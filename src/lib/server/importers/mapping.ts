@@ -1,21 +1,8 @@
 import { z } from "zod";
 
-export const DELIMITERS = [",", ";", "\t", "|", "auto"] as const;
-export const ENCODINGS = [
-  "auto",
-  "utf-8",
-  "utf-16le",
-  "windows-1252",
-  "iso-8859-1",
-] as const;
-export const DATE_FORMATS = [
-  "YYYY-MM-DD",
-  "DD.MM.YYYY",
-  "DD/MM/YYYY",
-  "MM/DD/YYYY",
-  "DD.MM.YY",
-  "YYYYMMDD",
-] as const;
+import { DATE_FORMATS, DELIMITERS, ENCODINGS } from "$lib/import-constants";
+
+export { DATE_FORMATS, DELIMITERS, ENCODINGS };
 
 /**
  * A column is addressed by its header name (trimmed, case-insensitive) or by

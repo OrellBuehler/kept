@@ -46,6 +46,20 @@ const matrix: Record<string, Entry> = {
     access: "user",
     handlers: { load: (m, e) => m.load(e) },
   },
+  "/src/routes/(app)/+page.server.ts": {
+    access: "user",
+    handlers: { load: (m, e) => m.load(e) },
+  },
+  "/src/routes/(app)/reports/+page.server.ts": {
+    access: "user",
+    handlers: { load: (m, e) => m.load(e) },
+  },
+  "/src/routes/(app)/reports/[kind]/+server.ts": {
+    access: "user",
+    handlers: {
+      GET: (m, e) => (m as never as { GET: (e: never) => unknown }).GET(e),
+    },
+  },
   "/src/routes/(app)/settings/account/+page.server.ts": {
     access: "user",
     handlers: {
