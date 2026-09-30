@@ -28,6 +28,7 @@
   let adding = $state(false);
   let deleteTarget = $state<(typeof data.users)[number] | null>(null);
   let deleting = $state(false);
+  let lastTarget = $state<(typeof data.users)[number] | null>(null);
 
   const createFailure = $derived(form && "values" in form ? form : null);
   const formatDate = (d: Date) => d.toISOString().slice(0, 10);
@@ -58,7 +59,7 @@
       size="icon"
       class="text-destructive hover:text-destructive"
       aria-label={`Delete ${user.username}`}
-      onclick={() => (deleteTarget = user)}
+      onclick={() => (deleteTarget = lastTarget = user)}
     >
       <Trash2Icon />
     </Button>
@@ -241,7 +242,7 @@
 >
   <AlertDialog.Content>
     <AlertDialog.Header>
-      <AlertDialog.Title>Delete {deleteTarget?.username}?</AlertDialog.Title>
+      <AlertDialog.Title>Delete {lastTarget?.username}?</AlertDialog.Title>
       <AlertDialog.Description>
         This permanently removes the account and signs the user out everywhere.
         This cannot be undone.
@@ -253,7 +254,7 @@
       class="contents"
       use:enhance={() => {
         deleting = true;
-        const name = deleteTarget?.username;
+        const name = lastTarget?.username;
         return async ({ result, update }) => {
           await update();
           deleting = false;
@@ -270,7 +271,7 @@
         };
       }}
     >
-      <input type="hidden" name="userId" value={deleteTarget?.id ?? ""} />
+      <input type="hidden" name="userId" value={lastTarget?.id ?? ""} />
       <AlertDialog.Footer>
         <AlertDialog.Cancel type="button" disabled={deleting}
           >Cancel</AlertDialog.Cancel

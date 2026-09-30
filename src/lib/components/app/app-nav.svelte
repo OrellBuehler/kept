@@ -4,7 +4,7 @@
   import type { Pathname } from "$app/types";
   import * as Sidebar from "$lib/components/ui/sidebar/index.js";
 
-  type Item = { href: string; label: string; icon: Component };
+  type Item = { href: Pathname; label: string; icon: Component };
   let {
     items,
     isActive,
@@ -22,7 +22,7 @@
       >
         {#snippet child({ props })}
           <a
-            href={resolve(item.href as Pathname)}
+            href={resolve(item.href)}
             {...props}
             aria-current={isActive(item.href) ? "page" : undefined}
             onclick={() => sidebar.setOpenMobile(false)}

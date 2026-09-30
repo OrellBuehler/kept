@@ -72,6 +72,7 @@
           touchedConfirm = true;
           if (confirm !== newPassword) {
             cancel();
+            document.getElementById("confirm")?.focus();
             return;
           }
           pending = true;
@@ -83,8 +84,6 @@
               confirm = "";
               touchedConfirm = false;
               toast.success("Password changed.");
-            } else if (result.type === "failure") {
-              toast.error("Password was not changed.");
             } else if (result.type === "error") {
               toast.error("Something went wrong. Please try again.");
             }
@@ -132,9 +131,12 @@
               bind:value={confirm}
               onblur={() => (touchedConfirm = confirm.length > 0)}
               aria-invalid={mismatch}
+              aria-describedby={mismatch ? "confirm-error" : undefined}
             />
             {#if mismatch}
-              <Field.Error>Passwords do not match.</Field.Error>
+              <Field.Error id="confirm-error"
+                >Passwords do not match.</Field.Error
+              >
             {/if}
           </Field.Field>
         </Field.Group>

@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { resolve } from "$app/paths";
   import LayoutDashboardIcon from "@lucide/svelte/icons/layout-dashboard";
   import * as Empty from "$lib/components/ui/empty/index.js";
   import { Button } from "$lib/components/ui/button/index.js";
@@ -19,6 +20,6 @@
     </Empty.Description>
   </Empty.Header>
   <Empty.Content>
-    <Button href="/accounts">Go to accounts</Button>
+    <Button href={resolve("/accounts")}>Go to accounts</Button>
   </Empty.Content>
 </Empty.Root>

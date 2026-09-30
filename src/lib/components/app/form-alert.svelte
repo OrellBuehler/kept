@@ -6,11 +6,7 @@
 </script>
 
 {#if message}
-  <Alert.Root
-    variant="destructive"
-    role="alert"
-    class="border-destructive/40 dark:text-red-400 dark:*:data-[slot=alert-description]:text-red-400"
-  >
+  <Alert.Root variant="destructive" class="border-destructive/40">
     <CircleAlertIcon />
     <Alert.Description>{message}</Alert.Description>
   </Alert.Root>

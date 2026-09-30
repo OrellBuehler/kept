@@ -1,6 +1,9 @@
 <script lang="ts">
   import { page } from "$app/state";
-  import { resolve } from "$app/paths";
+  import { resolve, asset } from "$app/paths";
+  import type { Pathname } from "$app/types";
+  import type { Component } from "svelte";
+  import { cn } from "$lib/utils";
   import { userPrefersMode, setMode } from "mode-watcher";
   import LayoutDashboardIcon from "@lucide/svelte/icons/layout-dashboard";
   import LandmarkIcon from "@lucide/svelte/icons/landmark";
@@ -20,14 +23,15 @@
 
   let { data, children }: LayoutProps = $props();
 
-  const nav = $derived([
+  // /import and /bills have no route yet, so they are not in the generated Pathname type
+  const nav: { href: Pathname; label: string; icon: Component }[] = $derived([
     { href: "/", label: "Dashboard", icon: LayoutDashboardIcon },
     { href: "/accounts", label: "Accounts", icon: LandmarkIcon },
-    { href: "/import", label: "Import", icon: UploadIcon },
-    { href: "/bills", label: "Bills", icon: ReceiptIcon },
+    { href: "/import" as Pathname, label: "Import", icon: UploadIcon },
+    { href: "/bills" as Pathname, label: "Bills", icon: ReceiptIcon },
     { href: "/settings/account", label: "Settings", icon: SettingsIcon },
     ...(data.user.role === "admin"
-      ? [{ href: "/admin/users", label: "Users", icon: UsersIcon }]
+      ? [{ href: "/admin/users" as const, label: "Users", icon: UsersIcon }]
       : []),
   ]);
 
@@ -57,7 +61,7 @@
         aria-label="Kept, go to dashboard"
       >
         <img
-          src="/brand/kept-symbol-small.svg"
+          src={asset("/brand/kept-symbol-small.svg")}
           alt=""
           class="size-6 shrink-0 dark:invert"
         />
@@ -132,7 +136,11 @@
               <form method="POST" action="/logout">
                 <DropdownMenu.Item>
                   {#snippet child({ props })}
-                    <button type="submit" {...props} class="w-full">
+                    <button
+                      type="submit"
+                      {...props}
+                      class={cn(props.class as string, "w-full")}
+                    >
                       <LogOutIcon />
                       Log out
                     </button>

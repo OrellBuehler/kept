@@ -40,6 +40,7 @@
           touchedConfirm = true;
           if (confirm !== password) {
             cancel();
+            document.getElementById("confirm")?.focus();
             return;
           }
           pending = true;
@@ -106,9 +107,12 @@
               bind:value={confirm}
               onblur={() => (touchedConfirm = confirm.length > 0)}
               aria-invalid={mismatch}
+              aria-describedby={mismatch ? "confirm-error" : undefined}
             />
             {#if mismatch}
-              <Field.Error>Passwords do not match.</Field.Error>
+              <Field.Error id="confirm-error"
+                >Passwords do not match.</Field.Error
+              >
             {/if}
           </Field.Field>
         </Field.Group>
