@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Document xmlns="urn:iso:std:iso:20022:tech:xsd:camt.053.001.02">
+  <BkToCstmrStmt>
+    <GrpHdr>
+      <MsgId>EXAMPLE-MSG-0002</MsgId>
+      <CreDtTm>2023-12-01T06:00:00</CreDtTm>
+    </GrpHdr>
+    <Stmt>
+      <Id>STMT-2023-11</Id>
+      <CreDtTm>2023-12-01T06:00:00</CreDtTm>
+      <Acct>
+        <Id><IBAN>CH9300762011623852957</IBAN></Id>
+        <Ccy>CHF</Ccy>
+      </Acct>
+      <Bal>
+        <Tp><CdOrPrtry><Cd>OPBD</Cd></CdOrPrtry></Tp>
+        <Amt Ccy="CHF">100.00</Amt>
+        <CdtDbtInd>CRDT</CdtDbtInd>
+        <Dt><Dt>2023-11-01</Dt></Dt>
+      </Bal>
+      <Bal>
+        <Tp><CdOrPrtry><Cd>CLBD</Cd></CdOrPrtry></Tp>
+        <Amt Ccy="CHF">150.00</Amt>
+        <CdtDbtInd>DBIT</CdtDbtInd>
+        <Dt><Dt>2023-11-30</Dt></Dt>
+      </Bal>
+      <Ntry>
+        <Amt Ccy="CHF">250.00</Amt>
+        <CdtDbtInd>DBIT</CdtDbtInd>
+        <Sts>BOOK</Sts>
+        <BookgDt><Dt>2023-11-12</Dt></BookgDt>
+        <ValDt><Dt>2023-11-12</Dt></ValDt>
+        <AcctSvcrRef>V2-REF-0001</AcctSvcrRef>
+        <NtryDtls>
+          <TxDtls>
+            <RltdPties><Cdtr><Nm>Sample Insurance AG</Nm></Cdtr></RltdPties>
+            <RmtInf><Ustrd>Policy 4711</Ustrd></RmtInf>
+          </TxDtls>
+        </NtryDtls>
+      </Ntry>
+    </Stmt>
+  </BkToCstmrStmt>
+</Document>
