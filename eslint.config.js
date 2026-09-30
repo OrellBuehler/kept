@@ -9,6 +9,7 @@ export default ts.config(
   {
     ignores: [
       ".svelte-kit/",
+      ".claude/worktrees/",
       "build/",
       "coverage/",
       "drizzle/",

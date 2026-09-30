@@ -6,3 +6,4 @@ drizzle
 bun.lock
 static
 src/lib/components/ui
+.claude/worktrees
