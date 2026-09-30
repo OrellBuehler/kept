@@ -8,6 +8,7 @@ import {
   matchDismissals,
   transactions,
 } from "$lib/server/db";
+import { emitBillChanged } from "$lib/server/events";
 import { LedgerError, notFound } from "$lib/server/ledger/errors";
 import { allocate, loadAllocations, toMatchTransaction } from "./allocations";
 import { getBill, listBills, toMatchBill } from "./bills";
@@ -291,6 +292,7 @@ export function removeAllocation(userId: string, allocationId: string): void {
       .onConflictDoNothing()
       .run();
   }
+  emitBillChanged(userId, row.billId);
 }
 
 /** Brings a dismissed pair back as a suggestion. Idempotent. */

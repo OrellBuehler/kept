@@ -2,6 +2,7 @@ import { json, type Handle } from "@sveltejs/kit";
 import { warmDummyHash } from "$lib/server/auth/password";
 import { assertSecretKeyConfigured } from "$lib/server/crypto";
 import { runMigrations } from "$lib/server/db";
+import { registerPaperless } from "$lib/server/integrations/paperless";
 import {
   SESSION_COOKIE,
   clearedSessionCookieHeader,
@@ -16,6 +17,7 @@ export async function init() {
   assertSecretKeyConfigured();
   runMigrations();
   await warmDummyHash();
+  registerPaperless();
 }
 
 function redirectResponse(location: string, clearCookie?: string): Response {

@@ -8,6 +8,7 @@ import {
   matchDismissals,
   transactions,
 } from "$lib/server/db";
+import { emitBillChanged } from "$lib/server/events";
 import { LedgerError } from "$lib/server/ledger/errors";
 import { parseMoneyInput } from "$lib/server/ledger/schemas";
 import { getTransaction } from "$lib/server/ledger/transactions";
@@ -121,11 +122,13 @@ export function allocate(
       ),
     )
     .run();
-  return db
+  const created = db
     .insert(billAllocations)
     .values({ userId, billId, transactionId, amount, origin })
     .returning({ id: billAllocations.id })
     .get();
+  emitBillChanged(userId, billId);
+  return created;
 }
 
 /** Like `allocate`, with the amount typed in the bill's currency (may be negative for refunds). */
