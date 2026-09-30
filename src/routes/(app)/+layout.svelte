@@ -1,0 +1,169 @@
+<script lang="ts">
+  import { page } from "$app/state";
+  import { resolve, asset } from "$app/paths";
+  import type { Pathname } from "$app/types";
+  import type { Component } from "svelte";
+  import { cn } from "$lib/utils";
+  import { userPrefersMode, setMode } from "mode-watcher";
+  import LayoutDashboardIcon from "@lucide/svelte/icons/layout-dashboard";
+  import LandmarkIcon from "@lucide/svelte/icons/landmark";
+  import UploadIcon from "@lucide/svelte/icons/upload";
+  import ReceiptIcon from "@lucide/svelte/icons/receipt";
+  import SettingsIcon from "@lucide/svelte/icons/settings";
+  import UsersIcon from "@lucide/svelte/icons/users";
+  import ChevronsUpDownIcon from "@lucide/svelte/icons/chevrons-up-down";
+  import LogOutIcon from "@lucide/svelte/icons/log-out";
+  import SunIcon from "@lucide/svelte/icons/sun";
+  import MoonIcon from "@lucide/svelte/icons/moon";
+  import MonitorIcon from "@lucide/svelte/icons/monitor";
+  import * as Sidebar from "$lib/components/ui/sidebar/index.js";
+  import * as DropdownMenu from "$lib/components/ui/dropdown-menu/index.js";
+  import AppNav from "$lib/components/app/app-nav.svelte";
+  import type { LayoutProps } from "./$types";
+
+  let { data, children }: LayoutProps = $props();
+
+  // /import and /bills have no route yet, so they are not in the generated Pathname type
+  const nav: { href: Pathname; label: string; icon: Component }[] = $derived([
+    { href: "/", label: "Dashboard", icon: LayoutDashboardIcon },
+    { href: "/accounts", label: "Accounts", icon: LandmarkIcon },
+    { href: "/import" as Pathname, label: "Import", icon: UploadIcon },
+    { href: "/bills" as Pathname, label: "Bills", icon: ReceiptIcon },
+    { href: "/settings/account", label: "Settings", icon: SettingsIcon },
+    ...(data.user.role === "admin"
+      ? [{ href: "/admin/users" as const, label: "Users", icon: UsersIcon }]
+      : []),
+  ]);
+
+  function isActive(href: string) {
+    const path = page.url.pathname;
+    if (href === "/") return path === "/";
+    if (href === "/settings/account") return path.startsWith("/settings");
+    return path === href || path.startsWith(href + "/");
+  }
+
+  const name = $derived(data.user.displayName || data.user.username);
+  const initial = $derived(name.charAt(0).toUpperCase());
+
+  const modes = [
+    { value: "light", label: "Light", icon: SunIcon },
+    { value: "dark", label: "Dark", icon: MoonIcon },
+    { value: "system", label: "System", icon: MonitorIcon },
+  ] as const;
+</script>
+
+<Sidebar.Provider>
+  <Sidebar.Root collapsible="icon">
+    <Sidebar.Header>
+      <a
+        href={resolve("/")}
+        class="ring-sidebar-ring flex h-10 items-center rounded-md px-2 outline-hidden focus-visible:ring-2"
+        aria-label="Kept, go to dashboard"
+      >
+        <img
+          src={asset("/brand/kept-symbol-small.svg")}
+          alt=""
+          class="size-6 shrink-0 dark:invert"
+        />
+        <span
+          class="ms-2 text-lg font-semibold tracking-tight group-data-[collapsible=icon]:hidden"
+          >Kept</span
+        >
+      </a>
+    </Sidebar.Header>
+    <Sidebar.Content>
+      <Sidebar.Group>
+        <Sidebar.GroupContent>
+          <AppNav items={nav} {isActive} />
+        </Sidebar.GroupContent>
+      </Sidebar.Group>
+    </Sidebar.Content>
+    <Sidebar.Footer>
+      <Sidebar.Menu>
+        <Sidebar.MenuItem>
+          <DropdownMenu.Root>
+            <DropdownMenu.Trigger>
+              {#snippet child({ props })}
+                <Sidebar.MenuButton
+                  {...props}
+                  size="lg"
+                  class="data-[state=open]:bg-sidebar-accent"
+                >
+                  <span
+                    class="bg-primary text-primary-foreground flex size-8 shrink-0 items-center justify-center rounded-lg text-sm font-medium"
+                    aria-hidden="true">{initial}</span
+                  >
+                  <span class="grid min-w-0 flex-1 text-start leading-tight">
+                    <span class="truncate text-sm font-medium">{name}</span>
+                    {#if data.user.displayName}
+                      <span class="text-muted-foreground truncate text-xs"
+                        >{data.user.username}</span
+                      >
+                    {/if}
+                  </span>
+                  <ChevronsUpDownIcon class="ms-auto size-4" />
+                </Sidebar.MenuButton>
+              {/snippet}
+            </DropdownMenu.Trigger>
+            <DropdownMenu.Content side="top" align="start" class="min-w-56">
+              <DropdownMenu.Label class="truncate">{name}</DropdownMenu.Label>
+              <DropdownMenu.Separator />
+              <DropdownMenu.Item>
+                {#snippet child({ props })}
+                  <a href={resolve("/settings/account")} {...props}>
+                    <SettingsIcon />
+                    Account settings
+                  </a>
+                {/snippet}
+              </DropdownMenu.Item>
+              <DropdownMenu.Separator />
+              <DropdownMenu.Group>
+                <DropdownMenu.GroupHeading>Theme</DropdownMenu.GroupHeading>
+                <DropdownMenu.RadioGroup
+                  value={userPrefersMode.current}
+                  onValueChange={(v) =>
+                    setMode(v as (typeof modes)[number]["value"])}
+                >
+                  {#each modes as m (m.value)}
+                    <DropdownMenu.RadioItem value={m.value}>
+                      <m.icon />
+                      {m.label}
+                    </DropdownMenu.RadioItem>
+                  {/each}
+                </DropdownMenu.RadioGroup>
+              </DropdownMenu.Group>
+              <DropdownMenu.Separator />
+              <form method="POST" action="/logout">
+                <DropdownMenu.Item>
+                  {#snippet child({ props })}
+                    <button
+                      type="submit"
+                      {...props}
+                      class={cn(props.class as string, "w-full")}
+                    >
+                      <LogOutIcon />
+                      Log out
+                    </button>
+                  {/snippet}
+                </DropdownMenu.Item>
+              </form>
+            </DropdownMenu.Content>
+          </DropdownMenu.Root>
+        </Sidebar.MenuItem>
+      </Sidebar.Menu>
+    </Sidebar.Footer>
+    <Sidebar.Rail />
+  </Sidebar.Root>
+
+  <Sidebar.Inset class="min-w-0">
+    <header
+      class="bg-background/80 sticky top-0 z-10 flex h-12 items-center gap-2 border-b px-4 backdrop-blur"
+    >
+      <Sidebar.Trigger />
+      <span class="text-sm font-medium md:hidden">Kept</span>
+    </header>
+    <div class="mx-auto w-full max-w-5xl min-w-0 flex-1 p-4 md:p-6">
+      {@render children()}
+    </div>
+  </Sidebar.Inset>
+</Sidebar.Provider>
