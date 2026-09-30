@@ -1,0 +1,43 @@
+default_install_hook_types: [pre-commit, commit-msg]
+default_stages: [pre-commit]
+# Run with prek (https://github.com/j178/prek): `prek install` once, then hooks run on every commit.
+repos:
+  - repo: local
+    hooks:
+      - id: leak-guard
+        name: leak guard (private terms)
+        entry: bun scripts/leak-guard.ts
+        language: system
+        pass_filenames: true
+        stages: [pre-commit, commit-msg]
+
+      - id: gitleaks
+        name: gitleaks
+        entry: gitleaks protect --staged --verbose --redact
+        language: system
+        pass_filenames: false
+
+      - id: prettier
+        name: prettier
+        entry: bunx prettier --write --ignore-unknown
+        language: system
+        types_or: [javascript, ts, svelte, css, json, yaml, markdown, html]
+
+      - id: eslint
+        name: eslint
+        entry: bunx eslint --fix --no-warn-ignored
+        language: system
+        types_or: [javascript, ts, svelte]
+
+      - id: svelte-check
+        name: svelte-check
+        entry: bash -c 'bunx svelte-kit sync && bunx svelte-check --tsconfig ./tsconfig.json'
+        language: system
+        pass_filenames: false
+        types_or: [ts, svelte]
+
+      - id: vitest
+        name: vitest (related tests)
+        entry: bunx vitest related --run --passWithNoTests
+        language: system
+        types_or: [ts, svelte]

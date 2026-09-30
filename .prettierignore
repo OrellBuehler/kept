@@ -1,0 +1,8 @@
+.svelte-kit
+build
+node_modules
+coverage
+drizzle
+bun.lock
+static
+src/lib/components/ui

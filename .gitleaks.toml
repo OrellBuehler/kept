@@ -1,0 +1,18 @@
+[extend]
+useDefault = true
+
+[[rules]]
+id = "iban"
+description = "IBAN (real account numbers must never be committed; use the documented test IBANs)"
+regex = '''\b[A-Z]{2}\d{2}(?:[ ]?[A-Z0-9]{4}){3,7}(?:[ ]?[A-Z0-9]{1,3})?\b'''
+keywords = ["ch", "de", "at", "li", "fr", "it"]
+
+[[rules]]
+id = "swiss-social-security-number"
+description = "Swiss AHV/AVS number"
+regex = '''\b756[.\s]?\d{4}[.\s]?\d{4}[.\s]?\d{2}\b'''
+keywords = ["756"]
+
+[allowlist]
+description = "Synthetic test data"
+paths = ['''src/lib/testing/fixtures/''']

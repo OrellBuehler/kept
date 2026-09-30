@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 740 256"><title>Kept</title><g fill="#000"><rect x="36" y="36" width="36" height="184"/><rect x="160" y="36" width="64" height="24"/><rect x="124" y="76" width="64" height="24"/><rect x="88" y="116" width="64" height="24"/><rect x="124" y="156" width="64" height="24"/><rect x="160" y="196" width="64" height="24"/></g>
+<g transform="translate(300 10)" fill="none" stroke="#000" stroke-width="22" stroke-linejoin="round">
+<path d="M11 20 V170"/><path d="M11 125 L63 73"/><path d="M30 106 L67 170"/>
+<path d="M98 120 H198 A50 50 0 1 0 183.36 155.36"/>
+<path d="M230 70 V235"/><circle cx="280" cy="120" r="50"/>
+<path d="M372 30 V145 A25 25 0 0 0 397 170 H402"/><path d="M350 70 H400"/>
+</g></svg>

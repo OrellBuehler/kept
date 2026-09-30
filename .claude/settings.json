@@ -1,0 +1,42 @@
+{
+  "$schema": "https://json.schemastore.org/claude-code-settings.json",
+  "permissions": {
+    "allow": [
+      "Bash(bun run:*)",
+      "Bash(bun install:*)",
+      "Bash(bun test:*)",
+      "Bash(bunx prettier:*)",
+      "Bash(bunx eslint:*)",
+      "Bash(bunx svelte-check:*)",
+      "Bash(bunx svelte-kit sync:*)",
+      "Bash(bunx vitest:*)",
+      "Bash(bunx drizzle-kit generate:*)",
+      "Bash(bunx shadcn-svelte@latest add:*)",
+      "Bash(git status:*)",
+      "Bash(git diff:*)",
+      "Bash(git log:*)",
+      "Bash(git show:*)",
+      "Bash(prek run:*)"
+    ],
+    "deny": [
+      "Read(./.private-terms)",
+      "Read(./.env)",
+      "Read(./.env.*)",
+      "Read(./data/**)"
+    ]
+  },
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Edit|Write|MultiEdit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/format-edited-file.sh",
+            "timeout": 30
+          }
+        ]
+      }
+    ]
+  }
+}
