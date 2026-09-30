@@ -2,11 +2,35 @@ import { applyAction } from "$app/forms";
 import type { SubmitFunction } from "@sveltejs/kit";
 import { toast } from "svelte-sonner";
 
-export type FormErrors = Record<string, string[]>;
+import type { FormErrors } from "$lib/form-errors";
+
+type Errors = NonNullable<FormErrors>;
+
+/**
+ * Move error keys the form does not render into `form`, so a failure is never
+ * silent. Without `knownFields` the errors are returned unchanged.
+ */
+export function foldErrors(
+  errors: Errors,
+  knownFields: readonly string[] | undefined,
+): Errors {
+  if (!knownFields) return errors;
+  const out: Errors = {};
+  const form = [...(errors.form ?? [])];
+  for (const [key, messages] of Object.entries(errors)) {
+    if (key === "form") continue;
+    if (knownFields.includes(key)) out[key] = messages;
+    else form.push(...messages.filter((m) => !form.includes(m)));
+  }
+  if (form.length > 0) out.form = form;
+  return out;
+}
 
 interface Options {
   setPending: (pending: boolean) => void;
-  setErrors: (errors: FormErrors) => void;
+  setErrors: (errors: Errors) => void;
+  /** Fields the form renders; other error keys are folded into `form`. */
+  knownFields?: readonly string[];
   onSuccess?: () => void;
   /** Toast shown after a successful submit. */
   successMessage?: string;
@@ -29,7 +53,10 @@ export function submitHandler(opts: Options): SubmitFunction {
         opts.onSuccess?.();
         await update({ reset: false });
       } else if (result.type === "failure") {
-        const errors = (result.data?.errors ?? {}) as FormErrors;
+        const errors = foldErrors(
+          (result.data?.errors ?? {}) as Errors,
+          opts.knownFields,
+        );
         opts.setErrors(
           Object.keys(errors).length ? errors : { form: [GENERIC] },
         );

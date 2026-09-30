@@ -4,6 +4,7 @@
   import { Button } from "$lib/components/ui/button";
   import Amount from "$lib/components/Amount.svelte";
   import { formatDate } from "$lib/format";
+  import { maskIban } from "$lib/iban";
   import { formatAmount } from "$lib/money";
   import Trash2Icon from "@lucide/svelte/icons/trash-2";
   import TransactionForm from "./TransactionForm.svelte";
@@ -22,6 +23,13 @@
     currency: string;
     onDelete: (tx: Tx) => void;
   } = $props();
+
+  let showIban = $state(false);
+
+  $effect(() => {
+    void transaction?.id;
+    showIban = false;
+  });
 
   const imported = $derived(transaction?.source === "import");
 </script>
@@ -63,8 +71,19 @@
             {/if}
             {#if transaction.counterpartyIban}
               <dt class="text-muted-foreground">IBAN</dt>
-              <dd class="font-mono break-all">
-                {transaction.counterpartyIban}
+              <dd class="flex items-center gap-2">
+                <span class="font-mono break-all">
+                  {showIban
+                    ? transaction.counterpartyIban
+                    : maskIban(transaction.counterpartyIban)}
+                </span>
+                <button
+                  type="button"
+                  class="text-muted-foreground text-xs underline"
+                  onclick={() => (showIban = !showIban)}
+                >
+                  {showIban ? "hide" : "show"}
+                </button>
               </dd>
             {/if}
             {#if transaction.description}

@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { resolve } from "$app/paths";
   import { page } from "$app/state";
   import { SvelteURLSearchParams } from "svelte/reactivity";
   import * as Card from "$lib/components/ui/card";
@@ -169,7 +170,7 @@
             {#if hasFilters}
               <Button variant="outline" href="?">Clear filters</Button>
             {:else}
-              <Button href="/import?account={accountId}">
+              <Button href="{resolve('/(app)/import')}?account={accountId}">
                 <UploadIcon /> Import statement
               </Button>
               <Button variant="outline" onclick={onAdd}>

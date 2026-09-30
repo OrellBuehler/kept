@@ -88,10 +88,10 @@
     deletingInstitution = i;
     deleteInstitutionOpen = true;
   }
-  function isStale(a: Account) {
-    return (
-      a.lastImportAt !== null && daysSince(a.lastImportAt, now) > STALE_DAYS
-    );
+  function staleAgo(a: Account) {
+    if (a.lastImportAt === null || daysSince(a.lastImportAt, now) <= STALE_DAYS)
+      return null;
+    return formatAgo(a.lastImportAt, now);
   }
 </script>
 
@@ -236,6 +236,7 @@
         {:else}
           <ul class="divide-y rounded-lg border">
             {#each group.accounts as account (account.id)}
+              {@const ago = staleAgo(account)}
               <li>
                 <a
                   href={resolve("/(app)/accounts/[id]", { id: account.id })}
@@ -261,12 +262,12 @@
                         No transactions yet
                       {/if}
                     </span>
-                    {#if account.lastImportAt !== null && isStale(account)}
+                    {#if ago}
                       <span
                         class="flex items-center gap-1 text-xs text-amber-600 dark:text-amber-400"
                       >
                         <TriangleAlertIcon class="size-3.5" />
-                        Last import {formatAgo(account.lastImportAt, now)}
+                        Last import {ago}
                       </span>
                     {/if}
                   </div>

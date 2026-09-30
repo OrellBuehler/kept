@@ -12,7 +12,8 @@
   import ConfirmActionDialog from "$lib/components/ConfirmActionDialog.svelte";
   import FormField from "$lib/components/FormField.svelte";
   import { formatDate, todayIso } from "$lib/format";
-  import { submitHandler, type FormErrors } from "$lib/form-submit";
+  import type { FormErrors } from "$lib/form-errors";
+  import { submitHandler } from "$lib/form-submit";
   import PlusIcon from "@lucide/svelte/icons/plus";
   import Trash2Icon from "@lucide/svelte/icons/trash-2";
   import ScaleIcon from "@lucide/svelte/icons/scale";
@@ -26,7 +27,7 @@
   const uid = $props.id();
   let addOpen = $state(false);
   let pending = $state(false);
-  let errors = $state<FormErrors>({});
+  let errors = $state<NonNullable<FormErrors>>({});
   let deleting = $state<Snapshot | null>(null);
   let deleteOpen = $state(false);
 
@@ -141,6 +142,7 @@
       use:enhance={submitHandler({
         setPending: (v) => (pending = v),
         setErrors: (e) => (errors = e),
+        knownFields: ["date", "amount", "note"],
         successMessage: "Snapshot added",
         onSuccess: () => (addOpen = false),
       })}
@@ -176,7 +178,9 @@
         <Input id="{uid}-note" name="note" maxlength={1000} />
       </FormField>
       {#if errors.form?.length}
-        <p class="text-destructive text-sm" role="alert">{errors.form[0]}</p>
+        <p class="text-destructive text-sm" role="alert">
+          {errors.form.join(" ")}
+        </p>
       {/if}
       <Dialog.Footer>
         <Button

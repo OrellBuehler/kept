@@ -7,7 +7,8 @@
   import FormField from "$lib/components/FormField.svelte";
   import { minorToInput } from "$lib/amount-input";
   import { todayIso } from "$lib/format";
-  import { submitHandler, type FormErrors } from "$lib/form-submit";
+  import type { FormErrors } from "$lib/form-errors";
+  import { submitHandler } from "$lib/form-submit";
   import { cn } from "$lib/utils";
   import type { PageData } from "./$types";
 
@@ -36,7 +37,7 @@
 
   const uid = $props.id();
   let pending = $state(false);
-  let errors = $state<FormErrors>({});
+  let errors = $state<NonNullable<FormErrors>>({});
   // svelte-ignore state_referenced_locally
   let direction = $state<"out" | "in">(
     transaction && transaction.amount > 0 ? "in" : "out",
@@ -57,9 +58,11 @@
     if (v.startsWith("-")) {
       direction = "out";
       amountText = v.slice(1);
+      e.currentTarget.value = amountText;
     } else if (v.startsWith("+")) {
       direction = "in";
       amountText = v.slice(1);
+      e.currentTarget.value = amountText;
     } else {
       amountText = v;
     }
@@ -73,6 +76,18 @@
   use:enhance={submitHandler({
     setPending: (v) => (pending = v),
     setErrors: (e) => (errors = e),
+    knownFields: noteOnly
+      ? ["note"]
+      : [
+          "bookingDate",
+          "valueDate",
+          "amount",
+          "counterpartyName",
+          "counterpartyIban",
+          "description",
+          "reference",
+          "note",
+        ],
     successMessage,
     onSuccess: () => onSuccess?.(),
   })}
@@ -216,7 +231,7 @@
   </FormField>
 
   {#if errors.form?.length}
-    <p class="text-destructive text-sm" role="alert">{errors.form[0]}</p>
+    <p class="text-destructive text-sm" role="alert">{errors.form.join(" ")}</p>
   {/if}
 
   <div class="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">

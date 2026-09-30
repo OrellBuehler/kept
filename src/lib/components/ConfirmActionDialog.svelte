@@ -5,7 +5,8 @@
   import { Button } from "$lib/components/ui/button";
   import { Input } from "$lib/components/ui/input";
   import { Spinner } from "$lib/components/ui/spinner";
-  import { submitHandler, type FormErrors } from "$lib/form-submit";
+  import type { FormErrors } from "$lib/form-errors";
+  import { submitHandler } from "$lib/form-submit";
 
   let {
     open = $bindable(false),
@@ -32,7 +33,7 @@
 
   const uid = $props.id();
   let pending = $state(false);
-  let errors = $state<FormErrors>({});
+  let errors = $state<NonNullable<FormErrors>>({});
   let typed = $state("");
 
   const confirmed = $derived(

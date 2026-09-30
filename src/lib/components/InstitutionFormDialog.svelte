@@ -1,12 +1,14 @@
 <script lang="ts">
   import { enhance } from "$app/forms";
+  import { untrack } from "svelte";
   import * as Dialog from "$lib/components/ui/dialog";
   import { Button } from "$lib/components/ui/button";
   import { Input } from "$lib/components/ui/input";
   import { Spinner } from "$lib/components/ui/spinner";
   import FormField from "$lib/components/FormField.svelte";
   import { COLOR_PALETTE } from "$lib/account-types";
-  import { submitHandler, type FormErrors } from "$lib/form-submit";
+  import type { FormErrors } from "$lib/form-errors";
+  import { submitHandler } from "$lib/form-submit";
   import { cn } from "$lib/utils";
   import CheckIcon from "@lucide/svelte/icons/check";
 
@@ -25,14 +27,15 @@
 
   const uid = $props.id();
   let pending = $state(false);
-  let errors = $state<FormErrors>({});
+  let errors = $state<NonNullable<FormErrors>>({});
   let color = $state("");
 
   $effect(() => {
-    if (open) {
+    if (!open) return;
+    untrack(() => {
       errors = {};
       color = institution?.color ?? "";
-    }
+    });
   });
 
   const editing = $derived(institution !== null);
@@ -55,6 +58,7 @@
       use:enhance={submitHandler({
         setPending: (v) => (pending = v),
         setErrors: (e) => (errors = e),
+        knownFields: ["name", "bic", "color"],
         successMessage: editing ? "Institution updated" : "Institution added",
         onSuccess: () => (open = false),
       })}
@@ -138,7 +142,9 @@
         {/if}
       </div>
       {#if errors.form?.length}
-        <p class="text-destructive text-sm" role="alert">{errors.form[0]}</p>
+        <p class="text-destructive text-sm" role="alert">
+          {errors.form.join(" ")}
+        </p>
       {/if}
       <Dialog.Footer>
         <Button

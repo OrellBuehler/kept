@@ -1,5 +1,6 @@
 <script lang="ts">
   import { enhance } from "$app/forms";
+  import { untrack } from "svelte";
   import * as Dialog from "$lib/components/ui/dialog";
   import * as Select from "$lib/components/ui/select";
   import { Button } from "$lib/components/ui/button";
@@ -9,7 +10,8 @@
   import { ACCOUNT_TYPES, type AccountType } from "$lib/ledger-types";
   import { ACCOUNT_TYPE_LABELS, COMMON_CURRENCIES } from "$lib/account-types";
   import { minorToSignedInput } from "$lib/amount-input";
-  import { submitHandler, type FormErrors } from "$lib/form-submit";
+  import type { FormErrors } from "$lib/form-errors";
+  import { submitHandler } from "$lib/form-submit";
   import type { Minor } from "$lib/money";
 
   interface EditableAccount {
@@ -42,18 +44,19 @@
   const uid = $props.id();
   const editing = $derived(account !== null);
   let pending = $state(false);
-  let errors = $state<FormErrors>({});
+  let errors = $state<NonNullable<FormErrors>>({});
   let institutionId = $state("");
   let type = $state<AccountType>("current");
 
   $effect(() => {
-    if (open) {
+    if (!open) return;
+    untrack(() => {
       errors = {};
       institutionId = account
         ? (account.institution?.id ?? "")
         : defaultInstitutionId;
       type = account?.type ?? "current";
-    }
+    });
   });
 
   const institutionLabel = $derived(
@@ -78,6 +81,15 @@
       use:enhance={submitHandler({
         setPending: (v) => (pending = v),
         setErrors: (e) => (errors = e),
+        knownFields: [
+          "name",
+          "type",
+          "institutionId",
+          "currency",
+          "iban",
+          "openingBalance",
+          "openingDate",
+        ],
         successMessage: editing ? "Account updated" : "Account added",
         onSuccess: () => (open = false),
       })}
@@ -223,7 +235,9 @@
       </div>
 
       {#if errors.form?.length}
-        <p class="text-destructive text-sm" role="alert">{errors.form[0]}</p>
+        <p class="text-destructive text-sm" role="alert">
+          {errors.form.join(" ")}
+        </p>
       {/if}
       <Dialog.Footer>
         <Button

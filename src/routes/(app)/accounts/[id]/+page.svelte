@@ -161,16 +161,22 @@
             </DropdownMenu.Item>
             <DropdownMenu.Item>
               {#snippet child({ props })}
-                <!-- eslint-disable-next-line svelte/no-navigation-without-resolve -- route is added by the import flow -->
-                <a href="/import?account={account.id}" {...props}>
+                <a
+                  href="{resolve('/(app)/import')}?account={account.id}"
+                  {...props}
+                >
                   <UploadIcon /> Import statement
                 </a>
               {/snippet}
             </DropdownMenu.Item>
             <DropdownMenu.Item>
               {#snippet child({ props })}
-                <!-- eslint-disable-next-line svelte/no-navigation-without-resolve -- route is added by the import flow -->
-                <a href="/accounts/{account.id}/imports" {...props}>
+                <a
+                  href={resolve("/(app)/accounts/[id]/imports", {
+                    id: account.id,
+                  })}
+                  {...props}
+                >
                   <HistoryIcon /> Import history
                 </a>
               {/snippet}
