@@ -19,9 +19,9 @@
   import { submitHandler } from "$lib/form-submit";
   import { formError } from "$lib/form-errors";
   import FormAlert from "$lib/components/app/form-alert.svelte";
+  import { MAX_UPLOAD_BYTES } from "$lib/import-constants";
   import {
     FORMAT_LABELS,
-    MAX_UPLOAD_BYTES,
     formatBytes,
     formatPeriod,
     plural,

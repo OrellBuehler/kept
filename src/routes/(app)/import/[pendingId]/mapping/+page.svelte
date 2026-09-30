@@ -21,6 +21,7 @@
   import ImportSteps from "$lib/components/import/ImportSteps.svelte";
   import { formatDate } from "$lib/format";
   import { submitHandler } from "$lib/form-submit";
+  import { DATE_FORMATS, DELIMITERS, ENCODINGS } from "$lib/import-constants";
   import { FORMAT_LABELS, plural } from "$lib/import-ui";
   import type { PageProps } from "./$types";
 
@@ -55,28 +56,20 @@
     "balance",
   ];
 
-  const DELIMITERS = [
-    ["auto", "Detect automatically"],
-    [",", "Comma ( , )"],
-    [";", "Semicolon ( ; )"],
-    ["\t", "Tab"],
-    ["|", "Pipe ( | )"],
-  ] as const;
-  const ENCODINGS = [
-    ["auto", "Detect automatically"],
-    ["utf-8", "UTF-8"],
-    ["utf-16le", "UTF-16 LE"],
-    ["windows-1252", "Windows-1252"],
-    ["iso-8859-1", "ISO-8859-1"],
-  ] as const;
-  const DATE_FORMATS = [
-    "YYYY-MM-DD",
-    "DD.MM.YYYY",
-    "DD/MM/YYYY",
-    "MM/DD/YYYY",
-    "DD.MM.YY",
-    "YYYYMMDD",
-  ] as const;
+  const DELIMITER_LABELS: Record<(typeof DELIMITERS)[number], string> = {
+    auto: "Detect automatically",
+    ",": "Comma ( , )",
+    ";": "Semicolon ( ; )",
+    "\t": "Tab",
+    "|": "Pipe ( | )",
+  };
+  const ENCODING_LABELS: Record<(typeof ENCODINGS)[number], string> = {
+    auto: "Detect automatically",
+    "utf-8": "UTF-8",
+    "utf-16le": "UTF-16 LE",
+    "windows-1252": "Windows-1252",
+    "iso-8859-1": "ISO-8859-1",
+  };
   const THOUSANDS = [
     ["", "None"],
     ["'", "Apostrophe ( ' )"],
@@ -163,7 +156,9 @@
     const debit = splitValues(ui.debitValues);
     if (ui.amountMode === "single_with_indicator") {
       if (credit.length > 0) draft.indicatorCreditValues = credit;
+      else delete draft.indicatorCreditValues;
       if (debit.length > 0) draft.indicatorDebitValues = debit;
+      else delete draft.indicatorDebitValues;
     } else {
       delete draft.indicatorCreditValues;
       delete draft.indicatorDebitValues;
@@ -221,14 +216,24 @@
             : `The preview request was rejected (${response.status}). Reload the page and try again.`;
         return;
       }
-      result = await response.json();
+      let body: typeof result;
+      try {
+        body = await response.json();
+      } catch (err) {
+        if (!(err instanceof SyntaxError)) throw err;
+        console.error("mapping preview returned a non-JSON response", err);
+        previewError =
+          "The server sent an unexpected response. Reload the page and try again.";
+        return;
+      }
+      result = body;
       previewError = null;
     } catch (err) {
       if (err instanceof DOMException && err.name === "AbortError") return;
       console.error("mapping preview failed", err);
       previewError = "Could not reach the server. Check your connection.";
     } finally {
-      if (controller === mine) loading = false;
+      if (controller === mine && json === lastSent) loading = false;
     }
   }
 
@@ -252,7 +257,22 @@
     byIndex ? String(c.index) : c.name;
   const isXlsx = $derived(data.format === "xlsx");
   const modeCols = $derived(modeColumns[ui.amountMode]);
-  const valid = $derived(result.profile !== null && !previewError);
+  const headerInvalid = $derived(
+    ui.headerRow === null ||
+      ui.headerRow < 0 ||
+      !Number.isInteger(ui.headerRow),
+  );
+  const footerInvalid = $derived(
+    ui.skipFooterRows === null ||
+      ui.skipFooterRows < 0 ||
+      !Number.isInteger(ui.skipFooterRows),
+  );
+  const valid = $derived(
+    result.profile !== null &&
+      !previewError &&
+      !headerInvalid &&
+      !footerInvalid,
+  );
   const okRows = $derived(result.preview.filter((r) => r.transaction).length);
   const badRows = $derived(result.preview.filter((r) => r.error).length);
 
@@ -298,8 +318,8 @@
                 bind:value={ui.delimiter}
                 class="w-full"
               >
-                {#each DELIMITERS as [value, label] (value)}
-                  <option {value}>{label}</option>
+                {#each DELIMITERS as value (value)}
+                  <option {value}>{DELIMITER_LABELS[value]}</option>
                 {/each}
               </NativeSelect>
             </FormField>
@@ -309,8 +329,8 @@
                 bind:value={ui.encoding}
                 class="w-full"
               >
-                {#each ENCODINGS as [value, label] (value)}
-                  <option {value}>{label}</option>
+                {#each ENCODINGS as value (value)}
+                  <option {value}>{ENCODING_LABELS[value]}</option>
                 {/each}
               </NativeSelect>
             </FormField>
@@ -318,6 +338,9 @@
           <FormField
             label="Header row"
             for="m-header"
+            errors={headerInvalid
+              ? ["Enter a whole number, 0 or more."]
+              : undefined}
             hint="Line number of the column names. 0 = no header; columns are then numbered."
           >
             <Input
@@ -332,6 +355,9 @@
           <FormField
             label="Footer rows to skip"
             for="m-footer"
+            errors={footerInvalid
+              ? ["Enter a whole number, 0 or more."]
+              : undefined}
             hint="Trailing lines such as totals."
           >
             <Input
@@ -592,7 +618,7 @@
         </Alert.Root>
       {/if}
 
-      <Card.Root class="min-w-0">
+      <Card.Root class="min-w-0" aria-live="polite" aria-busy={loading}>
         <Card.Header>
           <Card.Title class="flex items-center gap-2 text-base">
             Preview
