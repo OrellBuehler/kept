@@ -198,6 +198,17 @@ describe("unallocatedAmount", () => {
     expect(unallocatedAmount(tx(), allocations)).toBe(-3000);
   });
 
+  it("mixed-sign allocations on one transaction all consume its absolute amount", () => {
+    // outgoing payment: +6000 on an invoice, -1000 on a credit note
+    const allocations = [alloc("inv", "t1", 6000), alloc("cn", "t1", -1000)];
+    expect(unallocatedAmount(tx(), allocations)).toBe(-3000);
+    // incoming refund: -2000 on an invoice, +500 on a credit note
+    const incoming = [alloc("inv", "t2", -2000), alloc("cn", "t2", 500)];
+    expect(
+      unallocatedAmount(tx({ id: "t2", amount: minor(4000) }), incoming),
+    ).toBe(1500);
+  });
+
   it("counts negative allocations as consumption", () => {
     expect(
       unallocatedAmount(tx({ amount: minor(2000) }), [
@@ -224,7 +235,9 @@ describe("validateAllocation", () => {
 
   it("accepts a refund as negative allocation on an invoice", () => {
     expect(
-      validateAllocation(bill(), tx({ amount: minor(2000) }), minor(-2000), []),
+      validateAllocation(bill(), tx({ amount: minor(2000) }), minor(-2000), [
+        alloc("b1", "p", 12000),
+      ]),
     ).toBeNull();
   });
 
@@ -281,6 +294,37 @@ describe("validateAllocation", () => {
     expect(validateAllocation(bill(), tx(), minor(3000), existing)).toBeNull();
     expect(validateAllocation(bill(), tx(), minor(3001), existing)).toMatch(
       /exceeds/,
+    );
+  });
+
+  it("rejects refunds that would make the settled amount negative", () => {
+    const refund = tx({ amount: minor(2000) });
+    expect(validateAllocation(bill(), refund, minor(-2000), [])).toMatch(
+      /refund exceeds/i,
+    );
+    const paid = [alloc("b1", "p", 1500)];
+    expect(validateAllocation(bill(), refund, minor(-1501), paid)).toMatch(
+      /refund exceeds/i,
+    );
+    expect(validateAllocation(bill(), refund, minor(-1500), paid)).toBeNull();
+    const cn = bill({ kind: "credit_note" });
+    const reversal = tx({ amount: minor(-2000) });
+    expect(validateAllocation(cn, reversal, minor(-2000), [])).toMatch(
+      /refund exceeds/i,
+    );
+    expect(
+      validateAllocation(cn, reversal, minor(-2000), [alloc("b1", "p", 2000)]),
+    ).toBeNull();
+  });
+
+  it("over-allocation check accounts for refund allocations already on the transaction", () => {
+    const refund = tx({ id: "r", amount: minor(2000) });
+    const existing = [alloc("b1", "p", 12000), alloc("b1", "r", -1500)];
+    expect(
+      validateAllocation(bill(), refund, minor(-500), existing),
+    ).toBeNull();
+    expect(validateAllocation(bill(), refund, minor(-501), existing)).toMatch(
+      /exceeds the unallocated/,
     );
   });
 
@@ -877,11 +921,85 @@ describe("suggestMatches: ambiguity and precedence", () => {
       ],
       [],
     );
-    // t2 would also qualify by IBAN, which is ambiguous only within a rule
+    // combined 20000 exceeds the remaining 10000: the user must decide
+    expect(result.map((s) => [s.transactionId, s.rule, s.ambiguous])).toEqual([
+      ["t1", "reference", true],
+      ["t2", "iban_amount", true],
+    ]);
+  });
+
+  it("rule-2 is ambiguous on a bill that also has a reference match, the reference one stays if both fit", () => {
+    const b = bill({ reference: QRR, referenceType: "QRR" });
+    const result = suggestMatches(
+      [b],
+      [
+        tx({ id: "t1", reference: QRR, amount: minor(-4000) }),
+        tx({ id: "t2", amount: minor(-6000), bookingDate: "2026-03-21" }),
+      ],
+      [],
+    );
+    // t2 (6000) does not equal remaining (10000): no rule-2, reference stays exact
     expect(result.map((s) => [s.transactionId, s.rule, s.ambiguous])).toEqual([
       ["t1", "reference", false],
+    ]);
+    const after = suggestMatches(
+      [b],
+      [
+        tx({ id: "t1", reference: QRR, amount: minor(-4000) }),
+        tx({ id: "t2", amount: minor(-6000), bookingDate: "2026-03-21" }),
+      ],
+      [alloc("b1", "t1", 4000)],
+    );
+    expect(after.map((s) => [s.transactionId, s.rule, s.ambiguous])).toEqual([
       ["t2", "iban_amount", false],
     ]);
+  });
+
+  it("a partial reference match leaves the rest of the payment for IBAN+amount on another bill", () => {
+    const refBill = bill({
+      id: "b1",
+      amount: minor(6000),
+      reference: QRR,
+      referenceType: "QRR",
+      creditorIban: OTHER_IBAN,
+    });
+    const ibanBill = bill({ id: "b2", amount: minor(4000) });
+    const result = suggestMatches(
+      [refBill, ibanBill],
+      [tx({ reference: QRR, amount: minor(-10000) })],
+      [],
+    );
+    expect(
+      result.map((s) => [s.billId, s.rule, s.amount, s.ambiguous]),
+    ).toEqual([
+      ["b1", "reference", 6000, false],
+      ["b2", "iban_amount", 4000, false],
+    ]);
+    // the full payment no longer matches the IBAN bill
+    expect(
+      suggestMatches(
+        [refBill, bill({ id: "b2", amount: minor(10000) })],
+        [tx({ reference: QRR, amount: minor(-10000) })],
+        [],
+      ).map((s) => s.billId),
+    ).toEqual(["b1"]);
+  });
+
+  it("does not crash on malformed dates and skips rule 2 for that bill", () => {
+    for (const bad of ["2026-13-45", "garbage", "2026-02-30", ""]) {
+      expect(suggestMatches([bill({ dueDate: bad })], [tx()], [])).toEqual([]);
+      expect(suggestMatches([bill({ issueDate: bad })], [tx()], [])).toEqual(
+        [],
+      );
+    }
+    const ref = bill({
+      dueDate: "garbage",
+      reference: QRR,
+      referenceType: "QRR",
+    });
+    expect(
+      suggestMatches([ref], [tx({ reference: QRR })], []).map((s) => s.rule),
+    ).toEqual(["reference"]);
   });
 });
 

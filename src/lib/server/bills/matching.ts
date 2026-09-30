@@ -86,6 +86,13 @@ function addDays(date: string, days: number): string {
     .slice(0, 10);
 }
 
+function isIsoDate(value: string): boolean {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
+  const [y, m, d] = value.split("-").map(Number);
+  const date = new Date(Date.UTC(y, m - 1, d));
+  return date.toISOString().slice(0, 10) === value;
+}
+
 function sameCurrency(a: string, b: string): boolean {
   return a.toUpperCase() === b.toUpperCase();
 }
@@ -186,6 +193,9 @@ export function validateAllocation(
   if (Math.abs(amount) > Math.abs(unallocatedAmount(tx, allocations))) {
     return "Amount exceeds the unallocated part of the transaction";
   }
+  if (amount < 0 && computeBillStatus(bill, allocations).settled + amount < 0) {
+    return "Refund exceeds the amount settled on the bill";
+  }
   return null;
 }
 
@@ -195,6 +205,12 @@ function paymentWindow(
 ): { from: string; to: string } | null {
   const { issueDate, dueDate } = bill;
   if (issueDate === null && dueDate === null) return null;
+  if (
+    (issueDate !== null && !isIsoDate(issueDate)) ||
+    (dueDate !== null && !isIsoDate(dueDate))
+  ) {
+    return null;
+  }
   const start = issueDate ?? addDays(dueDate as string, -o.defaultTermDays);
   const end = dueDate ?? addDays(issueDate as string, o.defaultTermDays);
   return {
@@ -224,6 +240,14 @@ function cmp(a: string, b: string): number {
   return a < b ? -1 : a > b ? 1 : 0;
 }
 
+/**
+ * Suggests bill/transaction pairs. Nothing is written; the caller decides.
+ *
+ * Instalments paid under one reference are flagged ambiguous on purpose: several
+ * transactions carrying the same reference for one bill need the user's confirmation
+ * rather than automatic allocation. Ambiguity is also raised when a bill has both a
+ * reference and an IBAN+amount suggestion.
+ */
 export function suggestMatches(
   bills: readonly MatchBill[],
   transactions: readonly MatchTransaction[],
@@ -240,95 +264,129 @@ export function suggestMatches(
     .map((tx) => ({ tx, free: unallocatedAmount(tx, allocations) }))
     .filter((t) => t.free !== 0);
 
-  const rule1: Suggestion[] = [];
-  const rule2: Suggestion[] = [];
-
+  interface OpenBill {
+    bill: MatchBill;
+    settled: Minor;
+    remaining: Minor | null;
+    overpaid: boolean;
+    wantsIncoming: boolean;
+  }
+  const open: OpenBill[] = [];
   for (const bill of bills) {
     const { status, settled, remaining } = computeBillStatus(bill, allocations);
     const overpaid = status === "overpaid" && bill.kind === "invoice";
     if (
-      !overpaid &&
-      status !== "open" &&
-      status !== "partially_paid" &&
-      status !== "credit_due"
+      overpaid ||
+      status === "open" ||
+      status === "partially_paid" ||
+      status === "credit_due"
     ) {
-      continue;
+      open.push({
+        bill,
+        settled,
+        remaining,
+        overpaid,
+        wantsIncoming: overpaid || bill.kind === "credit_note",
+      });
     }
+  }
 
+  const rule1: Suggestion[] = [];
+  const rule2: Suggestion[] = [];
+
+  // Pass 1: structured references.
+  const consumed = new Map<string, number>();
+  for (const { bill, remaining, overpaid, wantsIncoming } of open) {
+    if (overpaid) continue;
     const billRef =
       bill.reference !== null &&
       (bill.referenceType === "QRR" || bill.referenceType === "SCOR")
         ? normalizeCompact(bill.reference)
         : "";
-    const billIban =
-      bill.creditorIban !== null ? normalizeCompact(bill.creditorIban) : "";
-    const window = paymentWindow(bill, o);
-    const wantsIncoming = overpaid || bill.kind === "credit_note";
-
+    if (billRef === "") continue;
     for (const { tx, free: txFree } of free) {
       if (allocated.has(`${bill.id}\u0000${tx.id}`)) continue;
       if (!sameCurrency(bill.currency, tx.currency)) continue;
       if (txFree > 0 !== wantsIncoming) continue;
-
-      const abs = Math.abs(txFree);
-
-      if (
-        !overpaid &&
-        billRef !== "" &&
-        tx.reference !== null &&
-        normalizeCompact(tx.reference) === billRef
-      ) {
-        rule1.push({
-          billId: bill.id,
-          transactionId: tx.id,
-          rule: "reference",
-          confidence: "exact",
-          amount: minor(remaining === null ? abs : Math.min(remaining, abs)),
-          ambiguous: false,
-        });
+      if (tx.reference === null || normalizeCompact(tx.reference) !== billRef) {
         continue;
       }
+      const abs = Math.abs(txFree);
+      const amount = remaining === null ? abs : Math.min(remaining, abs);
+      rule1.push({
+        billId: bill.id,
+        transactionId: tx.id,
+        rule: "reference",
+        confidence: "exact",
+        amount: minor(amount),
+        ambiguous: false,
+      });
+      consumed.set(tx.id, Math.max(consumed.get(tx.id) ?? 0, amount));
+    }
+  }
 
+  // Pass 2: creditor IBAN + amount, evaluated against what a reference match leaves over.
+  for (const { bill, settled, remaining, overpaid, wantsIncoming } of open) {
+    const billIban =
+      bill.creditorIban !== null ? normalizeCompact(bill.creditorIban) : "";
+    if (billIban === "" || bill.amount === null) continue;
+    const window = paymentWindow(bill, o);
+    for (const { tx, free: txFree } of free) {
+      if (allocated.has(`${bill.id}\u0000${tx.id}`)) continue;
+      if (!sameCurrency(bill.currency, tx.currency)) continue;
+      if (txFree > 0 !== wantsIncoming) continue;
       if (
-        billIban === "" ||
-        bill.amount === null ||
         tx.counterpartyIban === null ||
         normalizeCompact(tx.counterpartyIban) !== billIban
       ) {
         continue;
       }
+      const abs = Math.abs(txFree) - (consumed.get(tx.id) ?? 0);
+      if (abs <= 0) continue;
 
       if (overpaid) {
         // Refund of an overpayment: no date window, the exact surplus is specific enough.
         if (abs !== settled - bill.amount) continue;
-        rule2.push({
-          billId: bill.id,
-          transactionId: tx.id,
-          rule: "iban_amount",
-          confidence: "high",
-          amount: minor(0 - abs),
-          ambiguous: false,
-        });
-        continue;
+      } else {
+        if (abs !== remaining || window === null) continue;
+        if (tx.bookingDate < window.from || tx.bookingDate > window.to)
+          continue;
       }
-
-      if (abs !== remaining || window === null) continue;
-      if (tx.bookingDate < window.from || tx.bookingDate > window.to) continue;
       rule2.push({
         billId: bill.id,
         transactionId: tx.id,
         rule: "iban_amount",
         confidence: "high",
-        amount: minor(abs),
+        amount: minor(overpaid ? 0 - abs : abs),
         ambiguous: false,
       });
     }
   }
 
-  const referenced = new Set(rule1.map((s) => s.transactionId));
-  const rule2Kept = rule2.filter((s) => !referenced.has(s.transactionId));
   markAmbiguous(rule1);
-  markAmbiguous(rule2Kept);
+  markAmbiguous(rule2);
+
+  // A bill suggested by both rules needs the user's decision. The reference
+  // suggestions stay unambiguous only if both together fit into the remaining amount.
+  const rule1Bills = new Set(rule1.map((s) => s.billId));
+  const rule2Bills = new Set(rule2.map((s) => s.billId));
+  const totals = new Map<string, number>();
+  for (const s of [...rule1, ...rule2]) {
+    totals.set(s.billId, (totals.get(s.billId) ?? 0) + Math.abs(s.amount));
+  }
+  const remainingById = new Map(open.map((x) => [x.bill.id, x.remaining]));
+  for (const s of rule2) {
+    if (rule1Bills.has(s.billId)) s.ambiguous = true;
+  }
+  for (const s of rule1) {
+    if (
+      rule2Bills.has(s.billId) &&
+      (totals.get(s.billId) ?? 0) > (remainingById.get(s.billId) ?? 0)
+    ) {
+      s.ambiguous = true;
+    }
+  }
+  const rule2Kept = rule2;
 
   const billById = new Map(bills.map((b) => [b.id, b]));
   const txById = new Map(transactions.map((t) => [t.id, t]));
