@@ -1,8 +1,12 @@
 import { fail, redirect } from "@sveltejs/kit";
-import { RateLimitedError, authenticate } from "$lib/server/auth/login";
+import {
+  RateLimitedError,
+  authenticate,
+  clientKey,
+} from "$lib/server/auth/login";
 import { safeRedirectTo } from "$lib/server/auth/routing";
 import { loginSchema } from "$lib/server/auth/schemas";
-import { setSessionCookie } from "$lib/server/auth/sessions";
+import { invalidateSession, setSessionCookie } from "$lib/server/auth/sessions";
 import { parseForm, safeValues } from "$lib/server/forms";
 import type { Actions, PageServerLoad } from "./$types";
 
@@ -13,7 +17,7 @@ export const load: PageServerLoad = ({ locals, url }) => {
 };
 
 export const actions: Actions = {
-  default: async ({ request, cookies, url, getClientAddress }) => {
+  default: async ({ request, cookies, url, locals, getClientAddress }) => {
     const form = await request.formData();
     const values = safeValues(form, ["username"]);
     const parsed = parseForm(loginSchema, form);
@@ -24,7 +28,7 @@ export const actions: Actions = {
       result = await authenticate(
         parsed.data.username,
         parsed.data.password,
-        getClientAddress(),
+        clientKey(getClientAddress),
       );
     } catch (err) {
       if (err instanceof RateLimitedError) {
@@ -39,6 +43,7 @@ export const actions: Actions = {
       });
     }
 
+    if (locals.session) invalidateSession(locals.session.id);
     setSessionCookie(cookies, result.token, result.session.expiresAt);
     redirect(
       303,

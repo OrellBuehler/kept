@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { createTestUser } from "$lib/testing/auth";
 import { useTestDB } from "$lib/testing/db";
-import { RateLimitedError, authenticate } from "./login";
+import { RateLimitedError, authenticate, clientKey } from "./login";
 import { LoginRateLimiter } from "./rate-limit";
 import { validateSessionToken } from "./sessions";
 
@@ -65,5 +65,27 @@ describe("authenticate", () => {
     expect(
       await authenticate("alice", u.password, "1.1.1.1", limiter),
     ).not.toBeNull();
+  });
+
+  it("counts parallel guesses: most of 10 concurrent bad logins are rate limited", async () => {
+    await createTestUser({ username: "alice" });
+    const limiter = new LoginRateLimiter();
+    const results = await Promise.allSettled(
+      Array.from({ length: 10 }, () =>
+        authenticate("alice", "wrong-password", "1.1.1.1", limiter),
+      ),
+    );
+    const limited = results.filter(
+      (r) => r.status === "rejected" && r.reason instanceof RateLimitedError,
+    );
+    expect(limited).toHaveLength(5);
+  });
+
+  it("clientKey falls back to a fixed key when the address is unavailable", () => {
+    const boom = () => {
+      throw new Error("no address");
+    };
+    expect(clientKey(boom)).toBe("unknown");
+    expect(clientKey(() => "1.2.3.4")).toBe("1.2.3.4");
   });
 });

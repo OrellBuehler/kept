@@ -4,6 +4,8 @@ const VERSION = "v1";
 const IV_BYTES = 12;
 const TAG_BYTES = 16;
 const KEY_BYTES = 32;
+// The version prefix is authenticated, so it cannot be altered without detection.
+const AAD = Buffer.from(VERSION);
 
 // Publicly known key, used only outside production so dev and tests work
 // without configuration. Never valid for real data.
@@ -48,6 +50,7 @@ export function assertSecretKeyConfigured(): void {
 export function encryptSecret(plaintext: string): string {
   const iv = randomBytes(IV_BYTES);
   const cipher = createCipheriv("aes-256-gcm", getKey(), iv);
+  cipher.setAAD(AAD);
   const body = Buffer.concat([
     cipher.update(plaintext, "utf8"),
     cipher.final(),
@@ -65,6 +68,7 @@ export function decryptSecret(payload: string): string {
   const body = Buffer.from(parts[2], "base64url");
   if (iv.length !== IV_BYTES || body.length < TAG_BYTES) throw malformed();
   const decipher = createDecipheriv("aes-256-gcm", getKey(), iv);
+  decipher.setAAD(AAD);
   decipher.setAuthTag(body.subarray(body.length - TAG_BYTES));
   try {
     return Buffer.concat([

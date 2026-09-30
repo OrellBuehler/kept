@@ -25,6 +25,11 @@ let dummyHash: Promise<string> | null = null;
  * known ones.
  */
 export async function verifyAgainstDummy(password: string): Promise<void> {
+  await verifyPassword(password, await warmDummyHash());
+}
+
+/** Compute the dummy hash up front (called from init) so the first unknown-user login is not faster or slower. */
+export function warmDummyHash(): Promise<string> {
   dummyHash ??= hashPassword(crypto.randomUUID());
-  await verifyPassword(password, await dummyHash);
+  return dummyHash;
 }

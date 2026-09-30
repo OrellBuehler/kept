@@ -124,6 +124,17 @@ export function setSessionCookie(
   });
 }
 
+/** Set-Cookie header value that clears the session cookie, for responses built outside `resolve`. */
+export function clearedSessionCookieHeader(cookies: Cookies): string {
+  return cookies.serialize(SESSION_COOKIE, "", {
+    path: "/",
+    httpOnly: true,
+    sameSite: "lax",
+    expires: new Date(0),
+    ...cookieSecureOverride(),
+  });
+}
+
 export function deleteSessionCookie(cookies: Cookies): void {
   cookies.delete(SESSION_COOKIE, {
     path: "/",

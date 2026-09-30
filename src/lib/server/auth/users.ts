@@ -1,7 +1,7 @@
-import { asc, count, eq } from "drizzle-orm";
-import { getDB, users, type UserRole } from "$lib/server/db";
+import { and, asc, count, eq, ne } from "drizzle-orm";
+import { getDB, sessions, users, type UserRole } from "$lib/server/db";
 import { hashPassword, verifyPassword } from "./password";
-import { invalidateUserSessions } from "./sessions";
+import { passwordChangeLimiter, type LoginRateLimiter } from "./rate-limit";
 import { AuthError, type SessionUser } from "./types";
 import { usernameSchema } from "./schemas";
 
@@ -90,8 +90,11 @@ export async function changePassword(
   current: string,
   next: string,
   keepSessionId?: string,
+  limiter: LoginRateLimiter = passwordChangeLimiter,
 ): Promise<void> {
   const db = getDB();
+  // Throws RateLimitedError after too many wrong current-password guesses.
+  const release = limiter.acquireOrThrow(userId, "-");
   const row = db
     .select({ passwordHash: users.passwordHash })
     .from(users)
@@ -104,11 +107,18 @@ export async function changePassword(
       "Current password is incorrect.",
     );
   }
+  release();
   const passwordHash = await hashPassword(next);
   db.transaction((tx) => {
     tx.update(users).set({ passwordHash }).where(eq(users.id, userId)).run();
+    tx.delete(sessions)
+      .where(
+        keepSessionId
+          ? and(eq(sessions.userId, userId), ne(sessions.id, keepSessionId))
+          : eq(sessions.userId, userId),
+      )
+      .run();
   });
-  invalidateUserSessions(userId, keepSessionId);
 }
 
 export function listUsers(): UserListEntry[] {

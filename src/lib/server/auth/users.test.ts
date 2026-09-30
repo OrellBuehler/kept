@@ -133,6 +133,22 @@ describe("users", () => {
       expect(await verifyPassword(u.password, row.passwordHash)).toBe(true);
     });
 
+    it("rate limits wrong current-password guesses per user", async () => {
+      const u = await createTestUser();
+      const other = await createTestUser();
+      for (let i = 0; i < 5; i++) {
+        expect(
+          await codeOf(
+            changePassword(u.id, "wrong-password-xx", "brand-new-password"),
+          ),
+        ).toBe("invalid_credentials");
+      }
+      await expect(
+        changePassword(u.id, u.password, "brand-new-password"),
+      ).rejects.toThrow(/too many attempts/i);
+      await changePassword(other.id, other.password, "brand-new-password");
+    });
+
     it("bumps updatedAt", async () => {
       const u = await createTestUser();
       const before = ctx.db.select().from(users).get()!.updatedAt.getTime();

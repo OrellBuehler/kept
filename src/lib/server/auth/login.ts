@@ -4,19 +4,29 @@ import { createSession, purgeExpiredSessions } from "./sessions";
 import { findUserByUsername } from "./users";
 import type { SessionInfo, SessionUser } from "./types";
 
-export class RateLimitedError extends Error {
-  constructor(readonly retryAfterMinutes: number) {
-    super(
-      `Too many attempts, try again in ${retryAfterMinutes} ${retryAfterMinutes === 1 ? "minute" : "minutes"}.`,
-    );
-    this.name = "RateLimitedError";
-  }
-}
+export { RateLimitedError } from "./rate-limit";
 
 export interface LoginResult {
   user: SessionUser;
   token: string;
   session: SessionInfo;
+}
+
+let warnedAddress = false;
+
+/** Client address for rate limiting; a fixed shared key if the adapter cannot provide one. */
+export function clientKey(getClientAddress: () => string): string {
+  try {
+    return getClientAddress();
+  } catch {
+    if (!warnedAddress) {
+      warnedAddress = true;
+      console.warn(
+        "Could not determine the client address; rate limiting falls back to a single shared key. Check ADDRESS_HEADER / XFF_DEPTH.",
+      );
+    }
+    return "unknown";
+  }
 }
 
 /**
@@ -31,20 +41,17 @@ export async function authenticate(
   limiter: LoginRateLimiter = loginRateLimiter,
   now: number = Date.now(),
 ): Promise<LoginResult | null> {
-  const gate = limiter.check(username, ip);
-  if (!gate.allowed) throw new RateLimitedError(gate.retryAfterMinutes);
+  // Reserved before any await so parallel guesses are counted immediately.
+  const release = limiter.acquireOrThrow(username, ip);
 
   const row = findUserByUsername(username);
   let ok = false;
   if (row) ok = await verifyPassword(password, row.passwordHash);
   else await verifyAgainstDummy(password);
 
-  if (!row || !ok) {
-    limiter.recordFailure(username, ip);
-    return null;
-  }
+  if (!row || !ok) return null;
 
-  limiter.recordSuccess(username, ip);
+  release();
   purgeExpiredSessions(now);
   const { token, session } = createSession(row.id, now);
   return {

@@ -1,3 +1,4 @@
+import { createCipheriv, randomBytes } from "node:crypto";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   assertSecretKeyConfigured,
@@ -42,6 +43,18 @@ describe("crypto", () => {
     expect(() =>
       decryptSecret(`${v}.${iv}.${bytes.toString("base64url")}`),
     ).toThrow(/tampered/);
+  });
+
+  it("authenticates the version prefix as additional data", () => {
+    const iv = randomBytes(12);
+    const cipher = createCipheriv("aes-256-gcm", Buffer.alloc(32, 1), iv);
+    const body = Buffer.concat([
+      cipher.update("x"),
+      cipher.final(),
+      cipher.getAuthTag(),
+    ]);
+    const noAad = `v1.${iv.toString("base64url")}.${body.toString("base64url")}`;
+    expect(() => decryptSecret(noAad)).toThrow(/tampered/);
   });
 
   it("rejects a wrong key", () => {

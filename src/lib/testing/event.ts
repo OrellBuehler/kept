@@ -26,8 +26,12 @@ export class FakeCookies {
     this.jar.delete(name);
     this.deleted.push(name);
   }
-  serialize(name: string, value: string) {
-    return `${name}=${value}`;
+  serialize(name: string, value: string, opts?: Record<string, unknown>) {
+    const expires =
+      opts?.expires instanceof Date
+        ? `; Expires=${opts.expires.toUTCString()}`
+        : "";
+    return `${name}=${value}${expires}`;
   }
   options(name: string) {
     return this.jar.get(name)?.opts;

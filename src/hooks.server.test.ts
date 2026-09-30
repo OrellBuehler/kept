@@ -64,6 +64,22 @@ describe("handle", () => {
     expect(event.locals.session).not.toBeNull();
   });
 
+  it("early-return redirects and 401s also clear a stale cookie", async () => {
+    await createTestUser();
+    for (const p of ["/", "/api/things"]) {
+      const { res } = await run(p, { [SESSION_COOKIE]: "stale" });
+      expect(res.headers.get("set-cookie"), p).toMatch(
+        new RegExp(`^${SESSION_COOKIE}=; Expires=`),
+      );
+    }
+  });
+
+  it("does not set a clearing cookie when none was sent", async () => {
+    await createTestUser();
+    const { res } = await run("/");
+    expect(res.headers.get("set-cookie")).toBeNull();
+  });
+
   it("clears a cookie that does not match a session", async () => {
     await createTestUser();
     const { res, event } = await run("/", { [SESSION_COOKIE]: "stale" });

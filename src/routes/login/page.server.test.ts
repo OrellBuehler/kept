@@ -1,7 +1,10 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import { loginRateLimiter } from "$lib/server/auth/rate-limit";
-import { SESSION_COOKIE } from "$lib/server/auth/sessions";
-import { createTestUser } from "$lib/testing/auth";
+import {
+  SESSION_COOKIE,
+  validateSessionToken,
+} from "$lib/server/auth/sessions";
+import { createTestUser, loginTestUser } from "$lib/testing/auth";
 import { useTestDB } from "$lib/testing/db";
 import { FakeCookies, createTestEvent, outcome } from "$lib/testing/event";
 import { actions, load } from "./+page.server";
@@ -93,6 +96,18 @@ describe("login", () => {
         (event.cookies as unknown as FakeCookies).get(SESSION_COOKIE),
       ).toBeUndefined();
     }
+  });
+
+  it("invalidates the pre-existing session on login", async () => {
+    const u = await createTestUser({ username: "alice" });
+    const old = loginTestUser(u);
+    const event = createTestEvent({
+      user: u,
+      session: old.session,
+      form: { username: "alice", password: u.password },
+    });
+    await outcome(() => actions.default(event as never));
+    expect(validateSessionToken(old.token)).toBeNull();
   });
 
   it("fails validation on empty fields", async () => {
