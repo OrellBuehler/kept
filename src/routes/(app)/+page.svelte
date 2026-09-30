@@ -1,16 +1,24 @@
+<script lang="ts">
+  import LayoutDashboardIcon from "@lucide/svelte/icons/layout-dashboard";
+  import * as Empty from "$lib/components/ui/empty/index.js";
+  import { Button } from "$lib/components/ui/button/index.js";
+</script>
+
 <svelte:head>
-  <title>Kept</title>
+  <title>Dashboard · Kept</title>
 </svelte:head>
 
-<main
-  class="mx-auto flex min-h-screen max-w-2xl flex-col justify-center gap-4 p-8"
->
-  <img
-    src="/brand/kept-lockup.svg"
-    alt="Kept"
-    class="h-12 w-auto self-start dark:invert"
-  />
-  <p class="text-muted-foreground">
-    Self-hosted personal finance. Work in progress.
-  </p>
-</main>
+<h1 class="mb-6 text-2xl font-semibold tracking-tight">Dashboard</h1>
+
+<Empty.Root class="border border-dashed">
+  <Empty.Header>
+    <Empty.Media variant="icon"><LayoutDashboardIcon /></Empty.Media>
+    <Empty.Title>Nothing to show yet</Empty.Title>
+    <Empty.Description>
+      Your dashboard will appear here once you add accounts.
+    </Empty.Description>
+  </Empty.Header>
+  <Empty.Content>
+    <Button href="/accounts">Go to accounts</Button>
+  </Empty.Content>
+</Empty.Root>
