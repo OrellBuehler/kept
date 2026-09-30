@@ -2,6 +2,9 @@ import { fail } from "@sveltejs/kit";
 import { desc, eq } from "drizzle-orm";
 import { requireUser } from "$lib/server/auth/guards";
 import { BILL_STATUSES } from "$lib/bill-types";
+import { todayLocal } from "$lib/server/bills/dates";
+import { buildReport, reportKindSchema } from "$lib/server/reports";
+import { z } from "zod";
 import { getDB, paperlessDocuments } from "$lib/server/db";
 import {
   PaperlessError,
@@ -32,7 +35,10 @@ import {
   sourceFormSchema,
   toggleFormSchema,
 } from "$lib/server/integrations/paperless/forms";
-import { listUploads } from "$lib/server/integrations/paperless/reports";
+import {
+  listUploads,
+  uploadReport,
+} from "$lib/server/integrations/paperless/reports";
 import {
   webhookUrl,
   workflowRecipe,
@@ -82,6 +88,11 @@ async function loadLookups(userId: string): Promise<Lookups> {
   };
 }
 
+const NOTES = {
+  privateHosts:
+    "Private, LAN and localhost addresses are allowed on purpose: Kept and Paperless are self-hosted, and every user of this Kept instance is trusted by whoever runs it.",
+} as const;
+
 export const load: PageServerLoad = ({ locals, url }) => {
   const user = requireUser(locals);
   const view = getConnection(user.id);
@@ -91,6 +102,7 @@ export const load: PageServerLoad = ({ locals, url }) => {
       connection: null,
       minVersion: MIN_PAPERLESS_VERSION,
       billStatuses: BILL_STATUSES,
+      notes: NOTES,
       webhookUrl: null,
       recipe: null,
       lastSync: null,
@@ -120,6 +132,7 @@ export const load: PageServerLoad = ({ locals, url }) => {
     connection,
     minVersion: MIN_PAPERLESS_VERSION,
     billStatuses: BILL_STATUSES,
+    notes: NOTES,
     webhookUrl: webhookUrl(url.origin, webhookToken),
     recipe: workflowRecipe({
       origin: url.origin,
@@ -158,6 +171,13 @@ function actionFailure(
   }
   return ledgerFailure(action, err, values);
 }
+
+const reportFormSchema = z.object({
+  kind: reportKindSchema,
+  account: z.string().trim().optional(),
+  from: z.string().trim().optional(),
+  to: z.string().trim().optional(),
+});
 
 function secretRecipe(origin: string, userId: string, secret: string) {
   const view = getConnection(userId);
@@ -304,6 +324,49 @@ export const actions: Actions = {
       return { success: true as const, action: "disconnect" as const };
     } catch (err) {
       return actionFailure("disconnect", err);
+    }
+  },
+
+  uploadReport: async ({ locals, request }) => {
+    const user = requireUser(locals);
+    const form = await request.formData();
+    const values = safeValues(form, ["kind", "account", "from", "to"]);
+    if (!getConnection(user.id)) {
+      return fail(400, {
+        action: "uploadReport",
+        errors: { form: ["Connect Paperless first."] },
+        values,
+      });
+    }
+    const parsed = parseForm(reportFormSchema, form);
+    if (!parsed.ok) {
+      return fail(400, {
+        action: "uploadReport",
+        errors: parsed.errors,
+        values,
+      });
+    }
+    const { kind, account, from, to } = parsed.data;
+    try {
+      const built = await buildReport(user.id, kind, { account, from, to });
+      const upload = await uploadReport(user.id, {
+        bytes: built.bytes,
+        fileName: built.fileName,
+        title: built.title,
+        created: todayLocal(),
+        kind,
+      });
+      return {
+        success: true as const,
+        action: "uploadReport" as const,
+        upload: {
+          id: upload.id,
+          status: upload.status,
+          paperlessDocumentId: upload.paperlessDocumentId,
+        },
+      };
+    } catch (err) {
+      return actionFailure("uploadReport", err, values);
     }
   },
 

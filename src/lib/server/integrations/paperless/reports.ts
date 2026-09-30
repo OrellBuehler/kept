@@ -21,9 +21,13 @@ export interface ReportUploadInput {
   kind: string;
 }
 
+/** A pending row without a task this young is being uploaded by another call. */
+const IN_FLIGHT_MS = 2 * 60 * 1000;
+
 export type UploadStatus = "pending" | "success" | "failed";
 
 export interface ReportUploadResult {
+  id: string;
   status: UploadStatus;
   paperlessDocumentId: number | null;
   /** True when this exact file had been uploaded before and nothing was sent. */
@@ -173,6 +177,7 @@ async function settle(
       error: null,
     });
     return {
+      id: uploadId,
       status: "success",
       paperlessDocumentId: state.documentId,
       alreadyUploaded: false,
@@ -184,12 +189,14 @@ async function settle(
       error: "Paperless could not process the file.",
     });
     return {
+      id: uploadId,
       status: "failed",
       paperlessDocumentId: null,
       alreadyUploaded: false,
     };
   }
   return {
+    id: uploadId,
     status: "pending",
     paperlessDocumentId: null,
     alreadyUploaded: false,
@@ -213,8 +220,22 @@ export async function uploadReport(
 
   if (existing?.status === "success") {
     return {
+      id: existing.id,
       status: "success",
       paperlessDocumentId: existing.paperlessDocumentId,
+      alreadyUploaded: true,
+    };
+  }
+  if (
+    existing?.status === "pending" &&
+    !existing.taskId &&
+    Date.now() - existing.updatedAt.getTime() < IN_FLIGHT_MS
+  ) {
+    // Another call is sending this file right now.
+    return {
+      id: existing.id,
+      status: "pending",
+      paperlessDocumentId: null,
       alreadyUploaded: true,
     };
   }

@@ -25,7 +25,18 @@ import {
  * exponents (JPY, KWD, ...) do not fit and are not pushed.
  */
 export function monetaryString(amount: Minor, currency: string): string | null {
-  if (!/^[A-Z]{3}$/.test(currency)) return null;
+  return monetaryProblem(amount, currency) === null
+    ? `${currency}${toDecimalString(amount, 2)}`
+    : null;
+}
+
+/** Why an amount cannot be written to a Paperless monetary field, or null when it can. */
+export function monetaryProblem(
+  amount: Minor,
+  currency: string,
+): "unsupported_currency" | "non_positive" | null {
+  if (amount <= 0) return "non_positive";
+  if (!/^[A-Z]{3}$/.test(currency)) return "unsupported_currency";
   let exponent: number;
   try {
     exponent = new Intl.NumberFormat("en", {
@@ -33,11 +44,10 @@ export function monetaryString(amount: Minor, currency: string): string | null {
       currency,
     }).resolvedOptions().maximumFractionDigits!;
   } catch (err) {
-    if (err instanceof RangeError) return null;
+    if (err instanceof RangeError) return "unsupported_currency";
     throw err;
   }
-  if (exponent !== 2 || amount <= 0) return null;
-  return `${currency}${toDecimalString(amount, 2)}`;
+  return exponent === 2 ? null : "unsupported_currency";
 }
 
 export interface PushPlan {
@@ -53,12 +63,18 @@ export function buildPushPlan(
   const values: Record<string, string> = {};
   const notes: string[] = [];
   if (mapping.amount != null && bill.amount !== null) {
-    const money = monetaryString(bill.amount, bill.currency);
-    if (money === null) {
+    const problem = monetaryProblem(bill.amount, bill.currency);
+    if (problem === "non_positive") {
+      notes.push("The bill amount is not positive and was not pushed.");
+    } else if (problem !== null) {
       notes.push(
         `Amounts in ${bill.currency} cannot be written to a Paperless monetary field.`,
       );
-    } else values[String(mapping.amount)] = money;
+    } else
+      values[String(mapping.amount)] = monetaryString(
+        bill.amount,
+        bill.currency,
+      )!;
   }
   if (mapping.dueDate != null && bill.dueDate !== null) {
     values[String(mapping.dueDate)] = bill.dueDate;
@@ -160,6 +176,10 @@ export async function pushBill(
   if (hash === link.lastPushedHash) {
     return { status: "unchanged", notes: plan.notes };
   }
+  // Remembered read-only result: no refetch until the values or the document change.
+  if (link.lastPushedHash === `ro:${hash}`) {
+    return skipped("read_only", plan.notes);
+  }
 
   const client = clientForRow(row);
   const query = { fields: "id,modified,user_can_change" };
@@ -169,6 +189,15 @@ export async function pushBill(
       query,
     });
     if (meta.user_can_change === false) {
+      db.update(paperlessDocuments)
+        .set({ lastPushedHash: `ro:${hash}` })
+        .where(
+          and(
+            eq(paperlessDocuments.userId, userId),
+            eq(paperlessDocuments.id, link.id),
+          ),
+        )
+        .run();
       return skipped("read_only", plan.notes);
     }
     await client.json("documents/bulk_edit", z.unknown(), {

@@ -26,6 +26,7 @@ import { startFakePaperless } from "./fake-server";
 import {
   buildPushPlan,
   hashPlan,
+  monetaryProblem,
   monetaryString,
   pushBill,
   pushBillSafely,
@@ -54,6 +55,16 @@ describe("monetaryString", () => {
         /^[A-Z]{3}-?\d+(\.\d{1,2})$/,
       );
     }
+  });
+
+  it("tells unsupported currencies from non-positive amounts", () => {
+    expect(monetaryProblem(500 as Minor, "JPY")).toBe("unsupported_currency");
+    expect(monetaryProblem(0 as Minor, "CHF")).toBe("non_positive");
+    expect(monetaryProblem(500 as Minor, "CHF")).toBeNull();
+    const plan = (bill: Partial<BillWithStatus>) =>
+      buildPushPlan(fakeBill(bill), { amount: 1 }).notes[0];
+    expect(plan({ amount: 0 as Minor })).toContain("not positive");
+    expect(plan({ currency: "JPY" })).toContain("JPY");
   });
 
   it("refuses currencies that do not have two decimals, bad codes and non-positive amounts", () => {
@@ -249,6 +260,48 @@ describe("pushBill", () => {
     const r = await pushBill(user.id, billId());
     expect(r).toMatchObject({ status: "skipped", reason: "read_only" });
     expect(bulkEdits()).toHaveLength(0);
+  });
+
+  it("remembers a read-only result instead of asking Paperless every time", async () => {
+    fake.docs.get(7)!.user_can_change = false;
+    updateBill(
+      user.id,
+      billId(),
+      billInput({ creditorName: "Example Energy Ltd", dueDate: "2026-12-01" }),
+    );
+    expect(await pushBill(user.id, billId())).toMatchObject({
+      reason: "read_only",
+    });
+    fake.requests = [];
+    expect(await pushBill(user.id, billId())).toMatchObject({
+      reason: "read_only",
+    });
+    expect(fake.requests).toHaveLength(0);
+
+    // Values change: ask again. Document becomes writable: the push goes through.
+    fake.docs.get(7)!.user_can_change = true;
+    updateBill(
+      user.id,
+      billId(),
+      billInput({ creditorName: "Example Energy Ltd", dueDate: "2026-12-05" }),
+    );
+    expect((await pushBill(user.id, billId())).status).toBe("pushed");
+  });
+
+  it("forgets the read-only marker when the document changes in Paperless", async () => {
+    fake.docs.get(7)!.user_can_change = false;
+    updateBill(
+      user.id,
+      billId(),
+      billInput({ creditorName: "Example Energy Ltd", dueDate: "2026-12-01" }),
+    );
+    await pushBill(user.id, billId());
+    expect(link().lastPushedHash).toMatch(/^ro:/);
+    fake.docs.get(7)!.user_can_change = true;
+    fake.docs.get(7)!.modified = "2026-10-01T10:00:00+00:00";
+    await syncConnection(user.id);
+    expect(link().lastPushedHash).toBeNull();
+    expect((await pushBill(user.id, billId())).status).toBe("pushed");
   });
 
   it("skips bills without a link, without a mapping and on disabled connections", async () => {

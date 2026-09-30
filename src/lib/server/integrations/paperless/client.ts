@@ -92,6 +92,11 @@ export function errorCode(err: unknown): string {
 /**
  * http/https only, no credentials, no query or fragment, no trailing slash.
  * A path prefix (reverse proxy sub-path) is kept.
+ *
+ * Private, loopback and LAN addresses are allowed on purpose: Kept and Paperless
+ * are self-hosted and usually sit on the same network, and every user of a Kept
+ * instance is trusted by its operator. There is therefore no SSRF host filter.
+ * Redirects are never followed and the token is only sent to this base URL.
  */
 export function normalizeBaseUrl(input: string): string {
   let url: URL;
@@ -147,6 +152,7 @@ export function classifyFetchError(err: unknown): PaperlessError {
 export const DEFAULT_TIMEOUT_MS = 15_000;
 export const DOWNLOAD_TIMEOUT_MS = 60_000;
 export const MAX_DOWNLOAD_BYTES = 25 * 1024 * 1024;
+export const MAX_JSON_BYTES = 10 * 1024 * 1024;
 const MAX_PAGES = 200;
 const FIRST_VERSION = 9;
 const SECOND_VERSION = 10;
@@ -160,6 +166,7 @@ export interface ClientOptions {
   timeoutMs?: number;
   downloadTimeoutMs?: number;
   maxDownloadBytes?: number;
+  maxJsonBytes?: number;
 }
 
 export type Query =
@@ -220,6 +227,7 @@ export class PaperlessClient {
   private readonly timeoutMs: number;
   private readonly downloadTimeoutMs: number;
   private readonly maxDownloadBytes: number;
+  private readonly maxJsonBytes: number;
 
   constructor(options: ClientOptions) {
     this.baseUrl = normalizeBaseUrl(options.baseUrl);
@@ -229,6 +237,7 @@ export class PaperlessClient {
     this.timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
     this.downloadTimeoutMs = options.downloadTimeoutMs ?? DOWNLOAD_TIMEOUT_MS;
     this.maxDownloadBytes = options.maxDownloadBytes ?? MAX_DOWNLOAD_BYTES;
+    this.maxJsonBytes = options.maxJsonBytes ?? MAX_JSON_BYTES;
   }
 
   /** `{base}/api/<path>/`, always with the trailing slash Paperless requires. */
@@ -339,8 +348,9 @@ export class PaperlessClient {
   ): Promise<z.output<S>> {
     const res = await this.send(path, options);
     let data: unknown;
+    const body = await readCapped(res, this.maxJsonBytes);
     try {
-      data = await res.json();
+      data = JSON.parse(new TextDecoder().decode(body));
     } catch (err) {
       throw new PaperlessError("invalid_response", {
         detail: "not JSON",
@@ -416,37 +426,42 @@ export class PaperlessClient {
       await discard(res);
       throw new PaperlessError("wrong_type");
     }
-    const declared = Number(res.headers.get("content-length"));
-    if (Number.isFinite(declared) && declared > this.maxDownloadBytes) {
-      await discard(res);
-      throw new PaperlessError("too_large");
-    }
-    if (!res.body) {
-      throw new PaperlessError("invalid_response", { detail: "empty body" });
-    }
-    const chunks: Uint8Array[] = [];
-    let total = 0;
-    try {
-      const reader = res.body.getReader();
-      for (;;) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        total += value.byteLength;
-        if (total > this.maxDownloadBytes) {
-          await reader.cancel();
-          throw new PaperlessError("too_large");
-        }
-        chunks.push(value);
-      }
-    } catch (err) {
-      throw classifyFetchError(err);
-    }
-    const out = new Uint8Array(total);
-    let offset = 0;
-    for (const c of chunks) {
-      out.set(c, offset);
-      offset += c.byteLength;
-    }
-    return out;
+    return readCapped(res, this.maxDownloadBytes);
   }
+}
+
+/** Reads a response body, failing with `too_large` once it exceeds `max` bytes. */
+async function readCapped(res: Response, max: number): Promise<Uint8Array> {
+  const declared = Number(res.headers.get("content-length"));
+  if (Number.isFinite(declared) && declared > max) {
+    await discard(res);
+    throw new PaperlessError("too_large");
+  }
+  if (!res.body) {
+    throw new PaperlessError("invalid_response", { detail: "empty body" });
+  }
+  const chunks: Uint8Array[] = [];
+  let total = 0;
+  try {
+    const reader = res.body.getReader();
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      total += value.byteLength;
+      if (total > max) {
+        await reader.cancel();
+        throw new PaperlessError("too_large");
+      }
+      chunks.push(value);
+    }
+  } catch (err) {
+    throw classifyFetchError(err);
+  }
+  const out = new Uint8Array(total);
+  let offset = 0;
+  for (const c of chunks) {
+    out.set(c, offset);
+    offset += c.byteLength;
+  }
+  return out;
 }

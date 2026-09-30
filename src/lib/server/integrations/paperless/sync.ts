@@ -436,6 +436,41 @@ async function fetchPdf(
   return null;
 }
 
+const RUN_LEVEL_ERRORS = new Set([
+  "unauthorized",
+  "network",
+  "tls",
+  "redirect",
+  "version",
+]);
+
+const DOCUMENT_REASONS: Partial<
+  Record<string, { status: "skipped" | "failed"; message: string }>
+> = {
+  not_found: {
+    status: "skipped",
+    message: "The document is no longer available in Paperless.",
+  },
+  too_large: { status: "skipped", message: "The file is larger than 25 MB." },
+  wrong_type: { status: "skipped", message: "The file is not a PDF." },
+  forbidden: {
+    status: "failed",
+    message: "Paperless did not allow reading this document.",
+  },
+  bad_request: {
+    status: "failed",
+    message: "Paperless rejected the request for this document.",
+  },
+  server: {
+    status: "failed",
+    message: "Paperless reported an error for this document.",
+  },
+  invalid_response: {
+    status: "failed",
+    message: "Paperless sent an unreadable response for this document.",
+  },
+};
+
 async function handle(
   userId: string,
   row: ConnectionRow,
@@ -448,32 +483,23 @@ async function handle(
   try {
     outcome = await processDocument(userId, row, client, doc);
   } catch (err) {
-    // Connection-level problems stop the run; everything else is recorded for this document.
-    if (
-      err instanceof PaperlessError &&
-      err.code !== "not_found" &&
-      err.code !== "too_large" &&
-      err.code !== "wrong_type"
-    ) {
+    // Only problems with the connection itself stop the run; a document Paperless
+    // cannot serve is recorded and the run continues with the next one.
+    if (err instanceof PaperlessError && RUN_LEVEL_ERRORS.has(err.code)) {
       throw err;
     }
     const reason =
-      err instanceof PaperlessError
-        ? err.code === "not_found"
-          ? "The document is no longer available in Paperless."
-          : err.code === "too_large"
-            ? "The file is larger than 25 MB."
-            : "The file is not a PDF."
-        : null;
-    if (reason === null) {
+      err instanceof PaperlessError ? DOCUMENT_REASONS[err.code] : undefined;
+    if (reason === undefined) {
       console.error("paperless document failed", errorCode(err));
     }
+    const skip = reason?.status === "skipped";
     saveLink(row, doc.id, {
       modified: parseModified(doc),
-      status: reason === null ? "failed" : "skipped",
-      error: reason ?? "The document could not be processed.",
+      status: skip ? "skipped" : "failed",
+      error: reason?.message ?? "The document could not be processed.",
     });
-    outcome = reason === null ? "failed" : "skipped";
+    outcome = skip ? "skipped" : "failed";
   }
   if (outcome === "imported") result.imported++;
   else if (outcome === "updated") result.updated++;
@@ -491,6 +517,19 @@ async function processDocument(
   const modified = parseModified(doc);
   const link = findLink(row, doc.id);
   if (link && link.modified >= modified) return "unchanged";
+  if (link?.lastPushedHash?.startsWith("ro:")) {
+    // The document changed in Paperless: its permissions may have too.
+    getDB()
+      .update(paperlessDocuments)
+      .set({ lastPushedHash: null })
+      .where(
+        and(
+          eq(paperlessDocuments.userId, userId),
+          eq(paperlessDocuments.id, link.id),
+        ),
+      )
+      .run();
+  }
   // The user deleted the bill that came from this document: do not bring it back for metadata changes.
   if (link && link.status === "imported" && link.billId === null) {
     touchModified(link, userId, modified);

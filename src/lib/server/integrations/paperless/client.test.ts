@@ -1,4 +1,4 @@
-import { afterAll, beforeEach, describe, expect, it } from "vitest";
+import { afterAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { z } from "zod";
 import {
   PaperlessClient,
@@ -319,5 +319,34 @@ describe("error classification", () => {
     expect(messageForCode("push_forbidden")).toMatch(/permission/);
     expect(messageForCode("no_source")).toMatch(/Choose/);
     expect(messageForCode("whatever")).toBe("An unexpected error occurred.");
+  });
+});
+
+describe("response limits and TLS options", () => {
+  it("caps JSON bodies", async () => {
+    fake.addDoc({ id: 1 });
+    expect(
+      await codeOf(client({ maxJsonBytes: 20 }).json("documents", z.unknown())),
+    ).toBe("too_large");
+  });
+
+  it("never disables certificate verification unless the connection allows it", async () => {
+    const seen: Array<unknown> = [];
+    const real = globalThis.fetch;
+    const spy = vi
+      .spyOn(globalThis, "fetch")
+      .mockImplementation((input, init) => {
+        seen.push((init as { tls?: unknown } | undefined)?.tls);
+        return real(input, init);
+      });
+    try {
+      await client().json("documents", z.unknown());
+      await client({ allowInsecureTls: false }).json("documents", z.unknown());
+      expect(seen).toEqual([undefined, undefined]);
+      await client({ allowInsecureTls: true }).json("documents", z.unknown());
+      expect(seen[2]).toEqual({ rejectUnauthorized: false });
+    } finally {
+      spy.mockRestore();
+    }
   });
 });

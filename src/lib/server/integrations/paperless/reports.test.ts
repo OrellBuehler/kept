@@ -43,7 +43,7 @@ describe("uploadReport", () => {
 
   it("posts the file as multipart and reads the 2.x task shape (string document id)", async () => {
     const r = await uploadReport(user.id, input(), fast);
-    expect(r).toEqual({
+    expect(r).toMatchObject({
       status: "success",
       paperlessDocumentId: 900,
       alreadyUploaded: false,
@@ -106,7 +106,7 @@ describe("uploadReport", () => {
   it("is idempotent per file content", async () => {
     await uploadReport(user.id, input("e"), fast);
     const again = await uploadReport(user.id, input("e"), fast);
-    expect(again).toEqual({
+    expect(again).toMatchObject({
       status: "success",
       paperlessDocumentId: 900,
       alreadyUploaded: true,
@@ -160,6 +160,36 @@ describe("uploadReport", () => {
 
     fake.uploadStatus = 200;
     expect((await uploadReport(user.id, input("j"), fast)).status).toBe(
+      "success",
+    );
+  });
+
+  it("treats a just-claimed upload without a task as in flight", async () => {
+    const { getDB, paperlessReportUploads } = await import("$lib/server/db");
+    const { getConnectionRow } = await import("./connection");
+    const { createHash } = await import("node:crypto");
+    getDB()
+      .insert(paperlessReportUploads)
+      .values({
+        userId: user.id,
+        connectionId: getConnectionRow(user.id)!.id,
+        reportKind: "x",
+        sha256: createHash("sha256").update(input("z").bytes).digest("hex"),
+        status: "pending",
+      })
+      .run();
+
+    const r = await uploadReport(user.id, input("z"), fast);
+
+    expect(r).toMatchObject({ status: "pending", alreadyUploaded: true });
+    expect(fake.uploads).toHaveLength(0);
+
+    // A stale claim (crashed upload) is retried.
+    getDB()
+      .update(paperlessReportUploads)
+      .set({ updatedAt: new Date(Date.now() - 5 * 60_000) })
+      .run();
+    expect((await uploadReport(user.id, input("z"), fast)).status).toBe(
       "success",
     );
   });

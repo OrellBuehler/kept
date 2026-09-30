@@ -272,7 +272,7 @@ describe("syncConnection", () => {
     );
   });
 
-  it("does not move the watermark past a document that failed transiently, and retries it later", async () => {
+  it("stops the run on connection-level problems without moving the watermark, and retries later", async () => {
     fake.addDoc({
       id: 51,
       original: pdfEnergy,
@@ -283,18 +283,53 @@ describe("syncConnection", () => {
       original: pdfWater,
       modified: "2026-09-01T11:00:00+00:00",
     });
-    fake.downloadStatus = 503;
+    fake.downloadStatus = 401;
     vi.spyOn(console, "error").mockImplementation(() => {});
 
     const first = await syncConnection(user.id);
 
-    expect(first.error).toBe("server");
+    expect(first.error).toBe("unauthorized");
     expect(listBills(user.id)).toHaveLength(0);
     expect(getConnectionRow(user.id)!.lastSyncModified).toBeNull();
 
     fake.downloadStatus = 200;
     const second = await syncConnection(user.id);
     expect(second).toMatchObject({ imported: 2, error: null });
+  });
+
+  it("a document Paperless cannot serve is recorded and does not block later ones", async () => {
+    for (const [id, hour] of [
+      [51, "10"],
+      [52, "11"],
+      [53, "12"],
+      [54, "13"],
+    ] as const) {
+      fake.addDoc({
+        id,
+        original: pdfEnergy,
+        modified: `2026-09-01T${hour}:00:00+00:00`,
+      });
+    }
+    fake.downloadStatuses.set(51, 500);
+    fake.downloadStatuses.set(52, 403);
+    fake.downloadStatuses.set(53, 400);
+    vi.spyOn(console, "error").mockImplementation(() => {});
+
+    const r = await syncConnection(user.id);
+
+    expect(r).toMatchObject({ failed: 3, imported: 1, error: null });
+    expect(linkOf(51)).toMatchObject({
+      status: "failed",
+      error: "Paperless reported an error for this document.",
+    });
+    expect(linkOf(52)!.error).toBe(
+      "Paperless did not allow reading this document.",
+    );
+    expect(linkOf(54)).toMatchObject({ status: "imported" });
+    expect(getConnectionRow(user.id)!.lastSyncModified).toBe(
+      Date.parse("2026-09-01T13:00:00+00:00"),
+    );
+    expect(getConnectionRow(user.id)!.lastError).toBeNull();
   });
 
   it("skips documents that are not PDFs, using the archive version of images", async () => {

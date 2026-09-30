@@ -16,7 +16,8 @@ import { getConnectionRow, setEnabled } from "./connection";
 import { startFakePaperless } from "./fake-server";
 import { billPdf, seedConnection } from "./testing";
 import {
-  RATE_LIMIT_PER_MINUTE,
+  FAILED_PER_MINUTE,
+  VALID_PER_MINUTE,
   handleWebhook,
   resetWebhookState,
   webhookBodySchema,
@@ -166,16 +167,33 @@ describe("handleWebhook", () => {
     expect(JSON.stringify(error.mock.calls)).not.toContain("test-token");
   });
 
-  it("rate limits per connection", async () => {
+  it("counts only wrong-secret attempts against the tight limit", async () => {
     const now = 1_000_000;
-    for (let i = 0; i < RATE_LIMIT_PER_MINUTE; i++) {
-      const o = await deliver({ now, secret: "wrong" });
-      expect(o.status).toBe(401);
+    // Valid deliveries far beyond the failure cap are not limited by it.
+    for (let i = 0; i < FAILED_PER_MINUTE + 10; i++) {
+      expect((await deliver({ now }, { document_id: "x" })).status).toBe(400);
     }
+    for (let i = 0; i < FAILED_PER_MINUTE; i++) {
+      expect((await deliver({ now, secret: "wrong" })).status).toBe(401);
+    }
+    expect(await deliver({ now, secret: "wrong" })).toEqual({ status: 429 });
     expect(await deliver({ now, secret: "wrong" })).toEqual({ status: 429 });
     expect(await deliver({ now: now + 61_000, secret: "wrong" })).toEqual({
       status: 401,
     });
+  });
+
+  it("has a separate generous cap for valid deliveries", async () => {
+    const now = 2_000_000;
+    for (let i = 0; i < VALID_PER_MINUTE; i++) {
+      expect((await deliver({ now }, { document_id: "x" })).status).toBe(400);
+    }
+    expect(await deliver({ now }, { document_id: "x" })).toEqual({
+      status: 429,
+    });
+    expect(
+      (await deliver({ now: now + 61_000 }, { document_id: "x" })).status,
+    ).toBe(400);
   });
 
   it("maps a webhook token to exactly one user", async () => {

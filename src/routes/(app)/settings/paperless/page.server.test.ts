@@ -23,6 +23,7 @@ import {
   billPdf,
   seedConnection,
 } from "$lib/server/integrations/paperless/testing";
+import { seedAccount } from "$lib/testing/ledger";
 import { createTestUser, type TestUser } from "$lib/testing/auth";
 import { useTestDB } from "$lib/testing/db";
 import { useTestDocuments } from "$lib/testing/documents";
@@ -394,6 +395,98 @@ describe("settings/paperless", () => {
       webhookSecretHash: mine.webhookSecretHash,
     });
     expect(view.webhookUrl).not.toContain(mine.webhookToken);
+  });
+
+  describe("uploadReport", () => {
+    beforeEach(() => {
+      fake.uploads = [];
+      fake.taskShape = "v9";
+      fake.taskSteps = ["success"];
+      fake.newDocumentId = 900;
+    });
+
+    it("builds the report, uploads it and returns the upload", async () => {
+      await connect();
+      const r = value(await act("uploadReport", user, { kind: "bills" }));
+      expect(r).toMatchObject({
+        success: true,
+        action: "uploadReport",
+        upload: { status: "success", paperlessDocumentId: 900 },
+      });
+      expect(typeof (r.upload as { id: string }).id).toBe("string");
+      expect(fake.uploads).toHaveLength(1);
+      expect(fake.uploads[0]!.fileName).toMatch(
+        /^kept-bills-\d{4}-\d{2}-\d{2}\.pdf$/,
+      );
+      expect(fake.uploads[0]!.created).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+      expect((await loaded(user)).uploads).toHaveLength(1);
+    });
+
+    it("needs a connection", async () => {
+      const r = failure(await act("uploadReport", user, { kind: "bills" }));
+      expect(r.errors.form).toEqual(["Connect Paperless first."]);
+    });
+
+    it("reports invalid parameters per field", async () => {
+      await connect();
+      const bad = failure(await act("uploadReport", user, { kind: "nope" }));
+      expect(bad.errors.kind).toBeTruthy();
+      const stmt = failure(
+        await act("uploadReport", user, {
+          kind: "statement",
+          account: "",
+          from: "2026-01-01",
+          to: "x",
+        }),
+      );
+      expect(stmt.errors.account ?? stmt.errors.to).toBeTruthy();
+      expect(fake.uploads).toHaveLength(0);
+    });
+
+    it("turns Paperless errors into a form message", async () => {
+      await connect();
+      fake.uploadStatus = 403;
+      vi.spyOn(console, "error").mockImplementation(() => {});
+      const r = failure(await act("uploadReport", user, { kind: "net-worth" }));
+      expect(r.errors.form[0]).toContain("permission");
+      fake.uploadStatus = 200;
+    });
+
+    it("uploads the same report only once", async () => {
+      await connect();
+      seedAccount(user.id);
+      const first = value(
+        await act("uploadReport", user, { kind: "net-worth" }),
+      );
+      const second = value(
+        await act("uploadReport", user, { kind: "net-worth" }),
+      );
+      expect((second.upload as { id: string }).id).toBe(
+        (first.upload as { id: string }).id,
+      );
+      expect(fake.uploads).toHaveLength(1);
+    });
+
+    it("never uses another user's account or connection", async () => {
+      await connect();
+      const mine = seedAccount(user.id);
+      const other = await createTestUser();
+      // No connection for the other user.
+      const noConn = failure(
+        await act("uploadReport", other, { kind: "bills" }),
+      );
+      expect(noConn.errors.form).toBeTruthy();
+      // With a connection, a foreign account id is a 404.
+      seedConnection(other.id, fake);
+      const foreign = await act("uploadReport", other, {
+        kind: "statement",
+        account: mine.id,
+        from: "2026-01-01",
+        to: "2026-01-31",
+      });
+      expect(foreign).toEqual({ type: "error", status: 404 });
+      expect(fake.uploads).toHaveLength(0);
+    });
   });
 
   it("every handler needs a signed-in user", async () => {

@@ -89,6 +89,10 @@ export function getConnection(userId: string): ConnectionView | null {
   return row ? toView(row) : null;
 }
 
+export function hasPaperlessConnection(userId: string): boolean {
+  return getConnectionRow(userId) !== null;
+}
+
 export function requireConnectionRow(userId: string): ConnectionRow {
   const row = getConnectionRow(userId);
   if (!row) throw notFound("Paperless connection");

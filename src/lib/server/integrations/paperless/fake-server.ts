@@ -68,6 +68,8 @@ export class FakePaperless {
   taskSteps: TaskStep[] = ["success"];
   uploadStatus = 200;
   downloadStatus = 200;
+  /** Per-document download status, taking precedence over `downloadStatus`. */
+  downloadStatuses = new Map<number, number>();
   newDocumentId = 900;
   duplicateOf = 7;
   requests: RecordedRequest[] = [];
@@ -296,9 +298,10 @@ export class FakePaperless {
         return respond(this.docJson(doc));
       }
       if (third === "download") {
-        if (this.downloadStatus !== 200) {
+        const forced = this.downloadStatuses.get(doc.id) ?? this.downloadStatus;
+        if (forced !== 200) {
           return new Response("upstream error page", {
-            status: this.downloadStatus,
+            status: forced,
           });
         }
         const original = url.searchParams.get("original") === "true";

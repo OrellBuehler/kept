@@ -4,7 +4,10 @@ import { errorCode } from "./client";
 import { syncConnection } from "./sync";
 
 export const SECRET_HEADER = "x-kept-secret";
-export const RATE_LIMIT_PER_MINUTE = 60;
+/** Wrong-secret attempts per connection and minute before answering 429. */
+export const FAILED_PER_MINUTE = 20;
+/** Generous cap for valid deliveries (a bulk import of many documents). */
+export const VALID_PER_MINUTE = 600;
 
 export const webhookConfig = {
   /** Waits before re-checking a document that is not visible yet (Paperless may fire before commit). */
@@ -26,23 +29,20 @@ export const webhookBodySchema = z.object({
   ]),
 });
 
-const hits = new Map<string, number[]>();
+const failures = new Map<string, number[]>();
+const accepted = new Map<string, number[]>();
 const pending = new Map<string, Promise<void>>();
 
-function allowed(key: string, now: number): boolean {
-  const recent = (hits.get(key) ?? []).filter((t) => now - t < 60_000);
-  if (recent.length >= RATE_LIMIT_PER_MINUTE) {
-    hits.set(key, recent);
-    return false;
-  }
-  recent.push(now);
-  hits.set(key, recent);
-  return true;
+function recent(map: Map<string, number[]>, key: string, now: number) {
+  const list = (map.get(key) ?? []).filter((t) => now - t < 60_000);
+  map.set(key, list);
+  return list;
 }
 
 /** Tests only. */
 export function resetWebhookState(): void {
-  hits.clear();
+  failures.clear();
+  accepted.clear();
   pending.clear();
 }
 
@@ -77,10 +77,16 @@ export async function handleWebhook(input: {
 }): Promise<WebhookOutcome> {
   const row = getConnectionByWebhookToken(input.token);
   if (!row || !row.enabled) return { status: 404 };
-  if (!allowed(row.id, input.now ?? Date.now())) return { status: 429 };
+  const now = input.now ?? Date.now();
+  const failed = recent(failures, row.id, now);
+  if (failed.length >= FAILED_PER_MINUTE) return { status: 429 };
   if (!input.secret || !secretMatches(row, input.secret)) {
+    failed.push(now);
     return { status: 401 };
   }
+  const ok = recent(accepted, row.id, now);
+  if (ok.length >= VALID_PER_MINUTE) return { status: 429 };
+  ok.push(now);
   let body: unknown;
   try {
     body = await input.readBody();

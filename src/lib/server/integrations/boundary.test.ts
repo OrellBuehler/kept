@@ -35,7 +35,9 @@ describe("integration boundary", () => {
   it("only integrations, their routes and the startup hook import from integrations/", () => {
     const offenders = files
       .filter((f) => !mayImportIntegrations(f.path))
-      .filter((f) => /from\s+["'][^"']*\/integrations\//.test(f.text))
+      .filter((f) =>
+        /(?:from\s+|import\s*\(\s*)["'][^"']*\/integrations\//.test(f.text),
+      )
       .map((f) => f.path);
     expect(offenders).toEqual([]);
   });

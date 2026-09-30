@@ -79,6 +79,7 @@ const matrix: Record<string, Entry> = {
       "actions.syncNow": (m, e) => m.actions.syncNow(e),
       "actions.disconnect": (m, e) => m.actions.disconnect(e),
       "actions.toggle": (m, e) => m.actions.toggle(e),
+      "actions.uploadReport": (m, e) => m.actions.uploadReport(e),
     },
   },
   "/src/routes/(app)/accounts/+page.server.ts": {
