@@ -1,5 +1,25 @@
 import { describe, expect, it } from "vitest";
-import { currencyExponent, formatAmount, minor, parseAmount } from "./money";
+import {
+  currencyExponent,
+  formatAmount,
+  minor,
+  parseAmount,
+  toDecimalString,
+} from "./money";
+
+describe("toDecimalString", () => {
+  it.each([
+    [194975, 2, "1949.75"],
+    [5, 2, "0.05"],
+    [0, 2, "0.00"],
+    [-1230, 2, "-12.30"],
+    [1234, 0, "1234"],
+    [1234567, 3, "1234.567"],
+  ])("formats %d with %d decimals as %s", (value, decimals, expected) => {
+    expect(toDecimalString(minor(value), decimals)).toBe(expected);
+    expect(parseAmount(expected, decimals)).toBe(value);
+  });
+});
 
 describe("parseAmount", () => {
   it.each([

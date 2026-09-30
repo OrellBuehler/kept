@@ -40,7 +40,7 @@ ENV NODE_ENV=production \
     PORT=3000 \
     HOST=0.0.0.0 \
     DATABASE_PATH=/data/kept.db \
-    BODY_SIZE_LIMIT=21M \
+    BODY_SIZE_LIMIT=25M \
     APP_VERSION=${APP_VERSION}
 VOLUME ["/data"]
 EXPOSE 3000

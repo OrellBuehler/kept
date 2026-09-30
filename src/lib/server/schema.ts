@@ -12,10 +12,22 @@ import {
   REFERENCE_TYPES,
   ROW_SOURCES,
 } from "$lib/ledger-types";
+import {
+  ALLOCATION_ORIGINS,
+  BILL_KINDS,
+  BILL_REFERENCE_TYPES,
+  DOCUMENT_SOURCES,
+} from "$lib/bill-types";
 import type { Minor } from "$lib/money";
 
 export { ACCOUNT_TYPES, IMPORT_FORMATS, REFERENCE_TYPES, ROW_SOURCES };
 export type { AccountType, ImportFormat, RowSource } from "$lib/ledger-types";
+export {
+  ALLOCATION_ORIGINS,
+  BILL_KINDS,
+  BILL_REFERENCE_TYPES,
+  DOCUMENT_SOURCES,
+};
 
 const timestamps = {
   createdAt: integer("created_at", { mode: "timestamp_ms" })
@@ -223,5 +235,118 @@ export const csvProfiles = sqliteTable(
   (t) => [
     uniqueIndex("csv_profiles_account_uq").on(t.accountId),
     index("csv_profiles_user_id_idx").on(t.userId),
+  ],
+);
+export const documents = sqliteTable(
+  "documents",
+  {
+    id: id(),
+    userId: userId(),
+    fileName: text("file_name").notNull(),
+    mimeType: text("mime_type").notNull(),
+    size: integer("size").notNull(),
+    sha256: text("sha256").notNull(),
+    /** Relative to the documents root; built from ids, never from user input. */
+    storageKey: text("storage_key").notNull(),
+    source: text("source", { enum: DOCUMENT_SOURCES }).notNull(),
+    ...timestamps,
+  },
+  (t) => [
+    uniqueIndex("documents_user_sha256_uq").on(t.userId, t.sha256),
+    index("documents_user_id_idx").on(t.userId),
+  ],
+);
+
+export const bills = sqliteTable(
+  "bills",
+  {
+    id: id(),
+    userId: userId(),
+    kind: text("kind", { enum: BILL_KINDS }).notNull().default("invoice"),
+    creditorName: text("creditor_name"),
+    creditorIban: text("creditor_iban"),
+    /** Minor units, > 0 when set; null is an open-amount bill. */
+    amount: minor("amount"),
+    currency: text("currency").notNull(),
+    issueDate: text("issue_date"),
+    dueDate: text("due_date"),
+    reference: text("reference"),
+    referenceType: text("reference_type", { enum: BILL_REFERENCE_TYPES }),
+    message: text("message"),
+    invoiceNumber: text("invoice_number"),
+    cancelled: integer("cancelled", { mode: "boolean" })
+      .notNull()
+      .default(false),
+    documentId: text("document_id").references(() => documents.id, {
+      onDelete: "set null",
+    }),
+    expectedAccountId: text("expected_account_id").references(
+      () => accounts.id,
+      { onDelete: "set null" },
+    ),
+    notes: text("notes"),
+    /** Reserved for tax reconciliation; stored as given. */
+    taxYear: integer("tax_year"),
+    /** Set by an integration adapter; the core does not interpret these. */
+    externalSource: text("external_source"),
+    externalRef: text("external_ref"),
+    externalUrl: text("external_url"),
+    /** JSON text: `{ source, warnings }` of the last extraction. */
+    extraction: text("extraction"),
+    ...timestamps,
+  },
+  (t) => [
+    index("bills_user_id_idx").on(t.userId),
+    index("bills_user_due_idx").on(t.userId, t.dueDate),
+    index("bills_document_id_idx").on(t.documentId),
+    index("bills_expected_account_id_idx").on(t.expectedAccountId),
+    uniqueIndex("bills_user_external_uq").on(
+      t.userId,
+      t.externalSource,
+      t.externalRef,
+    ),
+  ],
+);
+
+export const billAllocations = sqliteTable(
+  "bill_allocations",
+  {
+    id: id(),
+    userId: userId(),
+    billId: text("bill_id")
+      .notNull()
+      .references(() => bills.id, { onDelete: "cascade" }),
+    transactionId: text("transaction_id")
+      .notNull()
+      .references(() => transactions.id, { onDelete: "cascade" }),
+    /** Signed in the bill's direction: positive settles the bill. */
+    amount: minor("amount").notNull(),
+    origin: text("origin", { enum: ALLOCATION_ORIGINS }).notNull(),
+    ...timestamps,
+  },
+  (t) => [
+    uniqueIndex("bill_allocations_pair_uq").on(t.billId, t.transactionId),
+    index("bill_allocations_user_id_idx").on(t.userId),
+    index("bill_allocations_transaction_id_idx").on(t.transactionId),
+  ],
+);
+
+export const matchDismissals = sqliteTable(
+  "match_dismissals",
+  {
+    id: id(),
+    userId: userId(),
+    billId: text("bill_id")
+      .notNull()
+      .references(() => bills.id, { onDelete: "cascade" }),
+    transactionId: text("transaction_id")
+      .notNull()
+      .references(() => transactions.id, { onDelete: "cascade" }),
+    ...timestamps,
+  },
+  (t) => [
+    uniqueIndex("match_dismissals_pair_uq").on(t.billId, t.transactionId),
+    index("match_dismissals_user_id_idx").on(t.userId),
+    index("match_dismissals_transaction_id_idx").on(t.transactionId),
   ],
 );

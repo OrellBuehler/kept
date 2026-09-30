@@ -60,3 +60,11 @@ export function formatAmount(
     maximumFractionDigits: exp,
   }).format(value / 10 ** exp);
 }
+
+/** Plain decimal string for form fields, e.g. 194975 -> "1949.75" (round-trips with parseAmount). */
+export function toDecimalString(value: Minor, decimals = 2): string {
+  const digits = String(Math.abs(value)).padStart(decimals + 1, "0");
+  const whole = digits.slice(0, digits.length - decimals);
+  const fraction = digits.slice(digits.length - decimals);
+  return `${value < 0 ? "-" : ""}${whole}${decimals > 0 ? `.${fraction}` : ""}`;
+}

@@ -4,7 +4,7 @@ import { currencyExponent, minor, parseAmount, type Minor } from "$lib/money";
 import { isValidIban, normalizeIban } from "$lib/iban";
 
 /** Blank or missing form fields become null; everything else goes through `schema`. */
-function optionalOf<S extends z.ZodType>(schema: S) {
+export function optionalOf<S extends z.ZodType>(schema: S) {
   return z.preprocess(
     (v) =>
       v === undefined || (typeof v === "string" && v.trim() === "") ? null : v,
@@ -12,7 +12,7 @@ function optionalOf<S extends z.ZodType>(schema: S) {
   ) as z.ZodType<z.output<S> | null>;
 }
 
-const optionalText = (max: number, label: string) =>
+export const optionalText = (max: number, label: string) =>
   optionalOf(
     z.string().trim().max(max, `${label} must be at most ${max} characters.`),
   );
@@ -33,7 +33,7 @@ export const dateSchema = z
   .string()
   .trim()
   .refine(isRealDate, "Enter a date as YYYY-MM-DD.");
-const optionalDate = optionalOf(dateSchema);
+export const optionalDate = optionalOf(dateSchema);
 
 export const currencySchema = z
   .string()
@@ -45,7 +45,7 @@ const ibanSchema = z
   .string()
   .transform(normalizeIban)
   .refine(isValidIban, "Enter a valid IBAN.");
-const optionalIban = optionalOf(ibanSchema);
+export const optionalIban = optionalOf(ibanSchema);
 
 export const idSchema = z.string().trim().min(1, "Required.");
 export const idFormSchema = <K extends string>(field: K) =>
