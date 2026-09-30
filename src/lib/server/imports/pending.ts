@@ -14,7 +14,9 @@ import { z } from "zod";
 import { IMPORT_FORMATS } from "$lib/ledger-types";
 import { LedgerError, notFound } from "$lib/server/ledger/errors";
 
-export const MAX_UPLOAD_BYTES = 20 * 1024 * 1024;
+import { MAX_UPLOAD_BYTES } from "$lib/import-constants";
+
+export { MAX_UPLOAD_BYTES };
 export const PENDING_TTL_MS = 2 * 60 * 60 * 1000;
 
 const pendingIdSchema = z.string().regex(/^[A-Za-z0-9_-]{32}$/);
