@@ -36,6 +36,7 @@
     "@tanstack/table-core": "^8.21.3",
     "@types/bun": "^1.4.2",
     "@types/node": "^26.6.2",
+    "@types/pdfmake": "^0.3.3",
     "@vitest/coverage-v8": "^5.0.3",
     "bits-ui": "^2.19.2",
     "clsx": "^2.1.1",
@@ -68,9 +69,14 @@
     "vitest": "^5.0.3"
   },
   "dependencies": {
+    "@napi-rs/canvas": "^1.0.9",
     "drizzle-orm": "^0.45.3",
     "fast-xml-parser": "^5.11.2",
-    "zod": "^4.6.5"
+    "fflate": "^0.8.3",
+    "pdfmake": "^0.3.11",
+    "unpdf": "^1.8.1",
+    "zod": "^4.6.5",
+    "zxing-wasm": "^3.1.4"
   },
   "engines": {
     "bun": ">=1.4"

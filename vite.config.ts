@@ -4,6 +4,14 @@ import { defineConfig } from "vitest/config";
 
 export default defineConfig({
   plugins: [tailwindcss(), sveltekit()],
+  // Native/WASM-backed PDF stack must be loaded from node_modules at runtime,
+  // not bundled (the zxing WASM binary is resolved relative to the package).
+  ssr: {
+    external: ["unpdf", "zxing-wasm", "@napi-rs/canvas", "pdfmake"],
+  },
+  optimizeDeps: {
+    exclude: ["unpdf", "zxing-wasm", "@napi-rs/canvas", "pdfmake"],
+  },
   build: {
     rollupOptions: {
       external: [/^bun:/],

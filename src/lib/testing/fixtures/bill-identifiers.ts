@@ -1,5 +1,39 @@
-/** Documented example identifiers for bill matching tests. */
+/** Documented example identifiers (public test values) for bill tests. */
 export const EXAMPLE_IBAN = "CH9300762011623852957";
 export const EXAMPLE_IBAN_OTHER = "CH4431999123000889012";
 export const EXAMPLE_QRR = "210000000003139471430009017";
 export const EXAMPLE_SCOR = "RF18539007547034";
+export const EXAMPLE_SCOR_FORMATTED = "RF18 5390 0754 7034";
+
+/** A third documented Swiss example IBAN (non-QR). */
+export const EXAMPLE_IBAN_THIRD = "CH5604835012345678009";
+
+/** Broken variants used as negative tests. */
+export const BAD_IBAN_CHECK = EXAMPLE_IBAN.slice(0, -1) + "8";
+export const BAD_IBAN_SHORT = EXAMPLE_IBAN.slice(0, -1);
+export const BAD_QR_IBAN_CHECK = EXAMPLE_IBAN_OTHER.slice(0, -1) + "3";
+export const BAD_QRR_CHECK = EXAMPLE_QRR.slice(0, -1) + "8";
+export const BAD_SCOR_CHECK = "RF19" + EXAMPLE_SCOR.slice(4);
+export const BAD_SCOR_TOO_LONG = EXAMPLE_SCOR.padEnd(30, "0");
+export const BAD_SCOR_PREFIX = "XX" + EXAMPLE_SCOR.slice(2);
+
+/** Documented example IBANs of other SEPA countries (valid). */
+export const FOREIGN_IBANS = [
+  "DE89370400440532013000",
+  "GB82WEST12345698765432",
+  "FR1420041010050500013M02606",
+  "NL91ABNA0417164300",
+  "AT611904300234573201",
+  "BE68539007547034",
+  "ES9121000418450200051332",
+  "IT60X0542811101000000123456",
+  "SE4550000000058398257466",
+  "PL61109010140000071219812874",
+  "DK5000400440116243",
+  "NO9386011117947",
+  "FI2112345600000785",
+  "LU280019400644750000",
+  "IE29AIBK93115212345678",
+  "PT50000201231234567890154",
+];
+export const BAD_FOREIGN_IBAN_CHECK = FOREIGN_IBANS[0].slice(0, -1) + "1";
