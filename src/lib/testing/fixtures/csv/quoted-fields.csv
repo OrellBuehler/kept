@@ -1,0 +1,6 @@
+Date,Counterparty,Description,Amount
+2024-07-01,"Example, Sample & Co.","Invoice ""A-7"", net 30 days",-99.00
+2024-07-02,Demo Services,"Line one
+line two
+line three",-10.00
+2024-07-03,"Semi;colon Ltd","Plain",5.00
