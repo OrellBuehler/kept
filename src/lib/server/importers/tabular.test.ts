@@ -73,6 +73,13 @@ describe("decodeText", () => {
     );
   });
 
+  it("detects UTF-16 without BOM in auto mode", () => {
+    const le = new Uint8Array([0x41, 0, 0x62, 0, 0xe4, 0, 0x0a, 0]);
+    const be = new Uint8Array([0, 0x41, 0, 0x62, 0, 0xe4, 0, 0x0a]);
+    expect(decodeText(le)).toBe("Abä\n");
+    expect(decodeText(be)).toBe("Abä\n");
+  });
+
   it("decodes iso-8859-1", () => {
     expect(decodeText(new Uint8Array([0xe4, 0xdf]), "iso-8859-1")).toBe("äß");
   });

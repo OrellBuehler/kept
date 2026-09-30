@@ -48,7 +48,7 @@ export const statementSheets: XlsxSheet[] = [
         "Sample Shop",
         "Float artefact",
         null,
-        { raw: "0.30000000000000004" },
+        { raw: "0.3" },
         "CHF",
       ],
       [

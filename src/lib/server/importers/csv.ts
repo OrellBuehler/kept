@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { minor, parseAmount, type Minor } from "$lib/money";
+import { currencyExponent, minor, parseAmount, type Minor } from "$lib/money";
 import type { ColumnRef, CsvMappingProfile } from "./mapping";
 import { detectReference } from "./references";
 import { readCsv, readXlsx } from "./tabular";
@@ -209,7 +209,11 @@ function parseDate(text: string, profile: CsvMappingProfile): string {
   );
 }
 
-function parseLocalizedAmount(text: string, profile: CsvMappingProfile): Minor {
+function parseLocalizedAmount(
+  text: string,
+  profile: CsvMappingProfile,
+  decimals: number,
+): Minor {
   let s = text
     .replace(/[\u00a0\u202f]/g, " ")
     .replace(/\u2019/g, "'")
@@ -234,12 +238,12 @@ function parseLocalizedAmount(text: string, profile: CsvMappingProfile): Minor {
   const [whole = "", fraction, ...rest] = s.split(dec);
   if (
     rest.length > 0 ||
-    whole === "" ||
+    (whole === "" && (fraction === undefined || fraction === "")) ||
     (fraction !== undefined && !/^\d+$/.test(fraction))
   ) {
     throw new RowProblem("not a valid number");
   }
-  let digits = whole;
+  let digits = whole === "" ? "0" : whole;
   if (thousands !== "" && whole.includes(thousands)) {
     const grouped = new RegExp(
       `^\\d{1,3}(?:${thousands.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\d{3})+$`,
@@ -250,13 +254,21 @@ function parseLocalizedAmount(text: string, profile: CsvMappingProfile): Minor {
   if (!/^\d+$/.test(digits)) throw new RowProblem("not a valid number");
 
   let frac = fraction ?? "";
-  if (frac.length > 2) {
-    if (/[1-9]/.test(frac.slice(2))) {
-      throw new RowProblem("has more than two decimal places");
+  if (frac.length > decimals) {
+    if (/[1-9]/.test(frac.slice(decimals))) {
+      throw new RowProblem(`has more than ${decimals} decimal places`);
     }
-    frac = frac.slice(0, 2);
+    frac = frac.slice(0, decimals);
   }
-  const value = parseAmount(`${digits}${frac ? `.${frac}` : ""}`);
+  let value: Minor;
+  try {
+    value = parseAmount(`${digits}${frac ? `.${frac}` : ""}`, decimals);
+  } catch (e) {
+    if (e instanceof RangeError || e instanceof SyntaxError) {
+      throw new RowProblem("not a valid number");
+    }
+    throw e;
+  }
   return negate(value, negative);
 }
 
@@ -294,26 +306,26 @@ function parseRow(
     const idx = cols[key]?.[0];
     return idx === undefined ? "" : normalizeText(row[idx] ?? "");
   };
-  const amountCell = (key: ColumnKey): Minor | null => {
+  const amountCell = (key: ColumnKey, decimals: number): Minor | null => {
     const text = cell(key);
     if (text === "") return null;
     try {
-      return parseLocalizedAmount(text, profile);
+      return parseLocalizedAmount(text, profile, decimals);
     } catch (e) {
-      if (
-        e instanceof RowProblem ||
-        e instanceof RangeError ||
-        e instanceof SyntaxError
-      ) {
+      // Fixed messages only: never echo the cell value.
+      if (e instanceof RowProblem) {
         throw new RowProblem(
           `${key} column is not a valid amount (${e.message})`,
         );
       }
+      if (e instanceof RangeError || e instanceof SyntaxError) {
+        throw new RowProblem(`${key} column is not a valid amount`);
+      }
       throw e;
     }
   };
-  const need = (key: ColumnKey): Minor => {
-    const v = amountCell(key);
+  const need = (key: ColumnKey, decimals: number): Minor => {
+    const v = amountCell(key, decimals);
     if (v === null) throw new RowProblem(`${key} column is empty`);
     return v;
   };
@@ -334,11 +346,21 @@ function parseRow(
   const bookingDate = dateCell("bookingDate", true)!;
   const valueDate = dateCell("valueDate", false);
 
+  const currencyText = cell("currency").toUpperCase();
+  const currency = currencyText || profile.defaultCurrency;
+  if (!currency)
+    throw new RowProblem("currency is empty and no defaultCurrency is set");
+  if (!/^[A-Z]{3}$/.test(currency)) {
+    throw new RowProblem(`currency "${currencyText}" is not a 3-letter code`);
+  }
+
+  const exp = currencyExponent(currency);
+
   let amount: Minor;
   if (profile.amountMode === "single") {
-    amount = need("amount");
+    amount = need("amount", exp);
   } else if (profile.amountMode === "single_with_indicator") {
-    const magnitude = abs(need("amount"));
+    const magnitude = abs(need("amount", exp));
     const indicator = cell("indicator").toUpperCase();
     const isCredit = profile.indicatorCreditValues.some(
       (v) => v.toUpperCase() === indicator,
@@ -355,8 +377,8 @@ function parseRow(
     }
     amount = negate(magnitude, isDebit);
   } else {
-    const credit = amountCell("credit");
-    const debit = amountCell("debit");
+    const credit = amountCell("credit", exp);
+    const debit = amountCell("debit", exp);
     if (credit === null && debit === null) {
       throw new RowProblem("both credit and debit are empty");
     }
@@ -366,14 +388,6 @@ function parseRow(
     amount = minor(abs(credit ?? (0 as Minor)) - abs(debit ?? (0 as Minor)));
   }
   if (profile.invertSign) amount = negate(amount, true);
-
-  const currencyText = cell("currency").toUpperCase();
-  const currency = currencyText || profile.defaultCurrency;
-  if (!currency)
-    throw new RowProblem("currency is empty and no defaultCurrency is set");
-  if (!/^[A-Z]{3}$/.test(currency)) {
-    throw new RowProblem(`currency "${currencyText}" is not a 3-letter code`);
-  }
 
   let originalAmount: Minor | null = null;
   let originalCurrency: string | null = null;
@@ -391,7 +405,9 @@ function parseRow(
       );
     }
     // The original amount takes the direction of the booked amount; the exports carry it unsigned.
-    const magnitude = abs(need("originalAmount"));
+    const magnitude = abs(
+      need("originalAmount", currencyExponent(origCurrencyText)),
+    );
     originalAmount = negate(magnitude, amount < 0);
     originalCurrency = origCurrencyText;
   }
@@ -408,7 +424,11 @@ function parseRow(
 
   const referenceText = cell("reference");
   const ref = referenceText ? detectReference(referenceText) : null;
-  const balance = amountCell("balance");
+  const rawBalance = amountCell("balance", exp);
+  const balance =
+    rawBalance !== null && profile.invertSign
+      ? negate(rawBalance, true)
+      : rawBalance;
   const provided = cell("externalId");
 
   return {
@@ -445,13 +465,15 @@ function parseRow(
  * day in half can shift the numbering of that day's duplicates.
  * A bank reference repeated within one file is disambiguated the same way
  * (first occurrence keeps the bare id, later ones get `#2`, `#3`, ...).
+ * `%` and `#` inside a provided reference are percent-escaped so the suffix
+ * can never be confused with part of a reference.
  */
 class ExternalIdAllocator {
   private seen = new Map<string, number>();
 
   allocate(parsed: ParsedRow): string {
     if (parsed.providedId) {
-      const base = `ref:${parsed.providedId}`;
+      const base = `ref:${parsed.providedId.replace(/[%#]/g, (c) => (c === "%" ? "%25" : "%23"))}`;
       const n = this.bump(base);
       return n === 1 ? base : `${base}#${n}`;
     }
@@ -536,33 +558,50 @@ export function previewTabular(
   );
 }
 
-function isAscending(
-  items: { tx: NormalizedTransaction; balance: Minor | null }[],
-): boolean {
-  const first = items[0]!.tx.bookingDate;
-  const last = items[items.length - 1]!.tx.bookingDate;
-  if (first !== last) return first < last;
-  // Same date throughout: decide by which direction makes the running balance add up.
-  let asc = 0;
-  let desc = 0;
-  for (let i = 1; i < items.length; i++) {
-    const prev = items[i - 1]!;
-    const cur = items[i]!;
-    if (prev.balance === null || cur.balance === null) continue;
-    if (prev.balance + cur.tx.amount === cur.balance) asc++;
-    if (cur.balance + prev.tx.amount === prev.balance) desc++;
+interface BalanceItem {
+  tx: NormalizedTransaction;
+  balance: Minor | null;
+}
+
+/**
+ * Opening and closing balance of the rows of one booking date, in whichever of
+ * file order / reversed file order the running balance actually chains
+ * (previous balance + amount = balance). Null when it cannot be verified
+ * or both directions chain to different results: no guessing.
+ */
+function verifiedChain(
+  group: BalanceItem[],
+): { start: Minor; end: Minor } | null {
+  if (group.some((i) => i.balance === null)) return null;
+  const results: { start: Minor; end: Minor }[] = [];
+  for (const order of [group, [...group].reverse()]) {
+    let ok = true;
+    for (let k = 1; k < order.length && ok; k++) {
+      ok = order[k - 1]!.balance! + order[k]!.tx.amount === order[k]!.balance;
+    }
+    if (!ok) continue;
+    const head = order[0]!;
+    results.push({
+      start: minor(head.balance! - head.tx.amount),
+      end: order[order.length - 1]!.balance!,
+    });
   }
-  return asc >= desc;
+  const first = results[0];
+  if (!first) return null;
+  return results.every((r) => r.start === first.start && r.end === first.end)
+    ? first
+    : null;
 }
 
 /**
  * Parses the whole table. Blank lines and configured footer rows are
  * skipped; any other row that fails makes this throw ImportRowsError (no
  * partial results). Opening/closing balances are derived only when a balance
- * column is mapped: the running balance of the chronologically first row
- * minus its amount, and the balance of the last row. Row order (ascending or
- * descending by date) is detected from the data. The balance dates are the
- * booking dates of those rows.
+ * column is mapped: among the rows of the earliest (latest) booking date the
+ * running balance chain is verified, in either file direction; opening is
+ * the first row's balance minus its amount, closing the last row's balance.
+ * If the chain cannot be verified the balance is null. Balance dates are
+ * those booking dates. With `invertSign`, balances are inverted as well.
  */
 export function parseTabular(
   rows: string[][],
@@ -596,23 +635,16 @@ export function parseTabular(
   let openingBalance: NormalizedBalance | null = null;
   let closingBalance: NormalizedBalance | null = null;
   if (profile.columns.balance !== undefined && items.length > 0) {
-    const ascending = isAscending(items);
-    const earliest = ascending ? items[0]! : items[items.length - 1]!;
-    const latest = ascending ? items[items.length - 1]! : items[0]!;
-    if (earliest.balance !== null) {
-      openingBalance = {
-        amount: minor(earliest.balance - earliest.tx.amount),
-        currency,
-        date: earliest.tx.bookingDate,
-      };
-    }
-    if (latest.balance !== null) {
-      closingBalance = {
-        amount: latest.balance,
-        currency,
-        date: latest.tx.bookingDate,
-      };
-    }
+    const all = items.map((i) => i.tx.bookingDate).sort();
+    const from = all[0]!;
+    const to = all[all.length - 1]!;
+    const opening = verifiedChain(
+      items.filter((i) => i.tx.bookingDate === from),
+    );
+    const closing = verifiedChain(items.filter((i) => i.tx.bookingDate === to));
+    if (opening)
+      openingBalance = { amount: opening.start, currency, date: from };
+    if (closing) closingBalance = { amount: closing.end, currency, date: to };
   }
 
   const dates = items.map((i) => i.tx.bookingDate).sort();

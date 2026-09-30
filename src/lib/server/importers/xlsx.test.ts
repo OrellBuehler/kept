@@ -10,12 +10,13 @@ describe("numberToPlainString", () => {
   it.each([
     ["5200", "5200"],
     ["-4.5", "-4.5"],
-    ["0.30000000000000004", "0.3"],
+    ["0.30000000000000004", "0.30000000000000004"],
     ["1.5E-2", "0.015"],
     ["2.1E+26", "210000000000000000000000000"],
     ["1.23456789012345E+2", "123.456789012345"],
     ["-0.1", "-0.1"],
-    ["100.10000000000001", "100.1"],
+    ["100.10000000000001", "100.10000000000001"],
+    ["1E-2", "0.01"],
   ])("%s -> %s", (input, expected) => {
     expect(numberToPlainString(input)).toBe(expected);
   });
@@ -109,15 +110,58 @@ describe("readXlsx", () => {
     expect(() => readXlsx(zip)).toThrow(/no worksheet/);
   });
 
-  it("rejects parts that are too large when uncompressed (zip bomb)", () => {
-    const big = new Uint8Array(XLSX_LIMITS.maxXmlBytes + 1);
-    const zip = zipSync({
+  const sheetZip = (sheetXml: Uint8Array | string) =>
+    zipSync({
       "xl/workbook.xml": strToU8("<workbook/>"),
-      "xl/worksheets/sheet1.xml": big,
+      "xl/worksheets/sheet1.xml":
+        typeof sheetXml === "string" ? strToU8(sheetXml) : sheetXml,
     });
+
+  it("rejects sheets that are too large when uncompressed (zip bomb)", () => {
+    const zip = sheetZip(new Uint8Array(XLSX_LIMITS.maxXmlBytes + 1));
     expect(zip.length).toBeLessThan(1_000_000);
     expect(() => readXlsx(zip)).toThrow(/too large/);
   }, 60_000);
+
+  it("rejects suspicious compression ratios below the size cap", () => {
+    const zip = sheetZip(new Uint8Array(5 * 1024 * 1024));
+    expect(() => readXlsx(zip)).toThrow(/suspicious compression ratio/);
+  });
+
+  it("counts rows before parsing", () => {
+    const rows = Array.from(
+      { length: XLSX_LIMITS.maxRows + 1 },
+      (_, i) =>
+        `<row><c t="inlineStr"><is><t>${(i * 7919).toString(36)}</t></is></c></row>`,
+    ).join("");
+    const zip = sheetZip(
+      `<worksheet><sheetData>${rows}</sheetData></worksheet>`,
+    );
+    expect(() => readXlsx(zip)).toThrow(
+      /exceeds 200000 rows|compression ratio/,
+    );
+  }, 60_000);
+
+  it("guards huge date serials and exponents", () => {
+    const one = (raw: string, format: string) =>
+      readXlsx(buildXlsx([{ name: "S", rows: [[{ raw, format }]] }]))[0]![0];
+    expect(() => one("99999999", "dd.mm.yyyy")).toThrow(/out-of-range date/);
+    expect(() => one("-5", "dd.mm.yyyy")).toThrow(/out-of-range date/);
+    expect(() => one("1E+300", "0.00")).toThrow(/huge exponent/);
+  });
+
+  it("detects date formats from custom codes, ignoring literals and brackets", () => {
+    const cell = (format: string) =>
+      readXlsx(
+        buildXlsx([{ name: "S", rows: [[{ raw: "45352", format }]] }]),
+      )[0]![0];
+    expect(cell("dd.mm.yyyy")).toBe("2024-03-01");
+    expect(cell("[$-409]d-mmm-yy")).toBe("2024-03-01");
+    expect(cell('"CHF" #,##0.00')).toBe("45352");
+    expect(cell('#,##0.00 "days"')).toBe("45352");
+    expect(cell("[Red]0.00")).toBe("45352");
+    expect(cell("0.00E+00")).toBe("45352");
+  });
 
   it("rejects sparse sheets that would allocate huge rows", () => {
     const wide = buildXlsx([{ name: "S", rows: [["a"]] }], {

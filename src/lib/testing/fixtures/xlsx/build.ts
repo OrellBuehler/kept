@@ -10,6 +10,7 @@ import { strToU8, zipSync, type Zippable } from "fflate";
  *  - { date }: ISO date stored as an Excel serial with a date format
  *  - { inline }: inline string, { rich }: shared rich-text string made of runs
  *  - { formulaText }: formula string result (t="str")
+ *  - { raw, format }: numeric cell with a custom number format code
  *  - null: empty cell
  */
 export type XlsxCell =
@@ -20,7 +21,8 @@ export type XlsxCell =
   | { date: string }
   | { inline: string }
   | { rich: string[] }
-  | { formulaText: string };
+  | { formulaText: string }
+  | { raw: string; format: string };
 
 export interface XlsxSheet {
   name: string;
@@ -58,6 +60,7 @@ export function buildXlsx(
   options: BuildXlsxOptions = {},
 ): Uint8Array {
   const shared: string[] = [];
+  const formats: string[] = [];
   const sharedIndex = new Map<string, number>();
   const addShared = (xml: string) => {
     let idx = sharedIndex.get(xml);
@@ -84,6 +87,11 @@ export function buildXlsx(
             }
             if (typeof cell === "number")
               return `<c r="${ref}"><v>${cell}</v></c>`;
+            if ("raw" in cell && "format" in cell) {
+              let fi = formats.indexOf(cell.format);
+              if (fi < 0) fi = formats.push(cell.format) - 1;
+              return `<c r="${ref}" s="${fi + 2}"><v>${cell.raw}</v></c>`;
+            }
             if ("raw" in cell) return `<c r="${ref}"><v>${cell.raw}</v></c>`;
             if ("date" in cell) {
               return `<c r="${ref}" s="1"><v>${excelSerial(cell.date, options.date1904)}</v></c>`;
@@ -141,7 +149,11 @@ export function buildXlsx(
         )}<Relationship Id="rId${n + 1}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/><Relationship Id="rId${n + 2}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/sharedStrings" Target="sharedStrings.xml"/></Relationships>`,
     ),
     "xl/styles.xml": file(
-      `${head}<styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><cellXfs count="2"><xf numFmtId="0"/><xf numFmtId="14"/></cellXfs></styleSheet>`,
+      `${head}<styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">${
+        formats.length
+          ? `<numFmts count="${formats.length}">${formats.map((f, i) => `<numFmt numFmtId="${164 + i}" formatCode="${xmlEscape(f).replace(/"/g, "&quot;")}"/>`).join("")}</numFmts>`
+          : ""
+      }<cellXfs count="${2 + formats.length}"><xf numFmtId="0"/><xf numFmtId="14"/>${formats.map((_, i) => `<xf numFmtId="${164 + i}"/>`).join("")}</cellXfs></styleSheet>`,
     ),
     "xl/sharedStrings.xml": file(
       `${head}<sst xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" count="${shared.length}" uniqueCount="${shared.length}">${shared.join("")}</sst>`,

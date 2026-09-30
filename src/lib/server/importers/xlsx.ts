@@ -4,7 +4,10 @@ import { ImportFormatError } from "./types";
 
 export const XLSX_LIMITS = {
   maxFileBytes: 25 * 1024 * 1024,
-  maxXmlBytes: 100 * 1024 * 1024,
+  maxXmlBytes: 25 * 1024 * 1024,
+  maxCompressionRatio: 100,
+  ratioCheckFromBytes: 100_000,
+  maxExponent: 40,
   maxRows: 200_000,
   maxColumns: 512,
 } as const;
@@ -58,9 +61,11 @@ function unescapeXlsxText(s: string): string {
   );
 }
 
-function parseXml(bytes: Uint8Array, what: string): Node {
+function parseXml(input: Uint8Array | string, what: string): Node {
   try {
-    return asNode(parser.parse(strFromU8(bytes)));
+    return asNode(
+      parser.parse(typeof input === "string" ? input : strFromU8(input)),
+    );
   } catch (cause) {
     throw new ImportFormatError(`XLSX ${what} is not well-formed XML`, {
       cause,
@@ -101,26 +106,25 @@ function plainDecimal(s: string): string {
 }
 
 /**
- * Renders a stored number as an exact decimal string. Excel keeps 15
- * significant digits of precision; longer binary artefacts such as
- * 0.30000000000000004 are rounded to that (what Excel itself displays).
+ * Renders a stored number as a plain decimal string without changing its
+ * value: plain decimals are returned as stored, exponent notation is expanded
+ * exactly. Nothing is rounded, so a float artefact such as 0.30000000000000004
+ * stays visible and is rejected by the amount parser (too many decimals)
+ * instead of being silently altered.
  */
 export function numberToPlainString(raw: string): string {
-  let s = plainDecimal(raw.trim());
-  if (!/^[+-]?\d*\.?\d+$|^[+-]?\d+\.$/.test(s)) return s;
-  const frac = s.split(".")[1];
-  const significant = s
-    .replace(/^[+-]/, "")
-    .replace(".", "")
-    .replace(/^0+/, "");
-  if (frac && significant.length > 15) {
-    s = plainDecimal(Number(s).toPrecision(15));
-    if (s.includes(".")) s = s.replace(/\.?0+$/, "");
+  const s = raw.trim();
+  const m = /^[+-]?\d*\.?\d*[eE]([+-]?\d+)$/.exec(s);
+  if (m && Math.abs(Number(m[1])) > XLSX_LIMITS.maxExponent) {
+    throw new ImportFormatError("XLSX contains a number with a huge exponent");
   }
-  return s.replace(/^\+/, "");
+  return plainDecimal(s).replace(/^\+/, "");
 }
 
 function serialToIsoDate(serial: number, date1904: boolean): string {
+  if (!Number.isFinite(serial) || serial < 0 || serial >= 2_958_466) {
+    throw new ImportFormatError("XLSX contains an out-of-range date value");
+  }
   const whole = Math.floor(serial);
   // Excel's 1900 system treats 1900 as a leap year; serials >= 61 map from 1899-12-30.
   const epoch = date1904
@@ -261,9 +265,9 @@ export function readXlsx(
     });
   }
 
-  const sheet = asNode(
-    asNode(parseXml(files[sheetPath]!, "worksheet"))["worksheet"],
-  );
+  const sheetText = strFromU8(files[sheetPath]!);
+  checkSheetShape(sheetText);
+  const sheet = asNode(asNode(parseXml(sheetText, "worksheet"))["worksheet"]);
   const sheetData = asNode(sheet["sheetData"]);
   const decimal = options.decimalSeparator ?? ".";
   const rows: string[][] = [];
@@ -341,6 +345,26 @@ function cellValue(
   return decimal === "," ? plain.replace(".", ",") : plain;
 }
 
+function countMatches(text: string, re: RegExp): number {
+  let n = 0;
+  while (re.exec(text)) n++;
+  return n;
+}
+
+/** Cheap element count before the XML is parsed into objects. */
+function checkSheetShape(xml: string): void {
+  const rows = countMatches(xml, /<(?:\w+:)?row[\s>/]/g);
+  if (rows > XLSX_LIMITS.maxRows) {
+    throw new ImportFormatError(
+      `XLSX worksheet exceeds ${XLSX_LIMITS.maxRows} rows`,
+    );
+  }
+  const cells = countMatches(xml, /<(?:\w+:)?c[\s>/]/g);
+  if (cells > XLSX_LIMITS.maxRows * XLSX_LIMITS.maxColumns) {
+    throw new ImportFormatError("XLSX worksheet has too many cells");
+  }
+}
+
 function unzipEntries(
   bytes: Uint8Array,
   pick: (name: string) => boolean,
@@ -353,6 +377,14 @@ function unzipEntries(
         if (f.originalSize > XLSX_LIMITS.maxXmlBytes) {
           throw new ImportFormatError(
             `XLSX part ${f.name} is too large when uncompressed`,
+          );
+        }
+        if (
+          f.originalSize > XLSX_LIMITS.ratioCheckFromBytes &&
+          f.originalSize > f.size * XLSX_LIMITS.maxCompressionRatio
+        ) {
+          throw new ImportFormatError(
+            `XLSX part ${f.name} has a suspicious compression ratio`,
           );
         }
         total += f.originalSize;

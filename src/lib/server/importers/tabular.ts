@@ -17,6 +17,25 @@ function swapBytes(bytes: Uint8Array): Uint8Array {
   return out;
 }
 
+/**
+ * UTF-16 without BOM: mostly-ASCII text has a NUL in every second byte, which
+ * never occurs in UTF-8 or single-byte text.
+ */
+function guessUtf16(bytes: Uint8Array): "le" | "be" | null {
+  const n = Math.min(bytes.length, 4000) & ~1;
+  if (n < 4) return null;
+  let evenNul = 0;
+  let oddNul = 0;
+  for (let i = 0; i < n; i += 2) {
+    if (bytes[i] === 0) evenNul++;
+    if (bytes[i + 1] === 0) oddNul++;
+  }
+  const pairs = n / 2;
+  if (oddNul > pairs * 0.3 && evenNul === 0) return "le";
+  if (evenNul > pairs * 0.3 && oddNul === 0) return "be";
+  return null;
+}
+
 function decodeStrictUtf8(bytes: Uint8Array): string {
   try {
     return new TextDecoder("utf-8", { fatal: true, ignoreBOM: true }).decode(
@@ -50,6 +69,12 @@ export function decodeText(
     if (hasLeBom) {
       text = new TextDecoder("utf-16le", { ignoreBOM: true }).decode(b);
     } else if (hasBeBom) {
+      text = new TextDecoder("utf-16le", { ignoreBOM: true }).decode(
+        swapBytes(b),
+      );
+    } else if (guessUtf16(b) === "le") {
+      text = new TextDecoder("utf-16le", { ignoreBOM: true }).decode(b);
+    } else if (guessUtf16(b) === "be") {
       text = new TextDecoder("utf-16le", { ignoreBOM: true }).decode(
         swapBytes(b),
       );

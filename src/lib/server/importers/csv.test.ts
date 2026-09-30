@@ -500,6 +500,9 @@ describe("amount parsing", () => {
     ["1 234,56", { decimalSeparator: ",", thousandsSeparator: " " }, 123456],
     ["1’234.56", { thousandsSeparator: "'" }, 123456],
     ["1234,56", { decimalSeparator: ",", thousandsSeparator: "'" }, 123456],
+    [".5", {}, 50],
+    [",5", { decimalSeparator: "," }, 50],
+    ["-.25", {}, -25],
   ])("%s", (value, extra, expected) => {
     expect(amountOf(value, extra)).toBe(minor(expected));
   });
@@ -511,7 +514,6 @@ describe("amount parsing", () => {
     ["1,23", { thousandsSeparator: "," }],
     ["1.2.3", {}],
     ["12,50", {}],
-    [".5", {}],
     ["--5", {}],
   ])("rejects %j without echoing the value", (value, extra) => {
     const result = amountOf(value, extra);
@@ -784,7 +786,7 @@ describe("row errors", () => {
         [2, "ok"],
         [3, expect.stringMatching(/bookingDate .*not a real calendar date/)],
         [4, expect.stringMatching(/amount column is not a valid amount/)],
-        [5, expect.stringMatching(/more than two decimal places/)],
+        [5, expect.stringMatching(/more than 2 decimal places/)],
         [6, "ok"],
       ],
     );

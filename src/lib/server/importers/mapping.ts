@@ -34,7 +34,7 @@ const currencyCode = z
   .regex(/^[A-Za-z]{3}$/, "Currency must be a 3-letter ISO 4217 code")
   .transform((v) => v.toUpperCase());
 
-const columns = z.object({
+const columns = z.strictObject({
   bookingDate: columnRef,
   valueDate: columnRef.optional(),
   amount: columnRef.optional(),
@@ -53,7 +53,7 @@ const columns = z.object({
 });
 
 export const csvMappingProfileSchema = z
-  .object({
+  .strictObject({
     delimiter: z.enum(DELIMITERS).default("auto"),
     encoding: z.enum(ENCODINGS).default("auto"),
     /** 1-based line of the header row; 0 means the file has no header. Lines above it are ignored. */
