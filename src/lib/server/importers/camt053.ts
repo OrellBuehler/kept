@@ -44,7 +44,8 @@ import {
  *
  * Only booked entries (Sts BOOK) are imported; PDNG/INFO are skipped.
  * The input is size-limited and DOCTYPE/ENTITY declarations are rejected (no XXE, no
- * entity expansion); the parser is additionally run with entity processing disabled.
+ * entity expansion). The parser's entity processing is off; the five predefined XML
+ * entities and numeric character references are decoded in a single pass by `decodeEntities`.
  */
 
 const MAX_INPUT_CHARS = 25_000_000;
@@ -106,10 +107,38 @@ function list(v: unknown, ...path: string[]): unknown[] {
   return asArray(walk(v, path));
 }
 
+const PREDEFINED: Record<string, string> = {
+  amp: "&",
+  lt: "<",
+  gt: ">",
+  quot: '"',
+  apos: "'",
+};
+
+function decodeEntities(s: string): string {
+  if (!s.includes("&")) return s;
+  return s.replace(/&(#x[0-9a-fA-F]+|#\d+|[a-z]+);/g, (m, body: string) => {
+    if (body[0] !== "#") return PREDEFINED[body] ?? m;
+    const cp =
+      body[1] === "x"
+        ? parseInt(body.slice(2), 16)
+        : parseInt(body.slice(1), 10);
+    const valid =
+      cp === 0x9 ||
+      cp === 0xa ||
+      cp === 0xd ||
+      (cp >= 0x20 && cp <= 0xd7ff) ||
+      (cp >= 0xe000 && cp <= 0xfffd && cp !== 0xfffe) ||
+      (cp >= 0x10000 && cp <= 0x10ffff);
+    if (!valid) fail(`Invalid numeric character reference "${m}"`);
+    return String.fromCodePoint(cp);
+  });
+}
+
 function text(v: unknown): string | null {
   if (Array.isArray(v)) return text(v[0]);
   let s: string | null = null;
-  if (typeof v === "string") s = v;
+  if (typeof v === "string") s = decodeEntities(v);
   else if (typeof v === "number") s = String(v);
   else if (isRec(v) && "#text" in v) return text(v["#text"]);
   s = s?.trim() ?? null;
@@ -163,10 +192,12 @@ function readAmount(v: unknown, what: string): Amount | null {
       );
     fraction = fraction.slice(0, decimals);
   }
-  const value = parseAmount(
-    fraction ? `${whole}.${fraction}` : whole!,
-    decimals,
-  );
+  let value: Minor;
+  try {
+    value = parseAmount(fraction ? `${whole}.${fraction}` : whole!, decimals);
+  } catch {
+    fail(`${what}: amount "${raw}" is out of range`);
+  }
   return { value, currency: currency.data };
 }
 
@@ -188,15 +219,17 @@ function checkNamespace(xml: string): void {
   const namespaces = [
     ...root[1]!.matchAll(/xmlns(?::[\w.-]+)?\s*=\s*["']([^"']*)["']/g),
   ].map((m) => m[1]!);
-  const iso = namespaces
+  // Match by the last path segment so URNs (urn:iso:std:iso:20022:tech:xsd:camt.053.001.04) and
+  // URLs with suffixes (.../camt.053.001.04.ch.02.xsd) are both recognized.
+  const messages = namespaces
     .map((ns) =>
-      /^urn:iso:std:iso:20022:tech:xsd:([a-z]+\.\d+\.\d+\.\d+)$/.exec(ns),
+      /^([a-z]+\.\d{3}\.\d{3}\.\d{2})(?:\..*)?$/.exec(ns.split(/[/:]/).pop()!),
     )
-    .find((m) => m !== null);
-  if (iso) {
-    const message = iso[1]!;
-    if (!/^camt\.053\.001\.\d+$/.test(message))
-      fail(`Not a camt.053 file: found ${message}`);
+    .filter((m) => m !== null)
+    .map((m) => m[1]!);
+  if (messages.length > 0) {
+    if (!messages.some((m) => /^camt\.053\.001\.\d+$/.test(m)))
+      fail(`Not a camt.053 file: found ${messages[0]}`);
   } else if (namespaces.length > 0) {
     fail(`Not a camt.053 file: unrecognized namespace ${namespaces[0]}`);
   }
@@ -288,17 +321,24 @@ function readParty(
   };
 }
 
-function readCounterparty(tx: unknown, credit: boolean, reversal: boolean) {
+function readCounterparty(
+  tx: unknown,
+  credit: boolean,
+  reversal: boolean,
+  ownIban: string | null,
+) {
   const entryRole = credit ? ("Dbtr" as const) : ("Cdtr" as const);
   const otherRole = credit ? ("Cdtr" as const) : ("Dbtr" as const);
   // A reversal undoes an original operation of the opposite direction, so the original
   // counterparty is usually reported in the other role; banks are inconsistent, so try both.
-  const [first, second] = reversal
-    ? [otherRole, entryRole]
-    : [entryRole, entryRole];
-  const primary = readParty(tx, first);
-  if (reversal && !primary.name && !primary.iban) return readParty(tx, second);
-  return primary;
+  // The statement's own account is never a counterparty.
+  const roles = reversal ? [otherRole, entryRole] : [entryRole];
+  for (const role of roles) {
+    const party = readParty(tx, role);
+    if ((party.name || party.iban) && (!ownIban || party.iban !== ownIban))
+      return party;
+  }
+  return { name: null, iban: null };
 }
 
 function readOriginal(
@@ -324,17 +364,28 @@ function readOriginal(
 
 function txAmount(tx: unknown): Amount | null {
   return (
-    readAmount(at(tx, "AmtDtls", "TxAmt", "Amt"), "TxDtls amount") ??
-    readAmount(at(tx, "Amt"), "TxDtls amount")
+    readAmount(at(tx, "Amt"), "TxDtls amount") ??
+    readAmount(at(tx, "AmtDtls", "TxAmt", "Amt"), "TxDtls amount")
   );
 }
 
+function reference(v: unknown): string | null {
+  const r = text(v);
+  return r === null || r.toUpperCase() === "NOTPROVIDED" ? null : r;
+}
+
+function sumSafe(values: number[], what: string): number {
+  const total = values.reduce((sum, v) => sum + v, 0);
+  if (!Number.isSafeInteger(total)) fail(`${what}: amounts are out of range`);
+  return total;
+}
+
 function detailKey(tx: unknown, index: number): string {
-  const acsr = text(at(tx, "Refs", "AcctSvcrRef"));
+  const acsr = reference(at(tx, "Refs", "AcctSvcrRef"));
   if (acsr) return `a:${acsr}`;
-  const e2e = text(at(tx, "Refs", "EndToEndId"));
-  if (e2e && e2e !== "NOTPROVIDED") return `e:${e2e}`;
-  const txId = text(at(tx, "Refs", "TxId"));
+  const e2e = reference(at(tx, "Refs", "EndToEndId"));
+  if (e2e) return `e:${e2e}`;
+  const txId = reference(at(tx, "Refs", "TxId"));
   if (txId) return `t:${txId}`;
   return `i:${index}`;
 }
@@ -348,20 +399,27 @@ function sha256(parts: unknown[]): string {
   return createHash("sha256").update(JSON.stringify(parts)).digest("hex");
 }
 
-function parseEntry(entry: Rec, accountKey: string, n: number): Draft[] {
+function parseEntry(
+  entry: Rec,
+  accountKey: string,
+  ownIban: string | null,
+  n: number,
+): Draft[] {
   const what = `Ntry #${n}`;
   const booked = readAmount(entry["Amt"], `${what} Amt`);
   if (!booked) fail(`${what} has no amount`);
   const credit = readIndicator(entry["CdtDbtInd"], what);
-  const reversal = text(entry["RvslInd"])?.toLowerCase() === "true";
+  const reversal = ["true", "1"].includes(
+    text(entry["RvslInd"])?.toLowerCase() ?? "",
+  );
   const bookingDate = readDate(entry["BookgDt"], `${what} booking`);
   if (!bookingDate) fail(`${what} has no booking date (BookgDt)`);
   const valueDate = readDate(entry["ValDt"], `${what} value`);
   const signed = applySign(booked.value, credit);
 
   const txs = list(entry, "NtryDtls").flatMap((d) => list(d, "TxDtls"));
-  const entryRef = text(entry["AcctSvcrRef"]);
-  const ntryRef = text(entry["NtryRef"]);
+  const entryRef = reference(entry["AcctSvcrRef"]);
+  const ntryRef = reference(entry["NtryRef"]);
 
   let parts: (unknown | null)[] = [null];
   let split = false;
@@ -371,7 +429,10 @@ function parseEntry(entry: Rec, accountKey: string, n: number): Draft[] {
       amounts.every(
         (a): a is Amount => a !== null && a.currency === booked.currency,
       ) &&
-      amounts.reduce((sum, a) => sum + a.value, 0) === booked.value
+      sumSafe(
+        amounts.map((a) => a.value),
+        what,
+      ) === booked.value
     ) {
       split = true;
       parts = txs;
@@ -386,14 +447,14 @@ function parseEntry(entry: Rec, accountKey: string, n: number): Draft[] {
     const cp =
       tx === null
         ? { name: null, iban: null }
-        : readCounterparty(tx, credit, reversal);
+        : readCounterparty(tx, credit, reversal, ownIban);
     const ref =
       tx === null
         ? { reference: null, referenceType: null }
         : readReference(tx);
     const description = readDescription(tx, entry);
     const original = readOriginal(
-      tx === null ? [entry] : [tx, entry],
+      tx === null ? [entry] : split ? [tx] : [tx, entry],
       amount,
       credit,
     );
@@ -502,7 +563,7 @@ function parseStatement(stmt: Rec, index: number): NormalizedStatement {
       text(at(entry, "Sts", "Prtry"));
     if (!sts) fail(`${what}: Ntry #${i + 1} has no status (Sts)`);
     if (sts !== "BOOK") return;
-    drafts.push(...parseEntry(entry, accountKey, i + 1));
+    drafts.push(...parseEntry(entry, accountKey, accountIban, i + 1));
   });
 
   return {

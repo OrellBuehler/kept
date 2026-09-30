@@ -687,3 +687,148 @@ describe("malformed input", () => {
     reject(bad, /Stmt #2/);
   });
 });
+
+describe("review fixes", () => {
+  const details = (inner: string) =>
+    `<NtryDtls><TxDtls>${inner}</TxDtls></NtryDtls>`;
+  const one = (entry: string) => parseCamt053(stmt(entry))[0]!.transactions[0]!;
+
+  it("decodes predefined entities and numeric references", () => {
+    const tx = one(
+      ntry(
+        "1.00",
+        "DBIT",
+        details(
+          "<RltdPties><Cdtr><Nm>Tom &amp; Jerry &lt;Ltd&gt; &quot;X&quot; &apos;Y&apos; caf&#233; &#xE9; &amp;lt;</Nm></Cdtr></RltdPties><RmtInf><Ustrd>A &amp; B &#x1F600; &#65;</Ustrd></RmtInf>",
+        ),
+      ),
+    );
+    expect(tx.counterpartyName).toBe(`Tom & Jerry <Ltd> "X" 'Y' café é &lt;`);
+    expect(tx.description).toBe("A & B \u{1F600} A");
+  });
+
+  it("rejects invalid numeric character references", () => {
+    for (const ref of ["&#0;", "&#xD800;", "&#x110000;", "&#8;"]) {
+      expect(() =>
+        parseCamt053(
+          stmt(
+            ntry("1.00", "DBIT", details(`<AddtlTxInf>a${ref}</AddtlTxInf>`)),
+          ),
+        ),
+      ).toThrow(/character reference/);
+    }
+  });
+
+  it("reports out-of-range amounts as a format error", () => {
+    expect(() =>
+      parseCamt053(stmt(ntry("99999999999999999999.00", "CRDT"))),
+    ).toThrow(/out of range/);
+    const part = (a: string) =>
+      `<TxDtls><AmtDtls><TxAmt><Amt Ccy="CHF">${a}</Amt></TxAmt></AmtDtls></TxDtls>`;
+    const big = "60000000000000.00";
+    expect(() =>
+      parseCamt053(
+        stmt(
+          ntry(big, "CRDT", `<NtryDtls>${part(big)}${part(big)}</NtryDtls>`),
+        ),
+      ),
+    ).toThrow(/out of range/);
+  });
+
+  it("uses only the TxDtls for originalAmount in split batches", () => {
+    const part = (a: string, extra = "") =>
+      `<TxDtls><Amt Ccy="CHF">${a}</Amt>${extra}</TxDtls>`;
+    const entry = ntry(
+      "100.00",
+      "DBIT",
+      `<AmtDtls><InstdAmt><Amt Ccy="USD">120.00</Amt></InstdAmt></AmtDtls><NtryDtls>${part("60.00")}${part("40.00", '<AmtDtls><TxAmt><Amt Ccy="EUR">38.00</Amt></TxAmt></AmtDtls>')}</NtryDtls>`,
+    );
+    const txs = parseCamt053(stmt(entry))[0]!.transactions;
+    expect(
+      txs.map((t) => [t.amount, t.originalAmount, t.originalCurrency]),
+    ).toEqual([
+      [-6000, null, null],
+      [-4000, -3800, "EUR"],
+    ]);
+  });
+
+  it("prefers TxDtls/Amt over AmtDtls/TxAmt when splitting", () => {
+    const part = (a: string) =>
+      `<TxDtls><Amt Ccy="CHF">${a}</Amt><AmtDtls><TxAmt><Amt Ccy="EUR">1.00</Amt></TxAmt></AmtDtls></TxDtls>`;
+    const txs = parseCamt053(
+      stmt(
+        ntry(
+          "100.00",
+          "CRDT",
+          `<NtryDtls>${part("60.00")}${part("40.00")}</NtryDtls>`,
+        ),
+      ),
+    )[0]!.transactions;
+    expect(txs.map((t) => t.amount)).toEqual([6000, 4000]);
+  });
+
+  it("never returns the statement's own IBAN as counterparty", () => {
+    const own = (role: string) =>
+      `<${role}><Nm>Me</Nm></${role}><${role}Acct><Id><IBAN>${IBAN_CH}</IBAN></Id></${role}Acct>`;
+    const both = one(
+      ntry(
+        "5.00",
+        "CRDT",
+        `<RvslInd>true</RvslInd>${details(`<RltdPties>${own("Cdtr")}<Dbtr><Nm>Somebody</Nm></Dbtr><DbtrAcct><Id><IBAN>${IBAN_DE}</IBAN></Id></DbtrAcct></RltdPties>`)}`,
+      ),
+    );
+    expect(both).toMatchObject({
+      counterpartyName: "Somebody",
+      counterpartyIban: IBAN_DE,
+    });
+    const none = one(
+      ntry(
+        "5.00",
+        "CRDT",
+        `<RvslInd>1</RvslInd>${details(`<RltdPties>${own("Cdtr")}</RltdPties>`)}`,
+      ),
+    );
+    expect(none).toMatchObject({
+      counterpartyName: null,
+      counterpartyIban: null,
+    });
+    const normal = one(
+      ntry("5.00", "DBIT", details(`<RltdPties>${own("Cdtr")}</RltdPties>`)),
+    );
+    expect(normal.counterpartyIban).toBeNull();
+  });
+
+  it("accepts RvslInd true and 1 only", () => {
+    const rev = (v: string) =>
+      one(ntry("1.00", "CRDT", `<RvslInd>${v}</RvslInd>`)).reversal;
+    expect(rev("1")).toBe(true);
+    expect(rev("true")).toBe(true);
+    expect(rev("false")).toBe(false);
+    expect(rev("0")).toBe(false);
+    expect(one(ntry("1.00", "CRDT", "<RvslInd>1</RvslInd>")).amount).toBe(100);
+  });
+
+  it("accepts URL namespaces with a suffix", () => {
+    const xml = load("v04-basic.xml").replace(
+      "urn:iso:std:iso:20022:tech:xsd:camt.053.001.04",
+      "http://www.example-clearing.test/de/camt.053.001.04.ch.02.xsd",
+    );
+    expect(parseCamt053(xml)[0]!.transactions).toHaveLength(4);
+    expect(() =>
+      parseCamt053(
+        xml.replace("camt.053.001.04.ch.02.xsd", "camt.054.001.04.ch.02.xsd"),
+      ),
+    ).toThrow(/camt\.054/);
+  });
+
+  it("treats NOTPROVIDED references as absent", () => {
+    const tx = one(
+      ntry(
+        "1.00",
+        "DBIT",
+        "<AcctSvcrRef>NOTPROVIDED</AcctSvcrRef><NtryRef>NOTPROVIDED</NtryRef>",
+      ),
+    );
+    expect(tx.externalId).toMatch(/^hash:/);
+  });
+});
