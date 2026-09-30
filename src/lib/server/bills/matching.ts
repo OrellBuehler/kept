@@ -1,4 +1,6 @@
+import { normalizeIban } from "$lib/iban";
 import { minor, type Minor } from "$lib/money";
+import { normalizeReference } from "./references";
 
 export type BillKind = "invoice" | "credit_note";
 export type ReferenceType = "QRR" | "SCOR" | "NON";
@@ -74,10 +76,6 @@ export const DEFAULT_MATCH_OPTIONS: MatchOptions = {
 };
 
 const DAY_MS = 86_400_000;
-
-function normalizeCompact(value: string): string {
-  return value.replace(/\s+/g, "").toUpperCase();
-}
 
 function addDays(date: string, days: number): string {
   const [y, m, d] = date.split("-").map(Number);
@@ -301,14 +299,17 @@ export function suggestMatches(
     const billRef =
       bill.reference !== null &&
       (bill.referenceType === "QRR" || bill.referenceType === "SCOR")
-        ? normalizeCompact(bill.reference)
+        ? normalizeReference(bill.reference)
         : "";
     if (billRef === "") continue;
     for (const { tx, free: txFree } of free) {
       if (allocated.has(`${bill.id}\u0000${tx.id}`)) continue;
       if (!sameCurrency(bill.currency, tx.currency)) continue;
       if (txFree > 0 !== wantsIncoming) continue;
-      if (tx.reference === null || normalizeCompact(tx.reference) !== billRef) {
+      if (
+        tx.reference === null ||
+        normalizeReference(tx.reference) !== billRef
+      ) {
         continue;
       }
       const abs = Math.abs(txFree);
@@ -328,7 +329,7 @@ export function suggestMatches(
   // Pass 2: creditor IBAN + amount, evaluated against what a reference match leaves over.
   for (const { bill, settled, remaining, overpaid, wantsIncoming } of open) {
     const billIban =
-      bill.creditorIban !== null ? normalizeCompact(bill.creditorIban) : "";
+      bill.creditorIban !== null ? normalizeIban(bill.creditorIban) : "";
     if (billIban === "" || bill.amount === null) continue;
     const window = paymentWindow(bill, o);
     for (const { tx, free: txFree } of free) {
@@ -337,7 +338,7 @@ export function suggestMatches(
       if (txFree > 0 !== wantsIncoming) continue;
       if (
         tx.counterpartyIban === null ||
-        normalizeCompact(tx.counterpartyIban) !== billIban
+        normalizeIban(tx.counterpartyIban) !== billIban
       ) {
         continue;
       }
