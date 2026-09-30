@@ -38,6 +38,7 @@ interface Entry {
 
 const matrix: Record<string, Entry> = {
   "/src/routes/api/health/+server.ts": { access: "public" },
+  "/src/routes/api/public/paperless/[token]/+server.ts": { access: "public" },
   "/src/routes/setup/+page.server.ts": { access: "public" },
   "/src/routes/login/+page.server.ts": { access: "public" },
   "/src/routes/logout/+page.server.ts": { access: "public" },
@@ -64,6 +65,21 @@ const matrix: Record<string, Entry> = {
     handlers: {
       load: (m, e) => m.load(e),
       "actions.changePassword": (m, e) => m.actions.changePassword(e),
+    },
+  },
+  "/src/routes/(app)/settings/paperless/+page.server.ts": {
+    access: "user",
+    handlers: {
+      load: (m, e) => m.load(e),
+      "actions.save": (m, e) => m.actions.save(e),
+      "actions.test": (m, e) => m.actions.test(e),
+      "actions.setSource": (m, e) => m.actions.setSource(e),
+      "actions.setMapping": (m, e) => m.actions.setMapping(e),
+      "actions.rotateSecret": (m, e) => m.actions.rotateSecret(e),
+      "actions.syncNow": (m, e) => m.actions.syncNow(e),
+      "actions.disconnect": (m, e) => m.actions.disconnect(e),
+      "actions.toggle": (m, e) => m.actions.toggle(e),
+      "actions.uploadReport": (m, e) => m.actions.uploadReport(e),
     },
   },
   "/src/routes/(app)/accounts/+page.server.ts": {

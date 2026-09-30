@@ -9,6 +9,7 @@ import {
   documents,
   getDB,
 } from "$lib/server/db";
+import { emitBillChanged } from "$lib/server/events";
 import { LedgerError, notFound } from "$lib/server/ledger/errors";
 import { deleteDocument } from "./documents";
 import type { MatchBill } from "./matching";
@@ -205,6 +206,7 @@ export function createBill(
     })
     .returning({ id: bills.id })
     .get();
+  emitBillChanged(userId, row.id);
   return getBill(userId, row.id);
 }
 
@@ -247,6 +249,7 @@ export function updateBill(
     .set(input)
     .where(and(eq(bills.userId, userId), eq(bills.id, id)))
     .run();
+  emitBillChanged(userId, id);
   return getBill(userId, id);
 }
 
@@ -295,6 +298,7 @@ export function setBillCancelled(
     .set({ cancelled })
     .where(and(eq(bills.userId, userId), eq(bills.id, id)))
     .run();
+  emitBillChanged(userId, id);
   return getBill(userId, id);
 }
 

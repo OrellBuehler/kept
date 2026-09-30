@@ -350,3 +350,125 @@ export const matchDismissals = sqliteTable(
     index("match_dismissals_transaction_id_idx").on(t.transactionId),
   ],
 );
+
+/** Where an integration looks for bills: a tag or a saved view. */
+export interface PaperlessBillSource {
+  kind: "tag" | "saved_view";
+  id: number;
+  label: string;
+}
+
+/** Kept field -> Paperless custom field id; `statusValues` maps a Kept status to the value written. */
+export interface PaperlessFieldMapping {
+  amount?: number | null;
+  dueDate?: number | null;
+  reference?: number | null;
+  status?: number | null;
+  statusValues?: Partial<Record<string, string>>;
+}
+
+export const PAPERLESS_DOCUMENT_STATUSES = [
+  "imported",
+  "skipped",
+  "failed",
+] as const;
+export const PAPERLESS_UPLOAD_STATUSES = [
+  "pending",
+  "success",
+  "failed",
+] as const;
+
+export const paperlessConnections = sqliteTable(
+  "paperless_connections",
+  {
+    id: id(),
+    userId: userId(),
+    baseUrl: text("base_url").notNull(),
+    /** Encrypted with `encryptSecret`; never returned to the client. */
+    tokenEncrypted: text("token_encrypted").notNull(),
+    apiVersion: integer("api_version"),
+    serverVersion: text("server_version"),
+    billSource: text("bill_source", {
+      mode: "json",
+    }).$type<PaperlessBillSource>(),
+    fieldMapping: text("field_mapping", {
+      mode: "json",
+    }).$type<PaperlessFieldMapping>(),
+    /** SHA-256 (hex) of the webhook secret; the secret itself is shown once. */
+    webhookSecretHash: text("webhook_secret_hash").notNull(),
+    /** Random, used in the webhook URL path to identify the connection. */
+    webhookToken: text("webhook_token").notNull(),
+    allowInsecureTls: integer("allow_insecure_tls", { mode: "boolean" })
+      .notNull()
+      .default(false),
+    lastSyncAt: integer("last_sync_at", { mode: "timestamp_ms" }),
+    /** Highest Paperless `modified` handled, epoch ms. */
+    lastSyncModified: integer("last_sync_modified"),
+    /** Short machine-readable reason, never document content. */
+    lastError: text("last_error"),
+    enabled: integer("enabled", { mode: "boolean" }).notNull().default(true),
+    ...timestamps,
+  },
+  (t) => [
+    uniqueIndex("paperless_connections_user_uq").on(t.userId),
+    uniqueIndex("paperless_connections_token_uq").on(t.webhookToken),
+  ],
+);
+
+export const paperlessDocuments = sqliteTable(
+  "paperless_documents",
+  {
+    id: id(),
+    userId: userId(),
+    connectionId: text("connection_id")
+      .notNull()
+      .references(() => paperlessConnections.id, { onDelete: "cascade" }),
+    paperlessId: integer("paperless_id").notNull(),
+    billId: text("bill_id").references(() => bills.id, {
+      onDelete: "set null",
+    }),
+    documentId: text("document_id").references(() => documents.id, {
+      onDelete: "set null",
+    }),
+    /** Paperless `modified` at the last handling, epoch ms. */
+    modified: integer("modified").notNull(),
+    status: text("status", { enum: PAPERLESS_DOCUMENT_STATUSES }).notNull(),
+    error: text("error"),
+    contentSha256: text("content_sha256"),
+    lastPushedHash: text("last_pushed_hash"),
+    ...timestamps,
+  },
+  (t) => [
+    uniqueIndex("paperless_documents_conn_doc_uq").on(
+      t.connectionId,
+      t.paperlessId,
+    ),
+    index("paperless_documents_user_id_idx").on(t.userId),
+    index("paperless_documents_bill_id_idx").on(t.billId),
+  ],
+);
+
+export const paperlessReportUploads = sqliteTable(
+  "paperless_report_uploads",
+  {
+    id: id(),
+    userId: userId(),
+    connectionId: text("connection_id")
+      .notNull()
+      .references(() => paperlessConnections.id, { onDelete: "cascade" }),
+    reportKind: text("report_kind").notNull(),
+    sha256: text("sha256").notNull(),
+    paperlessDocumentId: integer("paperless_document_id"),
+    taskId: text("task_id"),
+    status: text("status", { enum: PAPERLESS_UPLOAD_STATUSES }).notNull(),
+    error: text("error"),
+    ...timestamps,
+  },
+  (t) => [
+    uniqueIndex("paperless_report_uploads_conn_sha_uq").on(
+      t.connectionId,
+      t.sha256,
+    ),
+    index("paperless_report_uploads_user_id_idx").on(t.userId),
+  ],
+);
