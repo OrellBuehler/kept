@@ -1,0 +1,12 @@
+Example Bank - Account export
+Account;Example Current Account
+Period;01.03.2024 - 31.03.2024
+
+Date;Text;Amount
+01.03.2024;Opening deposit;1000.00
+15.03.2024;Sample Cafe;-12.40
+
+20.03.2024;Demo Insurance;-45.00
+
+Total credits;1000.00
+Total debits;-57.40

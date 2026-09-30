@@ -72,6 +72,7 @@
     "@napi-rs/canvas": "^1.0.9",
     "drizzle-orm": "^0.45.3",
     "fast-xml-parser": "^5.11.2",
+    "fflate": "^0.8.3",
     "pdfmake": "^0.3.11",
     "unpdf": "^1.8.1",
     "zod": "^4.6.5",

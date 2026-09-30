@@ -1,0 +1,5 @@
+Transaction Date,Merchant,Amount,Currency,Original Amount,Original Currency
+2024-06-01,Sample Shop,45.90,CHF,,
+2024-06-03,Demo Travel Inc,92.15,CHF,100.00,USD
+2024-06-10,Payment received,-200.00,CHF,,
+2024-06-11,Example Hotel,55.00,CHF,51.25,EUR

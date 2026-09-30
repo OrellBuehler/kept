@@ -1,0 +1,5 @@
+Date,Amount,Type,Text
+2024-05-01,2500.00,CRDT,Example Employer AG
+2024-05-02,19.90,DBIT,Sample Cafe
+2024-05-03,-5.00,DBIT,Sample Shop
+2024-05-04,0.00,CRDT,Zero booking

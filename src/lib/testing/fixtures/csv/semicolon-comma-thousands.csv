@@ -1,0 +1,5 @@
+Buchungsdatum;Valuta;Text;Betrag;Waehrung
+01.03.2024;01.03.2024;Miete Maerz;-1'850,00;CHF
+05.03.2024;05.03.2024;Gehalt;12'345,60;CHF
+07.03.2024;08.03.2024;Kleinbetrag;-0,05;CHF
+09.03.2024;09.03.2024;Erstattung;1'000'000,00;CHF

@@ -1,0 +1,6 @@
+Date,Text,Amount
+2024-10-01,Fine row,10.00
+2024-13-45,Invalid date,10.00
+2024-10-03,Invalid amount,12x.00
+2024-10-04,Too many decimals,1.234
+2024-10-05,Fine again,-3.00
