@@ -1,0 +1,99 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Document xmlns="urn:iso:std:iso:20022:tech:xsd:camt.053.001.04">
+  <BkToCstmrStmt>
+    <GrpHdr>
+      <MsgId>EXAMPLE-MSG-0001</MsgId>
+      <CreDtTm>2024-04-01T06:00:00</CreDtTm>
+    </GrpHdr>
+    <Stmt>
+      <Id>STMT-2024-03</Id>
+      <ElctrncSeqNb>3</ElctrncSeqNb>
+      <CreDtTm>2024-04-01T06:00:00</CreDtTm>
+      <FrToDt>
+        <FrDtTm>2024-03-01T00:00:00</FrDtTm>
+        <ToDtTm>2024-03-31T23:59:59</ToDtTm>
+      </FrToDt>
+      <Acct>
+        <Id><IBAN>CH9300762011623852957</IBAN></Id>
+        <Ccy>CHF</Ccy>
+        <Svcr><FinInstnId><Nm>Example Bank</Nm></FinInstnId></Svcr>
+      </Acct>
+      <Bal>
+        <Tp><CdOrPrtry><Cd>OPBD</Cd></CdOrPrtry></Tp>
+        <Amt Ccy="CHF">1000.00</Amt>
+        <CdtDbtInd>CRDT</CdtDbtInd>
+        <Dt><Dt>2024-03-01</Dt></Dt>
+      </Bal>
+      <Bal>
+        <Tp><CdOrPrtry><Cd>CLBD</Cd></CdOrPrtry></Tp>
+        <Amt Ccy="CHF">2331.45</Amt>
+        <CdtDbtInd>CRDT</CdtDbtInd>
+        <Dt><Dt>2024-03-31</Dt></Dt>
+      </Bal>
+      <Ntry>
+        <NtryRef>1</NtryRef>
+        <Amt Ccy="CHF">1500.00</Amt>
+        <CdtDbtInd>CRDT</CdtDbtInd>
+        <Sts>BOOK</Sts>
+        <BookgDt><Dt>2024-03-04</Dt></BookgDt>
+        <ValDt><Dt>2024-03-04</Dt></ValDt>
+        <AcctSvcrRef>EXREF-0001</AcctSvcrRef>
+        <NtryDtls>
+          <TxDtls>
+            <RltdPties>
+              <Dbtr><Nm>Jane Example</Nm></Dbtr>
+              <DbtrAcct><Id><IBAN>DE89370400440532013000</IBAN></Id></DbtrAcct>
+            </RltdPties>
+            <RmtInf>
+              <Ustrd>Invoice 2024-001</Ustrd>
+              <Ustrd>March consulting</Ustrd>
+            </RmtInf>
+          </TxDtls>
+        </NtryDtls>
+      </Ntry>
+      <Ntry>
+        <NtryRef>2</NtryRef>
+        <Amt Ccy="CHF">123.45</Amt>
+        <CdtDbtInd>DBIT</CdtDbtInd>
+        <Sts>BOOK</Sts>
+        <BookgDt><Dt>2024-03-10</Dt></BookgDt>
+        <ValDt><Dt>2024-03-11</Dt></ValDt>
+        <AcctSvcrRef>EXREF-0002</AcctSvcrRef>
+        <NtryDtls>
+          <TxDtls>
+            <RltdPties>
+              <Cdtr><Nm>Example Energy Ltd</Nm></Cdtr>
+              <CdtrAcct><Id><IBAN>GB82 WEST 1234 5698 7654 32</IBAN></Id></CdtrAcct>
+            </RltdPties>
+            <RmtInf><Ustrd>Energy March</Ustrd></RmtInf>
+          </TxDtls>
+        </NtryDtls>
+      </Ntry>
+      <Ntry>
+        <NtryRef>3</NtryRef>
+        <Amt Ccy="CHF">0.00</Amt>
+        <CdtDbtInd>DBIT</CdtDbtInd>
+        <Sts>BOOK</Sts>
+        <BookgDt><Dt>2024-03-15</Dt></BookgDt>
+        <ValDt><Dt>2024-03-15</Dt></ValDt>
+        <AcctSvcrRef>EXREF-0003</AcctSvcrRef>
+        <AddtlNtryInf>Account fee waived</AddtlNtryInf>
+      </Ntry>
+      <Ntry>
+        <NtryRef>4</NtryRef>
+        <Amt Ccy="CHF">45.10</Amt>
+        <CdtDbtInd>DBIT</CdtDbtInd>
+        <Sts>BOOK</Sts>
+        <BookgDt><Dt>2024-03-20</Dt></BookgDt>
+        <ValDt><Dt>2024-03-20</Dt></ValDt>
+        <AcctSvcrRef>EXREF-0004</AcctSvcrRef>
+        <NtryDtls>
+          <TxDtls>
+            <RltdPties><Cdtr><Nm>Sample Insurance AG</Nm></Cdtr></RltdPties>
+            <AddtlTxInf>Premium Q1</AddtlTxInf>
+          </TxDtls>
+        </NtryDtls>
+      </Ntry>
+    </Stmt>
+  </BkToCstmrStmt>
+</Document>

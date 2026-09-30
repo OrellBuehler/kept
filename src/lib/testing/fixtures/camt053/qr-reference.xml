@@ -1,0 +1,101 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Document xmlns="urn:iso:std:iso:20022:tech:xsd:camt.053.001.04">
+  <BkToCstmrStmt>
+    <GrpHdr>
+      <MsgId>EXAMPLE-MSG-QR</MsgId>
+      <CreDtTm>2024-08-01T06:00:00</CreDtTm>
+    </GrpHdr>
+    <Stmt>
+      <Id>STMT-QR-1</Id>
+      <Acct>
+        <Id><IBAN>CH4431999123000889012</IBAN></Id>
+        <Ccy>CHF</Ccy>
+      </Acct>
+      <Ntry>
+        <Amt Ccy="CHF">10.00</Amt>
+        <CdtDbtInd>CRDT</CdtDbtInd>
+        <Sts>BOOK</Sts>
+        <BookgDt><Dt>2024-07-02</Dt></BookgDt>
+        <AcctSvcrRef>QR-1</AcctSvcrRef>
+        <NtryDtls>
+          <TxDtls>
+            <RltdPties><Dbtr><Nm>Jane Example</Nm></Dbtr></RltdPties>
+            <RmtInf>
+              <Strd>
+                <CdtrRefInf>
+                  <Tp><CdOrPrtry><Prtry>QRR</Prtry></CdOrPrtry></Tp>
+                  <Ref>21 00000 00003 13947 14300 09017</Ref>
+                </CdtrRefInf>
+              </Strd>
+            </RmtInf>
+          </TxDtls>
+        </NtryDtls>
+      </Ntry>
+      <Ntry>
+        <Amt Ccy="CHF">20.00</Amt>
+        <CdtDbtInd>CRDT</CdtDbtInd>
+        <Sts>BOOK</Sts>
+        <BookgDt><Dt>2024-07-03</Dt></BookgDt>
+        <AcctSvcrRef>QR-2</AcctSvcrRef>
+        <NtryDtls>
+          <TxDtls>
+            <RltdPties><Dbtr><Nm>Jane Example</Nm></Dbtr></RltdPties>
+            <RmtInf>
+              <Strd>
+                <CdtrRefInf>
+                  <Tp><CdOrPrtry><Cd>SCOR</Cd></CdOrPrtry><Issr>ISO</Issr></Tp>
+                  <Ref>RF30 2024 INV0 042</Ref>
+                </CdtrRefInf>
+              </Strd>
+            </RmtInf>
+          </TxDtls>
+        </NtryDtls>
+      </Ntry>
+      <Ntry>
+        <Amt Ccy="CHF">30.00</Amt>
+        <CdtDbtInd>CRDT</CdtDbtInd>
+        <Sts>BOOK</Sts>
+        <BookgDt><Dt>2024-07-04</Dt></BookgDt>
+        <AcctSvcrRef>QR-3</AcctSvcrRef>
+        <NtryDtls>
+          <TxDtls>
+            <RltdPties><Dbtr><Nm>Jane Example</Nm></Dbtr></RltdPties>
+            <RmtInf>
+              <Strd><CdtrRefInf><Ref>000000000000000000000001236</Ref></CdtrRefInf></Strd>
+            </RmtInf>
+          </TxDtls>
+        </NtryDtls>
+      </Ntry>
+      <Ntry>
+        <Amt Ccy="CHF">40.00</Amt>
+        <CdtDbtInd>CRDT</CdtDbtInd>
+        <Sts>BOOK</Sts>
+        <BookgDt><Dt>2024-07-05</Dt></BookgDt>
+        <AcctSvcrRef>QR-4</AcctSvcrRef>
+        <NtryDtls>
+          <TxDtls>
+            <RltdPties><Dbtr><Nm>Jane Example</Nm></Dbtr></RltdPties>
+            <RmtInf>
+              <Strd><CdtrRefInf><Ref>RF18 5390 0754 7034</Ref></CdtrRefInf></Strd>
+            </RmtInf>
+          </TxDtls>
+        </NtryDtls>
+      </Ntry>
+      <Ntry>
+        <Amt Ccy="CHF">50.00</Amt>
+        <CdtDbtInd>CRDT</CdtDbtInd>
+        <Sts>BOOK</Sts>
+        <BookgDt><Dt>2024-07-06</Dt></BookgDt>
+        <AcctSvcrRef>QR-5</AcctSvcrRef>
+        <NtryDtls>
+          <TxDtls>
+            <RltdPties><Dbtr><Nm>Jane Example</Nm></Dbtr></RltdPties>
+            <RmtInf>
+              <Strd><CdtrRefInf><Ref>ABC-123</Ref></CdtrRefInf></Strd>
+            </RmtInf>
+          </TxDtls>
+        </NtryDtls>
+      </Ntry>
+    </Stmt>
+  </BkToCstmrStmt>
+</Document>
