@@ -77,6 +77,42 @@ const matrix: Record<string, Entry> = {
       "actions.deleteSnapshot": (m, e) => m.actions.deleteSnapshot(e),
     },
   },
+  "/src/routes/(app)/import/+page.server.ts": {
+    access: "user",
+    handlers: {
+      load: (m, e) => m.load(e),
+      "actions.upload": (m, e) => m.actions.upload(e),
+    },
+  },
+  "/src/routes/(app)/import/[pendingId]/+page.server.ts": {
+    access: "user",
+    handlers: {
+      load: (m, e) => m.load(e),
+      "actions.confirm": (m, e) => m.actions.confirm(e),
+      "actions.cancel": (m, e) => m.actions.cancel(e),
+    },
+  },
+  "/src/routes/(app)/import/[pendingId]/mapping/+page.server.ts": {
+    access: "user",
+    handlers: {
+      load: (m, e) => m.load(e),
+      "actions.save": (m, e) => m.actions.save(e),
+    },
+  },
+  "/src/routes/(app)/accounts/[id]/imports/+page.server.ts": {
+    access: "user",
+    handlers: {
+      load: (m, e) => m.load(e),
+      "actions.undo": (m, e) => m.actions.undo(e),
+    },
+  },
+  "/src/routes/api/imports/[pendingId]/preview/+server.ts": {
+    access: "user",
+    handlers: {
+      POST: (m, e) =>
+        (m as unknown as { POST: (event: never) => unknown }).POST(e),
+    },
+  },
   "/src/routes/(app)/admin/users/+page.server.ts": {
     access: "admin",
     handlers: {
