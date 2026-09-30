@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { ACCOUNT_TYPES } from "$lib/ledger-types";
 import { currencyExponent, minor, parseAmount, type Minor } from "$lib/money";
-import { isValidIban, normalizeIban } from "./iban-compat";
+import { isValidIban, normalizeIban } from "$lib/iban";
 
 /** Blank or missing form fields become null; everything else goes through `schema`. */
 function optionalOf<S extends z.ZodType>(schema: S) {

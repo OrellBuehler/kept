@@ -11,7 +11,7 @@ import {
 } from "$lib/server/db";
 import { currentBalance } from "./balances";
 import { LedgerError, notFound } from "./errors";
-import { maskIban } from "./iban-compat";
+import { maskIban } from "$lib/iban";
 import type { AccountInput } from "./schemas";
 
 export interface AccountView {
