@@ -84,10 +84,9 @@ function loadAllocationRows(userId: string, billId?: string): AllocationRow[] {
 
 function withStatus(
   bill: BillView,
-  allocations: readonly AllocationRow[],
+  mine: readonly AllocationRow[],
   today: string,
 ): BillWithStatus {
-  const mine = allocations.filter((a) => a.billId === bill.id);
   const { status, settled, remaining } = computeBillStatus(
     toMatchBill(bill),
     mine,
@@ -112,8 +111,15 @@ export function billViews(
   userId: string,
   { today }: { today: string },
 ): BillWithStatus[] {
-  const allocations = loadAllocationRows(userId);
-  return listBills(userId).map((b) => withStatus(b, allocations, today));
+  const byBill = new Map<string, AllocationRow[]>();
+  for (const a of loadAllocationRows(userId)) {
+    const list = byBill.get(a.billId);
+    if (list) list.push(a);
+    else byBill.set(a.billId, [a]);
+  }
+  return listBills(userId).map((b) =>
+    withStatus(b, byBill.get(b.id) ?? [], today),
+  );
 }
 
 export function billView(
