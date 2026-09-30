@@ -1,0 +1,30 @@
+export function hashPassword(password: string): Promise<string> {
+  return Bun.password.hash(password, { algorithm: "argon2id" });
+}
+
+export async function verifyPassword(
+  password: string,
+  hash: string,
+): Promise<boolean> {
+  try {
+    return await Bun.password.verify(password, hash);
+  } catch (err) {
+    // A corrupt stored hash must not authenticate; treat it as a mismatch.
+    console.error(
+      "Password verification failed on a malformed hash:",
+      err instanceof Error ? err.message : "unknown error",
+    );
+    return false;
+  }
+}
+
+let dummyHash: Promise<string> | null = null;
+
+/**
+ * Verify against a throwaway hash so unknown usernames cost the same as
+ * known ones.
+ */
+export async function verifyAgainstDummy(password: string): Promise<void> {
+  dummyHash ??= hashPassword(crypto.randomUUID());
+  await verifyPassword(password, await dummyHash);
+}

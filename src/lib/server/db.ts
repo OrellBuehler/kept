@@ -5,25 +5,36 @@ import { mkdirSync } from "node:fs";
 import { dirname, join } from "node:path";
 import * as schema from "./schema";
 
-type DB = ReturnType<typeof drizzle<typeof schema>>;
+export type DB = ReturnType<typeof drizzle<typeof schema>>;
 
 let db: DB | null = null;
 
+export function openDatabase(path: string): DB {
+  const memory = path === ":memory:";
+  if (!memory) mkdirSync(dirname(path), { recursive: true });
+  const client = new Database(path, { create: true, strict: true });
+  if (!memory) client.exec("PRAGMA journal_mode = WAL;");
+  client.exec("PRAGMA foreign_keys = ON;");
+  client.exec("PRAGMA busy_timeout = 5000;");
+  return drizzle({ client, schema });
+}
+
+export function migrateDatabase(target: DB): void {
+  migrate(target, { migrationsFolder: join(process.cwd(), "drizzle") });
+}
+
 export function getDB(): DB {
-  if (!db) {
-    const path = process.env.DATABASE_PATH ?? "./data/kept.db";
-    mkdirSync(dirname(path), { recursive: true });
-    const client = new Database(path, { create: true, strict: true });
-    client.exec("PRAGMA journal_mode = WAL;");
-    client.exec("PRAGMA foreign_keys = ON;");
-    client.exec("PRAGMA busy_timeout = 5000;");
-    db = drizzle({ client, schema });
-  }
+  if (!db) db = openDatabase(process.env.DATABASE_PATH ?? "./data/kept.db");
   return db;
 }
 
+/** Replace the process-wide database. Tests only; pass null to reset. */
+export function setDB(next: DB | null): void {
+  db = next;
+}
+
 export function runMigrations(): void {
-  migrate(getDB(), { migrationsFolder: join(process.cwd(), "drizzle") });
+  migrateDatabase(getDB());
 }
 
 export * from "./schema";
