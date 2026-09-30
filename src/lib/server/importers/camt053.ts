@@ -21,11 +21,14 @@ import {
  * Rules
  * -----
  * Sign:      from CdtDbtInd only (CRDT +, DBIT -), for balances and entries.
- * Reversal:  RvslInd=true marks an entry that cancels an earlier booking. Per the ISO 20022
- *            message definition the indicator then describes the booking being reversed
- *            ("a reversal of a debit" is DBIT + RvslInd), so the effect on the balance is the
- *            opposite: DBIT+RvslInd credits the account, CRDT+RvslInd debits it. The amount is
- *            therefore flipped relative to CdtDbtInd and `reversal: true` is set.
+ * Reversal:  ISO 20022 Ntry/RvslInd usage rule: "This element should only be present if the
+ *            entry is the result of a reversal. If the CreditDebitIndicator is CRDT and
+ *            ReversalIndicator is Yes, the original operation was a debit entry. If the
+ *            CreditDebitIndicator is DBIT and ReversalIndicator is Yes, the original operation
+ *            was a credit entry." So CdtDbtInd is the direction of the reversal entry itself:
+ *            the sign comes from CdtDbtInd unchanged and `reversal: true` is only a flag.
+ *            Consequently the original payment's roles are the opposite of the entry's
+ *            direction (a CRDT reversal undoes a debit, so the original creditor is in Cdtr).
  * Batches:   an Ntry with >= 2 TxDtls is split into one transaction per TxDtls only when every
  *            TxDtls carries its own amount (AmtDtls/TxAmt/Amt, else Amt) in the booked
  *            currency and those amounts sum exactly to the entry amount. Otherwise (missing or
@@ -33,10 +36,10 @@ import {
  *            because it is ambiguous which TxDtls would describe it, counterparty, reference and
  *            remittance text of the individual TxDtls are not used (entry-level AddtlNtryInf
  *            only). An Ntry with a single TxDtls is one transaction enriched with its details.
- * Counterparty: DBIT -> Cdtr/CdtrAcct, CRDT -> Dbtr/DbtrAcct. For reversals the parties are
- *            sometimes reported with swapped roles, so when the expected party has neither name
- *            nor IBAN the other role is used. Not done for normal entries (the other party
- *            would be the account holder).
+ * Counterparty: DBIT -> Cdtr/CdtrAcct, CRDT -> Dbtr/DbtrAcct. For reversals the original
+ *            operation's role is tried first (CRDT reversal -> Cdtr, DBIT reversal -> Dbtr), then
+ *            the entry-direction role. Normal entries never fall back (the other party would be
+ *            the account holder).
  * externalId: see `assignExternalIds`.
  *
  * Only booked entries (Sts BOOK) are imported; PDNG/INFO are skipped.
@@ -286,9 +289,15 @@ function readParty(
 }
 
 function readCounterparty(tx: unknown, credit: boolean, reversal: boolean) {
-  const primary = readParty(tx, credit ? "Dbtr" : "Cdtr");
-  if (reversal && !primary.name && !primary.iban)
-    return readParty(tx, credit ? "Cdtr" : "Dbtr");
+  const entryRole = credit ? ("Dbtr" as const) : ("Cdtr" as const);
+  const otherRole = credit ? ("Cdtr" as const) : ("Dbtr" as const);
+  // A reversal undoes an original operation of the opposite direction, so the original
+  // counterparty is usually reported in the other role; banks are inconsistent, so try both.
+  const [first, second] = reversal
+    ? [otherRole, entryRole]
+    : [entryRole, entryRole];
+  const primary = readParty(tx, first);
+  if (reversal && !primary.name && !primary.iban) return readParty(tx, second);
   return primary;
 }
 
@@ -296,7 +305,6 @@ function readOriginal(
   sources: unknown[],
   booked: Amount,
   credit: boolean,
-  reversal: boolean,
 ): { amount: Minor; currency: string } | null {
   for (const source of sources) {
     for (const path of [
@@ -306,7 +314,7 @@ function readOriginal(
       const amt = readAmount(at(source, ...path), "Original amount");
       if (amt && amt.currency !== booked.currency)
         return {
-          amount: applySign(amt.value, credit !== reversal),
+          amount: applySign(amt.value, credit),
           currency: amt.currency,
         };
     }
@@ -349,7 +357,7 @@ function parseEntry(entry: Rec, accountKey: string, n: number): Draft[] {
   const bookingDate = readDate(entry["BookgDt"], `${what} booking`);
   if (!bookingDate) fail(`${what} has no booking date (BookgDt)`);
   const valueDate = readDate(entry["ValDt"], `${what} value`);
-  const signed = applySign(booked.value, credit !== reversal);
+  const signed = applySign(booked.value, credit);
 
   const txs = list(entry, "NtryDtls").flatMap((d) => list(d, "TxDtls"));
   const entryRef = text(entry["AcctSvcrRef"]);
@@ -374,7 +382,7 @@ function parseEntry(entry: Rec, accountKey: string, n: number): Draft[] {
 
   return parts.map((tx, index): Draft => {
     const amount: Amount = split ? txAmount(tx)! : booked;
-    const value = applySign(amount.value, credit !== reversal);
+    const value = applySign(amount.value, credit);
     const cp =
       tx === null
         ? { name: null, iban: null }
@@ -388,7 +396,6 @@ function parseEntry(entry: Rec, accountKey: string, n: number): Draft[] {
       tx === null ? [entry] : [tx, entry],
       amount,
       credit,
-      reversal,
     );
     const transaction = {
       bookingDate,

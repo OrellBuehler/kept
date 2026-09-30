@@ -317,16 +317,33 @@ describe("empty statement", () => {
 describe("reversals", () => {
   const [s] = parse("reversal.xml");
 
-  it("flips the sign relative to the indicator and sets reversal", () => {
+  it("takes the sign from the indicator and flags the reversal", () => {
     expect(s!.transactions.map((t) => [t.amount, t.reversal])).toEqual([
       [20000, false],
-      [8000, true],
-      [-3000, true],
+      [-8000, true],
+      [3000, true],
     ]);
     expectReconciles(s!);
   });
 
-  it("keeps the counterparty for original and swapped roles", () => {
+  it("uses the original operation's role, falling back to the other", () => {
+    const only = (role: string, ind: string) =>
+      parseCamt053(
+        stmt(
+          ntry(
+            "5.00",
+            ind,
+            `<RvslInd>true</RvslInd><NtryDtls><TxDtls><RltdPties><${role}><Nm>Somebody</Nm></${role}></RltdPties></TxDtls></NtryDtls>`,
+          ),
+        ),
+      )[0]!.transactions[0]!;
+    expect(only("Cdtr", "CRDT").counterpartyName).toBe("Somebody");
+    expect(only("Dbtr", "CRDT").counterpartyName).toBe("Somebody");
+    expect(only("Dbtr", "DBIT").counterpartyName).toBe("Somebody");
+    expect(only("Cdtr", "DBIT").counterpartyName).toBe("Somebody");
+  });
+
+  it("reads the counterparty of the reversed payment", () => {
     expect(s!.transactions[1]).toMatchObject({
       counterpartyName: "Example Energy Ltd",
       counterpartyIban: IBAN_GB,
