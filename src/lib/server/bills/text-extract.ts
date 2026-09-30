@@ -240,6 +240,9 @@ function findDueDate(text: string): string | null {
   return null;
 }
 
+const NOT_A_NAME =
+  /\d[\d'\u2019 ]*[.,]\d{2}\b|\b(?:CHF|EUR|USD|GBP)\b|\b(?:total|summe|gesamt|betrag|amount|montant|importo|saldo|mwst|tva|vat)\b/iu;
+
 function findCreditorName(text: string, iban: string): string | null {
   const lines = text.split(/\r?\n/).map((l) => l.trim());
   const at = lines.findIndex(
@@ -249,7 +252,7 @@ function findCreditorName(text: string, iban: string): string | null {
   for (let i = at + 1; i < Math.min(lines.length, at + 4); i++) {
     const line = lines[i];
     if (line === "") continue;
-    if (NON_NAME_LABEL.test(line)) return null;
+    if (NON_NAME_LABEL.test(line) || NOT_A_NAME.test(line)) return null;
     if (/\p{L}/u.test(line) && line.length <= 70 && !/^\d/.test(line))
       return line;
     return null;

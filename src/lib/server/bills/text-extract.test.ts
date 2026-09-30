@@ -43,6 +43,20 @@ describe("extractFromText", () => {
     });
   });
 
+  it("never takes a line with an amount, currency or amount keyword as creditor", () => {
+    for (const line of [
+      "Total CHF 89.90",
+      "CHF 89.90",
+      "Summe 89.90",
+      "Amount due",
+      "Betrag",
+      "EUR",
+    ]) {
+      const text = ["Zahlbar an:", formatIban(EXAMPLE_IBAN), line].join("\n");
+      expect(extractFromText(text).fields.creditorName).toBeNull();
+    }
+  });
+
   it("reads French, Italian and English labels", () => {
     expect(
       extractFromText("Montant à payer: 1'234.50 EUR\nÉchéance: 05.06.2031")
