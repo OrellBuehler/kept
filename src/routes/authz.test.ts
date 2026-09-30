@@ -77,6 +77,43 @@ const matrix: Record<string, Entry> = {
       "actions.deleteSnapshot": (m, e) => m.actions.deleteSnapshot(e),
     },
   },
+  "/src/routes/(app)/bills/+page.server.ts": {
+    access: "user",
+    handlers: {
+      load: (m, e) => m.load(e),
+      "actions.confirmSuggestion": (m, e) => m.actions.confirmSuggestion(e),
+      "actions.dismissSuggestion": (m, e) => m.actions.dismissSuggestion(e),
+    },
+  },
+  "/src/routes/(app)/bills/new/+page.server.ts": {
+    access: "user",
+    handlers: {
+      load: (m, e) => m.load(e),
+      "actions.upload": (m, e) => m.actions.upload(e),
+      "actions.create": (m, e) => m.actions.create(e),
+    },
+  },
+  "/src/routes/(app)/bills/[id]/+page.server.ts": {
+    access: "user",
+    handlers: {
+      load: (m, e) => m.load(e),
+      "actions.update": (m, e) => m.actions.update(e),
+      "actions.cancel": (m, e) => m.actions.cancel(e),
+      "actions.uncancel": (m, e) => m.actions.uncancel(e),
+      "actions.delete": (m, e) => m.actions.delete(e),
+      "actions.allocate": (m, e) => m.actions.allocate(e),
+      "actions.removeAllocation": (m, e) => m.actions.removeAllocation(e),
+      "actions.dismissSuggestion": (m, e) => m.actions.dismissSuggestion(e),
+      "actions.attachDocument": (m, e) => m.actions.attachDocument(e),
+      "actions.reextract": (m, e) => m.actions.reextract(e),
+    },
+  },
+  "/src/routes/(app)/bills/[id]/document/+server.ts": {
+    access: "user",
+    handlers: {
+      GET: (m, e) => (m as never as { GET: (e: never) => unknown }).GET(e),
+    },
+  },
   "/src/routes/(app)/admin/users/+page.server.ts": {
     access: "admin",
     handlers: {
