@@ -158,3 +158,41 @@ export function billToFormValues(bill: {
     taxYear: bill.taxYear === null ? "" : String(bill.taxYear),
   };
 }
+
+const PDF_KEYS = [
+  "creditorName",
+  "creditorIban",
+  "amount",
+  "issueDate",
+  "dueDate",
+  "reference",
+  "referenceType",
+  "message",
+  "invoiceNumber",
+] as const;
+
+/**
+ * Overlays the values read from a PDF onto the stored bill for review.
+ * Only fields the PDF actually yielded replace stored ones; kind is never
+ * changed, and currency only from a QR code (the text fallback defaults it)
+ * and only while no payments are matched.
+ */
+export function mergeRereadDraft(
+  base: BillFormValues,
+  draft: Partial<BillFormValues>,
+  opts: { source: "qr" | "text" | "none"; hasAllocations: boolean },
+): BillFormValues {
+  const out = { ...base };
+  for (const key of PDF_KEYS) {
+    const value = draft[key];
+    if (value !== undefined && value !== "") {
+      (out as Record<string, string>)[key] = value;
+    }
+  }
+  if (out.creditorIban) out.creditorIban = formatIban(out.creditorIban);
+  if (out.reference) out.reference = formatReference(out.reference);
+  if (opts.source === "qr" && !opts.hasAllocations && draft.currency) {
+    out.currency = draft.currency;
+  }
+  return out;
+}

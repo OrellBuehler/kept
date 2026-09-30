@@ -29,6 +29,7 @@
   import {
     KIND_LABELS,
     billToFormValues,
+    mergeRereadDraft,
     dueHint,
     formatReference,
     type BillFormValues,
@@ -59,6 +60,8 @@
   let deleteOpen = $state(false);
   let showIban = $state(false);
   let reviewDraft = $state<Partial<BillFormValues> | null>(null);
+  let reviewSource = $state<"qr" | "text" | "none">("none");
+  let editKey = $state(0);
   let reextracting = $state(false);
   let reextractError = $state("");
   let togglingCancel = $state(false);
@@ -67,21 +70,17 @@
   const formValues = $derived.by((): BillFormValues => {
     const base = billToFormValues(bill);
     if (!reviewDraft) return base;
-    return {
-      ...base,
-      ...reviewDraft,
-      creditorIban: reviewDraft.creditorIban
-        ? formatIban(reviewDraft.creditorIban)
-        : "",
-      reference: reviewDraft.reference
-        ? formatReference(reviewDraft.reference)
-        : "",
-    };
+    return mergeRereadDraft(base, reviewDraft, {
+      source: reviewSource,
+      hasAllocations: bill.allocationCount > 0,
+    });
   });
 
-  $effect(() => {
-    if (!editOpen) reviewDraft = null;
-  });
+  function openEdit() {
+    reviewDraft = null;
+    editKey++;
+    editOpen = true;
+  }
 
   const desktop = new MediaQuery("min-width: 768px");
   let mounted = $state(false);
@@ -192,7 +191,7 @@
       </dl>
 
       <div class="flex flex-wrap gap-2">
-        <Button variant="outline" size="sm" onclick={() => (editOpen = true)}>
+        <Button variant="outline" size="sm" onclick={openEdit}>
           <PencilIcon /> Edit
         </Button>
         <form
@@ -227,6 +226,12 @@
                 reextracting = false;
                 if (result.type === "success" && result.data?.draft) {
                   reviewDraft = result.data.draft as Partial<BillFormValues>;
+                  reviewSource =
+                    (
+                      result.data.extraction as
+                        { source?: "qr" | "text" | "none" } | undefined
+                    )?.source ?? "none";
+                  editKey++;
                   editOpen = true;
                 } else if (result.type === "failure") {
                   const errors = (result.data?.errors ?? {}) as Record<
@@ -288,6 +293,8 @@
               <button
                 type="button"
                 class="text-muted-foreground text-xs underline"
+                aria-pressed={showIban}
+                aria-label={showIban ? "Hide full IBAN" : "Show full IBAN"}
                 onclick={() => (showIban = !showIban)}
               >
                 {showIban ? "hide" : "show"}
@@ -529,11 +536,12 @@
       <Alert.Root>
         <RefreshCwIcon />
         <Alert.Description>
-          Review the values below. Fields the PDF did not provide were cleared.
+          Review the values below. Fields the PDF did not provide keep their
+          current values.
         </Alert.Description>
       </Alert.Root>
     {/if}
-    {#key reviewDraft}
+    {#key editKey}
       <BillForm
         action="?/update"
         values={formValues}

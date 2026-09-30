@@ -69,7 +69,10 @@
   class="grid gap-2"
   use:enhance={submitHandler({
     setPending: (v) => (pending = v),
-    setErrors: (e) => (errors = e),
+    setErrors: (e) => {
+      errors = e;
+      if (Object.keys(e).length > 0 && input) input.value = "";
+    },
     knownFields: ["file"],
     successMessage,
     onSuccess: () => {
@@ -94,7 +97,7 @@
   >
     {#if pending}
       <Spinner class="size-6" />
-      <span class="text-sm font-medium" role="status">{pendingLabel}</span>
+      <span class="text-sm font-medium" aria-hidden="true">{pendingLabel}</span>
     {:else}
       <FileUpIcon class="text-muted-foreground size-6" />
       <span class="text-sm font-medium">{title}</span>
@@ -111,7 +114,11 @@
       onchange={submitIfValid}
     />
   </label>
-  {#if messages.length}
-    <p class="text-destructive text-sm" role="alert">{messages.join(" ")}</p>
-  {/if}
+  <div aria-live="polite" role="status" class="text-sm">
+    {#if pending}
+      <span class="sr-only">{pendingLabel}</span>
+    {:else if messages.length}
+      <p class="text-destructive">{messages.join(" ")}</p>
+    {/if}
+  </div>
 </form>

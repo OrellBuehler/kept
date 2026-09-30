@@ -1,5 +1,12 @@
+import { formatIban } from "$lib/iban";
+import { EXAMPLE_IBAN } from "$lib/testing/fixtures/bill-identifiers";
 import { describe, expect, it } from "vitest";
-import { dueHint, formatReference } from "./bill-display";
+import {
+  dueHint,
+  emptyBillValues,
+  formatReference,
+  mergeRereadDraft,
+} from "./bill-display";
 
 describe("dueHint", () => {
   const base = { overdue: false, status: "open" as const };
@@ -33,5 +40,56 @@ describe("formatReference", () => {
   });
   it("leaves anything else alone", () => {
     expect(formatReference(" abc ")).toBe("abc");
+  });
+});
+
+describe("mergeRereadDraft", () => {
+  const base = {
+    ...emptyBillValues(),
+    kind: "credit_note" as const,
+    creditorName: "Stored",
+    notes: "keep me",
+    expectedAccountId: "acc",
+    taxYear: "2025",
+    dueDate: "2026-01-01",
+  };
+  const draft = {
+    kind: "invoice" as const,
+    creditorName: "From PDF",
+    dueDate: "",
+    currency: "EUR",
+    amount: "12.50",
+    creditorIban: EXAMPLE_IBAN.toLowerCase(),
+  };
+
+  it("never changes kind and keeps non-PDF fields", () => {
+    const out = mergeRereadDraft(base, draft, {
+      source: "qr",
+      hasAllocations: false,
+    });
+    expect(out.kind).toBe("credit_note");
+    expect(out.notes).toBe("keep me");
+    expect(out.expectedAccountId).toBe("acc");
+    expect(out.taxYear).toBe("2025");
+  });
+  it("overlays found fields and keeps stored ones for empty values", () => {
+    const out = mergeRereadDraft(base, draft, {
+      source: "qr",
+      hasAllocations: false,
+    });
+    expect(out.creditorName).toBe("From PDF");
+    expect(out.amount).toBe("12.50");
+    expect(out.dueDate).toBe("2026-01-01");
+    expect(out.creditorIban).toBe(formatIban(EXAMPLE_IBAN));
+  });
+  it("takes the currency only from a QR code and without payments", () => {
+    const qr = { source: "qr" as const, hasAllocations: false };
+    expect(mergeRereadDraft(base, draft, qr).currency).toBe("EUR");
+    expect(
+      mergeRereadDraft(base, draft, { ...qr, hasAllocations: true }).currency,
+    ).toBe("CHF");
+    expect(
+      mergeRereadDraft(base, draft, { ...qr, source: "text" }).currency,
+    ).toBe("CHF");
   });
 });

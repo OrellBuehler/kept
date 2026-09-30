@@ -43,8 +43,9 @@
         {#if bill.documentId}
           <FileTextIcon
             class="text-muted-foreground size-4 shrink-0"
-            aria-label="PDF attached"
+            aria-hidden="true"
           />
+          <span class="sr-only">PDF attached</span>
         {/if}
       </div>
       {#if bill.invoiceNumber}
