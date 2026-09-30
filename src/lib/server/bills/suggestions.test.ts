@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { minor } from "$lib/money";
 import { createTestUser } from "$lib/testing/auth";
 import { seedBill } from "$lib/testing/bills";
@@ -11,11 +11,15 @@ import {
 import { seedAccount, seedImportedTransaction } from "$lib/testing/ledger";
 import { LedgerError } from "$lib/server/ledger/errors";
 import { allocate, listBillAllocations } from "./allocations";
+import { getDB, transactions } from "$lib/server/db";
 import { billView } from "./status";
 import {
   dismissSuggestion,
   getSuggestions,
+  listDismissed,
+  removeAllocation,
   runAutoMatching,
+  undismissSuggestion,
 } from "./suggestions";
 
 const TODAY = "2026-10-01";
@@ -54,8 +58,8 @@ describe("auto matching", () => {
     const { u, account } = await setup();
     const bill = qrBill(u.id);
     const tx = payment(u.id, account.id, 10000, { reference: EXAMPLE_QRR });
-    expect(runAutoMatching(u.id)).toBe(1);
-    expect(runAutoMatching(u.id)).toBe(0);
+    expect(runAutoMatching(u.id).matched).toBe(1);
+    expect(runAutoMatching(u.id).matched).toBe(0);
     expect(listBillAllocations(u.id, bill.id)).toEqual([
       expect.objectContaining({
         amount: 10000,
@@ -88,7 +92,7 @@ describe("auto matching", () => {
     const tx = payment(u.id, account.id, 10000, {
       counterpartyIban: EXAMPLE_IBAN,
     });
-    expect(runAutoMatching(u.id)).toBe(0);
+    expect(runAutoMatching(u.id).matched).toBe(0);
     const s = getSuggestions(u.id);
     expect(s).toHaveLength(1);
     expect(s[0]).toMatchObject({
@@ -118,7 +122,7 @@ describe("auto matching", () => {
       reference: EXAMPLE_QRR,
       bookingDate: "2026-09-12",
     });
-    expect(runAutoMatching(u.id)).toBe(0);
+    expect(runAutoMatching(u.id).matched).toBe(0);
     const s = getSuggestions(u.id);
     expect(s).toHaveLength(2);
     expect(s.every((x) => x.ambiguous && !x.auto)).toBe(true);
@@ -130,7 +134,7 @@ describe("auto matching", () => {
     payment(u.id, account.id, 10000, { reference: EXAMPLE_QRR });
     const { cancelBill } = await import("./bills");
     cancelBill(u.id, bill.id);
-    expect(runAutoMatching(u.id)).toBe(0);
+    expect(runAutoMatching(u.id).matched).toBe(0);
     expect(getSuggestions(u.id)).toEqual([]);
   });
 
@@ -156,7 +160,7 @@ describe("auto matching", () => {
       reference: EXAMPLE_QRR,
       bookingDate: "2020-01-01",
     });
-    expect(runAutoMatching(u.id)).toBe(1);
+    expect(runAutoMatching(u.id).matched).toBe(1);
   });
 });
 
@@ -182,7 +186,8 @@ describe("dismissals", () => {
     dismissSuggestion(u.id, bill.id, tx.id);
     const left = getSuggestions(u.id);
     expect(left.map((s) => s.transactionId)).toEqual([other.id]);
-    expect(left[0]!.ambiguous).toBe(false);
+    // Shared ambiguity with the dismissed pair keeps it from auto-confirming.
+    expect(left[0]).toMatchObject({ ambiguous: true, auto: false });
     expect(getSuggestions(u.id, { billId: "nope" })).toEqual([]);
   });
 
@@ -191,7 +196,7 @@ describe("dismissals", () => {
     const bill = qrBill(u.id);
     const tx = payment(u.id, account.id, 10000, { reference: EXAMPLE_QRR });
     dismissSuggestion(u.id, bill.id, tx.id);
-    expect(runAutoMatching(u.id)).toBe(0);
+    expect(runAutoMatching(u.id).matched).toBe(0);
   });
 });
 
@@ -208,8 +213,8 @@ describe("suggestions across users", () => {
     const txA = payment(a.u.id, a.account.id, 10000, {
       counterpartyIban: EXAMPLE_IBAN,
     });
-    expect(runAutoMatching(a.u.id)).toBe(0);
-    expect(runAutoMatching(b.u.id)).toBe(0);
+    expect(runAutoMatching(a.u.id).matched).toBe(0);
+    expect(runAutoMatching(b.u.id).matched).toBe(0);
     expect(getSuggestions(b.u.id)).toEqual([]);
 
     const dismiss = (user: string, bill: string, tx: string) => {
@@ -226,5 +231,146 @@ describe("suggestions across users", () => {
     expect(() =>
       allocate(a.u.id, billA.id, txB.id, minor(10000), "user"),
     ).toThrow(LedgerError);
+  });
+});
+
+describe("auto matching guards", () => {
+  useTestDB();
+
+  it("keeps a partial reference payment as a suggestion", async () => {
+    const { u, account } = await setup();
+    const bill = qrBill(u.id);
+    const tx = payment(u.id, account.id, 4000, { reference: EXAMPLE_QRR });
+    const result = runAutoMatching(u.id);
+    expect(result.matched).toBe(0);
+    expect(result.suggestions).toEqual([
+      expect.objectContaining({
+        billId: bill.id,
+        transactionId: tx.id,
+        rule: "reference",
+        ambiguous: false,
+        auto: false,
+        amount: 4000,
+      }),
+    ]);
+  });
+
+  it("auto-confirms an open-amount bill with a single reference match", async () => {
+    const { u, account } = await setup();
+    const bill = qrBill(u.id, { amount: null });
+    payment(u.id, account.id, 4321, { reference: EXAMPLE_QRR });
+    const result = runAutoMatching(u.id);
+    expect(result).toMatchObject({ matched: 1, suggestions: [] });
+    expect(listBillAllocations(u.id, bill.id)[0]).toMatchObject({
+      amount: 4321,
+    });
+  });
+
+  it("returns the remaining suggestions from the same run", async () => {
+    const { u, account } = await setup();
+    qrBill(u.id);
+    payment(u.id, account.id, 10000, { reference: EXAMPLE_QRR });
+    const other = seedBill(u.id, {
+      creditorIban: EXAMPLE_IBAN,
+      issueDate: "2026-09-01",
+      dueDate: "2026-10-01",
+      amount: minor(777),
+    });
+    const tx = payment(u.id, account.id, 777, {
+      counterpartyIban: EXAMPLE_IBAN,
+    });
+    const r = runAutoMatching(u.id);
+    expect(r.matched).toBe(1);
+    expect(r.suggestions.map((s) => [s.billId, s.transactionId])).toEqual([
+      [other.id, tx.id],
+    ]);
+    expect(r.truncated).toBe(false);
+  });
+
+  it("reports when the transaction window hit its cap", async () => {
+    const { u, account } = await setup();
+    qrBill(u.id, { issueDate: null, dueDate: null });
+    const rows = Array.from({ length: 5000 }, (_, i) => ({
+      userId: u.id,
+      accountId: account.id,
+      source: "import" as const,
+      externalId: `bulk-${i}`,
+      bookingDate: "2026-09-10",
+      amount: minor(-100),
+      currency: "CHF",
+    }));
+    for (let i = 0; i < rows.length; i += 500) {
+      getDB()
+        .insert(transactions)
+        .values(rows.slice(i, i + 500))
+        .run();
+    }
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    expect(runAutoMatching(u.id).truncated).toBe(true);
+    expect(warn).toHaveBeenCalledWith("suggestion window truncated");
+    warn.mockRestore();
+  });
+});
+
+describe("dismissals and removal", () => {
+  useTestDB();
+
+  it("removing an auto-confirmed allocation dismisses it so it does not come back", async () => {
+    const { u, account } = await setup();
+    const bill = qrBill(u.id);
+    const tx = payment(u.id, account.id, 10000, { reference: EXAMPLE_QRR });
+    runAutoMatching(u.id);
+    removeAllocation(u.id, listBillAllocations(u.id, bill.id)[0]!.id);
+    expect(listDismissed(u.id, bill.id).map((t) => t.id)).toEqual([tx.id]);
+    expect(runAutoMatching(u.id).matched).toBe(0);
+  });
+
+  it("removing a manual allocation does not dismiss a pair that was never automatic", async () => {
+    const { u, account } = await setup();
+    const bill = seedBill(u.id, {
+      creditorIban: EXAMPLE_IBAN,
+      issueDate: "2026-09-01",
+      dueDate: "2026-10-01",
+    });
+    const tx = payment(u.id, account.id, 10000, {
+      counterpartyIban: EXAMPLE_IBAN,
+    });
+    const { id } = allocate(u.id, bill.id, tx.id, minor(10000), "user");
+    removeAllocation(u.id, id);
+    expect(listDismissed(u.id, bill.id)).toEqual([]);
+    expect(getSuggestions(u.id).map((s) => s.transactionId)).toEqual([tx.id]);
+  });
+
+  it("allocating a dismissed pair clears the dismissal", async () => {
+    const { u, account } = await setup();
+    const bill = seedBill(u.id);
+    const tx = payment(u.id, account.id, 10000);
+    dismissSuggestion(u.id, bill.id, tx.id);
+    expect(listDismissed(u.id, bill.id)).toHaveLength(1);
+    allocate(u.id, bill.id, tx.id, minor(10000), "user");
+    expect(listDismissed(u.id, bill.id)).toEqual([]);
+  });
+
+  it("undismiss brings the suggestion back; other users cannot undismiss", async () => {
+    const a = await setup();
+    const b = await setup();
+    const bill = seedBill(a.u.id, {
+      creditorIban: EXAMPLE_IBAN,
+      issueDate: "2026-09-01",
+      dueDate: "2026-10-01",
+    });
+    const tx = payment(a.u.id, a.account.id, 10000, {
+      counterpartyIban: EXAMPLE_IBAN,
+    });
+    dismissSuggestion(a.u.id, bill.id, tx.id);
+    expect(getSuggestions(a.u.id)).toEqual([]);
+    expect(() => undismissSuggestion(b.u.id, bill.id, tx.id)).toThrow(
+      LedgerError,
+    );
+    expect(() => listDismissed(b.u.id, bill.id)).toThrow(LedgerError);
+    expect(getSuggestions(a.u.id)).toEqual([]);
+    undismissSuggestion(a.u.id, bill.id, tx.id);
+    undismissSuggestion(a.u.id, bill.id, tx.id);
+    expect(getSuggestions(a.u.id)).toHaveLength(1);
   });
 });

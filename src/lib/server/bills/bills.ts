@@ -1,4 +1,4 @@
-import { and, asc, count, desc, eq } from "drizzle-orm";
+import { and, asc, count, desc, eq, lt, notExists, sql } from "drizzle-orm";
 import { z } from "zod";
 import type { BillKind, BillReferenceType } from "$lib/bill-types";
 import type { Minor } from "$lib/money";
@@ -60,7 +60,14 @@ type Row = typeof bills.$inferSelect;
 
 function parseExtraction(raw: string | null): BillExtractionMeta | null {
   if (raw === null) return null;
-  const parsed = extractionSchema.safeParse(JSON.parse(raw));
+  let json: unknown;
+  try {
+    json = JSON.parse(raw);
+  } catch {
+    console.warn("bill extraction metadata is not valid JSON");
+    return null;
+  }
+  const parsed = extractionSchema.safeParse(json);
   return parsed.success ? parsed.data : null;
 }
 
@@ -326,4 +333,36 @@ export function setBillExtraction(
     .set({ extraction: JSON.stringify(extraction) })
     .where(and(eq(bills.userId, userId), eq(bills.id, billId)))
     .run();
+}
+
+export const DOCUMENT_SWEEP_AGE_MS = 24 * 60 * 60 * 1000;
+
+/**
+ * Removes the user's uploaded documents that no bill references and that are
+ * older than a day (abandoned uploads). Returns how many were removed.
+ */
+export function sweepUnreferencedDocuments(
+  userId: string,
+  now: number = Date.now(),
+): number {
+  const cutoff = new Date(now - DOCUMENT_SWEEP_AGE_MS);
+  const stale = getDB()
+    .select({ id: documents.id })
+    .from(documents)
+    .where(
+      and(
+        eq(documents.userId, userId),
+        eq(documents.source, "upload"),
+        lt(documents.createdAt, cutoff),
+        notExists(
+          getDB()
+            .select({ one: sql`1` })
+            .from(bills)
+            .where(eq(bills.documentId, documents.id)),
+        ),
+      ),
+    )
+    .all();
+  for (const d of stale) deleteDocument(userId, d.id);
+  return stale.length;
 }

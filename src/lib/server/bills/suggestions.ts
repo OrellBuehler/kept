@@ -1,7 +1,13 @@
 import { and, desc, eq, gte, inArray } from "drizzle-orm";
 import type { BillKind } from "$lib/bill-types";
-import { minor, type Minor } from "$lib/money";
-import { accounts, getDB, matchDismissals, transactions } from "$lib/server/db";
+import { type Minor } from "$lib/money";
+import {
+  accounts,
+  billAllocations,
+  getDB,
+  matchDismissals,
+  transactions,
+} from "$lib/server/db";
 import { LedgerError, notFound } from "$lib/server/ledger/errors";
 import { allocate, loadAllocations, toMatchTransaction } from "./allocations";
 import { getBill, listBills, toMatchBill } from "./bills";
@@ -10,7 +16,7 @@ import {
   autoConfirmable,
   computeBillStatus,
   suggestMatches,
-  type Allocation,
+  type Suggestion,
   type MatchRule,
 } from "./matching";
 
@@ -46,9 +52,27 @@ function subtractDays(date: string, days: number): string {
 
 interface Computed {
   suggestions: SuggestionView[];
+  /** The transaction window hit its row cap, so older payments were not considered. */
+  truncated: boolean;
 }
 
-function compute(userId: string, onlyBillId?: string): Computed {
+const pairKey = (billId: string, transactionId: string) =>
+  `${billId}|${transactionId}`;
+
+/**
+ * Automatic confirmation needs an exact, unambiguous reference match that covers
+ * the bill's remaining amount exactly (or an open-amount bill). Partial payments
+ * stay suggestions, in case a creditor reuses a reference.
+ */
+function isAuto(s: Suggestion, remaining: Minor | null): boolean {
+  return autoConfirmable(s) && (remaining === null || s.amount === remaining);
+}
+
+function compute(
+  userId: string,
+  onlyBillId?: string,
+  includeDismissed = false,
+): Computed {
   const db = getDB();
   const allBills = listBills(userId).filter((b) => !b.cancelled);
   const allocations = loadAllocations(userId);
@@ -71,7 +95,7 @@ function compute(userId: string, onlyBillId?: string): Computed {
     if (anchor === null) unbounded = true;
     else if (lowerBound === null || anchor < lowerBound) lowerBound = anchor;
   }
-  if (!anyOpen) return { suggestions: [] };
+  if (!anyOpen) return { suggestions: [], truncated: false };
 
   const since =
     unbounded || lowerBound === null
@@ -97,25 +121,37 @@ function compute(userId: string, onlyBillId?: string): Computed {
     .orderBy(desc(transactions.bookingDate), desc(transactions.id))
     .limit(MAX_SUGGESTION_TRANSACTIONS)
     .all();
+  const truncated = txRows.length >= MAX_SUGGESTION_TRANSACTIONS;
+  if (truncated) console.warn("suggestion window truncated");
 
-  // A dismissed pair acts like a zero-amount allocation: the engine skips pairs
-  // that already have an allocation and the zero changes no sums.
-  const dismissed: Allocation[] = db
-    .select({
-      billId: matchDismissals.billId,
-      transactionId: matchDismissals.transactionId,
-    })
-    .from(matchDismissals)
-    .where(eq(matchDismissals.userId, userId))
-    .all()
-    .map((d) => ({ ...d, amount: minor(0) }));
+  // Dismissed pairs take part in the engine run, so ambiguity they cause stays
+  // visible (and blocks auto-confirmation); they are only hidden from the result.
+  const dismissed = new Set(
+    db
+      .select({
+        billId: matchDismissals.billId,
+        transactionId: matchDismissals.transactionId,
+      })
+      .from(matchDismissals)
+      .where(eq(matchDismissals.userId, userId))
+      .all()
+      .map((d) => pairKey(d.billId, d.transactionId)),
+  );
 
-  const found = suggestMatches(matchBills, txRows.map(toMatchTransaction), [
-    ...allocations,
-    ...dismissed,
-  ]).filter((s) => onlyBillId === undefined || s.billId === onlyBillId);
-  if (found.length === 0) return { suggestions: [] };
+  const found = suggestMatches(
+    matchBills,
+    txRows.map(toMatchTransaction),
+    allocations,
+  ).filter(
+    (s) =>
+      (onlyBillId === undefined || s.billId === onlyBillId) &&
+      (includeDismissed || !dismissed.has(pairKey(s.billId, s.transactionId))),
+  );
+  if (found.length === 0) return { suggestions: [], truncated };
 
+  const remainingByBill = new Map(
+    matchBills.map((b) => [b.id, computeBillStatus(b, allocations).remaining]),
+  );
   const billById = new Map(allBills.map((b) => [b.id, b]));
   const txIds = new Set(found.map((s) => s.transactionId));
   const display = new Map(
@@ -133,6 +169,7 @@ function compute(userId: string, onlyBillId?: string): Computed {
       .map((t) => [t.id, t]),
   );
   return {
+    truncated,
     suggestions: found.map((s) => {
       const bill = billById.get(s.billId)!;
       return {
@@ -142,7 +179,7 @@ function compute(userId: string, onlyBillId?: string): Computed {
         confidence: s.confidence,
         amount: s.amount,
         ambiguous: s.ambiguous,
-        auto: autoConfirmable(s),
+        auto: isAuto(s, remainingByBill.get(s.billId) ?? null),
         bill: {
           id: bill.id,
           kind: bill.kind,
@@ -166,26 +203,135 @@ export function getSuggestions(
   return compute(userId, options.billId).suggestions;
 }
 
+/** Whether the pair would be confirmed automatically if it were not dismissed. */
+export function wouldAutoConfirm(
+  userId: string,
+  billId: string,
+  transactionId: string,
+): boolean {
+  return compute(userId, billId, true).suggestions.some(
+    (s) => s.transactionId === transactionId && s.auto,
+  );
+}
+
+export interface AutoMatchResult {
+  /** Allocations created by this run. */
+  matched: number;
+  /** What is left to decide, after the automatic matches. */
+  suggestions: SuggestionView[];
+  truncated: boolean;
+}
+
 /**
- * Confirms every exact, unambiguous reference match as an `auto` allocation.
- * Idempotent: confirmed pairs are never suggested again. Returns how many were created.
+ * Confirms every exact, unambiguous reference match that covers the bill's
+ * remaining amount as an `auto` allocation. Idempotent: confirmed pairs are never
+ * suggested again. Also returns the remaining suggestions, so callers match once.
  */
-export function runAutoMatching(userId: string): number {
-  const todo = compute(userId).suggestions.filter((s) => s.auto);
-  if (todo.length === 0) return 0;
-  let created = 0;
+export function runAutoMatching(userId: string): AutoMatchResult {
+  const first = compute(userId);
+  const todo = first.suggestions.filter((s) => s.auto);
+  if (todo.length === 0) {
+    return {
+      matched: 0,
+      suggestions: first.suggestions,
+      truncated: first.truncated,
+    };
+  }
+  let matched = 0;
   getDB().transaction(() => {
     for (const s of todo) {
       try {
         allocate(userId, s.billId, s.transactionId, s.amount, "auto");
-        created++;
+        matched++;
       } catch (err) {
         if (!(err instanceof LedgerError)) throw err;
         console.warn("auto-match skipped", err.code);
       }
     }
   });
-  return created;
+  const after = compute(userId);
+  return {
+    matched,
+    suggestions: after.suggestions,
+    truncated: after.truncated,
+  };
+}
+
+/**
+ * Removes an allocation. The pair is dismissed only if automatic matching would
+ * otherwise put it straight back.
+ */
+export function removeAllocation(userId: string, allocationId: string): void {
+  const db = getDB();
+  const row = db
+    .select({
+      billId: billAllocations.billId,
+      transactionId: billAllocations.transactionId,
+    })
+    .from(billAllocations)
+    .where(
+      and(
+        eq(billAllocations.userId, userId),
+        eq(billAllocations.id, allocationId),
+      ),
+    )
+    .get();
+  if (!row) throw notFound("Allocation");
+  db.delete(billAllocations)
+    .where(
+      and(
+        eq(billAllocations.userId, userId),
+        eq(billAllocations.id, allocationId),
+      ),
+    )
+    .run();
+  if (wouldAutoConfirm(userId, row.billId, row.transactionId)) {
+    db.insert(matchDismissals)
+      .values({ userId, billId: row.billId, transactionId: row.transactionId })
+      .onConflictDoNothing()
+      .run();
+  }
+}
+
+/** Brings a dismissed pair back as a suggestion. Idempotent. */
+export function undismissSuggestion(
+  userId: string,
+  billId: string,
+  transactionId: string,
+): void {
+  getBill(userId, billId);
+  getDB()
+    .delete(matchDismissals)
+    .where(
+      and(
+        eq(matchDismissals.userId, userId),
+        eq(matchDismissals.billId, billId),
+        eq(matchDismissals.transactionId, transactionId),
+      ),
+    )
+    .run();
+}
+
+/** Transactions the user dismissed for this bill, newest first. */
+export function listDismissed(
+  userId: string,
+  billId: string,
+): TransactionDisplay[] {
+  getBill(userId, billId);
+  return getDB()
+    .select(transactionDisplayColumns)
+    .from(matchDismissals)
+    .innerJoin(transactions, eq(transactions.id, matchDismissals.transactionId))
+    .innerJoin(accounts, eq(accounts.id, transactions.accountId))
+    .where(
+      and(
+        eq(matchDismissals.userId, userId),
+        eq(transactions.userId, userId),
+        eq(matchDismissals.billId, billId),
+      ),
+    )
+    .orderBy(desc(transactions.bookingDate), desc(transactions.id))
+    .all();
 }
 
 export function dismissSuggestion(

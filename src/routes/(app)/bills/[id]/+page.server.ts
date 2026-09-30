@@ -3,10 +3,11 @@ import { requireUser } from "$lib/server/auth/guards";
 import {
   allocateFromInput,
   listBillAllocations,
-  removeAllocation,
 } from "$lib/server/bills/allocations";
 import {
   attachDocument,
+  deleteDocumentIfUnused,
+  sweepUnreferencedDocuments,
   cancelBill,
   deleteBill,
   uncancelBill,
@@ -29,6 +30,9 @@ import { billView } from "$lib/server/bills/status";
 import {
   dismissSuggestion,
   getSuggestions,
+  listDismissed,
+  removeAllocation,
+  undismissSuggestion,
 } from "$lib/server/bills/suggestions";
 import { parseForm, safeValues } from "$lib/server/forms";
 import { listAccounts } from "$lib/server/ledger/accounts";
@@ -51,6 +55,7 @@ export const load: PageServerLoad = ({ locals, params, url }) => {
     bill,
     allocations: listBillAllocations(user.id, bill.id),
     suggestions: getSuggestions(user.id, { billId: bill.id }),
+    dismissed: listDismissed(user.id, bill.id),
     candidates: candidateTransactions(user.id, bill.id, {
       q,
       page: positiveInt(url.searchParams.get("page")),
@@ -176,21 +181,45 @@ export const actions: Actions = {
     }
   },
 
+  undismiss: async ({ locals, params, request }) => {
+    const user = requireUser(locals);
+    orNotFound(() => billView(user.id, params.id, { today: todayLocal() }));
+    const form = await request.formData();
+    const values = safeValues(form, ["transactionId"]);
+    const parsed = parseForm(dismissForBillFormSchema, form);
+    if (!parsed.ok) {
+      return fail(400, {
+        action: "undismiss",
+        errors: parsed.errors,
+        values,
+      });
+    }
+    try {
+      undismissSuggestion(user.id, params.id, parsed.data.transactionId);
+      return { success: true as const, action: "undismiss" as const };
+    } catch (err) {
+      return ledgerFailure("undismiss", err, values);
+    }
+  },
+
   attachDocument: async ({ locals, params, request }) => {
     const user = requireUser(locals);
     orNotFound(() => billView(user.id, params.id, { today: todayLocal() }));
     const upload = await readUpload(await request.formData());
     if (!upload.ok) return uploadFailure("attachDocument", upload.message);
+    sweepUnreferencedDocuments(user.id);
+    let storedId: string | null = null;
     try {
-      const doc = storeDocument(
+      storedId = storeDocument(
         user.id,
         upload.bytes,
         upload.fileName,
         upload.mimeType,
-      );
-      attachDocument(user.id, params.id, doc.id);
+      ).id;
+      attachDocument(user.id, params.id, storedId);
       return { success: true as const, action: "attachDocument" as const };
     } catch (err) {
+      deleteDocumentIfUnused(user.id, storedId);
       return ledgerFailure("attachDocument", err);
     }
   },

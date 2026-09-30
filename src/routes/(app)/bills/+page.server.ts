@@ -9,8 +9,8 @@ import {
 import { billViews, countBills, groupBills } from "$lib/server/bills/status";
 import {
   dismissSuggestion,
-  getSuggestions,
   runAutoMatching,
+  type SuggestionView,
 } from "$lib/server/bills/suggestions";
 import { parseForm, safeValues } from "$lib/server/forms";
 import { ledgerFailure } from "$lib/server/ledger/http";
@@ -18,15 +18,33 @@ import type { Actions, PageServerLoad } from "./$types";
 
 export const load: PageServerLoad = ({ locals }) => {
   const user = requireUser(locals);
-  const autoMatched = runAutoMatching(user.id);
   const today = todayLocal();
+  let autoMatched = 0;
+  let suggestions: SuggestionView[] = [];
+  let suggestionsTruncated = false;
+  let matchingFailed = false;
+  try {
+    const result = runAutoMatching(user.id);
+    autoMatched = result.matched;
+    suggestions = result.suggestions;
+    suggestionsTruncated = result.truncated;
+  } catch (err) {
+    // The overview must still render; the flag tells the UI matching did not run.
+    console.warn(
+      "auto-matching failed",
+      err instanceof Error ? err.name : "unknown",
+    );
+    matchingFailed = true;
+  }
   const views = billViews(user.id, { today });
   const { cancelled, ...groups } = groupBills(views, { today });
   return {
     today,
     groups,
     cancelled,
-    suggestions: getSuggestions(user.id),
+    suggestions,
+    suggestionsTruncated,
+    matchingFailed,
     counts: countBills(views, { ...groups, cancelled }),
     autoMatched,
   };

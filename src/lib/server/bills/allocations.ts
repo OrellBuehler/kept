@@ -8,7 +8,7 @@ import {
   matchDismissals,
   transactions,
 } from "$lib/server/db";
-import { LedgerError, notFound } from "$lib/server/ledger/errors";
+import { LedgerError } from "$lib/server/ledger/errors";
 import { parseMoneyInput } from "$lib/server/ledger/schemas";
 import { getTransaction } from "$lib/server/ledger/transactions";
 import { getBill, toMatchBill } from "./bills";
@@ -110,7 +110,18 @@ export function allocate(
     related,
   );
   if (problem !== null) throw new LedgerError("invalid", problem, "amount");
-  return getDB()
+  const db = getDB();
+  // Allocating a pair that was dismissed means the user changed their mind.
+  db.delete(matchDismissals)
+    .where(
+      and(
+        eq(matchDismissals.userId, userId),
+        eq(matchDismissals.billId, billId),
+        eq(matchDismissals.transactionId, transactionId),
+      ),
+    )
+    .run();
+  return db
     .insert(billAllocations)
     .values({ userId, billId, transactionId, amount, origin })
     .returning({ id: billAllocations.id })
@@ -129,42 +140,6 @@ export function allocateFromInput(
   const parsed = parseMoneyInput(amountText, bill.currency);
   if (!parsed.ok) throw new LedgerError("invalid", parsed.message, "amount");
   return allocate(userId, billId, transactionId, parsed.value, origin);
-}
-
-/**
- * Removes an allocation. The pair is dismissed as well, so automatic matching
- * does not put it straight back.
- */
-export function removeAllocation(userId: string, allocationId: string): void {
-  const db = getDB();
-  const row = db
-    .select({
-      billId: billAllocations.billId,
-      transactionId: billAllocations.transactionId,
-    })
-    .from(billAllocations)
-    .where(
-      and(
-        eq(billAllocations.userId, userId),
-        eq(billAllocations.id, allocationId),
-      ),
-    )
-    .get();
-  if (!row) throw notFound("Allocation");
-  db.transaction((tx) => {
-    tx.delete(billAllocations)
-      .where(
-        and(
-          eq(billAllocations.userId, userId),
-          eq(billAllocations.id, allocationId),
-        ),
-      )
-      .run();
-    tx.insert(matchDismissals)
-      .values({ userId, billId: row.billId, transactionId: row.transactionId })
-      .onConflictDoNothing()
-      .run();
-  });
 }
 
 export function listBillAllocations(

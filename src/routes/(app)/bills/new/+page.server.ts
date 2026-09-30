@@ -1,6 +1,9 @@
 import { fail, redirect } from "@sveltejs/kit";
 import { requireUser } from "$lib/server/auth/guards";
-import { createBill } from "$lib/server/bills/bills";
+import {
+  createBill,
+  sweepUnreferencedDocuments,
+} from "$lib/server/bills/bills";
 import { pdfErrorMessage } from "$lib/server/bills/draft";
 import { getDocumentMeta, storeDocument } from "$lib/server/bills/documents";
 import {
@@ -48,6 +51,7 @@ export const actions: Actions = {
       if (!(err instanceof PdfExtractError)) throw err;
       return uploadFailure("upload", pdfErrorMessage(err.code));
     }
+    sweepUnreferencedDocuments(user.id);
     let documentId: string;
     try {
       documentId = storeDocument(

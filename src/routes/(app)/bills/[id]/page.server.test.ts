@@ -81,6 +81,7 @@ describe("bill detail page", () => {
       "bill",
       "candidateQuery",
       "candidates",
+      "dismissed",
       "document",
       "suggestions",
     ]);
@@ -166,6 +167,36 @@ describe("bill detail page", () => {
     });
   });
 
+  it("dismisses a suggestion and brings it back with undismiss", async () => {
+    const u = await createTestUser();
+    const account = seedAccount(u.id);
+    const bill = seedBill(u.id);
+    const tx = seedImportedTransaction(u.id, account.id, {
+      amount: minor(-4000),
+    });
+    await run("dismissSuggestion", u, bill.id, { transactionId: tx.id });
+    const dismissed = async () =>
+      (
+        (await loadAs(u, bill.id)) as { value: { dismissed: { id: string }[] } }
+      ).value.dismissed.map((t) => t.id);
+    expect(await dismissed()).toEqual([tx.id]);
+    expect(
+      await run("undismiss", u, bill.id, { transactionId: tx.id }),
+    ).toEqual({
+      type: "return",
+      value: { success: true, action: "undismiss" },
+    });
+    expect(await dismissed()).toEqual([]);
+    expect(await run("undismiss", u, bill.id, {})).toMatchObject({
+      type: "fail",
+      status: 400,
+    });
+    const other = await createTestUser();
+    expect(
+      await run("undismiss", other, bill.id, { transactionId: tx.id }),
+    ).toEqual({ type: "error", status: 404 });
+  });
+
   it("dismisses a suggestion for this bill", async () => {
     const u = await createTestUser();
     const account = seedAccount(u.id);
@@ -222,7 +253,9 @@ describe("bill detail page", () => {
       "inline; filename*=UTF-8''Bill%20%281%29.pdf",
     );
     expect(res.headers.get("X-Content-Type-Options")).toBe("nosniff");
-    expect(res.headers.get("Content-Security-Policy")).toBe("sandbox");
+    expect(res.headers.get("Content-Security-Policy")).toBe(
+      "default-src 'none'; object-src 'none'; frame-ancestors 'self'",
+    );
     expect(res.headers.get("Cache-Control")).toBe("private, no-store");
     expect((await res.arrayBuffer()).byteLength).toBe(pdf.byteLength);
 

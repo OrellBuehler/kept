@@ -1,17 +1,24 @@
 import { existsSync, readdirSync } from "node:fs";
 import { join } from "node:path";
-import { describe, expect, it } from "vitest";
+import { eq } from "drizzle-orm";
+import { describe, expect, it, vi } from "vitest";
 import { createTestUser } from "$lib/testing/auth";
 import { useTestDB } from "$lib/testing/db";
 import { useTestDocuments } from "$lib/testing/documents";
 import { LedgerError } from "$lib/server/ledger/errors";
-import { documents, getDB } from "$lib/server/db";
+import { bills, documents, getDB } from "$lib/server/db";
 import { seedBill } from "$lib/testing/bills";
-import { attachDocument, deleteBill, getBill } from "./bills";
+import {
+  attachDocument,
+  deleteBill,
+  getBill,
+  sweepUnreferencedDocuments,
+} from "./bills";
 import {
   MAX_DOCUMENT_BYTES,
   deleteDocument,
   getDocumentMeta,
+  hasPdfMagic,
   readDocument,
   sanitizeFileName,
   storeDocument,
@@ -121,6 +128,56 @@ describe("documents", () => {
     expect(sanitizeFileName("..")).toBe("document.pdf");
     expect(sanitizeFileName("a\\b\\c.pdf")).toBe("c.pdf");
     expect(sanitizeFileName("x".repeat(500))).toHaveLength(200);
+  });
+
+  it("checks the PDF signature at the start, allowing leading whitespace", async () => {
+    const u = await createTestUser();
+    const enc = (t: string) => new TextEncoder().encode(t);
+    expect(() =>
+      storeDocument(u.id, enc("\n \r%PDF-1.4"), "a.pdf", "x"),
+    ).not.toThrow();
+    expect(() =>
+      storeDocument(u.id, enc("junk%PDF-1.4"), "b.pdf", "x"),
+    ).toThrow(LedgerError);
+    expect(hasPdfMagic(enc("<html>%PDF-"))).toBe(false);
+  });
+
+  it("sweeps old unreferenced uploads only", async () => {
+    const u = await createTestUser();
+    const other = await createTestUser();
+    const bill = seedBill(u.id);
+    const old = storeDocument(u.id, pdf("old"), "a.pdf", "x");
+    const used = storeDocument(u.id, pdf("used"), "b.pdf", "x");
+    const fresh = storeDocument(u.id, pdf("fresh"), "c.pdf", "x");
+    const foreign = storeDocument(other.id, pdf("old"), "d.pdf", "x");
+    attachDocument(u.id, bill.id, used.id);
+    const dayAndAbit = Date.now() - 25 * 3600 * 1000;
+    for (const id of [old.id, used.id, foreign.id]) {
+      getDB()
+        .update(documents)
+        .set({ createdAt: new Date(dayAndAbit) })
+        .where(eq(documents.id, id))
+        .run();
+    }
+    expect(sweepUnreferencedDocuments(u.id)).toBe(1);
+    expect(() => getDocumentMeta(u.id, old.id)).toThrow(LedgerError);
+    expect(existsSync(join(store.dir, u.id, old.id))).toBe(false);
+    expect(getDocumentMeta(u.id, used.id).id).toBe(used.id);
+    expect(getDocumentMeta(u.id, fresh.id).id).toBe(fresh.id);
+    expect(getDocumentMeta(other.id, foreign.id).id).toBe(foreign.id);
+  });
+
+  it("reads a bill whose stored extraction is corrupt", async () => {
+    const u = await createTestUser();
+    const bill = seedBill(u.id);
+    getDB()
+      .update(bills)
+      .set({ extraction: "{not json" })
+      .where(eq(bills.id, bill.id))
+      .run();
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    expect(getBill(u.id, bill.id).extraction).toBeNull();
+    warn.mockRestore();
   });
 
   it("does not expose another user's document", async () => {

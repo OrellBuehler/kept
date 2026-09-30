@@ -44,7 +44,10 @@ export interface TestEventOptions {
   params?: Record<string, string>;
   url?: string;
   method?: string;
-  form?: Record<string, string>;
+  form?: Record<string, string | File>;
+  /** Raw request body (e.g. JSON); use with `headers`. */
+  body?: string;
+  headers?: Record<string, string>;
   cookies?: Record<string, string>;
   ip?: string;
 }
@@ -55,8 +58,9 @@ export interface TestEventOptions {
  */
 export function createTestEvent(opts: TestEventOptions = {}) {
   const url = new URL(opts.url ?? "http://localhost/");
-  const method = opts.method ?? (opts.form ? "POST" : "GET");
-  let body: FormData | undefined;
+  const method =
+    opts.method ?? (opts.form || opts.body !== undefined ? "POST" : "GET");
+  let body: FormData | string | undefined = opts.body;
   if (opts.form) {
     body = new FormData();
     for (const [k, v] of Object.entries(opts.form)) body.append(k, v);
@@ -76,7 +80,7 @@ export function createTestEvent(opts: TestEventOptions = {}) {
     },
     params: opts.params ?? {},
     url,
-    request: new Request(url, { method, body }),
+    request: new Request(url, { method, body, headers: opts.headers }),
     cookies,
     getClientAddress: () => opts.ip ?? "203.0.113.7",
     setHeaders: () => {},

@@ -15,7 +15,6 @@ import {
   allocate,
   allocateFromInput,
   listBillAllocations,
-  removeAllocation,
 } from "./allocations";
 import {
   cancelBill,
@@ -29,6 +28,7 @@ import {
 import { candidateTransactions } from "./candidates";
 import { billInput } from "$lib/testing/bills";
 import { billView, billViews, groupBills } from "./status";
+import { removeAllocation } from "./suggestions";
 
 const TODAY = "2026-10-01";
 
@@ -421,11 +421,11 @@ describe("allocations", () => {
     });
     const tx = pay(u.id, account.id, 10000, { reference: EXAMPLE_QRR });
     const { runAutoMatching, getSuggestions } = await import("./suggestions");
-    expect(runAutoMatching(u.id)).toBe(1);
+    expect(runAutoMatching(u.id).matched).toBe(1);
     const [alloc] = listBillAllocations(u.id, bill.id);
     removeAllocation(u.id, alloc!.id);
     expect(billView(u.id, bill.id, { today: TODAY }).status).toBe("open");
-    expect(runAutoMatching(u.id)).toBe(0);
+    expect(runAutoMatching(u.id).matched).toBe(0);
     expect(getSuggestions(u.id)).toEqual([]);
     expect((await fails(() => removeAllocation(u.id, alloc!.id))).code).toBe(
       "not_found",

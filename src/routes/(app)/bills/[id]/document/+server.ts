@@ -25,7 +25,8 @@ export const GET: RequestHandler = ({ locals, params }) => {
       "Content-Length": String(bytes.byteLength),
       "Content-Disposition": `inline; filename*=UTF-8''${encodeRfc5987(meta.fileName)}`,
       "X-Content-Type-Options": "nosniff",
-      "Content-Security-Policy": "sandbox",
+      "Content-Security-Policy":
+        "default-src 'none'; object-src 'none'; frame-ancestors 'self'",
       "Cache-Control": "private, no-store",
     },
   });

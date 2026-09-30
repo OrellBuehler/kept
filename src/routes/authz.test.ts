@@ -104,6 +104,7 @@ const matrix: Record<string, Entry> = {
       "actions.allocate": (m, e) => m.actions.allocate(e),
       "actions.removeAllocation": (m, e) => m.actions.removeAllocation(e),
       "actions.dismissSuggestion": (m, e) => m.actions.dismissSuggestion(e),
+      "actions.undismiss": (m, e) => m.actions.undismiss(e),
       "actions.attachDocument": (m, e) => m.actions.attachDocument(e),
       "actions.reextract": (m, e) => m.actions.reextract(e),
     },
@@ -112,6 +113,42 @@ const matrix: Record<string, Entry> = {
     access: "user",
     handlers: {
       GET: (m, e) => (m as never as { GET: (e: never) => unknown }).GET(e),
+    },
+  },
+  "/src/routes/(app)/import/+page.server.ts": {
+    access: "user",
+    handlers: {
+      load: (m, e) => m.load(e),
+      "actions.upload": (m, e) => m.actions.upload(e),
+    },
+  },
+  "/src/routes/(app)/import/[pendingId]/+page.server.ts": {
+    access: "user",
+    handlers: {
+      load: (m, e) => m.load(e),
+      "actions.confirm": (m, e) => m.actions.confirm(e),
+      "actions.cancel": (m, e) => m.actions.cancel(e),
+    },
+  },
+  "/src/routes/(app)/import/[pendingId]/mapping/+page.server.ts": {
+    access: "user",
+    handlers: {
+      load: (m, e) => m.load(e),
+      "actions.save": (m, e) => m.actions.save(e),
+    },
+  },
+  "/src/routes/(app)/accounts/[id]/imports/+page.server.ts": {
+    access: "user",
+    handlers: {
+      load: (m, e) => m.load(e),
+      "actions.undo": (m, e) => m.actions.undo(e),
+    },
+  },
+  "/src/routes/api/imports/[pendingId]/preview/+server.ts": {
+    access: "user",
+    handlers: {
+      POST: (m, e) =>
+        (m as unknown as { POST: (event: never) => unknown }).POST(e),
     },
   },
   "/src/routes/(app)/admin/users/+page.server.ts": {

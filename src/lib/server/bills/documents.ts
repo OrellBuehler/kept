@@ -83,8 +83,14 @@ export function sanitizeFileName(input: string): string {
 }
 
 export function hasPdfMagic(bytes: Uint8Array): boolean {
-  const head = new TextDecoder("latin1").decode(bytes.subarray(0, 1024));
-  return head.includes("%PDF-");
+  let i = 0;
+  while (
+    i < bytes.length &&
+    i < 64 &&
+    [0x20, 0x09, 0x0a, 0x0d].includes(bytes[i]!)
+  )
+    i++;
+  return new TextDecoder("latin1").decode(bytes.subarray(i, i + 5)) === "%PDF-";
 }
 
 /**
