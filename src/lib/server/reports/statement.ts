@@ -56,6 +56,8 @@ export async function accountStatementReport(
     if (t.amount > 0) incoming += t.amount;
     else outgoing -= t.amount;
   }
+  const adjustment =
+    input.closingBalance - input.openingBalance - (incoming - outgoing);
   const details = [
     account.institutionName,
     account.ibanMasked,
@@ -101,6 +103,16 @@ export async function accountStatementReport(
       },
       layout: "noBorders",
     },
+    ...(adjustment !== 0
+      ? [
+          {
+            text: `Adjusted by balance snapshot: ${money(adjustment as Minor, cur)}`,
+            italics: true,
+            fontSize: 9,
+            margin: [0, 6, 0, 0],
+          } as Content,
+        ]
+      : []),
     sectionTitle("Transactions"),
     transactions.length
       ? table(

@@ -82,6 +82,20 @@ describe("report builders", () => {
     expect(text).not.toContain(EXAMPLE_IBAN);
   });
 
+  it("notes a balance adjustment only when the figures do not reconcile", async () => {
+    // opening 100000 - 2500 + 1000 = 98500 reconciles
+    expect(
+      await textOf(await accountStatementReport(statementInput())),
+    ).not.toContain("Adjusted by balance snapshot");
+    const text = await textOf(
+      await accountStatementReport({
+        ...statementInput(),
+        closingBalance: m(99000),
+      }),
+    );
+    expect(text).toContain("Adjusted by balance snapshot: CHF 5.00");
+  });
+
   it("is deterministic for the same input", async () => {
     const a = await accountStatementReport(statementInput());
     const b = await accountStatementReport(statementInput());

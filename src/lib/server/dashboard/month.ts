@@ -29,12 +29,12 @@ export interface MonthSummary {
  * transaction whose counterparty IBAN equals the IBAN of another account of
  * the same user (archived ones included) is a transfer. Transfers whose
  * counterparty carries no IBAN cannot be recognised and count as income or
- * expense. Income is the sum of positive amounts, expenses the sum of
+ * expense. Amounts are bucketed by the account's currency (as in net worth). Income is the sum of positive amounts, expenses the sum of
  * negative ones (reversals are not netted against the original).
  */
 export function monthSummary(
   userId: string,
-  { month }: { month: string; today?: string },
+  { month }: { month: string },
 ): MonthSummary {
   const db = getDB();
   const prev = previousMonth(month);
@@ -43,11 +43,14 @@ export function monthSummary(
       id: accounts.id,
       iban: accounts.iban,
       archived: accounts.archived,
+      currency: accounts.currency,
     })
     .from(accounts)
     .where(eq(accounts.userId, userId))
     .all();
-  const active = new Set(own.filter((a) => !a.archived).map((a) => a.id));
+  const active = new Map(
+    own.filter((a) => !a.archived).map((a) => [a.id, a.currency]),
+  );
   const ibanOwner = new Map<string, string>();
   for (const a of own) if (a.iban) ibanOwner.set(normalizeIban(a.iban), a.id);
 
@@ -56,7 +59,6 @@ export function monthSummary(
       accountId: transactions.accountId,
       bookingDate: transactions.bookingDate,
       amount: transactions.amount,
-      currency: transactions.currency,
       counterpartyIban: transactions.counterpartyIban,
     })
     .from(transactions)
@@ -81,13 +83,14 @@ export function monthSummary(
   };
   const currencies = new Set<string>();
   for (const t of rows) {
-    if (!active.has(t.accountId)) continue;
+    const currency = active.get(t.accountId);
+    if (currency === undefined) continue;
     if (t.counterpartyIban) {
       const owner = ibanOwner.get(normalizeIban(t.counterpartyIban));
       if (owner !== undefined && owner !== t.accountId) continue;
     }
-    currencies.add(t.currency);
-    const b = bucket(t.bookingDate.slice(0, 7), t.currency);
+    currencies.add(currency);
+    const b = bucket(t.bookingDate.slice(0, 7), currency);
     if (t.amount > 0) b.income += t.amount;
     else b.expenses -= t.amount;
   }

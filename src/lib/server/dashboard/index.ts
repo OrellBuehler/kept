@@ -70,7 +70,7 @@ export function dashboard(
       totals: balanceTotals(accounts),
     },
     accounts,
-    month: monthSummary(userId, { month: today.slice(0, 7), today }),
+    month: monthSummary(userId, { month: today.slice(0, 7) }),
     bills,
     unmatched: unmatchedTransactions(userId, { days: 60, today }),
     imports: lastImports(userId, today, accounts),

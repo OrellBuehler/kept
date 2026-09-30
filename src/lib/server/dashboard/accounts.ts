@@ -1,4 +1,4 @@
-import { eq, max } from "drizzle-orm";
+import { and, eq, lte, max } from "drizzle-orm";
 import type { AccountType } from "$lib/ledger-types";
 import { minor, type Minor } from "$lib/money";
 import { balanceSnapshots, getDB } from "$lib/server/db";
@@ -24,6 +24,8 @@ export interface AccountBalanceView {
   lastImportAt: number | null;
   lastSnapshotDate: string | null;
   stale: boolean;
+  /** No import, snapshot or transaction yet: there is nothing to be stale. */
+  noData: boolean;
   /**
    * Age in days of the data the stale flag is based on: the last import, or,
    * for accounts that were never imported, the last snapshot. Null when the
@@ -50,7 +52,12 @@ export function accountBalances(
         d: max(balanceSnapshots.date),
       })
       .from(balanceSnapshots)
-      .where(eq(balanceSnapshots.userId, userId))
+      .where(
+        and(
+          eq(balanceSnapshots.userId, userId),
+          lte(balanceSnapshots.date, today),
+        ),
+      )
       .groupBy(balanceSnapshots.accountId)
       .all()
       .map((r) => [r.accountId, r.d]),
@@ -83,6 +90,10 @@ export function accountBalances(
         lastImportAt: a.lastImportAt,
         lastSnapshotDate,
         stale,
+        noData:
+          a.lastImportAt === null &&
+          lastSnapshotDate === null &&
+          a.lastBookingDate === null,
         staleDays,
       };
     });

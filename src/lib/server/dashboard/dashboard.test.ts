@@ -71,6 +71,8 @@ describe("dates", () => {
       step: "month",
     });
     expect(rangeWindow("all", TODAY, null).from).toBe(TODAY);
+    expect(rangeWindow("all", TODAY, "0001-01-01").from).toBe("1976-10-15");
+    expect(rangeWindow("all", TODAY, "2999-01-01").from).toBe(TODAY);
   });
 });
 
@@ -223,6 +225,11 @@ describe("accountBalances", () => {
       date: "2026-05-01",
       amount: m(10),
     } as never);
+    const future = seedAccount(u.id, { name: "Future snap", type: "pension" });
+    createSnapshot(u.id, future.id, {
+      date: "2026-12-01",
+      amount: m(10),
+    } as never);
     const empty = seedAccount(u.id, { name: "Empty" });
     seedAccount(other.id, { name: "Foreign" });
 
@@ -232,6 +239,7 @@ describe("accountBalances", () => {
       "Boundary",
       "Empty",
       "Fresh",
+      "Future snap",
       "Old import",
       "P new",
       "P old",
@@ -254,7 +262,17 @@ describe("accountBalances", () => {
       lastImportAt: null,
     });
     expect(by["P old"]).toMatchObject({ stale: true, staleDays: 167 });
-    expect(by.Empty).toMatchObject({ stale: false, staleDays: null });
+    expect(by["Future snap"]).toMatchObject({
+      lastSnapshotDate: null,
+      staleDays: null,
+    });
+    expect(by.Empty).toMatchObject({
+      stale: false,
+      staleDays: null,
+      noData: true,
+    });
+    expect(by.Fresh!.noData).toBe(false);
+    expect(by["P new"]!.noData).toBe(false);
     expect(empty.id).toBe(by.Empty!.id);
 
     const imports = lastImports(u.id, TODAY);
@@ -272,6 +290,23 @@ describe("accountBalances", () => {
 
 describe("monthSummary", () => {
   useTestDB();
+
+  it("buckets by the account currency and keeps other users' IBANs out of the transfer rule", async () => {
+    const u = await createTestUser();
+    const other = await createTestUser();
+    const a = seedAccount(u.id, { iban: EXAMPLE_IBAN });
+    seedAccount(other.id, { iban: EXAMPLE_IBAN_OTHER });
+    seedImportedTransaction(u.id, a.id, {
+      bookingDate: "2026-10-03",
+      amount: m(-400),
+      currency: "EUR",
+      counterpartyIban: EXAMPLE_IBAN_OTHER,
+    });
+    const s = monthSummary(u.id, { month: "2026-10" });
+    expect(s.totals).toEqual([
+      { currency: "CHF", income: 0, expenses: 400, net: -400 },
+    ]);
+  });
 
   it("splits income and expenses per currency at month boundaries", async () => {
     const u = await createTestUser();
@@ -297,7 +332,7 @@ describe("monthSummary", () => {
     tx(chf.id, "2026-08-31", -99999);
     tx(eur.id, "2026-10-05", -300, "EUR");
 
-    const s = monthSummary(u.id, { month: "2026-10", today: TODAY });
+    const s = monthSummary(u.id, { month: "2026-10" });
     expect(s.previousMonth).toBe("2026-09");
     expect(s.totals).toEqual([
       { currency: "CHF", income: 50000, expenses: 2000, net: 48000 },
@@ -320,13 +355,12 @@ describe("monthSummary", () => {
       bookingDate: "2026-02-28",
       amount: m(-20),
     });
-    const jan = monthSummary(u.id, { month: "2026-01", today: TODAY });
+    const jan = monthSummary(u.id, { month: "2026-01" });
     expect(jan.previousMonth).toBe("2025-12");
     expect(jan.previousTotals[0]!.expenses).toBe(10);
-    expect(
-      monthSummary(u.id, { month: "2026-02", today: TODAY }).totals[0]!
-        .expenses,
-    ).toBe(20);
+    expect(monthSummary(u.id, { month: "2026-02" }).totals[0]!.expenses).toBe(
+      20,
+    );
   });
 
   it("excludes transfers between own accounts", async () => {
@@ -351,7 +385,7 @@ describe("monthSummary", () => {
       amount: m(-70),
       counterpartyIban: FOREIGN_IBANS[0],
     });
-    const s = monthSummary(u.id, { month: "2026-10", today: TODAY });
+    const s = monthSummary(u.id, { month: "2026-10" });
     expect(s.totals).toEqual([
       { currency: "CHF", income: 0, expenses: 70, net: -70 },
     ]);
@@ -377,13 +411,11 @@ describe("monthSummary", () => {
       bookingDate: "2026-10-03",
       amount: m(-5000),
     });
-    const s = monthSummary(u.id, { month: "2026-10", today: TODAY });
+    const s = monthSummary(u.id, { month: "2026-10" });
     expect(s.totals).toEqual([
       { currency: "CHF", income: 0, expenses: 100, net: -100 },
     ]);
-    expect(
-      monthSummary(u.id, { month: "2024-01", today: TODAY }).totals,
-    ).toEqual([]);
+    expect(monthSummary(u.id, { month: "2024-01" }).totals).toEqual([]);
   });
 });
 
