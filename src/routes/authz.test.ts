@@ -52,6 +52,31 @@ const matrix: Record<string, Entry> = {
       "actions.changePassword": (m, e) => m.actions.changePassword(e),
     },
   },
+  "/src/routes/(app)/accounts/+page.server.ts": {
+    access: "user",
+    handlers: {
+      load: (m, e) => m.load(e),
+      "actions.createInstitution": (m, e) => m.actions.createInstitution(e),
+      "actions.updateInstitution": (m, e) => m.actions.updateInstitution(e),
+      "actions.deleteInstitution": (m, e) => m.actions.deleteInstitution(e),
+      "actions.createAccount": (m, e) => m.actions.createAccount(e),
+    },
+  },
+  "/src/routes/(app)/accounts/[id]/+page.server.ts": {
+    access: "user",
+    handlers: {
+      load: (m, e) => m.load(e),
+      "actions.updateAccount": (m, e) => m.actions.updateAccount(e),
+      "actions.archive": (m, e) => m.actions.archive(e),
+      "actions.unarchive": (m, e) => m.actions.unarchive(e),
+      "actions.deleteAccount": (m, e) => m.actions.deleteAccount(e),
+      "actions.addTransaction": (m, e) => m.actions.addTransaction(e),
+      "actions.updateTransaction": (m, e) => m.actions.updateTransaction(e),
+      "actions.deleteTransaction": (m, e) => m.actions.deleteTransaction(e),
+      "actions.addSnapshot": (m, e) => m.actions.addSnapshot(e),
+      "actions.deleteSnapshot": (m, e) => m.actions.deleteSnapshot(e),
+    },
+  },
   "/src/routes/(app)/admin/users/+page.server.ts": {
     access: "admin",
     handlers: {
