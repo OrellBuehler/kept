@@ -86,7 +86,8 @@ jobs:
       - name: Smoke test
         run: |
           image=$(echo "${{ steps.meta.outputs.tags }}" | head -n1)
-          docker run -d --name kept-smoke -p 3000:3000 "$image"
+          docker run -d --name kept-smoke -p 3000:3000 \
+            -e KEPT_SECRET_KEY="$(openssl rand -base64 32)" "$image"
           for i in $(seq 1 30); do
             if curl -fsS http://127.0.0.1:3000/api/health; then
               echo; echo "healthy after ${i}s"; exit 0
