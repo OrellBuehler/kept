@@ -9,7 +9,7 @@ import {
   institutions,
   transactions,
 } from "$lib/server/db";
-import { currentBalance } from "./balances";
+import { currentBalances } from "./balances";
 import { LedgerError, notFound } from "./errors";
 import { maskIban } from "$lib/iban";
 import type { AccountInput } from "./schemas";
@@ -61,7 +61,11 @@ function baseRows(userId: string, accountId?: string) {
     .all();
 }
 
-function toViews(userId: string, accountId?: string): AccountView[] {
+function toViews(
+  userId: string,
+  accountId?: string,
+  today?: string,
+): AccountView[] {
   const db = getDB();
   const lastBooking = new Map(
     db
@@ -70,7 +74,12 @@ function toViews(userId: string, accountId?: string): AccountView[] {
         d: sql<string>`max(${transactions.bookingDate})`,
       })
       .from(transactions)
-      .where(eq(transactions.userId, userId))
+      .where(
+        and(
+          eq(transactions.userId, userId),
+          accountId ? eq(transactions.accountId, accountId) : undefined,
+        ),
+      )
       .groupBy(transactions.accountId)
       .all()
       .map((r) => [r.id, r.d]),
@@ -82,12 +91,19 @@ function toViews(userId: string, accountId?: string): AccountView[] {
         t: sql<number>`max(${imports.createdAt})`,
       })
       .from(imports)
-      .where(eq(imports.userId, userId))
+      .where(
+        and(
+          eq(imports.userId, userId),
+          accountId ? eq(imports.accountId, accountId) : undefined,
+        ),
+      )
       .groupBy(imports.accountId)
       .all()
       .map((r) => [r.id, r.t]),
   );
-  return baseRows(userId, accountId).map((r) => ({
+  const rows = baseRows(userId, accountId);
+  const balances = currentBalances(userId, rows, today);
+  return rows.map((r) => ({
     id: r.id,
     name: r.name,
     type: r.type,
@@ -105,18 +121,22 @@ function toViews(userId: string, accountId?: string): AccountView[] {
           color: r.institutionColor,
         }
       : null,
-    balance: currentBalance(userId, r.id),
+    balance: balances.get(r.id)!,
     lastBookingDate: lastBooking.get(r.id) ?? null,
     lastImportAt: lastImport.get(r.id) ?? null,
   }));
 }
 
-export function listAccounts(userId: string): AccountView[] {
-  return toViews(userId);
+export function listAccounts(userId: string, today?: string): AccountView[] {
+  return toViews(userId, undefined, today);
 }
 
-export function getAccount(userId: string, id: string): AccountView {
-  const found = toViews(userId, id)[0];
+export function getAccount(
+  userId: string,
+  id: string,
+  today?: string,
+): AccountView {
+  const found = toViews(userId, id, today)[0];
   if (!found) throw notFound("Account");
   return found;
 }

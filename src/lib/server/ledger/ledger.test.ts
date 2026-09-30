@@ -489,6 +489,31 @@ describe("transactions", () => {
     });
   });
 
+  it("rejects booking dates before the account's opening date", async () => {
+    const u = await createTestUser();
+    const acc = seedAccount(u.id, { openingDate: "2024-03-01" });
+    expect(
+      code(() =>
+        createManualTransaction(
+          u.id,
+          acc.id,
+          txInput({ bookingDate: "2024-02-29" }),
+        ),
+      ),
+    ).toBe("invalid:bookingDate");
+    const ok = createManualTransaction(
+      u.id,
+      acc.id,
+      txInput({ bookingDate: "2024-03-01" }),
+    );
+    expect(
+      code(() =>
+        updateTransaction(u.id, ok.id, txInput({ bookingDate: "2024-01-01" })),
+      ),
+    ).toBe("invalid:bookingDate");
+    expect(getTransaction(u.id, ok.id).bookingDate).toBe("2024-03-01");
+  });
+
   it("deletes manual rows only", async () => {
     const u = await createTestUser();
     const acc = seedAccount(u.id);

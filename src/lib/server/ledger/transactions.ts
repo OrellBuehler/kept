@@ -61,14 +61,27 @@ const columns = {
   createdAt: sql<number>`${transactions.createdAt}`,
 };
 
-function accountCurrency(userId: string, accountId: string): string {
+function ownedAccount(userId: string, accountId: string) {
   const account = getDB()
-    .select({ currency: accounts.currency })
+    .select({ currency: accounts.currency, openingDate: accounts.openingDate })
     .from(accounts)
     .where(and(eq(accounts.userId, userId), eq(accounts.id, accountId)))
     .get();
   if (!account) throw notFound("Account");
-  return account.currency;
+  return account;
+}
+
+function assertNotBeforeOpening(
+  account: { openingDate: string | null },
+  bookingDate: string,
+) {
+  if (account.openingDate !== null && bookingDate < account.openingDate) {
+    throw new LedgerError(
+      "invalid",
+      `The booking date cannot be before the account's opening date (${account.openingDate}).`,
+      "bookingDate",
+    );
+  }
 }
 
 function escapeLike(value: string): string {
@@ -81,7 +94,7 @@ export function listTransactions(
   accountId: string,
   opts: { filters?: TransactionFilters; page?: number; pageSize?: number } = {},
 ): TransactionPage {
-  accountCurrency(userId, accountId);
+  ownedAccount(userId, accountId);
   const f = opts.filters ?? {};
   const pageSize = Math.max(1, Math.floor(opts.pageSize ?? 50));
   const requested = Math.max(1, Math.floor(opts.page ?? 1));
@@ -138,7 +151,8 @@ export function createManualTransaction(
   accountId: string,
   input: TransactionInput,
 ): TransactionView {
-  const currency = accountCurrency(userId, accountId);
+  const { currency, openingDate } = ownedAccount(userId, accountId);
+  assertNotBeforeOpening({ openingDate }, input.bookingDate);
   const row = getDB()
     .insert(transactions)
     .values({
@@ -169,6 +183,10 @@ export function updateTransaction(
     if (!("bookingDate" in input)) {
       throw new LedgerError("invalid", "Missing transaction fields.");
     }
+    assertNotBeforeOpening(
+      ownedAccount(userId, current.accountId),
+      input.bookingDate,
+    );
     getDB().update(transactions).set(input).where(where).run();
   }
   return getTransaction(userId, id);

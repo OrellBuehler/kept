@@ -243,9 +243,87 @@ export function accountBalanceAt(
   return balanceAt(loadInput(userId, accountId, date), date);
 }
 
-/** Latest known balance: every transaction and snapshot counts. */
-export function currentBalance(userId: string, accountId: string): Minor {
-  return balanceAt(loadInput(userId, accountId, null), "9999-12-31");
+export function localToday(now = new Date()): string {
+  const p = (n: number) => String(n).padStart(2, "0");
+  return `${now.getFullYear()}-${p(now.getMonth() + 1)}-${p(now.getDate())}`;
+}
+
+/**
+ * Balance as of `today` (YYYY-MM-DD, default local today): future-dated
+ * transactions and snapshots do not count.
+ */
+export function currentBalance(
+  userId: string,
+  accountId: string,
+  today: string = localToday(),
+): Minor {
+  return balanceAt(loadInput(userId, accountId, today), today);
+}
+
+/** Current balances of several accounts with two queries in total. */
+export function currentBalances(
+  userId: string,
+  accountRows: readonly {
+    id: string;
+    openingBalance: number;
+    openingDate: string | null;
+  }[],
+  today: string = localToday(),
+): Map<string, Minor> {
+  const db = getDB();
+  const txByAccount = new Map<string, BalanceInput["transactions"][number][]>();
+  for (const t of db
+    .select({
+      accountId: transactions.accountId,
+      bookingDate: transactions.bookingDate,
+      amount: transactions.amount,
+    })
+    .from(transactions)
+    .where(
+      and(
+        eq(transactions.userId, userId),
+        lte(transactions.bookingDate, today),
+      ),
+    )
+    .all()) {
+    const list = txByAccount.get(t.accountId) ?? [];
+    list.push(t);
+    txByAccount.set(t.accountId, list);
+  }
+  const snapByAccount = new Map<string, BalanceInput["snapshots"][number][]>();
+  for (const s of db
+    .select({
+      accountId: balanceSnapshots.accountId,
+      date: balanceSnapshots.date,
+      amount: balanceSnapshots.amount,
+      source: balanceSnapshots.source,
+    })
+    .from(balanceSnapshots)
+    .where(
+      and(
+        eq(balanceSnapshots.userId, userId),
+        lte(balanceSnapshots.date, today),
+      ),
+    )
+    .all()) {
+    const list = snapByAccount.get(s.accountId) ?? [];
+    list.push(s);
+    snapByAccount.set(s.accountId, list);
+  }
+  return new Map(
+    accountRows.map((a) => [
+      a.id,
+      balanceAt(
+        {
+          openingBalance: a.openingBalance,
+          openingDate: a.openingDate,
+          transactions: txByAccount.get(a.id) ?? [],
+          snapshots: snapByAccount.get(a.id) ?? [],
+        },
+        today,
+      ),
+    ]),
+  );
 }
 
 export function balanceSeries(

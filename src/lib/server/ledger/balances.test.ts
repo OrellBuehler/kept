@@ -9,9 +9,11 @@ import {
   balanceSeries,
   balanceSeriesOf,
   currentBalance,
+  currentBalances,
   seriesDates,
   type BalanceInput,
 } from "./balances";
+import { getAccount, listAccounts } from "./accounts";
 import { createSnapshot } from "./snapshots";
 import { createManualTransaction } from "./transactions";
 import { LedgerError } from "./errors";
@@ -250,5 +252,45 @@ describe("database balances", () => {
     expect(() =>
       balanceSeries(b.id, account.id, "2024-01-01", "2024-01-02", "day"),
     ).toThrow(LedgerError);
+  });
+});
+
+describe("current balance cap", () => {
+  useTestDB();
+
+  it("ignores future-dated transactions and snapshots", async () => {
+    const user = await createTestUser();
+    const account = seedAccount(user.id, { openingBalance: minor(100) });
+    seedImportedTransaction(user.id, account.id, {
+      bookingDate: "2024-01-10",
+      amount: minor(10),
+    });
+    seedImportedTransaction(user.id, account.id, {
+      bookingDate: "2024-02-10",
+      amount: minor(1000),
+    });
+    expect(currentBalance(user.id, account.id, "2024-01-31")).toBe(110);
+    expect(currentBalance(user.id, account.id, "2024-02-10")).toBe(1110);
+    createSnapshot(user.id, account.id, {
+      date: "2024-03-01",
+      amount: minor(5),
+      note: null,
+    });
+    expect(currentBalance(user.id, account.id, "2024-02-28")).toBe(1110);
+    expect(getAccount(user.id, account.id, "2024-01-31").balance).toBe(110);
+    expect(listAccounts(user.id, "2024-03-01")[0]!.balance).toBe(5);
+  });
+
+  it("currentBalances matches per-account results for several accounts", async () => {
+    const user = await createTestUser();
+    const a = seedAccount(user.id, { openingBalance: minor(1) });
+    const b = seedAccount(user.id, { name: "B" });
+    seedImportedTransaction(user.id, b.id, { amount: minor(7) });
+    const other = await createTestUser();
+    const c = seedAccount(other.id);
+    seedImportedTransaction(other.id, c.id, { amount: minor(999) });
+    const m = currentBalances(user.id, [a, b], "2024-12-31");
+    expect(m.get(a.id)).toBe(1);
+    expect(m.get(b.id)).toBe(7);
   });
 });

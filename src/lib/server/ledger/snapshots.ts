@@ -66,6 +66,11 @@ export function getSnapshot(userId: string, id: string): SnapshotView {
   return row;
 }
 
+/*
+ * Note for the import flow: imported snapshots must be upserted on
+ * (accountId, date, source="import"); this helper only creates manual ones and
+ * rejects a second manual snapshot for the same date.
+ */
 export function createSnapshot(
   userId: string,
   accountId: string,
