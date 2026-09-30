@@ -49,7 +49,9 @@ export function assertSecretKeyConfigured(): void {
 
 export function encryptSecret(plaintext: string): string {
   const iv = randomBytes(IV_BYTES);
-  const cipher = createCipheriv("aes-256-gcm", getKey(), iv);
+  const cipher = createCipheriv("aes-256-gcm", getKey(), iv, {
+    authTagLength: TAG_BYTES,
+  });
   cipher.setAAD(AAD);
   const body = Buffer.concat([
     cipher.update(plaintext, "utf8"),
@@ -67,7 +69,9 @@ export function decryptSecret(payload: string): string {
   const iv = Buffer.from(parts[1], "base64url");
   const body = Buffer.from(parts[2], "base64url");
   if (iv.length !== IV_BYTES || body.length < TAG_BYTES) throw malformed();
-  const decipher = createDecipheriv("aes-256-gcm", getKey(), iv);
+  const decipher = createDecipheriv("aes-256-gcm", getKey(), iv, {
+    authTagLength: TAG_BYTES,
+  });
   decipher.setAAD(AAD);
   decipher.setAuthTag(body.subarray(body.length - TAG_BYTES));
   try {
