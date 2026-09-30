@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Document xmlns="urn:iso:std:iso:20022:tech:xsd:camt.053.001.04">
+  <BkToCstmrStmt>
+    <GrpHdr>
+      <MsgId>EXAMPLE-MSG-PNDG</MsgId>
+      <CreDtTm>2025-01-01T06:00:00</CreDtTm>
+    </GrpHdr>
+    <Stmt>
+      <Id>STMT-PNDG-1</Id>
+      <Acct>
+        <Id><IBAN>CH9300762011623852957</IBAN></Id>
+        <Ccy>CHF</Ccy>
+      </Acct>
+      <Ntry>
+        <Amt Ccy="CHF">11.00</Amt>
+        <CdtDbtInd>DBIT</CdtDbtInd>
+        <Sts>BOOK</Sts>
+        <BookgDt><Dt>2024-12-02</Dt></BookgDt>
+        <AcctSvcrRef>PD-1</AcctSvcrRef>
+      </Ntry>
+      <Ntry>
+        <Amt Ccy="CHF">22.00</Amt>
+        <CdtDbtInd>DBIT</CdtDbtInd>
+        <Sts>PDNG</Sts>
+        <BookgDt><Dt>2024-12-03</Dt></BookgDt>
+        <AcctSvcrRef>PD-2</AcctSvcrRef>
+      </Ntry>
+      <Ntry>
+        <Amt Ccy="CHF">33.00</Amt>
+        <CdtDbtInd>CRDT</CdtDbtInd>
+        <Sts>INFO</Sts>
+        <BookgDt><Dt>2024-12-04</Dt></BookgDt>
+        <AcctSvcrRef>PD-3</AcctSvcrRef>
+      </Ntry>
+      <Ntry>
+        <Amt Ccy="CHF">44.00</Amt>
+        <CdtDbtInd>CRDT</CdtDbtInd>
+        <Sts>BOOK</Sts>
+        <BookgDt><Dt>2024-12-05</Dt></BookgDt>
+        <AcctSvcrRef>PD-4</AcctSvcrRef>
+      </Ntry>
+    </Stmt>
+  </BkToCstmrStmt>
+</Document>

@@ -1,0 +1,547 @@
+import { createHash } from "node:crypto";
+import { XMLParser, XMLValidator } from "fast-xml-parser";
+import { z } from "zod";
+import { parseAmount, type Minor } from "$lib/money";
+import {
+  ImportFormatError,
+  type NormalizedBalance,
+  type NormalizedStatement,
+  type NormalizedTransaction,
+  type ReferenceType,
+} from "./types";
+
+/**
+ * ISO 20022 camt.053 (bank-to-customer statement) importer.
+ *
+ * Elements are read by local name and meaning, never by a fixed per-version path, so
+ * camt.053.001.02 / .04 / .08 (and other .001.NN versions) share one code path. Differences
+ * handled: `Sts` (plain text vs `Sts/Cd`), party name (`Cdtr/Nm` vs `Cdtr/Pty/Nm`),
+ * `Dt` vs `DtTm` date choices.
+ *
+ * Rules
+ * -----
+ * Sign:      from CdtDbtInd only (CRDT +, DBIT -), for balances and entries.
+ * Reversal:  RvslInd=true marks an entry that cancels an earlier booking. Per the ISO 20022
+ *            message definition the indicator then describes the booking being reversed
+ *            ("a reversal of a debit" is DBIT + RvslInd), so the effect on the balance is the
+ *            opposite: DBIT+RvslInd credits the account, CRDT+RvslInd debits it. The amount is
+ *            therefore flipped relative to CdtDbtInd and `reversal: true` is set.
+ * Batches:   an Ntry with >= 2 TxDtls is split into one transaction per TxDtls only when every
+ *            TxDtls carries its own amount (AmtDtls/TxAmt/Amt, else Amt) in the booked
+ *            currency and those amounts sum exactly to the entry amount. Otherwise (missing or
+ *            non-summing amounts, or foreign currency) the entry is ONE transaction, and
+ *            because it is ambiguous which TxDtls would describe it, counterparty, reference and
+ *            remittance text of the individual TxDtls are not used (entry-level AddtlNtryInf
+ *            only). An Ntry with a single TxDtls is one transaction enriched with its details.
+ * Counterparty: DBIT -> Cdtr/CdtrAcct, CRDT -> Dbtr/DbtrAcct. For reversals the parties are
+ *            sometimes reported with swapped roles, so when the expected party has neither name
+ *            nor IBAN the other role is used. Not done for normal entries (the other party
+ *            would be the account holder).
+ * externalId: see `assignExternalIds`.
+ *
+ * Only booked entries (Sts BOOK) are imported; PDNG/INFO are skipped.
+ * The input is size-limited and DOCTYPE/ENTITY declarations are rejected (no XXE, no
+ * entity expansion); the parser is additionally run with entity processing disabled.
+ */
+
+const MAX_INPUT_CHARS = 25_000_000;
+
+type Rec = Record<string, unknown>;
+
+const parser = new XMLParser({
+  removeNSPrefix: true,
+  ignoreAttributes: false,
+  attributeNamePrefix: "@_",
+  parseTagValue: false,
+  parseAttributeValue: false,
+  processEntities: false,
+  htmlEntities: false,
+  trimValues: true,
+  isArray: (name) =>
+    ["Stmt", "Ntry", "Bal", "NtryDtls", "TxDtls", "Ustrd", "Strd"].includes(
+      name,
+    ),
+});
+
+const dateSchema = z
+  .string()
+  .regex(/^\d{4}-\d{2}-\d{2}/)
+  .transform((s) => s.slice(0, 10))
+  .refine((d) => {
+    const t = new Date(`${d}T00:00:00Z`);
+    return !Number.isNaN(t.getTime()) && t.toISOString().slice(0, 10) === d;
+  });
+const currencySchema = z.string().regex(/^[A-Z]{3}$/);
+const indicatorSchema = z.enum(["CRDT", "DBIT"]);
+const amountSchema = z.string().regex(/^\d+(\.\d+)?$/);
+
+function isRec(v: unknown): v is Rec {
+  return typeof v === "object" && v !== null && !Array.isArray(v);
+}
+
+function asArray(v: unknown): unknown[] {
+  if (v === undefined || v === null) return [];
+  return Array.isArray(v) ? v : [v];
+}
+
+function walk(v: unknown, path: string[]): unknown {
+  let cur: unknown = v;
+  for (const key of path) {
+    if (Array.isArray(cur)) cur = cur[0];
+    if (!isRec(cur)) return undefined;
+    cur = cur[key];
+  }
+  return cur;
+}
+
+function at(v: unknown, ...path: string[]): unknown {
+  const r = walk(v, path);
+  return Array.isArray(r) ? r[0] : r;
+}
+
+function list(v: unknown, ...path: string[]): unknown[] {
+  return asArray(walk(v, path));
+}
+
+function text(v: unknown): string | null {
+  if (Array.isArray(v)) return text(v[0]);
+  let s: string | null = null;
+  if (typeof v === "string") s = v;
+  else if (typeof v === "number") s = String(v);
+  else if (isRec(v) && "#text" in v) return text(v["#text"]);
+  s = s?.trim() ?? null;
+  return s ? s : null;
+}
+
+function fail(message: string): never {
+  throw new ImportFormatError(message);
+}
+
+function readDate(v: unknown, what: string): string | null {
+  return readDateText(text(at(v, "Dt")) ?? text(at(v, "DtTm")), what);
+}
+
+function readDateText(raw: string | null, what: string): string | null {
+  if (raw === null) return null;
+  const parsed = dateSchema.safeParse(raw);
+  if (!parsed.success) fail(`Invalid ${what} date "${raw}"`);
+  return parsed.data;
+}
+
+function decimalsFor(currency: string): number {
+  return new Intl.NumberFormat("en", {
+    style: "currency",
+    currency,
+  }).resolvedOptions().maximumFractionDigits!;
+}
+
+interface Amount {
+  value: Minor;
+  currency: string;
+}
+
+function readAmount(v: unknown, what: string): Amount | null {
+  const raw = text(v);
+  if (raw === null) return null;
+  const ccy = isRec(v) ? text(v["@_Ccy"]) : null;
+  const currency = currencySchema.safeParse(ccy);
+  if (!currency.success)
+    fail(`${what}: missing or invalid currency "${ccy ?? ""}"`);
+  if (!amountSchema.safeParse(raw).success)
+    fail(`${what}: invalid amount "${raw}" (must be a non-negative decimal)`);
+  const decimals = decimalsFor(currency.data);
+  const [whole, rawFraction = ""] = raw.split(".");
+  let fraction = rawFraction;
+  if (fraction.length > decimals) {
+    const extra = fraction.slice(decimals);
+    if (/[^0]/.test(extra))
+      fail(
+        `${what}: amount "${raw}" has more decimals than ${currency.data} allows`,
+      );
+    fraction = fraction.slice(0, decimals);
+  }
+  const value = parseAmount(
+    fraction ? `${whole}.${fraction}` : whole!,
+    decimals,
+  );
+  return { value, currency: currency.data };
+}
+
+function applySign(value: Minor, credit: boolean): Minor {
+  return (credit || value === 0 ? value : 0 - value) as Minor;
+}
+
+function readIndicator(v: unknown, what: string): boolean {
+  const raw = text(v);
+  const parsed = indicatorSchema.safeParse(raw);
+  if (!parsed.success)
+    fail(`${what}: CdtDbtInd must be CRDT or DBIT, got "${raw ?? ""}"`);
+  return parsed.data === "CRDT";
+}
+
+function checkNamespace(xml: string): void {
+  const root = /<(?:[\w.-]+:)?Document\b([^>]*)>/.exec(xml);
+  if (!root) fail("Not a camt.053 file: no <Document> root element");
+  const namespaces = [
+    ...root[1]!.matchAll(/xmlns(?::[\w.-]+)?\s*=\s*["']([^"']*)["']/g),
+  ].map((m) => m[1]!);
+  const iso = namespaces
+    .map((ns) =>
+      /^urn:iso:std:iso:20022:tech:xsd:([a-z]+\.\d+\.\d+\.\d+)$/.exec(ns),
+    )
+    .find((m) => m !== null);
+  if (iso) {
+    const message = iso[1]!;
+    if (!/^camt\.053\.001\.\d+$/.test(message))
+      fail(`Not a camt.053 file: found ${message}`);
+  } else if (namespaces.length > 0) {
+    fail(`Not a camt.053 file: unrecognized namespace ${namespaces[0]}`);
+  }
+}
+
+function pickBalance(bals: Rec[], codes: string[]): NormalizedBalance | null {
+  for (const code of codes) {
+    const bal = bals.find((b) => text(at(b, "Tp", "CdOrPrtry", "Cd")) === code);
+    if (!bal) continue;
+    const amount = readAmount(bal["Amt"], `Balance ${code}`);
+    if (!amount) fail(`Balance ${code} has no amount`);
+    const credit = readIndicator(bal["CdtDbtInd"], `Balance ${code}`);
+    const date = readDate(bal["Dt"], `balance ${code}`);
+    if (!date) fail(`Balance ${code} has no date`);
+    return {
+      amount: applySign(amount.value, credit),
+      currency: amount.currency,
+      date,
+    };
+  }
+  return null;
+}
+
+function normalizeIban(v: unknown): string | null {
+  const s = text(v);
+  return s ? s.replace(/\s+/g, "").toUpperCase() : null;
+}
+
+// Swiss QR reference: 27 digits, last digit = modulo 10 recursive check digit.
+const MOD10 = [0, 9, 4, 6, 8, 2, 7, 1, 3, 5];
+function isQrReference(ref: string): boolean {
+  if (!/^\d{27}$/.test(ref)) return false;
+  let carry = 0;
+  for (let i = 0; i < 26; i++) carry = MOD10[(carry + Number(ref[i])) % 10]!;
+  return (10 - carry) % 10 === Number(ref[26]);
+}
+
+// ISO 11649 creditor reference: RF + 2 check digits + up to 21 alphanumerics, mod 97-10.
+function isCreditorReference(ref: string): boolean {
+  if (!/^RF\d{2}[A-Z0-9]{1,21}$/.test(ref)) return false;
+  const rearranged = ref.slice(4) + ref.slice(0, 4);
+  const digits = [...rearranged]
+    .map((c) => (/\d/.test(c) ? c : String(c.charCodeAt(0) - 55)))
+    .join("");
+  return BigInt(digits) % 97n === 1n;
+}
+
+function readReference(tx: unknown): {
+  reference: string | null;
+  referenceType: ReferenceType | null;
+} {
+  for (const strd of list(tx, "RmtInf", "Strd")) {
+    const raw = text(at(strd, "CdtrRefInf", "Ref"));
+    if (!raw) continue;
+    const reference = raw.replace(/\s+/g, "");
+    const declared =
+      text(at(strd, "CdtrRefInf", "Tp", "CdOrPrtry", "Prtry")) ??
+      text(at(strd, "CdtrRefInf", "Tp", "CdOrPrtry", "Cd"));
+    let referenceType: ReferenceType | null = null;
+    if (declared === "QRR" || declared === "SCOR") referenceType = declared;
+    else if (isQrReference(reference)) referenceType = "QRR";
+    else if (isCreditorReference(reference.toUpperCase()))
+      referenceType = "SCOR";
+    return { reference, referenceType };
+  }
+  return { reference: null, referenceType: null };
+}
+
+function readDescription(tx: unknown, entry: Rec): string | null {
+  const ustrd = list(tx, "RmtInf", "Ustrd")
+    .map(text)
+    .filter((s): s is string => s !== null)
+    .join(" ");
+  return (
+    (ustrd ? ustrd : null) ??
+    text(at(tx, "AddtlTxInf")) ??
+    text(entry["AddtlNtryInf"])
+  );
+}
+
+function readParty(
+  tx: unknown,
+  role: "Cdtr" | "Dbtr",
+): { name: string | null; iban: string | null } {
+  const party = at(tx, "RltdPties", role);
+  return {
+    name: text(at(party, "Nm")) ?? text(at(party, "Pty", "Nm")),
+    iban: normalizeIban(at(tx, "RltdPties", `${role}Acct`, "Id", "IBAN")),
+  };
+}
+
+function readCounterparty(tx: unknown, credit: boolean, reversal: boolean) {
+  const primary = readParty(tx, credit ? "Dbtr" : "Cdtr");
+  if (reversal && !primary.name && !primary.iban)
+    return readParty(tx, credit ? "Cdtr" : "Dbtr");
+  return primary;
+}
+
+function readOriginal(
+  sources: unknown[],
+  booked: Amount,
+  credit: boolean,
+  reversal: boolean,
+): { amount: Minor; currency: string } | null {
+  for (const source of sources) {
+    for (const path of [
+      ["AmtDtls", "InstdAmt", "Amt"],
+      ["AmtDtls", "TxAmt", "Amt"],
+    ]) {
+      const amt = readAmount(at(source, ...path), "Original amount");
+      if (amt && amt.currency !== booked.currency)
+        return {
+          amount: applySign(amt.value, credit !== reversal),
+          currency: amt.currency,
+        };
+    }
+  }
+  return null;
+}
+
+function txAmount(tx: unknown): Amount | null {
+  return (
+    readAmount(at(tx, "AmtDtls", "TxAmt", "Amt"), "TxDtls amount") ??
+    readAmount(at(tx, "Amt"), "TxDtls amount")
+  );
+}
+
+function detailKey(tx: unknown, index: number): string {
+  const acsr = text(at(tx, "Refs", "AcctSvcrRef"));
+  if (acsr) return `a:${acsr}`;
+  const e2e = text(at(tx, "Refs", "EndToEndId"));
+  if (e2e && e2e !== "NOTPROVIDED") return `e:${e2e}`;
+  const txId = text(at(tx, "Refs", "TxId"));
+  if (txId) return `t:${txId}`;
+  return `i:${index}`;
+}
+
+interface Draft {
+  tx: Omit<NormalizedTransaction, "externalId">;
+  baseId: string | null;
+}
+
+function sha256(parts: unknown[]): string {
+  return createHash("sha256").update(JSON.stringify(parts)).digest("hex");
+}
+
+function parseEntry(entry: Rec, accountKey: string, n: number): Draft[] {
+  const what = `Ntry #${n}`;
+  const booked = readAmount(entry["Amt"], `${what} Amt`);
+  if (!booked) fail(`${what} has no amount`);
+  const credit = readIndicator(entry["CdtDbtInd"], what);
+  const reversal = text(entry["RvslInd"])?.toLowerCase() === "true";
+  const bookingDate = readDate(entry["BookgDt"], `${what} booking`);
+  if (!bookingDate) fail(`${what} has no booking date (BookgDt)`);
+  const valueDate = readDate(entry["ValDt"], `${what} value`);
+  const signed = applySign(booked.value, credit !== reversal);
+
+  const txs = list(entry, "NtryDtls").flatMap((d) => list(d, "TxDtls"));
+  const entryRef = text(entry["AcctSvcrRef"]);
+  const ntryRef = text(entry["NtryRef"]);
+
+  let parts: (unknown | null)[] = [null];
+  let split = false;
+  if (txs.length >= 2) {
+    const amounts = txs.map(txAmount);
+    if (
+      amounts.every(
+        (a): a is Amount => a !== null && a.currency === booked.currency,
+      ) &&
+      amounts.reduce((sum, a) => sum + a.value, 0) === booked.value
+    ) {
+      split = true;
+      parts = txs;
+    }
+  } else if (txs.length === 1) {
+    parts = txs;
+  }
+
+  return parts.map((tx, index): Draft => {
+    const amount: Amount = split ? txAmount(tx)! : booked;
+    const value = applySign(amount.value, credit !== reversal);
+    const cp =
+      tx === null
+        ? { name: null, iban: null }
+        : readCounterparty(tx, credit, reversal);
+    const ref =
+      tx === null
+        ? { reference: null, referenceType: null }
+        : readReference(tx);
+    const description = readDescription(tx, entry);
+    const original = readOriginal(
+      tx === null ? [entry] : [tx, entry],
+      amount,
+      credit,
+      reversal,
+    );
+    const transaction = {
+      bookingDate,
+      valueDate,
+      amount: value,
+      currency: amount.currency,
+      originalAmount: original?.amount ?? null,
+      originalCurrency: original?.currency ?? null,
+      counterpartyName: cp.name,
+      counterpartyIban: cp.iban,
+      description,
+      reference: ref.reference,
+      referenceType: ref.referenceType,
+      reversal,
+    };
+
+    let baseId: string | null = null;
+    if (entryRef) {
+      baseId = split
+        ? `acsr:${entryRef}/${detailKey(tx, index)}`
+        : `acsr:${entryRef}`;
+    } else if (ntryRef) {
+      baseId = `ntry:${ntryRef}:${bookingDate}:${signed}`;
+      if (split) baseId += `/${detailKey(tx, index)}`;
+    }
+    if (baseId === null) {
+      baseId = `hash:${sha256([
+        accountKey,
+        bookingDate,
+        valueDate,
+        value,
+        transaction.currency,
+        cp.iban,
+        ref.reference,
+        description,
+        reversal,
+      ])}`;
+    }
+    return { tx: transaction, baseId };
+  });
+}
+
+/**
+ * externalId rules, in order of preference:
+ *   1. `acsr:<AcctSvcrRef>` - the account servicer's reference for the booking; identical in
+ *      every download that contains the booking. For split batches `/<key>` is appended, where
+ *      key is the TxDtls AcctSvcrRef, EndToEndId or TxId, else the TxDtls position.
+ *   2. `ntry:<NtryRef>:<bookingDate>:<signedAmount>` - NtryRef is often only a sequence number
+ *      within one statement, so date and amount are added to keep different bookings apart
+ *      across overlapping files.
+ *   3. `hash:<sha256>` of the normalized entry (account, booking/value date, signed amount,
+ *      currency, counterparty IBAN, reference, description, reversal). Only fields that the
+ *      bank reports identically for the same booking are hashed (no statement id, no position
+ *      in the file), so the same booking hashes identically in every overlapping file.
+ * Identical ids within one statement (e.g. two identical bookings on the same day) get an
+ * occurrence suffix `#2`, `#3`, ... in file order, so real duplicates are kept apart yet
+ * remain stable as long as overlapping files contain the same identical bookings.
+ */
+function assignExternalIds(drafts: Draft[]): NormalizedTransaction[] {
+  const seen = new Map<string, number>();
+  return drafts.map(({ tx, baseId }) => {
+    const count = (seen.get(baseId!) ?? 0) + 1;
+    seen.set(baseId!, count);
+    return {
+      ...tx,
+      externalId: count === 1 ? baseId! : `${baseId}#${count}`,
+    };
+  });
+}
+
+function parseStatement(stmt: Rec, index: number): NormalizedStatement {
+  const what = `Stmt #${index + 1}`;
+  const accountIban = normalizeIban(at(stmt, "Acct", "Id", "IBAN"));
+  const accountOtherId = text(at(stmt, "Acct", "Id", "Othr", "Id"));
+  if (!accountIban && !accountOtherId)
+    fail(`${what} has no account identification (Acct/Id/IBAN or Othr/Id)`);
+
+  const bals = asArray(stmt["Bal"]).filter(isRec);
+  const openingBalance = pickBalance(bals, ["OPBD", "PRCD"]);
+  const closingBalance = pickBalance(bals, ["CLBD"]);
+
+  const entries = asArray(stmt["Ntry"]).map((e, i) => {
+    if (!isRec(e)) fail(`${what}: Ntry #${i + 1} is empty`);
+    return e;
+  });
+
+  let currency = text(at(stmt, "Acct", "Ccy"));
+  if (!currency) {
+    currency =
+      openingBalance?.currency ??
+      closingBalance?.currency ??
+      readAmount(entries[0]?.["Amt"], `${what} Ntry #1 Amt`)?.currency ??
+      null;
+  }
+  if (!currency || !currencySchema.safeParse(currency).success)
+    fail(`${what}: cannot determine the account currency`);
+
+  const accountKey = accountIban ?? `other:${accountOtherId}`;
+  const drafts: Draft[] = [];
+  entries.forEach((entry, i) => {
+    const sts =
+      text(entry["Sts"]) ??
+      text(at(entry, "Sts", "Cd")) ??
+      text(at(entry, "Sts", "Prtry"));
+    if (!sts) fail(`${what}: Ntry #${i + 1} has no status (Sts)`);
+    if (sts !== "BOOK") return;
+    drafts.push(...parseEntry(entry, accountKey, i + 1));
+  });
+
+  return {
+    accountIban,
+    accountOtherId: accountIban ? null : accountOtherId,
+    currency,
+    statementId: text(stmt["Id"]),
+    fromDate: readDateText(text(at(stmt, "FrToDt", "FrDtTm")), `${what} from`),
+    toDate: readDateText(text(at(stmt, "FrToDt", "ToDtTm")), `${what} to`),
+    openingBalance,
+    closingBalance,
+    transactions: assignExternalIds(drafts),
+  };
+}
+
+export function parseCamt053(xml: string): NormalizedStatement[] {
+  if (typeof xml !== "string" || xml.trim() === "")
+    fail("Empty file: expected a camt.053 XML document");
+  if (xml.length > MAX_INPUT_CHARS)
+    fail(`File too large: more than ${MAX_INPUT_CHARS} characters`);
+  const content = xml.charCodeAt(0) === 0xfeff ? xml.slice(1) : xml;
+  if (/<!DOCTYPE|<!ENTITY/i.test(content))
+    fail("DOCTYPE and ENTITY declarations are not allowed in camt.053 files");
+  const valid = XMLValidator.validate(content);
+  if (valid !== true)
+    fail(`Invalid XML: ${valid.err.msg} (line ${valid.err.line})`);
+  checkNamespace(content);
+
+  let tree: unknown;
+  try {
+    tree = parser.parse(content);
+  } catch (e) {
+    fail(`Invalid XML: ${e instanceof Error ? e.message : String(e)}`);
+  }
+  const doc = at(tree, "Document");
+  if (doc === undefined)
+    fail("Not a camt.053 file: no <Document> root element");
+  const container = at(doc, "BkToCstmrStmt");
+  if (!isRec(container))
+    fail(
+      "Not a camt.053 file: <Document> has no BkToCstmrStmt element (is this a different message type?)",
+    );
+  const stmts = asArray(container["Stmt"]);
+  if (stmts.length === 0) fail("camt.053 file contains no statements (Stmt)");
+  return stmts.map((s, i) => {
+    if (!isRec(s)) fail(`Stmt #${i + 1} is empty`);
+    return parseStatement(s, i);
+  });
+}
