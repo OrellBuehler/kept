@@ -1,7 +1,14 @@
-export const QR_IBAN = "CH4431999123000889012";
-export const PLAIN_IBAN = "CH9300762011623852957";
-export const QRR = "210000000003139471430009017";
-export const SCOR = "RF18539007547034";
+import {
+  EXAMPLE_IBAN,
+  EXAMPLE_IBAN_OTHER,
+  EXAMPLE_QRR,
+  EXAMPLE_SCOR,
+} from "../bill-identifiers";
+
+export const QR_IBAN = EXAMPLE_IBAN_OTHER;
+export const PLAIN_IBAN = EXAMPLE_IBAN;
+export const QRR = EXAMPLE_QRR;
+export const SCOR = EXAMPLE_SCOR;
 
 export interface PayloadOptions {
   iban: string;

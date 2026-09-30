@@ -20,3 +20,6 @@ vite.config.ts.timestamp-*
 
 # private terms for the leak guard (never commit)
 .private-terms
+
+# agent worktrees
+/.claude/worktrees

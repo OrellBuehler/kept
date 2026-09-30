@@ -30,7 +30,8 @@ const MAX_AMOUNT = 99_999_999_999;
 const NUM =
   "(?:\\d{1,3}(?:\\.\\d{3})+,\\d{2}|\\d{1,3}(?:,\\d{3})+\\.\\d{2}|\\d{1,3}(?:[ '’  ]\\d{3})+[.,]\\d{2}|\\d+[.,]\\d{2})";
 const NOT_DIGIT_BEFORE = "(?<![\\d.,])";
-const NOT_DIGIT_AFTER = "(?![\\d])";
+// Not followed by a digit or a further separator+digit: keeps "12.03.2024" from reading as 12.03.
+const NOT_DIGIT_AFTER = "(?!\\d|[.,]\\d)";
 
 const AMOUNT_KEYWORDS = [
   "gesamtbetrag",
@@ -49,6 +50,15 @@ const AMOUNT_KEYWORDS = [
 ]
   .map((k) => k.replace(/ /g, "\\s+"))
   .join("|");
+
+/** Specific total labels outrank generic ones ("Betrag", "Total"). */
+const STRONG_KEYWORD =
+  /^(?:gesamtbetrag|rechnungsbetrag|endbetrag|total\s+amount|montant\s+total|total\s+à\s+payer|montant\s+à\s+payer|importo\s+totale|totale\s+da\s+pagare|zu\s+zahlen|amount\s+due|total\s+due|balance\s+due)/iu;
+const TAX_AFTER_KEYWORD =
+  /^(?:betrag|total|totale|montant|importo|amount)\s*(?:mwst|mehrwertsteuer|tva|iva|vat|steuer|tax)(?!\p{L})/iu;
+const TAX_BEFORE_KEYWORD =
+  /(?:mwst|mehrwertsteuer|tva|iva|vat|steuer|tax)\.?:?\s*$/iu;
+const MAX_TEXT_CHARS = 2_000_000;
 
 const KEYWORD_AMOUNT = new RegExp(
   `(?<!\\p{L})(?:${AMOUNT_KEYWORDS})(?!\\p{L})[^\\d]{0,30}?(?:(CHF|EUR)\\s*)?${NOT_DIGIT_BEFORE}(${NUM})${NOT_DIGIT_AFTER}(?:\\s*(CHF|EUR))?`,
@@ -174,30 +184,37 @@ function tryAmount(raw: string): Minor | null {
   }
 }
 
-function findAmount(
-  text: string,
-): { amount: Minor; currency: "CHF" | "EUR" | null } | null {
-  let best: { amount: Minor; currency: "CHF" | "EUR" | null } | null = null;
+type FoundAmount = { amount: Minor; currency: "CHF" | "EUR" | null };
+
+/**
+ * Ranks keyword matches by label specificity, then by whether a currency is
+ * attached; the last match wins only as a tie-break. VAT lines are skipped.
+ */
+function findAmount(text: string): FoundAmount | null {
+  let best: (FoundAmount & { score: number }) | null = null;
   for (const m of text.matchAll(KEYWORD_AMOUNT)) {
     const amount = tryAmount(m[2]);
-    if (amount !== null) {
-      best = {
-        amount,
-        currency: ((m[1] ?? m[3])?.toUpperCase() as "CHF" | "EUR") ?? null,
-      };
+    if (amount === null) continue;
+    const before = text.slice(Math.max(0, m.index - 12), m.index);
+    if (TAX_AFTER_KEYWORD.test(m[0]) || TAX_BEFORE_KEYWORD.test(before)) {
+      continue;
     }
+    const currency = ((m[1] ?? m[3])?.toUpperCase() as "CHF" | "EUR") ?? null;
+    const score = (STRONG_KEYWORD.test(m[0]) ? 2 : 0) + (currency ? 1 : 0);
+    if (!best || score >= best.score) best = { amount, currency, score };
   }
-  if (best) return best;
+  if (best) return { amount: best.amount, currency: best.currency };
+  let fallback: FoundAmount | null = null;
   for (const m of text.matchAll(CURRENCY_FIRST)) {
     const amount = tryAmount(m[2]);
-    if (amount !== null) best = { amount, currency: m[1] as "CHF" | "EUR" };
+    if (amount !== null) fallback = { amount, currency: m[1] as "CHF" | "EUR" };
   }
-  if (best) return best;
+  if (fallback) return fallback;
   for (const m of text.matchAll(CURRENCY_LAST)) {
     const amount = tryAmount(m[1]);
-    if (amount !== null) best = { amount, currency: m[2] as "CHF" | "EUR" };
+    if (amount !== null) fallback = { amount, currency: m[2] as "CHF" | "EUR" };
   }
-  return best;
+  return fallback;
 }
 
 function toIsoDate(y: number, m: number, d: number): string | null {
@@ -241,11 +258,14 @@ function findCreditorName(text: string, iban: string): string | null {
 }
 
 /**
+ * Input beyond 2 million characters is ignored.
  * Best-effort extraction from plain PDF text (German, French, Italian, English).
  * Every returned value is either validated (IBAN, reference, real calendar date,
  * amount range) or explicitly heuristic (creditor name, invoice number).
  */
-export function extractFromText(text: string): TextExtraction {
+export function extractFromText(input: string): TextExtraction {
+  const text =
+    input.length > MAX_TEXT_CHARS ? input.slice(0, MAX_TEXT_CHARS) : input;
   const fields = emptyFields();
 
   const iban = findIban(text);

@@ -1,4 +1,11 @@
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
+import {
+  BAD_QRR_CHECK,
+  EXAMPLE_IBAN,
+  EXAMPLE_SCOR,
+} from "$lib/testing/fixtures/bill-identifiers";
+import { formatIban } from "$lib/iban";
+import { formatReference } from "./references";
 import { buildBillPdf } from "$lib/testing/fixtures/bills/pdf";
 import {
   PLAIN_IBAN,
@@ -124,7 +131,7 @@ describe("extractBillFromPdf with a QR code", () => {
 
   it("warns and falls back to text when the QR payload is invalid", async () => {
     const pdf = await buildBillPdf({
-      qrPayload: buildPayload({ reference: "210000000003139471430009018" }),
+      qrPayload: buildPayload({ reference: BAD_QRR_CHECK }),
       paymentPart: { account: QR_IBAN, amount: "12.50", currency: "CHF" },
     });
     const result = await extractBillFromPdf(pdf);
@@ -146,8 +153,8 @@ describe("extractBillFromPdf without a QR code", () => {
     const pdf = await buildBillPdf({
       bodyLines: ["Rechnung Nr. 2024-77", "Fällig am 15.03.2031"],
       paymentPart: {
-        account: "CH93 0076 2011 6238 5295 7",
-        reference: "RF18 5390 0754 7034",
+        account: formatIban(EXAMPLE_IBAN),
+        reference: formatReference(EXAMPLE_SCOR),
         amount: "250.00",
       },
     });
@@ -212,5 +219,39 @@ describe("extractBillFromPdf errors", () => {
     await extractBillFromPdf(pdf);
     expect(pdf).toEqual(copy);
     expect((await extractBillFromPdf(pdf)).source).toBe("qr");
+  });
+
+  it("stops when the time budget is exhausted", async () => {
+    const pdf = await buildBillPdf({ qrPayload: buildPayload() });
+    const error = await extractBillFromPdf(pdf, { budgetMs: -1 }).catch(
+      (e: unknown) => e,
+    );
+    expect(error).toBeInstanceOf(PdfExtractError);
+    expect((error as PdfExtractError).code).toBe("unreadable");
+    expect((error as PdfExtractError).message).toMatch(/too long/);
+  });
+
+  it("queues concurrent extractions and keeps serving after a failure", async () => {
+    const good = await buildBillPdf({ qrPayload: buildPayload() });
+    const bad = new TextEncoder().encode("%PDF-1.4\nbroken");
+    const results = await Promise.allSettled([
+      extractBillFromPdf(good),
+      extractBillFromPdf(bad),
+      extractBillFromPdf(good),
+    ]);
+    expect(results.map((r) => r.status)).toEqual([
+      "fulfilled",
+      "rejected",
+      "fulfilled",
+    ]);
+  });
+
+  it("surfaces the zero-amount warning", async () => {
+    const pdf = await buildBillPdf({
+      qrPayload: buildPayload({ amount: "0.00" }),
+    });
+    const result = await extractBillFromPdf(pdf);
+    expect(result.fields.amount).toBe(0);
+    expect(result.warnings.join(" ")).toMatch(/notification only/);
   });
 });

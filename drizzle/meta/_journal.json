@@ -8,6 +8,13 @@
       "when": 1790804256722,
       "tag": "0000_fixed_rattler",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "6",
+      "when": 1790805330817,
+      "tag": "0001_green_violations",
+      "breakpoints": true
     }
   ]
 }

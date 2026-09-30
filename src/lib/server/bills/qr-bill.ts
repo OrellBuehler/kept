@@ -26,6 +26,8 @@ export interface QrBill {
   /** YYYY-MM-DD, derived from invoice date + net payment days of `/40/`, if present. */
   dueDate: string | null;
   alternativeProcedures: string[];
+  /** Non-fatal observations for the user, e.g. a zero amount. */
+  warnings: string[];
 }
 
 export class QrBillParseError extends Error {
@@ -210,6 +212,11 @@ export function parseBillInformation(text: string | null): BillInformation {
   return result;
 }
 
+/**
+ * The implementation guidelines require exactly two decimals; we also accept
+ * "50" and "1.5" since they are unambiguous and some generators omit them.
+ * Zero is allowed (notification bills carry 0.00); the caller adds a warning.
+ */
 function parseAmountField(value: string): Minor | null {
   if (value === "") return null;
   if (!/^\d{1,9}(\.\d{1,2})?$/.test(value)) {
@@ -219,11 +226,8 @@ function parseAmountField(value: string): Minor | null {
     );
   }
   const amount = parseAmount(value);
-  if (amount < 1 || amount > 99_999_999_999) {
-    throw new QrBillParseError(
-      "amount",
-      "must be between 0.01 and 999999999.99",
-    );
+  if (amount > 99_999_999_999) {
+    throw new QrBillParseError("amount", "must be at most 999999999.99");
   }
   return amount;
 }
@@ -232,6 +236,10 @@ function parseAmountField(value: string): Minor | null {
  * Parses the text of a Swiss QR code (type SPC, version 0200, coding 1).
  * Lines may be separated by CRLF or LF; trailing empty lines and missing optional
  * trailing fields are tolerated. Throws QrBillParseError naming the offending field.
+ *
+ * Leniency: both structured (S) and combined (K) creditor/debtor addresses are
+ * accepted (K was withdrawn from the guidelines in late 2025 but is still common);
+ * a filled ultimate-creditor block is ignored; amounts may omit decimals.
  */
 export function parseQrBillPayload(text: string): QrBill {
   const lines = text
@@ -345,5 +353,7 @@ export function parseQrBillPayload(text: string): QrBill {
     invoiceDate: info.invoiceDate,
     dueDate: info.dueDate,
     alternativeProcedures: [at(L.alt1), at(L.alt2)].filter((v) => v !== ""),
+    warnings:
+      amount === 0 ? ["Zero amount - notification only, nothing to pay"] : [],
   };
 }

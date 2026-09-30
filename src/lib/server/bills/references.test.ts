@@ -1,5 +1,14 @@
 import { describe, expect, it } from "vitest";
 import {
+  BAD_QRR_CHECK,
+  BAD_SCOR_CHECK,
+  BAD_SCOR_PREFIX,
+  BAD_SCOR_TOO_LONG,
+  EXAMPLE_QRR,
+  EXAMPLE_SCOR,
+  EXAMPLE_SCOR_FORMATTED,
+} from "$lib/testing/fixtures/bill-identifiers";
+import {
   formatReference,
   isValidQrr,
   isValidScor,
@@ -8,29 +17,29 @@ import {
 
 describe("references", () => {
   it("validates QRR check digit", () => {
-    expect(isValidQrr("210000000003139471430009017")).toBe(true);
-    expect(isValidQrr("21 00000 00003 13947 14300 09017")).toBe(true);
+    expect(isValidQrr(EXAMPLE_QRR)).toBe(true);
+    expect(isValidQrr(formatReference(EXAMPLE_QRR))).toBe(true);
     expect(isValidQrr("000000000000000000000000000")).toBe(true);
-    expect(isValidQrr("210000000003139471430009018")).toBe(false);
-    expect(isValidQrr("21000000000313947143000901")).toBe(false);
-    expect(isValidQrr("2100000000031394714300090170")).toBe(false);
-    expect(isValidQrr("21000000000313947143000901A")).toBe(false);
+    expect(isValidQrr(BAD_QRR_CHECK)).toBe(false);
+    expect(isValidQrr(EXAMPLE_QRR.slice(0, -1))).toBe(false);
+    expect(isValidQrr(EXAMPLE_QRR + "0")).toBe(false);
+    expect(isValidQrr(EXAMPLE_QRR.slice(0, -1) + "A")).toBe(false);
   });
 
   it("validates SCOR references", () => {
-    expect(isValidScor("RF18539007547034")).toBe(true);
-    expect(isValidScor("rf18 5390 0754 7034")).toBe(true);
-    expect(isValidScor("RF19539007547034")).toBe(false);
+    expect(isValidScor(EXAMPLE_SCOR)).toBe(true);
+    expect(isValidScor(formatReference(EXAMPLE_SCOR).toLowerCase())).toBe(true);
+    expect(isValidScor(BAD_SCOR_CHECK)).toBe(false);
     expect(isValidScor("RF18")).toBe(false);
-    expect(isValidScor("RF18539007547034".padEnd(30, "0"))).toBe(false);
-    expect(isValidScor("XX" + "18539007547034")).toBe(false);
+    expect(isValidScor(BAD_SCOR_TOO_LONG)).toBe(false);
+    expect(isValidScor(BAD_SCOR_PREFIX)).toBe(false);
   });
 
   it("normalizes and formats", () => {
     expect(normalizeReference(" rf18 5390 ")).toBe("RF185390");
-    expect(formatReference("210000000003139471430009017")).toBe(
+    expect(formatReference(EXAMPLE_QRR)).toBe(
       "21 00000 00003 13947 14300 09017",
     );
-    expect(formatReference("RF18539007547034")).toBe("RF18 5390 0754 7034");
+    expect(formatReference(EXAMPLE_SCOR)).toBe(EXAMPLE_SCOR_FORMATTED);
   });
 });

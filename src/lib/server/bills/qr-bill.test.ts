@@ -1,4 +1,11 @@
 import { describe, expect, it } from "vitest";
+import {
+  BAD_QR_IBAN_CHECK,
+  BAD_QRR_CHECK,
+  BAD_SCOR_CHECK,
+  EXAMPLE_SCOR,
+  FOREIGN_IBANS,
+} from "$lib/testing/fixtures/bill-identifiers";
 import { minor } from "$lib/money";
 import {
   PLAIN_IBAN,
@@ -12,6 +19,7 @@ import {
   parseBillInformation,
   parseQrBillPayload,
 } from "./qr-bill";
+import { formatReference } from "./references";
 
 function fieldOf(fn: () => unknown): string {
   try {
@@ -52,6 +60,7 @@ describe("parseQrBillPayload", () => {
       invoiceDate: "2024-03-15",
       dueDate: "2024-04-14",
       alternativeProcedures: [],
+      warnings: [],
     });
   });
 
@@ -93,7 +102,7 @@ describe("parseQrBillPayload", () => {
       buildPayload({
         iban: PLAIN_IBAN,
         referenceType: "SCOR",
-        reference: "RF18 5390 0754 7034",
+        reference: formatReference(EXAMPLE_SCOR),
         amount: "50.5",
       }),
     );
@@ -155,12 +164,12 @@ describe("parseQrBillPayload", () => {
   it("rejects invalid IBANs", () => {
     expect(
       fieldOf(() =>
-        parseQrBillPayload(buildPayload({ iban: "CH4431999123000889013" })),
+        parseQrBillPayload(buildPayload({ iban: BAD_QR_IBAN_CHECK })),
       ),
     ).toBe("creditorIban");
     expect(
       fieldOf(() =>
-        parseQrBillPayload(buildPayload({ iban: "DE89370400440532013000" })),
+        parseQrBillPayload(buildPayload({ iban: FOREIGN_IBANS[0] })),
       ),
     ).toBe("creditorIban");
   });
@@ -181,9 +190,7 @@ describe("parseQrBillPayload", () => {
   it("rejects invalid check digits", () => {
     expect(
       fieldOf(() =>
-        parseQrBillPayload(
-          buildPayload({ reference: "210000000003139471430009018" }),
-        ),
+        parseQrBillPayload(buildPayload({ reference: BAD_QRR_CHECK })),
       ),
     ).toBe("reference");
     expect(
@@ -192,7 +199,7 @@ describe("parseQrBillPayload", () => {
           buildPayload({
             iban: PLAIN_IBAN,
             referenceType: "SCOR",
-            reference: "RF19539007547034",
+            reference: BAD_SCOR_CHECK,
           }),
         ),
       ),
@@ -220,15 +227,7 @@ describe("parseQrBillPayload", () => {
   });
 
   it("validates amounts", () => {
-    for (const amount of [
-      "0.00",
-      "0",
-      "-5.00",
-      "1.234",
-      "1000000000.00",
-      "1,50",
-      "abc",
-    ]) {
+    for (const amount of ["-5.00", "1.234", "1000000000.00", "1,50", "abc"]) {
       expect(
         fieldOf(() => parseQrBillPayload(buildPayload({ amount }))),
         amount,
@@ -238,6 +237,17 @@ describe("parseQrBillPayload", () => {
     expect(
       parseQrBillPayload(buildPayload({ amount: "999999999.99" })).amount,
     ).toBe(99_999_999_999);
+  });
+
+  it("accepts a zero amount with a warning", () => {
+    const bill = parseQrBillPayload(buildPayload({ amount: "0.00" }));
+    expect(bill.amount).toBe(0);
+    expect(bill.warnings).toEqual([
+      "Zero amount - notification only, nothing to pay",
+    ]);
+    expect(parseQrBillPayload(buildPayload({ amount: "12" })).amount).toBe(
+      1200,
+    );
   });
 
   it("validates currency and creditor address", () => {

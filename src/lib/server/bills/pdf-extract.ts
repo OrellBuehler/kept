@@ -10,8 +10,13 @@ export const MAX_PDF_BYTES = 20 * 1024 * 1024;
 export const MAX_PDF_PAGES = 200;
 /** Pages rendered for QR detection: the last two first, then others back to front. */
 const MAX_RENDERED_PAGES = 12;
-const RENDER_DPI = 300;
-const MAX_PIXELS = 16_000_000;
+/** First pass: plain decode of a 300 dpi render. Second pass: harder decode of a cheaper render. */
+const PASSES = [
+  { dpi: 300, maxPixels: 12_000_000, hard: false },
+  { dpi: 200, maxPixels: 4_000_000, hard: true },
+] as const;
+export const EXTRACTION_BUDGET_MS = 20_000;
+const MAX_TEXT_CHARS = 2_000_000;
 
 export interface BillExtraction {
   /** qr: a valid Swiss QR-bill was decoded. text: heuristics only. none: nothing found. */
@@ -121,61 +126,74 @@ function pageOrder(numPages: number): number[] {
   return order;
 }
 
+function checkBudget(deadline: number) {
+  if (Date.now() > deadline) {
+    throw new PdfExtractError(
+      "unreadable",
+      "Reading the PDF took too long and was stopped",
+    );
+  }
+}
+
 async function decodeSpcFromPage(
   engine: Engine,
   doc: PdfDocument,
   pageNumber: number,
+  deadline: number,
 ): Promise<string[]> {
   const page = await doc.getPage(pageNumber);
-  const base = page.getViewport({ scale: 1 });
-  const scale = Math.min(
-    RENDER_DPI / 72,
-    Math.sqrt(MAX_PIXELS / (base.width * base.height)),
-  );
-  const viewport = page.getViewport({ scale });
-  const factory = new engine.CanvasFactory();
-  const target = factory.create(
-    Math.ceil(viewport.width),
-    Math.ceil(viewport.height),
-  );
   try {
-    await page.render({
-      canvas: target.canvas,
-      canvasContext: target.context,
-      viewport,
-    } as never).promise;
-    if (!target.context) throw new Error("Canvas context is unavailable");
-    const image = target.context.getImageData(
-      0,
-      0,
-      target.canvas.width,
-      target.canvas.height,
-    );
-    const imageData = {
-      data: image.data,
-      width: image.width,
-      height: image.height,
-      colorSpace: "srgb",
-    } as ImageData;
-    const attempts = [
-      { tryHarder: false },
-      { tryHarder: true, tryRotate: true, tryInvert: true },
-    ];
-    for (const attempt of attempts) {
-      const results = await engine.zxing.readBarcodes(imageData, {
-        formats: ["QRCode"],
-        maxNumberOfSymbols: 4,
-        ...attempt,
-      });
-      const texts = results
-        .map((r) => r.text)
-        .filter((t) => t.startsWith("SPC"));
-      if (texts.length > 0) return texts;
+    const base = page.getViewport({ scale: 1 });
+    for (const pass of PASSES) {
+      checkBudget(deadline);
+      const scale = Math.min(
+        pass.dpi / 72,
+        Math.sqrt(pass.maxPixels / (base.width * base.height)),
+      );
+      const viewport = page.getViewport({ scale });
+      const factory = new engine.CanvasFactory();
+      const target = factory.create(
+        Math.ceil(viewport.width),
+        Math.ceil(viewport.height),
+      );
+      try {
+        if (!target.context) throw new Error("Canvas context is unavailable");
+        await page.render({
+          canvas: target.canvas,
+          canvasContext: target.context,
+          viewport,
+        } as never).promise;
+        const image = target.context.getImageData(
+          0,
+          0,
+          target.canvas.width,
+          target.canvas.height,
+        );
+        const imageData = {
+          data: image.data,
+          width: image.width,
+          height: image.height,
+          colorSpace: "srgb",
+        } as ImageData;
+        checkBudget(deadline);
+        const results = await engine.zxing.readBarcodes(imageData, {
+          formats: ["QRCode"],
+          maxNumberOfSymbols: 4,
+          ...(pass.hard
+            ? { tryHarder: true, tryRotate: true, tryInvert: true }
+            : { tryHarder: false }),
+        });
+        const texts = results
+          .map((r) => r.text)
+          .filter((t) => t.startsWith("SPC"));
+        if (texts.length > 0) return texts;
+      } finally {
+        factory.destroy(target);
+      }
     }
     return [];
   } finally {
     page.cleanup();
-    factory.destroy(target);
   }
 }
 
@@ -211,9 +229,36 @@ function fieldsFromQr(qr: QrBill): BillFields {
  * PdfExtractError for oversized, non-PDF, encrypted or unreadable input.
  * Scanned (image-only) bills without a readable QR code yield source "none".
  */
-export async function extractBillFromPdf(
+export function extractBillFromPdf(
   bytes: Uint8Array,
+  options: { budgetMs?: number } = {},
 ): Promise<BillExtraction> {
+  return exclusive(() =>
+    extractUnlocked(bytes, options.budgetMs ?? EXTRACTION_BUDGET_MS),
+  );
+}
+
+let queueTail: Promise<void> = Promise.resolve();
+
+/**
+ * Runs extractions one at a time: rendering is CPU and memory heavy, and
+ * concurrent uploads must queue rather than multiply peak memory.
+ */
+function exclusive<T>(task: () => Promise<T>): Promise<T> {
+  const run = queueTail.then(task);
+  // The caller receives `run` with its outcome; the queue only needs to advance.
+  queueTail = run.then(
+    () => undefined,
+    () => undefined,
+  );
+  return run;
+}
+
+async function extractUnlocked(
+  bytes: Uint8Array,
+  budgetMs: number,
+): Promise<BillExtraction> {
+  const deadline = Date.now() + budgetMs;
   if (bytes.byteLength > MAX_PDF_BYTES) {
     throw new PdfExtractError(
       "too_large",
@@ -244,7 +289,7 @@ export async function extractBillFromPdf(
     for (const pageNumber of pageOrder(doc.numPages)) {
       let payloads: string[];
       try {
-        payloads = await decodeSpcFromPage(engine, doc, pageNumber);
+        payloads = await decodeSpcFromPage(engine, doc, pageNumber, deadline);
       } catch (error) {
         warnings.push(
           `Page ${pageNumber} could not be rendered for QR detection`,
@@ -269,12 +314,13 @@ export async function extractBillFromPdf(
       if (qr) break;
     }
 
+    checkBudget(deadline);
     let text = "";
     try {
       const extracted = await engine.pdf.extractText(doc, {
         mergePages: false,
       });
-      text = extracted.text.join("\n");
+      text = extracted.text.join("\n").slice(0, MAX_TEXT_CHARS);
     } catch (error) {
       warnings.push("The text of the PDF could not be read");
       console.warn(
@@ -285,6 +331,7 @@ export async function extractBillFromPdf(
     const fromText = extractFromText(text);
 
     if (qr) {
+      warnings.push(...qr.warnings);
       const fields = fieldsFromQr(qr);
       fields.dueDate ??= fromText.fields.dueDate;
       fields.invoiceNumber ??= fromText.fields.invoiceNumber;
