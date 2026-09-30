@@ -4,7 +4,12 @@
   import type { Pathname } from "$app/types";
   import * as Sidebar from "$lib/components/ui/sidebar/index.js";
 
-  type Item = { href: Pathname; label: string; icon: Component };
+  type Item = {
+    href: Pathname;
+    label: string;
+    icon: Component;
+    badge?: number;
+  };
   let {
     items,
     isActive,
@@ -32,6 +37,14 @@
           </a>
         {/snippet}
       </Sidebar.MenuButton>
+      {#if item.badge}
+        <Sidebar.MenuBadge
+          class="bg-destructive text-white peer-hover/menu-button:text-white peer-data-[active=true]/menu-button:text-white"
+          aria-label={`${item.badge} overdue`}
+        >
+          {item.badge}
+        </Sidebar.MenuBadge>
+      {/if}
     </Sidebar.MenuItem>
   {/each}
 </Sidebar.Menu>
