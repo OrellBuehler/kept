@@ -38,6 +38,6 @@ repos:
 
       - id: vitest
         name: vitest (related tests)
-        entry: bunx vitest related --run --passWithNoTests
+        entry: bunx --bun vitest related --run --passWithNoTests
         language: system
         types_or: [ts, svelte]

@@ -28,7 +28,8 @@ LABEL org.opencontainers.image.title="kept" \
       org.opencontainers.image.revision="${GIT_HASH}" \
       org.opencontainers.image.created="${BUILD_TIMESTAMP}"
 WORKDIR /app
-RUN addgroup -S -g 1001 kept && adduser -S -u 1001 -G kept kept && \
+RUN apk upgrade --no-cache && \
+    addgroup -S -g 1001 kept && adduser -S -u 1001 -G kept kept && \
     mkdir -p /data && chown kept:kept /data
 COPY --from=prod-deps --chown=kept:kept /app/node_modules ./node_modules
 COPY --from=builder --chown=kept:kept /app/build ./build
