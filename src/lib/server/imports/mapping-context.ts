@@ -73,8 +73,14 @@ export function guessProfile(
         c.samples.length > 0 &&
         c.samples.every((s) => /^[-+(]?[\d.,' ]+\)?-?$/.test(s)),
     );
-  const descriptionColumn = columns.find((c) =>
-    /descr|text|purpose|memo|details|verwendung|buchungs/i.test(c.name),
+  const descriptionColumn = columns.find(
+    (c) =>
+      c !== dateColumn &&
+      c !== amountColumn &&
+      !/date|datum|valuta|amount|betrag|credit|debit|saldo|balance/i.test(
+        c.name,
+      ) &&
+      /descr|text|purpose|memo|details|verwendung|mitteilung/i.test(c.name),
   );
   const amountSamples = amountColumn?.samples ?? [];
   const decimalComma = amountSamples.some((s) => /,\d{1,2}\)?-?$/.test(s));
