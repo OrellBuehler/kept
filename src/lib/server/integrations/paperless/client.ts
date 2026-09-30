@@ -275,8 +275,10 @@ export class PaperlessClient {
         body: init.body,
         redirect: "manual",
         signal: AbortSignal.timeout(init.timeoutMs),
+        // Opt-in per connection for self-signed certificates on a private network; off by default.
         ...(this.allowInsecureTls
-          ? { tls: { rejectUnauthorized: false } }
+          ? // nosemgrep: problem-based-packs.insecure-transport.js-node.bypass-tls-verification.bypass-tls-verification
+            { tls: { rejectUnauthorized: false } }
           : {}),
       } as RequestInit);
     } catch (err) {
