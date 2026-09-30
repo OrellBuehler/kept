@@ -14,7 +14,8 @@ import { readCsv, readXlsx } from "$lib/server/importers/tabular";
 import { ImportFormatError } from "$lib/server/importers/types";
 import { getAccount } from "$lib/server/ledger/accounts";
 import { LedgerError } from "$lib/server/ledger/errors";
-import { readPending } from "./pending";
+import { cachedParse } from "./cache";
+import { getPendingMeta, readPending } from "./pending";
 import { getCsvProfile, parseProfileSafe } from "./profiles";
 
 export interface MappingContext {
@@ -127,7 +128,8 @@ export function mappingContext(
   pendingId: string,
   draftProfile?: unknown,
 ): MappingContext {
-  const { meta, bytes } = readPending(userId, pendingId);
+  const meta = getPendingMeta(userId, pendingId);
+  const readBytes = () => readPending(userId, pendingId).bytes;
   if (meta.format === "camt053") {
     throw new LedgerError(
       "invalid",
@@ -156,8 +158,12 @@ export function mappingContext(
   try {
     rows =
       meta.format === "xlsx"
-        ? readXlsx(bytes, { decimalSeparator })
-        : readCsv(bytes, { delimiter, encoding });
+        ? cachedParse(meta, `xlsx:${decimalSeparator}`, () =>
+            readXlsx(readBytes(), { decimalSeparator }),
+          )
+        : cachedParse(meta, `csv:${delimiter}:${encoding}`, () =>
+            readCsv(readBytes(), { delimiter, encoding }),
+          );
   } catch (err) {
     if (!(err instanceof ImportFormatError)) throw err;
     errors.push(err.message);

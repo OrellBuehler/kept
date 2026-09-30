@@ -111,6 +111,16 @@ describe("/import/[pendingId]/mapping", () => {
     expect(getCsvProfile(user.id, account.id)).toBeNull();
   });
 
+  it("save reports a missing profile field under errors.profile", async () => {
+    const { user, account } = await setup();
+    const id = uploadFixture(user.id, account.id, "csv/overlap-a.csv");
+    expect(await save(user, id, { name: "x" })).toMatchObject({
+      type: "fail",
+      status: 400,
+      data: { action: "save", errors: { profile: [expect.any(String)] } },
+    });
+  });
+
   it("another user cannot load or save a mapping for my upload", async () => {
     const { user, account } = await setup();
     const other = await createTestUser();

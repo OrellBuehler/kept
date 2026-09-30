@@ -208,7 +208,9 @@ describe("confirmImport", () => {
       account.id,
       "camt053/v08-basic.xml",
     );
-    expect(() => confirmImport(user.id, wrongCurrency)).toThrow(/in EUR/);
+    expect(() => confirmImport(user.id, wrongCurrency)).toThrow(
+      /different IBAN/,
+    );
     expect(txCount(account.id)).toBe(0);
     expect(getDB().select().from(imports).all()).toEqual([]);
     expect(() => readPending(user.id, csv)).not.toThrow();

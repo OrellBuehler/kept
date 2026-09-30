@@ -136,6 +136,21 @@ describe("POST /api/imports/[pendingId]/preview", () => {
     });
   });
 
+  it("rejects an oversized declared content-length before reading", async () => {
+    const { user, id } = await setup();
+    const r = await post(
+      user,
+      id,
+      { profile: {} },
+      {
+        origin: ORIGIN,
+        "content-type": "application/json",
+        "content-length": "100001",
+      },
+    );
+    expect(r).toEqual({ type: "error", status: 413 });
+  });
+
   it("another user cannot use my pendingId", async () => {
     const { id } = await setup();
     const other = await createTestUser();

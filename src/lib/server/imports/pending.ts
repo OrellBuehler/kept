@@ -8,6 +8,7 @@ import {
   statSync,
   writeFileSync,
 } from "node:fs";
+import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { z } from "zod";
 import { IMPORT_FORMATS } from "$lib/ledger-types";
@@ -32,10 +33,10 @@ const metaSchema = z.object({
 export type PendingMeta = z.infer<typeof metaSchema>;
 
 export function pendingRoot(): string {
-  return join(
-    dirname(process.env.DATABASE_PATH ?? "./data/kept.db"),
-    "pending-imports",
-  );
+  const dbPath = process.env.DATABASE_PATH ?? "./data/kept.db";
+  // An in-memory database has no directory to live next to.
+  if (dbPath === ":memory:") return join(tmpdir(), "kept", "pending-imports");
+  return join(dirname(dbPath), "pending-imports");
 }
 
 /** Validates before any filesystem access: an invalid id is simply "not found". */

@@ -9,7 +9,8 @@ import {
   transactions,
 } from "$lib/server/db";
 import { parseCamt053 } from "$lib/server/importers/camt053";
-import { parseCsvFile, parseXlsxFile } from "$lib/server/importers/csv";
+import { parseTabular } from "$lib/server/importers/csv";
+import { readCsv, readXlsx } from "$lib/server/importers/tabular";
 import type { CsvMappingProfile } from "$lib/server/importers/mapping";
 import {
   ImportFormatError,
@@ -20,7 +21,8 @@ import {
 import { getAccount, type AccountView } from "$lib/server/ledger/accounts";
 import { balanceAt, type BalanceInput } from "$lib/server/ledger/balances";
 import { getCsvProfile } from "./profiles";
-import { readPending, type PendingMeta } from "./pending";
+import { cachedParse } from "./cache";
+import { getPendingMeta, readPending, type PendingMeta } from "./pending";
 
 export type RowStatus = "new" | "duplicate" | "duplicate_in_file";
 
@@ -70,20 +72,30 @@ export interface PreviewOptions {
 
 function mergeStatements(list: NormalizedStatement[]): NormalizedStatement {
   if (list.length === 1) return list[0]!;
-  const sorted = [...list].sort((a, b) =>
-    (a.fromDate ?? a.openingBalance?.date ?? "").localeCompare(
-      b.fromDate ?? b.openingBalance?.date ?? "",
-    ),
-  );
-  const first = sorted[0]!;
-  const last = sorted[sorted.length - 1]!;
+  const byOpening = list
+    .filter((s) => s.openingBalance)
+    .sort((a, b) =>
+      a.openingBalance!.date.localeCompare(b.openingBalance!.date),
+    );
+  const byClosing = list
+    .filter((s) => s.closingBalance)
+    .sort((a, b) =>
+      b.closingBalance!.date.localeCompare(a.closingBalance!.date),
+    );
+  const dates = (pick: (s: NormalizedStatement) => string | null) =>
+    list
+      .map(pick)
+      .filter((d): d is string => d !== null)
+      .sort();
+  const froms = dates((s) => s.fromDate);
+  const tos = dates((s) => s.toDate);
   return {
-    ...first,
-    fromDate: first.fromDate,
-    toDate: last.toDate,
-    openingBalance: first.openingBalance,
-    closingBalance: last.closingBalance,
-    transactions: sorted.flatMap((s) => s.transactions),
+    ...list[0]!,
+    fromDate: froms[0] ?? null,
+    toDate: tos[tos.length - 1] ?? null,
+    openingBalance: byOpening[0]?.openingBalance ?? null,
+    closingBalance: byClosing[0]?.closingBalance ?? null,
+    transactions: list.flatMap((s) => s.transactions),
   };
 }
 
@@ -108,11 +120,18 @@ function selectCamtStatement(
   }
   if (statements.length === 1) {
     const only = statements[0]!;
+    if (only.accountIban && accountIban) {
+      return {
+        statement: null,
+        warnings: [],
+        errors: [
+          `The statement is for a different IBAN (${maskIban(only.accountIban)}) than this account (${maskIban(accountIban)}).`,
+        ],
+      };
+    }
     const warning = !only.accountIban
       ? "The statement does not name an account IBAN, so it cannot be checked against this account."
-      : !accountIban
-        ? "This account has no IBAN, so the statement's account could not be verified."
-        : `The statement is for a different IBAN (${maskIban(only.accountIban)}) than this account (${maskIban(accountIban)}).`;
+      : "This account has no IBAN, so the statement's account could not be verified.";
     return { statement: only, warnings: [warning], errors: [] };
   }
   const listed = statements
@@ -257,24 +276,39 @@ function continuityWarnings(
 
 function parseFile(
   meta: PendingMeta,
-  bytes: Uint8Array,
+  readBytes: () => Uint8Array,
   profile: CsvMappingProfile | null,
   account: AccountView,
 ): Selection {
   try {
     if (meta.format === "camt053") {
       return selectCamtStatement(
-        parseCamt053(new TextDecoder("utf-8").decode(bytes)),
+        cachedParse(meta, "camt", () =>
+          parseCamt053(new TextDecoder("utf-8").decode(readBytes())),
+        ),
         account,
       );
     }
     if (!profile) {
       return { statement: null, warnings: [], errors: [MAPPING_REQUIRED] };
     }
-    const statement =
+    const rows =
       meta.format === "xlsx"
-        ? parseXlsxFile(bytes, profile)
-        : parseCsvFile(bytes, profile);
+        ? cachedParse(meta, `xlsx:${profile.decimalSeparator}`, () =>
+            readXlsx(readBytes(), {
+              decimalSeparator: profile.decimalSeparator,
+            }),
+          )
+        : cachedParse(
+            meta,
+            `csv:${profile.delimiter}:${profile.encoding}`,
+            () =>
+              readCsv(readBytes(), {
+                delimiter: profile.delimiter,
+                encoding: profile.encoding,
+              }),
+          );
+    const statement = parseTabular(rows, profile);
     return { statement, warnings: [], errors: [] };
   } catch (err) {
     // Importer messages name rows and columns, never cell values.
@@ -316,7 +350,7 @@ export function buildPreview(
   pendingId: string,
   options: PreviewOptions = {},
 ): ImportPreview {
-  const { meta, bytes } = readPending(userId, pendingId);
+  const meta = getPendingMeta(userId, pendingId);
   const account = getAccount(userId, meta.accountId);
   const base = {
     pendingId: meta.id,
@@ -350,7 +384,12 @@ export function buildPreview(
     meta.format === "camt053"
       ? null
       : (options.profile ?? getCsvProfile(userId, account.id)?.profile ?? null);
-  const selection = parseFile(meta, bytes, profile, account);
+  const selection = parseFile(
+    meta,
+    () => readPending(userId, pendingId).bytes,
+    profile,
+    account,
+  );
   const warnings = [...selection.warnings];
   const errors = [...selection.errors];
   const statement = selection.statement;

@@ -27,6 +27,8 @@ export const POST: RequestHandler = async ({
   if (!/^application\/json\s*(;|$)/i.test(contentType)) {
     error(415, "Content-Type must be application/json");
   }
+  const declared = Number(request.headers.get("content-length") ?? "0");
+  if (declared > MAX_BODY_CHARS) error(413, "Request body too large");
   const text = await request.text();
   if (text.length > MAX_BODY_CHARS) error(413, "Request body too large");
   let raw: unknown;

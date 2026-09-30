@@ -1,6 +1,7 @@
-import { eq } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 import { balanceSnapshots, getDB, imports, transactions } from "$lib/server/db";
 import type { CsvMappingProfile } from "$lib/server/importers/mapping";
+import { getAccount } from "$lib/server/ledger/accounts";
 import { LedgerError } from "$lib/server/ledger/errors";
 import { deletePending, getPendingMeta } from "./pending";
 import { buildPreview } from "./preview";
@@ -31,6 +32,12 @@ export function confirmImport(
   }
   const { statement } = preview;
   if (!statement) throw new LedgerError("invalid", "Nothing to import.");
+  if (getAccount(userId, preview.account.id).archived) {
+    throw new LedgerError(
+      "invalid",
+      "This account is archived; unarchive it to import into it.",
+    );
+  }
 
   const sha = getPendingMeta(userId, pendingId).sha256;
   const accountId = preview.account.id;
@@ -119,12 +126,23 @@ export function confirmImport(
             importId: imp.id,
             updatedAt: new Date(),
           },
+          // An unchanged amount keeps pointing at the import that first wrote it.
+          setWhere: sql`${balanceSnapshots.amount} != ${closing.amount}`,
         })
         .run();
     }
     return { importId: imp.id, accountId, newCount: inserted, duplicateCount };
   });
 
-  deletePending(userId, pendingId);
+  try {
+    deletePending(userId, pendingId);
+  } catch (err) {
+    // The import is committed; a leftover file is purged when it expires.
+    console.error(
+      "could not delete pending import %s: %s",
+      pendingId,
+      err instanceof Error ? err.name : "error",
+    );
+  }
   return result;
 }

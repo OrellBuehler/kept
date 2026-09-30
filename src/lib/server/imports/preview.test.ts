@@ -7,7 +7,7 @@ import {
   EXAMPLE_IBAN,
   EXAMPLE_IBAN_OTHER,
 } from "$lib/testing/fixtures/bill-identifiers";
-import { buildCamt } from "$lib/testing/fixtures/camt053/build";
+import { buildCamt, buildCamtMulti } from "$lib/testing/fixtures/camt053/build";
 import { IBAN_DE } from "$lib/testing/fixtures/camt053/examples";
 import {
   BAD_ROWS_PROFILE,
@@ -87,17 +87,60 @@ describe("buildPreview: camt.053", () => {
     expect(p.errors[0]).not.toContain(IBAN_DE);
   });
 
-  it("uses a single statement for a different IBAN, with a warning", async () => {
+  it("blocks a single statement for a different IBAN", async () => {
     const { user, account } = await setup({ iban: EXAMPLE_IBAN_OTHER });
     const p = buildPreview(
       user.id,
       uploadFixture(user.id, account.id, "camt053/v04-basic.xml"),
     );
+    expect(p.errors).toHaveLength(1);
+    expect(p.errors[0]).toContain(maskIban(EXAMPLE_IBAN));
+    expect(p.errors[0]).toContain(maskIban(EXAMPLE_IBAN_OTHER));
+    expect(p.errors[0]).not.toContain(EXAMPLE_IBAN);
+    expect(() =>
+      confirmImport(
+        user.id,
+        uploadFixture(user.id, account.id, "camt053/v04-basic.xml"),
+      ),
+    ).toThrow(/different IBAN/);
+  });
+
+  it("merges several statements of the account, taking the latest closing balance whatever the order", async () => {
+    const { user, account } = await setup();
+    const id = uploadBytes(
+      user.id,
+      account.id,
+      buildCamtMulti([
+        {
+          iban: EXAMPLE_IBAN,
+          opening: { amount: "150.00", date: "2024-04-01" },
+          closing: { amount: "130.00", date: "2024-04-30" },
+          entries: [
+            { date: "2024-04-10", amount: "20.00", sign: "DBIT", ref: "M2" },
+          ],
+        },
+        {
+          iban: EXAMPLE_IBAN,
+          opening: { amount: "100.00", date: "2024-03-01" },
+          closing: { amount: "150.00", date: "2024-03-31" },
+          entries: [
+            { date: "2024-03-10", amount: "50.00", sign: "CRDT", ref: "M1" },
+          ],
+        },
+      ]),
+    );
+    const p = buildPreview(user.id, id);
     expect(p.errors).toEqual([]);
-    expect(p.rows.length).toBeGreaterThan(0);
-    expect(p.warnings).toHaveLength(1);
-    expect(p.warnings[0]).toContain(maskIban(EXAMPLE_IBAN));
-    expect(p.warnings[0]).not.toContain(EXAMPLE_IBAN);
+    expect(p.counts.total).toBe(2);
+    expect(p.statement?.openingBalance).toMatchObject({
+      date: "2024-03-01",
+      amount: 10000,
+    });
+    expect(p.statement?.closingBalance).toMatchObject({
+      date: "2024-04-30",
+      amount: 13000,
+    });
+    expect(p.statement?.toDate ?? "2024-04-30").toBe("2024-04-30");
   });
 
   it("warns when the account has no IBAN", async () => {

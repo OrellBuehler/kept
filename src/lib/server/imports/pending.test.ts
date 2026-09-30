@@ -1,4 +1,5 @@
 import { existsSync, readdirSync, utimesSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { fixture } from "$lib/testing/fixtures";
@@ -58,6 +59,16 @@ describe("detectFormat", () => {
 });
 
 describe("pending uploads", () => {
+  it("uses the system temp dir for an in-memory database", () => {
+    const saved = process.env.DATABASE_PATH;
+    process.env.DATABASE_PATH = ":memory:";
+    try {
+      expect(pendingRoot()).toBe(join(tmpdir(), "kept", "pending-imports"));
+    } finally {
+      process.env.DATABASE_PATH = saved;
+    }
+  });
+
   it("stores bytes plus metadata under the user's directory", () => {
     const meta = storePending("user-a", {
       accountId: "acc",

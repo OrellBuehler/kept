@@ -1,7 +1,7 @@
-import { and, desc, eq } from "drizzle-orm";
+import { and, desc, eq, isNotNull } from "drizzle-orm";
 import type { ImportFormat } from "$lib/ledger-types";
 import type { Minor } from "$lib/money";
-import { accounts, getDB, imports } from "$lib/server/db";
+import { accounts, balanceSnapshots, getDB, imports } from "$lib/server/db";
 import { getAccount } from "$lib/server/ledger/accounts";
 import { notFound } from "$lib/server/ledger/errors";
 
@@ -85,10 +85,15 @@ export function listRecentImports(userId: string, limit = 10): ImportView[] {
 }
 
 /**
- * Removes an import. Its transactions and the balance snapshots still
- * pointing at it go with it (foreign key cascade). Snapshots that a newer
- * import re-pointed to itself stay. Bill allocations that reference the
- * removed transactions will cascade as well once bills exist.
+ * Removes an import. Transactions belong to the import that first inserted
+ * them (later files that contained them only counted them as duplicates), so
+ * undoing that import removes them even if a newer import also covered them.
+ * Snapshots still pointing at the import go with it (foreign key cascade);
+ * snapshots that a newer import re-pointed to itself stay. When the removed
+ * import's closing snapshot disappears, it is restored from the latest
+ * remaining import of the account with the same closing date, so balance
+ * anchors survive. Bill allocations that reference the removed transactions
+ * will cascade as well once bills exist.
  * `accountId`, when given, must be the import's account.
  */
 export function undoImport(
@@ -96,21 +101,63 @@ export function undoImport(
   importId: string,
   accountId?: string,
 ): { accountId: string; removedTransactions: number } {
-  const found = getDB()
-    .select({
-      id: imports.id,
-      accountId: imports.accountId,
-      n: imports.newCount,
-    })
-    .from(imports)
-    .where(and(eq(imports.id, importId), eq(imports.userId, userId)))
-    .get();
-  if (!found || (accountId !== undefined && found.accountId !== accountId)) {
-    throw notFound("Import");
-  }
-  getDB()
-    .delete(imports)
-    .where(and(eq(imports.id, importId), eq(imports.userId, userId)))
-    .run();
-  return { accountId: found.accountId, removedTransactions: found.n };
+  return getDB().transaction((tx) => {
+    const found = tx
+      .select({
+        accountId: imports.accountId,
+        n: imports.newCount,
+        closingDate: imports.closingBalanceDate,
+      })
+      .from(imports)
+      .where(and(eq(imports.id, importId), eq(imports.userId, userId)))
+      .get();
+    if (!found || (accountId !== undefined && found.accountId !== accountId)) {
+      throw notFound("Import");
+    }
+    tx.delete(imports)
+      .where(and(eq(imports.id, importId), eq(imports.userId, userId)))
+      .run();
+
+    if (found.closingDate !== null) {
+      const present = tx
+        .select({ id: balanceSnapshots.id })
+        .from(balanceSnapshots)
+        .where(
+          and(
+            eq(balanceSnapshots.accountId, found.accountId),
+            eq(balanceSnapshots.date, found.closingDate),
+            eq(balanceSnapshots.source, "import"),
+          ),
+        )
+        .get();
+      if (!present) {
+        const heir = tx
+          .select({ id: imports.id, amount: imports.closingBalance })
+          .from(imports)
+          .where(
+            and(
+              eq(imports.userId, userId),
+              eq(imports.accountId, found.accountId),
+              eq(imports.closingBalanceDate, found.closingDate),
+              isNotNull(imports.closingBalance),
+            ),
+          )
+          .orderBy(desc(imports.createdAt), desc(imports.id))
+          .get();
+        if (heir && heir.amount !== null) {
+          tx.insert(balanceSnapshots)
+            .values({
+              userId,
+              accountId: found.accountId,
+              importId: heir.id,
+              source: "import",
+              date: found.closingDate,
+              amount: heir.amount,
+            })
+            .run();
+        }
+      }
+    }
+    return { accountId: found.accountId, removedTransactions: found.n };
+  });
 }
