@@ -1,0 +1,83 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Document xmlns="urn:iso:std:iso:20022:tech:xsd:camt.053.001.04">
+  <BkToCstmrStmt>
+    <GrpHdr>
+      <MsgId>EXAMPLE-MSG-BATCH</MsgId>
+      <CreDtTm>2024-12-01T06:00:00</CreDtTm>
+    </GrpHdr>
+    <Stmt>
+      <Id>STMT-BATCH-1</Id>
+      <Acct>
+        <Id><IBAN>CH9300762011623852957</IBAN></Id>
+        <Ccy>CHF</Ccy>
+      </Acct>
+      <Ntry>
+        <Amt Ccy="CHF">300.00</Amt>
+        <CdtDbtInd>CRDT</CdtDbtInd>
+        <Sts>BOOK</Sts>
+        <BookgDt><Dt>2024-11-05</Dt></BookgDt>
+        <ValDt><Dt>2024-11-05</Dt></ValDt>
+        <AcctSvcrRef>BATCH-SPLIT</AcctSvcrRef>
+        <NtryDtls>
+          <Btch><NbOfTxs>3</NbOfTxs></Btch>
+          <TxDtls>
+            <Refs><AcctSvcrRef>BATCH-SPLIT-A</AcctSvcrRef></Refs>
+            <AmtDtls><TxAmt><Amt Ccy="CHF">100.00</Amt></TxAmt></AmtDtls>
+            <RltdPties><Dbtr><Nm>Jane Example</Nm></Dbtr></RltdPties>
+            <RmtInf><Ustrd>Share A</Ustrd></RmtInf>
+          </TxDtls>
+          <TxDtls>
+            <Refs><EndToEndId>E2E-B</EndToEndId></Refs>
+            <AmtDtls><TxAmt><Amt Ccy="CHF">120.00</Amt></TxAmt></AmtDtls>
+            <RltdPties><Dbtr><Nm>Example Energy Ltd</Nm></Dbtr></RltdPties>
+            <RmtInf>
+              <Strd><CdtrRefInf><Ref>RF18 5390 0754 7034</Ref></CdtrRefInf></Strd>
+            </RmtInf>
+          </TxDtls>
+          <TxDtls>
+            <Refs><EndToEndId>NOTPROVIDED</EndToEndId></Refs>
+            <AmtDtls><TxAmt><Amt Ccy="CHF">80.00</Amt></TxAmt></AmtDtls>
+            <RltdPties><Dbtr><Nm>Sample Insurance AG</Nm></Dbtr></RltdPties>
+            <RmtInf><Ustrd>Share C</Ustrd></RmtInf>
+          </TxDtls>
+        </NtryDtls>
+      </Ntry>
+      <Ntry>
+        <Amt Ccy="CHF">250.00</Amt>
+        <CdtDbtInd>DBIT</CdtDbtInd>
+        <Sts>BOOK</Sts>
+        <BookgDt><Dt>2024-11-12</Dt></BookgDt>
+        <AcctSvcrRef>BATCH-NOSPLIT</AcctSvcrRef>
+        <AddtlNtryInf>Salary run November</AddtlNtryInf>
+        <NtryDtls>
+          <TxDtls>
+            <AmtDtls><TxAmt><Amt Ccy="CHF">100.00</Amt></TxAmt></AmtDtls>
+            <RltdPties><Cdtr><Nm>Jane Example</Nm></Cdtr></RltdPties>
+            <RmtInf><Ustrd>Line 1</Ustrd></RmtInf>
+          </TxDtls>
+          <TxDtls>
+            <AmtDtls><TxAmt><Amt Ccy="CHF">100.00</Amt></TxAmt></AmtDtls>
+            <RltdPties><Cdtr><Nm>Example Energy Ltd</Nm></Cdtr></RltdPties>
+            <RmtInf><Ustrd>Line 2</Ustrd></RmtInf>
+          </TxDtls>
+        </NtryDtls>
+      </Ntry>
+      <Ntry>
+        <Amt Ccy="CHF">70.00</Amt>
+        <CdtDbtInd>DBIT</CdtDbtInd>
+        <Sts>BOOK</Sts>
+        <BookgDt><Dt>2024-11-14</Dt></BookgDt>
+        <AcctSvcrRef>BATCH-NOAMT</AcctSvcrRef>
+        <AddtlNtryInf>Collective payment</AddtlNtryInf>
+        <NtryDtls>
+          <TxDtls>
+            <RltdPties><Cdtr><Nm>Jane Example</Nm></Cdtr></RltdPties>
+          </TxDtls>
+          <TxDtls>
+            <RltdPties><Cdtr><Nm>Example Energy Ltd</Nm></Cdtr></RltdPties>
+          </TxDtls>
+        </NtryDtls>
+      </Ntry>
+    </Stmt>
+  </BkToCstmrStmt>
+</Document>

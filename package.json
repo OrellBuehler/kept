@@ -69,6 +69,7 @@
   },
   "dependencies": {
     "drizzle-orm": "^0.45.3",
+    "fast-xml-parser": "^5.11.2",
     "zod": "^4.6.5"
   },
   "engines": {

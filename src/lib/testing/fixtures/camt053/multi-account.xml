@@ -1,0 +1,63 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Document xmlns="urn:iso:std:iso:20022:tech:xsd:camt.053.001.04">
+  <BkToCstmrStmt>
+    <GrpHdr>
+      <MsgId>EXAMPLE-MSG-MULTI</MsgId>
+      <CreDtTm>2024-06-01T06:00:00</CreDtTm>
+    </GrpHdr>
+    <Stmt>
+      <Id>STMT-CHF-1</Id>
+      <Acct>
+        <Id><IBAN>CH9300762011623852957</IBAN></Id>
+        <Ccy>CHF</Ccy>
+      </Acct>
+      <Bal>
+        <Tp><CdOrPrtry><Cd>OPBD</Cd></CdOrPrtry></Tp>
+        <Amt Ccy="CHF">10.00</Amt>
+        <CdtDbtInd>CRDT</CdtDbtInd>
+        <Dt><Dt>2024-05-01</Dt></Dt>
+      </Bal>
+      <Bal>
+        <Tp><CdOrPrtry><Cd>CLBD</Cd></CdOrPrtry></Tp>
+        <Amt Ccy="CHF">60.00</Amt>
+        <CdtDbtInd>CRDT</CdtDbtInd>
+        <Dt><Dt>2024-05-31</Dt></Dt>
+      </Bal>
+      <Ntry>
+        <Amt Ccy="CHF">50.00</Amt>
+        <CdtDbtInd>CRDT</CdtDbtInd>
+        <Sts>BOOK</Sts>
+        <BookgDt><Dt>2024-05-05</Dt></BookgDt>
+        <AcctSvcrRef>MULTI-CHF-1</AcctSvcrRef>
+        <NtryDtls><TxDtls><RltdPties><Dbtr><Nm>Jane Example</Nm></Dbtr></RltdPties></TxDtls></NtryDtls>
+      </Ntry>
+    </Stmt>
+    <Stmt>
+      <Id>STMT-EUR-1</Id>
+      <Acct>
+        <Id><IBAN>de89 3704 0044 0532 0130 00</IBAN></Id>
+        <Ccy>EUR</Ccy>
+      </Acct>
+      <Bal>
+        <Tp><CdOrPrtry><Cd>OPBD</Cd></CdOrPrtry></Tp>
+        <Amt Ccy="EUR">500.00</Amt>
+        <CdtDbtInd>CRDT</CdtDbtInd>
+        <Dt><Dt>2024-05-01</Dt></Dt>
+      </Bal>
+      <Bal>
+        <Tp><CdOrPrtry><Cd>CLBD</Cd></CdOrPrtry></Tp>
+        <Amt Ccy="EUR">470.00</Amt>
+        <CdtDbtInd>CRDT</CdtDbtInd>
+        <Dt><Dt>2024-05-31</Dt></Dt>
+      </Bal>
+      <Ntry>
+        <Amt Ccy="EUR">30.00</Amt>
+        <CdtDbtInd>DBIT</CdtDbtInd>
+        <Sts>BOOK</Sts>
+        <BookgDt><Dt>2024-05-07</Dt></BookgDt>
+        <AcctSvcrRef>MULTI-EUR-1</AcctSvcrRef>
+        <NtryDtls><TxDtls><RltdPties><Cdtr><Nm>Example Energy Ltd</Nm></Cdtr></RltdPties></TxDtls></NtryDtls>
+      </Ntry>
+    </Stmt>
+  </BkToCstmrStmt>
+</Document>

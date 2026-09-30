@@ -1,0 +1,63 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Document xmlns="urn:iso:std:iso:20022:tech:xsd:camt.053.001.04">
+  <BkToCstmrStmt>
+    <GrpHdr>
+      <MsgId>EXAMPLE-MSG-FX</MsgId>
+      <CreDtTm>2024-11-01T06:00:00</CreDtTm>
+    </GrpHdr>
+    <Stmt>
+      <Id>STMT-FX-1</Id>
+      <Acct>
+        <Id><IBAN>CH9300762011623852957</IBAN></Id>
+        <Ccy>CHF</Ccy>
+      </Acct>
+      <Ntry>
+        <Amt Ccy="CHF">92.35</Amt>
+        <CdtDbtInd>DBIT</CdtDbtInd>
+        <Sts>BOOK</Sts>
+        <BookgDt><Dt>2024-10-08</Dt></BookgDt>
+        <AcctSvcrRef>FX-1</AcctSvcrRef>
+        <NtryDtls>
+          <TxDtls>
+            <AmtDtls>
+              <InstdAmt><Amt Ccy="USD">100.00</Amt></InstdAmt>
+              <TxAmt><Amt Ccy="CHF">92.35</Amt></TxAmt>
+            </AmtDtls>
+            <RltdPties><Cdtr><Nm>Example Software Inc</Nm></Cdtr></RltdPties>
+            <RmtInf><Ustrd>Annual licence</Ustrd></RmtInf>
+          </TxDtls>
+        </NtryDtls>
+      </Ntry>
+      <Ntry>
+        <Amt Ccy="CHF">500.00</Amt>
+        <CdtDbtInd>CRDT</CdtDbtInd>
+        <Sts>BOOK</Sts>
+        <BookgDt><Dt>2024-10-09</Dt></BookgDt>
+        <AcctSvcrRef>FX-2</AcctSvcrRef>
+        <NtryDtls>
+          <TxDtls>
+            <AmtDtls>
+              <TxAmt><Amt Ccy="EUR">520.00</Amt></TxAmt>
+            </AmtDtls>
+            <RltdPties><Dbtr><Nm>Jane Example</Nm></Dbtr></RltdPties>
+          </TxDtls>
+        </NtryDtls>
+      </Ntry>
+      <Ntry>
+        <Amt Ccy="CHF">10.00</Amt>
+        <CdtDbtInd>DBIT</CdtDbtInd>
+        <Sts>BOOK</Sts>
+        <BookgDt><Dt>2024-10-10</Dt></BookgDt>
+        <AcctSvcrRef>FX-3</AcctSvcrRef>
+        <NtryDtls>
+          <TxDtls>
+            <AmtDtls>
+              <InstdAmt><Amt Ccy="CHF">10.00</Amt></InstdAmt>
+            </AmtDtls>
+            <RltdPties><Cdtr><Nm>Example Energy Ltd</Nm></Cdtr></RltdPties>
+          </TxDtls>
+        </NtryDtls>
+      </Ntry>
+    </Stmt>
+  </BkToCstmrStmt>
+</Document>
