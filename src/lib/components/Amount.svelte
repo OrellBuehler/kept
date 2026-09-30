@@ -23,7 +23,7 @@
 <span
   class={cn(
     "whitespace-nowrap tabular-nums",
-    value < 0 && "text-destructive dark:text-red-400",
+    value < 0 && "text-destructive",
     flow && value > 0 && "text-emerald-600 dark:text-emerald-400",
     className,
   )}>{text}</span

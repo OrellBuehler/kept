@@ -80,7 +80,7 @@
   <title>{account.name} · Kept</title>
 </svelte:head>
 
-<div class="mx-auto grid w-full max-w-5xl gap-6 p-4 sm:p-6">
+<div class="grid gap-6">
   <div class="grid gap-3">
     <Button
       variant="ghost"

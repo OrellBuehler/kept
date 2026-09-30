@@ -99,7 +99,7 @@
   <title>Accounts · Kept</title>
 </svelte:head>
 
-<div class="mx-auto grid w-full max-w-5xl gap-6 p-4 sm:p-6">
+<div class="grid gap-6">
   <div class="flex flex-wrap items-center justify-between gap-3">
     <h1 class="text-2xl font-semibold tracking-tight">Accounts</h1>
     <div class="flex flex-wrap items-center gap-2">
