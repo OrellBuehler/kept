@@ -1,0 +1,8 @@
+Booking Date,Value Date,Counterparty,Counterparty IBAN,Description,Reference,Amount,Currency
+2024-03-01,2024-03-01,Example Employer AG,CH9300762011623852957,Salary March,,5200.00,CHF
+2024-03-02,2024-03-02,Sample Cafe,,Coffee,,-4.50,CHF
+2024-03-02,2024-03-02,Sample Cafe,,Coffee,,-4.50,CHF
+2024-03-03,2024-03-04,Demo Utilities GmbH,DE89370400440532013000,Invoice 2024-117,210000000003139471430009017,-123.45,CHF
+2024-03-05,2024-03-05,Demo Insurance,,Premium,RF18 5390 0754 7034,-89.9,CHF
+2024-03-06,2024-03-06,Sample Shop,,Refund of order,,12.3,CHF
+2024-03-07,2024-03-07,Example Bank,,Account adjustment,,0.00,CHF
