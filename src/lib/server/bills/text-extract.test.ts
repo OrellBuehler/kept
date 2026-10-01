@@ -8,7 +8,7 @@ import {
   EXAMPLE_QRR,
   EXAMPLE_SCOR,
 } from "$lib/testing/fixtures/bill-identifiers";
-import { formatReference } from "./references";
+import { formatReference } from "$lib/references";
 import { extractFromText } from "./text-extract";
 
 describe("extractFromText", () => {

@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import { currencyExponent, minor, parseAmount, type Minor } from "$lib/money";
 import type { ColumnRef, CsvMappingProfile } from "./mapping";
-import { detectReference } from "./references";
+import { detectReference } from "$lib/references";
 import { readCsv, readXlsx } from "./tabular";
 import {
   ImportFormatError,

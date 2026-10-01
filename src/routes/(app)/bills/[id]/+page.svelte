@@ -31,9 +31,9 @@
     billToFormValues,
     mergeRereadDraft,
     dueHint,
-    formatReference,
     type BillFormValues,
   } from "$lib/bill-display";
+  import { formatReference } from "$lib/references";
   import type { FormErrors } from "$lib/form-errors";
   import { submitHandler } from "$lib/form-submit";
   import { formatDate } from "$lib/format";

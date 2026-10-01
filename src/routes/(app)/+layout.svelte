@@ -9,6 +9,7 @@
   import LandmarkIcon from "@lucide/svelte/icons/landmark";
   import UploadIcon from "@lucide/svelte/icons/upload";
   import ReceiptIcon from "@lucide/svelte/icons/receipt";
+  import FileTextIcon from "@lucide/svelte/icons/file-text";
   import SettingsIcon from "@lucide/svelte/icons/settings";
   import UsersIcon from "@lucide/svelte/icons/users";
   import ChevronsUpDownIcon from "@lucide/svelte/icons/chevrons-up-down";
@@ -23,12 +24,22 @@
 
   let { data, children }: LayoutProps = $props();
 
-  // /import and /bills have no route yet, so they are not in the generated Pathname type
-  const nav: { href: Pathname; label: string; icon: Component }[] = $derived([
+  const nav: {
+    href: Pathname;
+    label: string;
+    icon: Component;
+    badge?: number;
+  }[] = $derived([
     { href: "/", label: "Dashboard", icon: LayoutDashboardIcon },
     { href: "/accounts", label: "Accounts", icon: LandmarkIcon },
-    { href: "/import" as Pathname, label: "Import", icon: UploadIcon },
-    { href: "/bills" as Pathname, label: "Bills", icon: ReceiptIcon },
+    { href: "/import", label: "Import", icon: UploadIcon },
+    {
+      href: "/bills",
+      label: "Bills",
+      icon: ReceiptIcon,
+      badge: data.overdueBills,
+    },
+    { href: "/reports", label: "Reports", icon: FileTextIcon },
     { href: "/settings/account", label: "Settings", icon: SettingsIcon },
     ...(data.user.role === "admin"
       ? [{ href: "/admin/users" as const, label: "Users", icon: UsersIcon }]

@@ -11,12 +11,9 @@
   import { Button } from "$lib/components/ui/button";
   import BillForm from "$lib/components/bills/BillForm.svelte";
   import DocumentUpload from "$lib/components/bills/DocumentUpload.svelte";
-  import {
-    emptyBillValues,
-    formatReference,
-    type BillFormValues,
-  } from "$lib/bill-display";
+  import { emptyBillValues, type BillFormValues } from "$lib/bill-display";
   import { formatIban } from "$lib/iban";
+  import { formatReference } from "$lib/references";
   import type { PageProps } from "./$types";
 
   let { data }: PageProps = $props();
