@@ -11,10 +11,10 @@
     BILL_FIELDS,
     KIND_LABELS,
     REFERENCE_TYPE_LABELS,
-    formatReference,
     type BillFormValues,
   } from "$lib/bill-display";
   import { BILL_KINDS, BILL_REFERENCE_TYPES } from "$lib/bill-types";
+  import { formatReference } from "$lib/references";
   import type { FormErrors } from "$lib/form-errors";
   import { submitHandler } from "$lib/form-submit";
   import { formatIban } from "$lib/iban";

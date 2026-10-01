@@ -19,7 +19,7 @@ import {
   parseBillInformation,
   parseQrBillPayload,
 } from "./qr-bill";
-import { formatReference } from "./references";
+import { formatReference } from "$lib/references";
 
 function fieldOf(fn: () => unknown): string {
   try {

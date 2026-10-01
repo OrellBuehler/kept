@@ -1,5 +1,8 @@
+export type ReferenceType = "QRR" | "SCOR";
+
 const MOD10_TABLE = [0, 9, 4, 6, 8, 2, 7, 1, 3, 5];
 
+/** Strips whitespace and upper-cases, the canonical form for comparing references. */
 export function normalizeReference(input: string): string {
   return input.replace(/\s+/g, "").toUpperCase();
 }
@@ -10,7 +13,7 @@ export function isValidQrr(input: string): boolean {
   if (!/^\d{27}$/.test(ref)) return false;
   let carry = 0;
   for (const ch of ref.slice(0, 26))
-    carry = MOD10_TABLE[(carry + Number(ch)) % 10];
+    carry = MOD10_TABLE[(carry + Number(ch)) % 10]!;
   return (10 - carry) % 10 === Number(ref[26]);
 }
 
@@ -28,11 +31,36 @@ export function isValidScor(input: string): boolean {
   return remainder === 1;
 }
 
-/** Groups a QRR as `XX XXXXX XXXXX XXXXX XXXXX XXXXX` and a SCOR in blocks of four. */
+export interface DetectedReference {
+  reference: string;
+  referenceType: ReferenceType | null;
+}
+
+/**
+ * Classifies a payment reference. A valid QRR or SCOR reference is returned
+ * without whitespace (and SCOR upper-cased); anything else is kept as given
+ * (trimmed) with a null type.
+ */
+export function detectReference(value: string): DetectedReference {
+  const trimmed = value.trim();
+  if (isValidQrr(trimmed)) {
+    return { reference: normalizeReference(trimmed), referenceType: "QRR" };
+  }
+  if (isValidScor(trimmed)) {
+    return { reference: normalizeReference(trimmed), referenceType: "SCOR" };
+  }
+  return { reference: trimmed, referenceType: null };
+}
+
+/**
+ * Groups a payment reference for reading: QRR as 2+5x5 digits, SCOR in fours.
+ * Anything else is returned trimmed and otherwise untouched.
+ */
 export function formatReference(input: string): string {
   const ref = normalizeReference(input);
   if (/^\d{27}$/.test(ref)) {
     return `${ref.slice(0, 2)} ${ref.slice(2).replace(/(\d{5})(?=\d)/g, "$1 ")}`;
   }
-  return ref.replace(/(.{4})(?=.)/g, "$1 ");
+  if (/^RF[0-9A-Z]{2,}$/.test(ref)) return ref.replace(/(.{4})(?=.)/g, "$1 ");
+  return input.trim();
 }

@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import { XMLParser, XMLValidator } from "fast-xml-parser";
 import { z } from "zod";
 import { parseAmount, type Minor } from "$lib/money";
+import { isValidQrr, isValidScor } from "$lib/references";
 import {
   ImportFormatError,
   type NormalizedBalance,
@@ -258,25 +259,6 @@ function normalizeIban(v: unknown): string | null {
   return s ? s.replace(/\s+/g, "").toUpperCase() : null;
 }
 
-// Swiss QR reference: 27 digits, last digit = modulo 10 recursive check digit.
-const MOD10 = [0, 9, 4, 6, 8, 2, 7, 1, 3, 5];
-function isQrReference(ref: string): boolean {
-  if (!/^\d{27}$/.test(ref)) return false;
-  let carry = 0;
-  for (let i = 0; i < 26; i++) carry = MOD10[(carry + Number(ref[i])) % 10]!;
-  return (10 - carry) % 10 === Number(ref[26]);
-}
-
-// ISO 11649 creditor reference: RF + 2 check digits + up to 21 alphanumerics, mod 97-10.
-function isCreditorReference(ref: string): boolean {
-  if (!/^RF\d{2}[A-Z0-9]{1,21}$/.test(ref)) return false;
-  const rearranged = ref.slice(4) + ref.slice(0, 4);
-  const digits = [...rearranged]
-    .map((c) => (/\d/.test(c) ? c : String(c.charCodeAt(0) - 55)))
-    .join("");
-  return BigInt(digits) % 97n === 1n;
-}
-
 function readReference(tx: unknown): {
   reference: string | null;
   referenceType: ReferenceType | null;
@@ -290,9 +272,8 @@ function readReference(tx: unknown): {
       text(at(strd, "CdtrRefInf", "Tp", "CdOrPrtry", "Cd"));
     let referenceType: ReferenceType | null = null;
     if (declared === "QRR" || declared === "SCOR") referenceType = declared;
-    else if (isQrReference(reference)) referenceType = "QRR";
-    else if (isCreditorReference(reference.toUpperCase()))
-      referenceType = "SCOR";
+    else if (isValidQrr(reference)) referenceType = "QRR";
+    else if (isValidScor(reference)) referenceType = "SCOR";
     return { reference, referenceType };
   }
   return { reference: null, referenceType: null };

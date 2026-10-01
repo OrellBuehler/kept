@@ -1,6 +1,6 @@
 import { normalizeIban } from "$lib/iban";
 import { minor, type Minor } from "$lib/money";
-import { normalizeReference } from "./references";
+import { normalizeReference } from "$lib/references";
 
 export type BillKind = "invoice" | "credit_note";
 export type ReferenceType = "QRR" | "SCOR" | "NON";
