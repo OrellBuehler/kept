@@ -42,6 +42,8 @@ const statusValueShape = Object.fromEntries(
 
 export const mappingFormSchema = z
   .object({
+    // Without an explicit intent an empty post (e.g. sent before the form was ready) must not wipe the mapping.
+    intent: z.enum(["save", "clear"], "Choose save or clear."),
     amount: optionalFieldId,
     dueDate: optionalFieldId,
     reference: optionalFieldId,
@@ -49,6 +51,15 @@ export const mappingFormSchema = z
     ...statusValueShape,
   })
   .transform((v, ctx): PaperlessFieldMapping => {
+    if (v.intent === "clear") {
+      return {
+        amount: null,
+        dueDate: null,
+        reference: null,
+        status: null,
+        statusValues: {},
+      };
+    }
     const ids = [v.amount, v.dueDate, v.reference, v.status].filter(
       (x): x is number => x !== undefined,
     );
@@ -64,6 +75,14 @@ export const mappingFormSchema = z
     for (const s of BILL_STATUSES) {
       const value = (v as Record<string, unknown>)[`statusValue_${s}`];
       if (typeof value === "string" && value !== "") statusValues[s] = value;
+    }
+    if (ids.length === 0 && Object.keys(statusValues).length === 0) {
+      ctx.issues.push({
+        code: "custom",
+        message: "Choose at least one field, or use Clear mapping.",
+        input: v,
+        path: ["form"],
+      });
     }
     return {
       amount: v.amount ?? null,

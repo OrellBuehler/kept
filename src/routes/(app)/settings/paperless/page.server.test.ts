@@ -120,11 +120,24 @@ describe("settings/paperless", () => {
     expect(data.billStatuses).toContain("open");
   });
 
+  it("save keeps an unreachable connection and reports the problem at once", async () => {
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    const r = value(
+      await act("save", user, { baseUrl: "http://127.0.0.1:1", token: "x" }),
+    );
+    expect(r).toMatchObject({ success: true, action: "save" });
+    expect((r.test as { error: string }).error).toContain(
+      "could not be reached",
+    );
+    expect(getConnectionRow(user.id)).toBeTruthy();
+  });
+
   it("save creates the connection, returns the webhook secret once and never the token", async () => {
     const r = value(await connect({ allowInsecureTls: "on" }));
     expect(r).toMatchObject({ success: true, action: "save" });
     const secret = r.webhookSecret as string;
     expect(secret).toMatch(/^[\w-]{40,}$/);
+    expect(r.test).toMatchObject({ result: { serverVersion: "2.20.3" } });
     expect(
       (r.recipe as { action: { headers: Record<string, string> } }).action
         .headers["X-Kept-Secret"],
@@ -266,6 +279,7 @@ describe("settings/paperless", () => {
     await connect();
     value(
       await act("setMapping", user, {
+        intent: "save",
         amount: "10",
         dueDate: " 11 ",
         reference: "",
@@ -283,12 +297,40 @@ describe("settings/paperless", () => {
       statusValues: { open: "opt-open", paid: "opt-paid" },
     });
     expect(
-      failure(await act("setMapping", user, { amount: "10", dueDate: "10" }))
-        .errors.form,
+      failure(
+        await act("setMapping", user, {
+          intent: "save",
+          amount: "10",
+          dueDate: "10",
+        }),
+      ).errors.form,
     ).toBeTruthy();
     expect(
-      failure(await act("setMapping", user, { amount: "x" })).errors.amount,
+      failure(await act("setMapping", user, { intent: "save", amount: "x" }))
+        .errors.amount,
     ).toBeTruthy();
+  });
+
+  it("setMapping never wipes the mapping without an explicit clear", async () => {
+    await connect();
+    value(await act("setMapping", user, { intent: "save", amount: "10" }));
+    const stored = getConnectionRow(user.id)!.fieldMapping;
+    // An empty post (no intent) and an empty save are both rejected.
+    expect(failure(await act("setMapping", user, {})).errors).toBeTruthy();
+    expect(
+      failure(await act("setMapping", user, { intent: "save", amount: "" }))
+        .errors.form,
+    ).toBeTruthy();
+    expect(getConnectionRow(user.id)!.fieldMapping).toEqual(stored);
+
+    value(await act("setMapping", user, { intent: "clear" }));
+    expect(getConnectionRow(user.id)!.fieldMapping).toEqual({
+      amount: null,
+      dueDate: null,
+      reference: null,
+      status: null,
+      statusValues: {},
+    });
   });
 
   it("rotateSecret returns a new secret once and the old one stops working", async () => {
@@ -366,7 +408,9 @@ describe("settings/paperless", () => {
       type: "error",
       status: 404,
     });
-    expect(await act("setMapping", user, { amount: "1" })).toEqual({
+    expect(
+      await act("setMapping", user, { intent: "save", amount: "1" }),
+    ).toEqual({
       type: "error",
       status: 404,
     });
@@ -411,6 +455,7 @@ describe("settings/paperless", () => {
       expect(r).toMatchObject({
         success: true,
         action: "uploadReport",
+        alreadyUploaded: false,
         upload: { status: "success", paperlessDocumentId: 900 },
       });
       expect(typeof (r.upload as { id: string }).id).toBe("string");
@@ -461,6 +506,8 @@ describe("settings/paperless", () => {
       const second = value(
         await act("uploadReport", user, { kind: "net-worth" }),
       );
+      expect(first.alreadyUploaded).toBe(false);
+      expect(second.alreadyUploaded).toBe(true);
       expect((second.upload as { id: string }).id).toBe(
         (first.upload as { id: string }).id,
       );
@@ -471,6 +518,10 @@ describe("settings/paperless", () => {
       await connect();
       const mine = seedAccount(user.id);
       const other = await createTestUser();
+      expect(
+        (await loaded(user)).accounts.map((a: { id: string }) => a.id),
+      ).toEqual([mine.id]);
+      expect((await loaded(other)).accounts).toEqual([]);
       // No connection for the other user.
       const noConn = failure(
         await act("uploadReport", other, { kind: "bills" }),

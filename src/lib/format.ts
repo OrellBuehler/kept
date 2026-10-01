@@ -32,3 +32,25 @@ export function formatAgo(ms: number, now = Date.now()): string {
   if (days < 730) return relative.format(-Math.floor(days / 30.4), "month");
   return relative.format(-Math.floor(days / 365), "year");
 }
+
+/** Date and time of an instant; pass `timeZone: "UTC"` for output that is identical on server and client. */
+export function formatDateTime(ms: number, timeZone?: string): string {
+  return new Intl.DateTimeFormat("en-GB", {
+    day: "numeric",
+    month: "short",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+    timeZone,
+  }).format(new Date(ms));
+}
+
+/** First and last day (`YYYY-MM-DD`) of the month before the one containing `now`. */
+export function lastFullMonth(now = new Date()): { from: string; to: string } {
+  const pad = (n: number) => String(n).padStart(2, "0");
+  const first = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+  const last = new Date(now.getFullYear(), now.getMonth(), 0);
+  const iso = (d: Date) =>
+    `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+  return { from: iso(first), to: iso(last) };
+}

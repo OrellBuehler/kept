@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { daysSince, formatAgo, formatDate, todayIso } from "./format";
+import {
+  daysSince,
+  formatAgo,
+  formatDate,
+  lastFullMonth,
+  todayIso,
+} from "./format";
 
 const DAY = 86_400_000;
 
@@ -25,5 +31,25 @@ describe("formatAgo", () => {
   it("never goes negative", () => {
     expect(daysSince(now + DAY, now)).toBe(-1);
     expect(formatAgo(now + DAY, now)).toBe("0 days ago");
+  });
+});
+
+describe("lastFullMonth", () => {
+  it("returns the previous calendar month", () => {
+    expect(lastFullMonth(new Date(2026, 4, 17))).toEqual({
+      from: "2026-04-01",
+      to: "2026-04-30",
+    });
+  });
+
+  it("crosses the year boundary and handles leap years", () => {
+    expect(lastFullMonth(new Date(2026, 0, 3))).toEqual({
+      from: "2025-12-01",
+      to: "2025-12-31",
+    });
+    expect(lastFullMonth(new Date(2024, 2, 1))).toEqual({
+      from: "2024-02-01",
+      to: "2024-02-29",
+    });
   });
 });
