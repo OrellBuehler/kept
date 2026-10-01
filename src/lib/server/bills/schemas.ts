@@ -16,7 +16,7 @@ import {
   optionalText,
   parseMoneyInput,
 } from "$lib/server/ledger/schemas";
-import { isValidQrr, isValidScor, normalizeReference } from "./references";
+import { isValidQrr, isValidScor, normalizeReference } from "$lib/references";
 
 /** Largest accepted amount in minor units (keeps sums well inside safe integers). */
 export const MAX_BILL_AMOUNT = 1_000_000_000_000;

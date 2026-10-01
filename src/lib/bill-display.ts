@@ -6,6 +6,7 @@ import type {
 } from "$lib/bill-types";
 import { formatIban } from "$lib/iban";
 import type { Minor } from "$lib/money";
+import { formatReference } from "$lib/references";
 
 export const STATUS_LABELS: Record<BillStatusName, string> = {
   open: "Open",
@@ -49,16 +50,6 @@ export function dueHint(bill: {
   if (bill.dueInDays === 1) return "Due tomorrow";
   if (bill.dueInDays > 1) return `Due in ${bill.dueInDays} days`;
   return null;
-}
-
-/** Groups a payment reference for reading: QRR as 2+5x5 digits, SCOR in fours. */
-export function formatReference(input: string): string {
-  const ref = input.replace(/\s+/g, "").toUpperCase();
-  if (/^\d{27}$/.test(ref)) {
-    return `${ref.slice(0, 2)} ${ref.slice(2).replace(/(\d{5})(?=\d)/g, "$1 ")}`;
-  }
-  if (/^RF[0-9A-Z]{2,}$/.test(ref)) return ref.replace(/(.{4})(?=.)/g, "$1 ");
-  return input.trim();
 }
 
 /** Form fields of the bill form; other error keys are folded into the form error. */

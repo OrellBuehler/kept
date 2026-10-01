@@ -1,12 +1,7 @@
 import { formatIban } from "$lib/iban";
 import { EXAMPLE_IBAN } from "$lib/testing/fixtures/bill-identifiers";
 import { describe, expect, it } from "vitest";
-import {
-  dueHint,
-  emptyBillValues,
-  formatReference,
-  mergeRereadDraft,
-} from "./bill-display";
+import { dueHint, emptyBillValues, mergeRereadDraft } from "./bill-display";
 
 describe("dueHint", () => {
   const base = { overdue: false, status: "open" as const };
@@ -26,20 +21,6 @@ describe("dueHint", () => {
   it("stays quiet for settled bills and missing dates", () => {
     expect(dueHint({ ...base, status: "paid", dueInDays: 4 })).toBeNull();
     expect(dueHint({ ...base, dueInDays: null })).toBeNull();
-  });
-});
-
-describe("formatReference", () => {
-  it("groups a 27 digit QR reference", () => {
-    expect(formatReference("000000000000000000000000000")).toBe(
-      "00 00000 00000 00000 00000 00000",
-    );
-  });
-  it("groups a creditor reference in fours", () => {
-    expect(formatReference("rf12 abcd efgh")).toBe("RF12 ABCD EFGH");
-  });
-  it("leaves anything else alone", () => {
-    expect(formatReference(" abc ")).toBe("abc");
   });
 });
 
