@@ -49,11 +49,15 @@ src/lib/money.ts                 Minor-unit money type + parsing/formatting (the
 src/lib/server/db.ts             SQLite connection (WAL, foreign keys), migrations run on startup
 src/lib/server/schema.ts         Drizzle schema — one file, every table has created_at/updated_at
 src/lib/server/auth/             local users (Bun.password argon2id), sessions in SQLite
-src/lib/server/importers/        file format → NormalizedTransaction[] (pure, no DB access)
-src/lib/server/ledger/           accounts, transactions, dedupe, balances
-src/lib/server/bills/            bills, Swiss QR-bill payload parsing, bill ↔ payment matching
+src/lib/server/importers/        file format → NormalizedStatement[] (pure, no DB access)
+src/lib/server/imports/          upload → preview → confirm flow, history/undo, CSV mapping profiles
+src/lib/server/ledger/           institutions, accounts, transactions, snapshots, balances
+src/lib/server/bills/            bills, documents, QR-bill/PDF extraction, bill ↔ payment matching
+src/lib/server/dashboard/        aggregate queries for the dashboard
+src/lib/server/events.ts         generic in-process events (integrations subscribe; core emits)
 src/lib/server/integrations/     optional adapters (paperless/) — the core never imports these
 src/lib/server/reports/          pdfmake document builders
+src/lib/{money,iban,references}.ts  client-safe helpers for amounts, IBANs, QRR/SCOR references
 src/routes/                      UI + API (`src/routes/api/`)
 src/lib/testing/fixtures/        synthetic sample files for importer tests
 ```
