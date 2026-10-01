@@ -27,7 +27,7 @@ const MESSAGES: Record<PaperlessErrorCode, string> = {
     "The Paperless API version is not supported. Kept needs Paperless-ngx 2.16 or newer.",
   redirect:
     "Paperless answered with a redirect. Check that the address uses the right scheme (https) and host.",
-  network: "Paperless could not be reached (connection failed or timed out).",
+  network: "Paperless could not be reached.",
   tls: "The TLS certificate of Paperless could not be verified. Fix the certificate or allow insecure TLS for this connection.",
   server: "Paperless reported a server error.",
   invalid_response: "Paperless sent a response Kept could not understand.",
@@ -46,7 +46,9 @@ export class PaperlessError extends Error {
     options: { status?: number; detail?: string; cause?: unknown } = {},
   ) {
     super(
-      options.detail ? `${MESSAGES[code]} (${options.detail})` : MESSAGES[code],
+      options.detail
+        ? `${MESSAGES[code].replace(/\.$/, "")} (${options.detail}).`
+        : MESSAGES[code],
       options.cause === undefined ? undefined : { cause: options.cause },
     );
     this.code = code;
@@ -141,9 +143,15 @@ export function classifyFetchError(err: unknown): PaperlessError {
     return new PaperlessError("tls", { cause: err });
   }
   if (name === "TimeoutError" || name === "AbortError") {
-    return new PaperlessError("network", { cause: err });
+    return new PaperlessError("network", {
+      detail: "the request timed out",
+      cause: err,
+    });
   }
-  return new PaperlessError("network", { cause: err });
+  return new PaperlessError("network", {
+    detail: "the connection failed",
+    cause: err,
+  });
 }
 
 export const DEFAULT_TIMEOUT_MS = 15_000;

@@ -165,6 +165,10 @@
             </ul>
           {/if}
         {/if}
+      {:catch}
+        <p class="text-destructive text-sm" role="alert">
+          Could not load the list from Paperless. Reload the page to try again.
+        </p>
       {/await}
 
       <Button type="submit" disabled={pending || !selected} class="self-start">

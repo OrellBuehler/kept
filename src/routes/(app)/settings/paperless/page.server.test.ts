@@ -279,6 +279,7 @@ describe("settings/paperless", () => {
     await connect();
     value(
       await act("setMapping", user, {
+        intent: "save",
         amount: "10",
         dueDate: " 11 ",
         reference: "",
@@ -296,12 +297,40 @@ describe("settings/paperless", () => {
       statusValues: { open: "opt-open", paid: "opt-paid" },
     });
     expect(
-      failure(await act("setMapping", user, { amount: "10", dueDate: "10" }))
-        .errors.form,
+      failure(
+        await act("setMapping", user, {
+          intent: "save",
+          amount: "10",
+          dueDate: "10",
+        }),
+      ).errors.form,
     ).toBeTruthy();
     expect(
-      failure(await act("setMapping", user, { amount: "x" })).errors.amount,
+      failure(await act("setMapping", user, { intent: "save", amount: "x" }))
+        .errors.amount,
     ).toBeTruthy();
+  });
+
+  it("setMapping never wipes the mapping without an explicit clear", async () => {
+    await connect();
+    value(await act("setMapping", user, { intent: "save", amount: "10" }));
+    const stored = getConnectionRow(user.id)!.fieldMapping;
+    // An empty post (no intent) and an empty save are both rejected.
+    expect(failure(await act("setMapping", user, {})).errors).toBeTruthy();
+    expect(
+      failure(await act("setMapping", user, { intent: "save", amount: "" }))
+        .errors.form,
+    ).toBeTruthy();
+    expect(getConnectionRow(user.id)!.fieldMapping).toEqual(stored);
+
+    value(await act("setMapping", user, { intent: "clear" }));
+    expect(getConnectionRow(user.id)!.fieldMapping).toEqual({
+      amount: null,
+      dueDate: null,
+      reference: null,
+      status: null,
+      statusValues: {},
+    });
   });
 
   it("rotateSecret returns a new secret once and the old one stops working", async () => {
@@ -379,7 +408,9 @@ describe("settings/paperless", () => {
       type: "error",
       status: 404,
     });
-    expect(await act("setMapping", user, { amount: "1" })).toEqual({
+    expect(
+      await act("setMapping", user, { intent: "save", amount: "1" }),
+    ).toEqual({
       type: "error",
       status: 404,
     });

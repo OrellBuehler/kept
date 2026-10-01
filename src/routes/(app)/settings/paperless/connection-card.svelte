@@ -106,7 +106,6 @@
         setPending: (v) => (savePending = v),
         setErrors: (e) => (saveErrors = e),
         knownFields: ["baseUrl", "token", "allowInsecureTls"],
-        successMessage: connection ? "Connection saved." : "Connected.",
       })}
     >
       <FormAlert message={formError(saveErrors)} />

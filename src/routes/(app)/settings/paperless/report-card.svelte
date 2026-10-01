@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { onMount } from "svelte";
   import { enhance } from "$app/forms";
   import SendIcon from "@lucide/svelte/icons/send";
   import * as Card from "$lib/components/ui/card/index.js";
@@ -21,7 +22,10 @@
     { value: "net-worth", label: "Net worth" },
   ] as const;
 
-  const defaults = lastFullMonth();
+  // Computed in the browser: the server's clock and timezone may differ from the user's.
+  let from = $state("");
+  let to = $state("");
+  onMount(() => ({ from, to } = lastFullMonth()));
 
   let pending = $state(false);
   let errors = $state<NonNullable<FormErrors>>({});
@@ -99,7 +103,7 @@
                 name="from"
                 type="date"
                 required
-                value={defaults.from}
+                bind:value={from}
                 aria-invalid={!!errors.from}
               />
             </FormField>
@@ -109,7 +113,7 @@
                 name="to"
                 type="date"
                 required
-                value={defaults.to}
+                bind:value={to}
                 aria-invalid={!!errors.to}
               />
             </FormField>

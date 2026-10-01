@@ -16,14 +16,19 @@
     iconOnly?: boolean;
   } = $props();
 
+  import { onDestroy } from "svelte";
+
   let copied = $state(false);
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  onDestroy(() => clearTimeout(timer));
 
   async function copy() {
     try {
       await navigator.clipboard.writeText(value);
       copied = true;
       toast.success(copiedMessage);
-      setTimeout(() => (copied = false), 2000);
+      clearTimeout(timer);
+      timer = setTimeout(() => (copied = false), 2000);
     } catch (err) {
       console.error("clipboard write failed", err);
       toast.error("Could not copy. Select the text and copy it by hand.");

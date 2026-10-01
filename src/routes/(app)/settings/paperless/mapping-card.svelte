@@ -28,6 +28,11 @@
   } = $props();
 
   const mapping = $derived(connection.fieldMapping ?? {});
+  const hasMapping = $derived(
+    [mapping.amount, mapping.dueDate, mapping.reference, mapping.status].some(
+      (id) => id != null,
+    ) || Object.keys(mapping.statusValues ?? {}).length > 0,
+  );
 
   const targets = [
     {
@@ -268,11 +273,29 @@
             </fieldset>
           {/key}
         {/if}
-      {/await}
 
-      <Button type="submit" disabled={pending} class="self-start">
-        {#if pending}<Spinner />Saving…{:else}Save mapping{/if}
-      </Button>
+        <div class="flex flex-wrap gap-2">
+          <Button type="submit" name="intent" value="save" disabled={pending}>
+            {#if pending}<Spinner />Saving…{:else}Save mapping{/if}
+          </Button>
+          {#if hasMapping}
+            <Button
+              type="submit"
+              name="intent"
+              value="clear"
+              variant="outline"
+              disabled={pending}
+            >
+              Clear mapping
+            </Button>
+          {/if}
+        </div>
+      {:catch}
+        <p class="text-destructive text-sm" role="alert">
+          Could not load the custom fields from Paperless. Reload the page to
+          try again.
+        </p>
+      {/await}
     </form>
   </Card.Content>
 </Card.Root>
