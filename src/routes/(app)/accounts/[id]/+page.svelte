@@ -205,6 +205,7 @@
     accountId={account.id}
     currency={account.currency}
     transactions={data.transactions}
+    categories={data.categories}
     filters={data.filters}
     filterErrors={data.filterErrors}
     onSelect={(tx) => {

@@ -109,6 +109,29 @@ const matrix: Record<string, Entry> = {
       "actions.deleteTransaction": (m, e) => m.actions.deleteTransaction(e),
       "actions.addSnapshot": (m, e) => m.actions.addSnapshot(e),
       "actions.deleteSnapshot": (m, e) => m.actions.deleteSnapshot(e),
+      "actions.setCategory": (m, e) => m.actions.setCategory(e),
+    },
+  },
+  "/src/routes/(app)/settings/categories/+page.server.ts": {
+    access: "user",
+    handlers: {
+      load: (m, e) => m.load(e),
+      "actions.createCategory": (m, e) => m.actions.createCategory(e),
+      "actions.updateCategory": (m, e) => m.actions.updateCategory(e),
+      "actions.deleteCategory": (m, e) => m.actions.deleteCategory(e),
+      "actions.createRule": (m, e) => m.actions.createRule(e),
+      "actions.updateRule": (m, e) => m.actions.updateRule(e),
+      "actions.deleteRule": (m, e) => m.actions.deleteRule(e),
+      "actions.applyRules": (m, e) => m.actions.applyRules(e),
+    },
+  },
+  "/src/routes/(app)/budgets/+page.server.ts": {
+    access: "user",
+    handlers: {
+      load: (m, e) => m.load(e),
+      "actions.createBudget": (m, e) => m.actions.createBudget(e),
+      "actions.updateBudget": (m, e) => m.actions.updateBudget(e),
+      "actions.deleteBudget": (m, e) => m.actions.deleteBudget(e),
     },
   },
   "/src/routes/(app)/bills/+page.server.ts": {

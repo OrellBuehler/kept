@@ -15,6 +15,10 @@ history — on your own server, in a single SQLite file.
   no QR code), or enter a bill by hand. Payments are matched by structured reference
   automatically, by IBAN and amount as a suggestion, or manually — including bills paid in parts,
   overpayments and credit notes awaiting a refund.
+- **Categories and budgets**: your own income and expense categories (one level of
+  subcategories), rules that categorize transactions on import (counterparty, description, IBAN,
+  direction) and can be re-run on uncategorized ones, a category you set by hand always wins, and
+  monthly budgets per category showing spent against budget, per currency.
 - **Dashboard**: net worth over time per currency (no currency conversion), this month's income
   and expenses, overdue and upcoming bills, and accounts whose last import is getting old.
 - **PDF reports**: account statement, open bills, net worth.

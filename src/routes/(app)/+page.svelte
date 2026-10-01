@@ -7,6 +7,7 @@
   import { Button } from "$lib/components/ui/button";
   import Amount from "$lib/components/Amount.svelte";
   import AccountTypeBadge from "$lib/components/AccountTypeBadge.svelte";
+  import CategoryBadge from "$lib/components/CategoryBadge.svelte";
   import NetWorthChart from "$lib/components/dashboard/NetWorthChart.svelte";
   import { formatDate } from "$lib/format";
   import { formatAmount, minor, type Minor } from "$lib/money";
@@ -435,6 +436,80 @@
               {d.unmatched.count === 1 ? "isn't" : "aren't"} linked to a bill.
             </span>
           </a>
+        {/if}
+      </Card.Content>
+    </Card.Root>
+
+    <Card.Root class="lg:col-span-2">
+      <Card.Header>
+        <Card.Title>Spending by category</Card.Title>
+        <Card.Description>
+          {monthLabel(d.spending.month)}, per currency.
+        </Card.Description>
+        <Card.Action>
+          <Button variant="ghost" size="sm" href={resolve("/(app)/budgets")}>
+            Budgets
+          </Button>
+        </Card.Action>
+      </Card.Header>
+      <Card.Content class="space-y-5">
+        {#each d.spending.currencies as spending (spending.currency)}
+          <section aria-label={`Spending ${spending.currency}`}>
+            <div class="mb-2 flex items-baseline justify-between gap-3">
+              <p class="text-muted-foreground text-xs font-medium">
+                {spending.currency}
+              </p>
+              <Amount
+                value={spending.total}
+                currency={spending.currency}
+                class="text-sm font-medium"
+              />
+            </div>
+            <ul class="space-y-2">
+              {#each spending.items.slice(0, 8) as item (item.categoryId)}
+                <li>
+                  <div class="flex items-center justify-between gap-3 text-sm">
+                    <CategoryBadge
+                      name={item.name}
+                      color={item.color}
+                      icon={item.icon}
+                    />
+                    <Amount value={item.spent} currency={spending.currency} />
+                  </div>
+                  <div class="bg-muted mt-1 h-1.5 overflow-hidden rounded-full">
+                    <div
+                      class="bg-primary h-full rounded-full"
+                      style:width="{Math.max(
+                        2,
+                        Math.round((item.spent / spending.total) * 100),
+                      )}%"
+                      style:background-color={item.color}
+                    ></div>
+                  </div>
+                </li>
+              {/each}
+            </ul>
+            {#if spending.items.length > 8}
+              <p class="text-muted-foreground mt-2 text-xs">
+                and {spending.items.length - 8} more
+              </p>
+            {/if}
+          </section>
+        {:else}
+          <p class="text-muted-foreground text-sm">
+            No categorized spending this month.
+            <a
+              href={resolve("/(app)/settings/categories")}
+              class="text-primary underline-offset-2 hover:underline"
+              >Set up categories</a
+            >
+          </p>
+        {/each}
+        {#if d.spending.uncategorizedCount > 0}
+          <p class="text-muted-foreground text-xs">
+            {plural(d.spending.uncategorizedCount, "expense")} this month
+            {d.spending.uncategorizedCount === 1 ? "has" : "have"} no category.
+          </p>
         {/if}
       </Card.Content>
     </Card.Root>

@@ -12,6 +12,10 @@ import {
   type BillsSummary,
   type UnmatchedHint,
 } from "./bills";
+import {
+  spendingByCategory,
+  type SpendingSummary,
+} from "$lib/server/categories/budgets";
 import { monthSummary, type MonthSummary } from "./month";
 import {
   earliestDataDate,
@@ -40,6 +44,7 @@ export interface Dashboard {
   };
   accounts: AccountBalanceView[];
   month: MonthSummary;
+  spending: SpendingSummary;
   bills: BillsSummary;
   unmatched: UnmatchedHint;
   imports: LastImportView[];
@@ -71,6 +76,7 @@ export function dashboard(
     },
     accounts,
     month: monthSummary(userId, { month: today.slice(0, 7) }),
+    spending: spendingByCategory(userId, today.slice(0, 7)),
     bills,
     unmatched: unmatchedTransactions(userId, { days: 60, today }),
     imports: lastImports(userId, today, accounts),

@@ -15,6 +15,8 @@ import {
   usePendingDir,
 } from "$lib/testing/imports";
 import { seedAccount } from "$lib/testing/ledger";
+import { createCategory } from "$lib/server/categories/categories";
+import { createRule } from "$lib/server/categories/rules";
 import { confirmImport } from "./confirm";
 import { listImports, listRecentImports, undoImport } from "./history";
 import { readPending } from "./pending";
@@ -380,5 +382,53 @@ describe("listImports / undoImport", () => {
       /not found/,
     );
     expect(txCount(account.id)).toBe(5);
+  });
+
+  it("categorizes new rows with the user's rules only", async () => {
+    const { user, account } = await setup();
+    const other = await createTestUser();
+    const mine = createCategory(user.id, {
+      name: "Incoming",
+      kind: "income",
+      parentId: null,
+      color: null,
+      icon: null,
+    });
+    const theirs = createCategory(other.id, {
+      name: "Theirs",
+      kind: "expense",
+      parentId: null,
+      color: null,
+      icon: null,
+    });
+    createRule(user.id, {
+      categoryId: mine.id,
+      priority: 100,
+      counterpartyContains: null,
+      descriptionContains: null,
+      counterpartyIban: null,
+      amountSign: "income",
+    });
+    createRule(other.id, {
+      categoryId: theirs.id,
+      priority: 100,
+      counterpartyContains: null,
+      descriptionContains: null,
+      counterpartyIban: null,
+      amountSign: "expense",
+    });
+    confirmImport(
+      user.id,
+      uploadFixture(user.id, account.id, "camt053/overlap-a.xml"),
+    );
+    const rows = getDB()
+      .select()
+      .from(transactions)
+      .where(eq(transactions.accountId, account.id))
+      .all();
+    expect(rows.some((t) => t.amount > 0)).toBe(true);
+    for (const t of rows) {
+      expect(t.categoryId).toBe(t.amount > 0 ? mine.id : null);
+    }
   });
 });

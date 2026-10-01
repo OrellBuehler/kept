@@ -36,6 +36,13 @@
       "when": 1790810697123,
       "tag": "0004_heavy_wildside",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "6",
+      "when": 1790883192087,
+      "tag": "0005_stormy_silvermane",
+      "breakpoints": true
     }
   ]
 }
