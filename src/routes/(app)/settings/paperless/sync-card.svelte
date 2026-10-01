@@ -23,7 +23,9 @@
     documents,
     uploads,
     syncResult,
+    onresult,
   }: {
+    onresult: (result: NonNullable<typeof syncResult>) => void;
     connection: Connection;
     documents: PageData["recentDocuments"];
     uploads: PageData["uploads"];
@@ -82,11 +84,21 @@
       method="POST"
       action="?/syncNow"
       class="grid grid-cols-[minmax(0,1fr)] gap-4"
-      use:enhance={submitHandler({
-        setPending: (v) => (pending = v),
-        setErrors: (e) => (errors = e),
-        successMessage: "Sync finished.",
-      })}
+      use:enhance={(input) => {
+        const handle = submitHandler({
+          setPending: (v) => (pending = v),
+          setErrors: (e) => (errors = e),
+          successMessage: "Sync finished.",
+        })(input);
+        return async (args) => {
+          // A failed run still reports what it did before it stopped.
+          if (args.result.type === "failure" && args.result.data?.result) {
+            onresult(args.result.data.result as NonNullable<typeof syncResult>);
+          }
+          const callback = await handle;
+          await callback?.(args);
+        };
+      }}
     >
       <FormAlert message={formError(errors)} />
       <Button

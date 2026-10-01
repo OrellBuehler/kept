@@ -6,10 +6,19 @@
 
   let { children }: LayoutProps = $props();
 
-  const tabs = [
-    { href: resolve("/(app)/settings/account"), label: "Account" },
-    { href: resolve("/(app)/settings/paperless"), label: "Paperless-ngx" },
-  ];
+  // Each settings page declares its tab in `<page>/tab.ts`; the core layout does not know them by name.
+  const modules = import.meta.glob<{ tab: { label: string; order: number } }>(
+    "./*/tab.ts",
+    { eager: true },
+  );
+  const tabs = Object.entries(modules)
+    .map(([path, m]) => ({
+      href: resolve(
+        `/(app)/settings/${path.split("/")[1]}` as "/(app)/settings/account",
+      ),
+      ...m.tab,
+    }))
+    .sort((a, b) => a.order - b.order);
 </script>
 
 <nav

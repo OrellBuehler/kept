@@ -141,10 +141,7 @@ export function classifyFetchError(err: unknown): PaperlessError {
     return new PaperlessError("tls", { cause: err });
   }
   if (name === "TimeoutError" || name === "AbortError") {
-    return new PaperlessError("network", {
-      detail: "timed out",
-      cause: err,
-    });
+    return new PaperlessError("network", { cause: err });
   }
   return new PaperlessError("network", { cause: err });
 }

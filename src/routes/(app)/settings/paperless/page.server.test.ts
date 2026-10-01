@@ -120,11 +120,24 @@ describe("settings/paperless", () => {
     expect(data.billStatuses).toContain("open");
   });
 
+  it("save keeps an unreachable connection and reports the problem at once", async () => {
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    const r = value(
+      await act("save", user, { baseUrl: "http://127.0.0.1:1", token: "x" }),
+    );
+    expect(r).toMatchObject({ success: true, action: "save" });
+    expect((r.test as { error: string }).error).toContain(
+      "could not be reached",
+    );
+    expect(getConnectionRow(user.id)).toBeTruthy();
+  });
+
   it("save creates the connection, returns the webhook secret once and never the token", async () => {
     const r = value(await connect({ allowInsecureTls: "on" }));
     expect(r).toMatchObject({ success: true, action: "save" });
     const secret = r.webhookSecret as string;
     expect(secret).toMatch(/^[\w-]{40,}$/);
+    expect(r.test).toMatchObject({ result: { serverVersion: "2.20.3" } });
     expect(
       (r.recipe as { action: { headers: Record<string, string> } }).action
         .headers["X-Kept-Secret"],

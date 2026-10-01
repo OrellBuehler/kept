@@ -345,8 +345,12 @@ export function recordConnectionState(
     .run();
 }
 
-export function clientForRow(row: ConnectionRow): PaperlessClient {
+export function clientForRow(
+  row: ConnectionRow,
+  options: { timeoutMs?: number } = {},
+): PaperlessClient {
   return new PaperlessClient({
+    ...options,
     baseUrl: row.baseUrl,
     token: decryptSecret(row.tokenEncrypted),
     allowInsecureTls: row.allowInsecureTls,
@@ -371,12 +375,15 @@ export function rememberServerInfo(
   }
 }
 
-export function getClient(userId: string): {
+export function getClient(
+  userId: string,
+  options: { timeoutMs?: number } = {},
+): {
   row: ConnectionRow;
   client: PaperlessClient;
 } {
   const row = requireConnectionRow(userId);
-  return { row, client: clientForRow(row) };
+  return { row, client: clientForRow(row, options) };
 }
 
 function parseVersion(v: string): number[] {
@@ -398,6 +405,9 @@ export function isOlderThan(version: string, minimum: string): boolean {
   return false;
 }
 
+/** A reachable server answers at once; do not make the user wait the full request timeout. */
+const TEST_TIMEOUT_MS = 5_000;
+
 export interface TestResult {
   serverVersion: string | null;
   apiVersion: number;
@@ -409,7 +419,7 @@ const idOnly = z.object({ id: z.number().int() });
 
 /** Calls the server once, records its version and reports what is worth knowing. */
 export async function testConnection(userId: string): Promise<TestResult> {
-  const { row, client } = getClient(userId);
+  const { row, client } = getClient(userId, { timeoutMs: TEST_TIMEOUT_MS });
   try {
     await client.json("documents", pageSchema(idOnly), {
       query: { page_size: 1, fields: "id" },

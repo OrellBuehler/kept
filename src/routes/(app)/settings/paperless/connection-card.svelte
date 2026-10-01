@@ -25,11 +25,13 @@
     data,
     secret,
     testResult,
+    testError,
     ondismisssecret,
   }: {
     data: PageData;
     secret: string | null;
     testResult: Awaited<ReturnType<typeof testConnection>> | null;
+    testError: string | null;
     ondismisssecret: () => void;
   } = $props();
 
@@ -229,7 +231,14 @@
           </Button>
         </div>
         <FormAlert message={formError(testErrors) ?? formError(toggleErrors)} />
-        {#if testResult}
+        {#if testError}
+          <div class="grid gap-1">
+            <FormAlert message={testError} />
+            <p class="text-muted-foreground text-xs">
+              The connection was saved. Fix the address or token and save again.
+            </p>
+          </div>
+        {:else if testResult}
           <div class="grid gap-2 rounded-md border p-3 text-sm" role="status">
             <p class="flex items-center gap-2 font-medium">
               <CircleCheckIcon

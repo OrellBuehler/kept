@@ -24,6 +24,7 @@
   let testResult = $state<Awaited<ReturnType<typeof testConnection>> | null>(
     null,
   );
+  let testError = $state<string | null>(null);
   let syncResult = $state<Awaited<ReturnType<typeof syncConnection>> | null>(
     null,
   );
@@ -38,8 +39,18 @@
           recipe: form.recipe ?? null,
         };
       }
+      if (form.action === "save" && "test" in form && form.test) {
+        if ("result" in form.test) {
+          testResult = form.test.result;
+          testError = null;
+        } else {
+          testResult = null;
+          testError = form.test.error;
+        }
+      }
     } else if (form.action === "test" && "result" in form) {
       testResult = form.result as typeof testResult;
+      testError = null;
     } else if (form.action === "syncNow" && "result" in form) {
       syncResult = form.result as typeof syncResult;
     } else if (form.action === "uploadReport" && "upload" in form) {
@@ -52,6 +63,7 @@
     } else if (form.action === "disconnect") {
       secret = null;
       testResult = null;
+      testError = null;
       syncResult = null;
     }
   });
@@ -87,6 +99,7 @@
     {data}
     secret={secret?.from === "save" ? secret.value : null}
     {testResult}
+    {testError}
     ondismisssecret={() => (secret = null)}
   />
 
@@ -112,6 +125,7 @@
       documents={data.recentDocuments}
       uploads={data.uploads}
       {syncResult}
+      onresult={(r) => (syncResult = r)}
     />
     <ReportCard accounts={data.accounts} />
   {:else}

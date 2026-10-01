@@ -208,6 +208,15 @@ export const actions: Actions = {
     }
     try {
       const { webhookSecret } = saveConnection(user.id, parsed.data);
+      // The connection is saved either way; the test only tells the user at once whether it works.
+      let test:
+        | { result: Awaited<ReturnType<typeof testConnection>> }
+        | { error: string };
+      try {
+        test = { result: await testConnection(user.id) };
+      } catch (err) {
+        test = { error: describeError(err) };
+      }
       return {
         success: true as const,
         action: "save" as const,
@@ -215,6 +224,7 @@ export const actions: Actions = {
         recipe: webhookSecret
           ? secretRecipe(url.origin, user.id, webhookSecret)
           : null,
+        test,
       };
     } catch (err) {
       return actionFailure("save", err, values);
