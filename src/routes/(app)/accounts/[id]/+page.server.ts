@@ -1,5 +1,10 @@
 import { error, fail, redirect } from "@sveltejs/kit";
 import { requireUser } from "$lib/server/auth/guards";
+import {
+  assignCategory,
+  assignCategorySchema,
+  listCategories,
+} from "$lib/server/categories";
 import { parseForm, safeValues } from "$lib/server/forms";
 import {
   archiveAccount,
@@ -72,6 +77,7 @@ export const load: PageServerLoad = ({ locals, params, url }) => {
       pageSize: query.pageSize,
     }),
     snapshots: listSnapshots(user.id, account.id),
+    categories: listCategories(user.id),
     filters: query.raw,
     filterErrors: query.errors,
   };
@@ -216,6 +222,36 @@ export const actions: Actions = {
       };
     } catch (err) {
       return ledgerFailure("deleteTransaction", err, values);
+    }
+  },
+
+  setCategory: async ({ locals, params, request }) => {
+    const user = requireUser(locals);
+    const account = orNotFound(() => getAccount(user.id, params.id));
+    const form = await request.formData();
+    const values = safeValues(form, ["transactionId", "categoryId"]);
+    const parsed = parseForm(assignCategorySchema, form);
+    if (!parsed.ok) {
+      return fail(400, {
+        action: "setCategory",
+        errors: parsed.errors,
+        values,
+      });
+    }
+    const existing = ownedTransaction(
+      user.id,
+      account.id,
+      parsed.data.transactionId,
+    );
+    try {
+      assignCategory(user.id, existing.id, parsed.data.categoryId);
+      return {
+        success: true as const,
+        action: "setCategory" as const,
+        id: existing.id,
+      };
+    } catch (err) {
+      return ledgerFailure("setCategory", err, values);
     }
   },
 

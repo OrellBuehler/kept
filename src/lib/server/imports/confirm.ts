@@ -1,6 +1,7 @@
 import { eq, sql } from "drizzle-orm";
 import { balanceSnapshots, getDB, imports, transactions } from "$lib/server/db";
 import type { CsvMappingProfile } from "$lib/server/importers/mapping";
+import { categorize, loadRules } from "$lib/server/categories/rules";
 import { getAccount } from "$lib/server/ledger/accounts";
 import { LedgerError } from "$lib/server/ledger/errors";
 import { deletePending, getPendingMeta } from "./pending";
@@ -42,6 +43,7 @@ export function confirmImport(
   const sha = getPendingMeta(userId, pendingId).sha256;
   const accountId = preview.account.id;
   const newRows = preview.rows.filter((r) => r.status === "new");
+  const rules = loadRules(userId);
 
   const result = getDB().transaction((tx) => {
     const imp = tx
@@ -88,6 +90,7 @@ export function confirmImport(
             reference: t.reference,
             referenceType: t.referenceType,
             reversal: t.reversal,
+            categoryId: categorize(rules, t),
           })),
         )
         .onConflictDoNothing({

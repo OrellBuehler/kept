@@ -28,6 +28,7 @@ export interface TransactionView {
   referenceType: "QRR" | "SCOR" | null;
   reversal: boolean;
   note: string | null;
+  categoryId: string | null;
   createdAt: number;
 }
 
@@ -58,6 +59,7 @@ const columns = {
   referenceType: transactions.referenceType,
   reversal: transactions.reversal,
   note: transactions.note,
+  categoryId: transactions.categoryId,
   createdAt: sql<number>`${transactions.createdAt}`,
 };
 

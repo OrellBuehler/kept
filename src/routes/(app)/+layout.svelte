@@ -8,6 +8,7 @@
   import LayoutDashboardIcon from "@lucide/svelte/icons/layout-dashboard";
   import LandmarkIcon from "@lucide/svelte/icons/landmark";
   import UploadIcon from "@lucide/svelte/icons/upload";
+  import PiggyBankIcon from "@lucide/svelte/icons/piggy-bank";
   import ReceiptIcon from "@lucide/svelte/icons/receipt";
   import FileTextIcon from "@lucide/svelte/icons/file-text";
   import SettingsIcon from "@lucide/svelte/icons/settings";
@@ -39,6 +40,7 @@
       icon: ReceiptIcon,
       badge: data.overdueBills,
     },
+    { href: "/budgets", label: "Budgets", icon: PiggyBankIcon },
     { href: "/reports", label: "Reports", icon: FileTextIcon },
     { href: "/settings/account", label: "Settings", icon: SettingsIcon },
     ...(data.user.role === "admin"

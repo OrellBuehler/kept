@@ -9,6 +9,7 @@
   import { Button } from "$lib/components/ui/button";
   import { Input } from "$lib/components/ui/input";
   import Amount from "$lib/components/Amount.svelte";
+  import CategorySelect from "$lib/components/CategorySelect.svelte";
   import FormField from "$lib/components/FormField.svelte";
   import { formatDate } from "$lib/format";
   import ArrowLeftRightIcon from "@lucide/svelte/icons/arrow-left-right";
@@ -24,6 +25,7 @@
     accountId,
     currency,
     transactions,
+    categories,
     filters,
     filterErrors,
     onSelect,
@@ -32,6 +34,7 @@
     accountId: string;
     currency: string;
     transactions: PageData["transactions"];
+    categories: PageData["categories"];
     filters: PageData["filters"];
     filterErrors: PageData["filterErrors"];
     onSelect: (tx: Tx) => void;
@@ -187,6 +190,7 @@
             <Table.Row>
               <Table.Head class="w-32">Date</Table.Head>
               <Table.Head>Description</Table.Head>
+              <Table.Head class="w-48">Category</Table.Head>
               <Table.Head class="w-24">Source</Table.Head>
               <Table.Head class="w-40 text-end">Amount</Table.Head>
             </Table.Row>
@@ -229,6 +233,13 @@
                       {tx.reference}
                     </div>
                   {/if}
+                </Table.Cell>
+                <Table.Cell class="align-top">
+                  <CategorySelect
+                    transactionId={tx.id}
+                    categoryId={tx.categoryId}
+                    {categories}
+                  />
                 </Table.Cell>
                 <Table.Cell class="align-top">
                   <Badge
@@ -292,6 +303,13 @@
                 </span>
               </span>
             </button>
+            <div class="px-3 pb-3">
+              <CategorySelect
+                transactionId={tx.id}
+                categoryId={tx.categoryId}
+                {categories}
+              />
+            </div>
           </li>
         {/each}
       </ul>

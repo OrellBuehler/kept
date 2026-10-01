@@ -1,5 +1,6 @@
 import { sql } from "drizzle-orm";
 import {
+  type AnySQLiteColumn,
   index,
   integer,
   sqliteTable,
@@ -18,6 +19,7 @@ import {
   BILL_REFERENCE_TYPES,
   DOCUMENT_SOURCES,
 } from "$lib/bill-types";
+import { AMOUNT_SIGNS, CATEGORY_KINDS } from "$lib/category-types";
 import type { Minor } from "$lib/money";
 
 export { ACCOUNT_TYPES, IMPORT_FORMATS, REFERENCE_TYPES, ROW_SOURCES };
@@ -150,6 +152,82 @@ export const imports = sqliteTable(
   ],
 );
 
+export const categories = sqliteTable(
+  "categories",
+  {
+    id: id(),
+    userId: userId(),
+    /** One level only: a parent never has a parent of its own. */
+    parentId: text("parent_id").references(
+      (): AnySQLiteColumn => categories.id,
+      {
+        onDelete: "set null",
+      },
+    ),
+    name: text("name").notNull(),
+    kind: text("kind", { enum: CATEGORY_KINDS }).notNull().default("expense"),
+    /** `#rrggbb`. */
+    color: text("color"),
+    icon: text("icon"),
+    ...timestamps,
+  },
+  (t) => [
+    uniqueIndex("categories_user_name_uq").on(t.userId, t.name),
+    index("categories_user_id_idx").on(t.userId),
+    index("categories_parent_id_idx").on(t.parentId),
+  ],
+);
+
+/**
+ * Every set condition must match (AND); at least one is set. Rules run in
+ * ascending `priority`, then creation order, and the first match wins.
+ */
+export const categoryRules = sqliteTable(
+  "category_rules",
+  {
+    id: id(),
+    userId: userId(),
+    categoryId: text("category_id")
+      .notNull()
+      .references(() => categories.id, { onDelete: "cascade" }),
+    priority: integer("priority").notNull().default(100),
+    counterpartyContains: text("counterparty_contains"),
+    descriptionContains: text("description_contains"),
+    counterpartyIban: text("counterparty_iban"),
+    amountSign: text("amount_sign", { enum: AMOUNT_SIGNS }),
+    ...timestamps,
+  },
+  (t) => [
+    index("category_rules_user_id_idx").on(t.userId),
+    index("category_rules_category_id_idx").on(t.categoryId),
+  ],
+);
+
+/** Monthly budget for a category in one currency; no conversion between currencies. */
+export const budgets = sqliteTable(
+  "budgets",
+  {
+    id: id(),
+    userId: userId(),
+    categoryId: text("category_id")
+      .notNull()
+      .references(() => categories.id, { onDelete: "cascade" }),
+    currency: text("currency").notNull(),
+    /** Minor units, > 0. */
+    amount: minor("amount").notNull(),
+    ...timestamps,
+  },
+  (t) => [
+    uniqueIndex("budgets_user_category_currency_uq").on(
+      t.userId,
+      t.categoryId,
+      t.currency,
+    ),
+    index("budgets_user_id_idx").on(t.userId),
+    index("budgets_category_id_idx").on(t.categoryId),
+  ],
+);
+
 export const transactions = sqliteTable(
   "transactions",
   {
@@ -177,6 +255,10 @@ export const transactions = sqliteTable(
     referenceType: text("reference_type", { enum: REFERENCE_TYPES }),
     reversal: integer("reversal", { mode: "boolean" }).notNull().default(false),
     note: text("note"),
+    /** Set by a rule on import or by hand; a manual choice is never overwritten. */
+    categoryId: text("category_id").references(() => categories.id, {
+      onDelete: "set null",
+    }),
     ...timestamps,
   },
   (t) => [
@@ -187,6 +269,7 @@ export const transactions = sqliteTable(
     index("transactions_account_booking_idx").on(t.accountId, t.bookingDate),
     index("transactions_user_id_idx").on(t.userId),
     index("transactions_import_id_idx").on(t.importId),
+    index("transactions_category_id_idx").on(t.categoryId),
   ],
 );
 

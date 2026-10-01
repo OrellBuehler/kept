@@ -8,6 +8,7 @@ import {
   seedImportedTransaction,
   seedInstitution,
 } from "$lib/testing/ledger";
+import { createCategory } from "$lib/server/categories/categories";
 import { getAccount, listAccounts } from "$lib/server/ledger/accounts";
 import { createSnapshot, listSnapshots } from "$lib/server/ledger/snapshots";
 import {
@@ -74,6 +75,7 @@ describe("account detail page", () => {
     expect(Object.keys(v).sort()).toEqual([
       "account",
       "balance",
+      "categories",
       "filterErrors",
       "filters",
       "institutions",
@@ -288,6 +290,59 @@ describe("account detail page", () => {
       status: 404,
     });
     expect(getTransaction(u.id, tx.id).id).toBe(tx.id);
+  });
+
+  it("sets and clears a category, also on imported rows", async () => {
+    const u = await createTestUser();
+    const acc = seedAccount(u.id);
+    const tx = seedImportedTransaction(u.id, acc.id);
+    const c = createCategory(u.id, {
+      name: "Food",
+      kind: "expense",
+      parentId: null,
+      color: null,
+      icon: null,
+    });
+    expect(
+      await run("setCategory", u, acc.id, {
+        transactionId: tx.id,
+        categoryId: c.id,
+      }),
+    ).toMatchObject({ type: "return", value: { success: true } });
+    expect(getTransaction(u.id, tx.id).categoryId).toBe(c.id);
+    await run("setCategory", u, acc.id, {
+      transactionId: tx.id,
+      categoryId: "",
+    });
+    expect(getTransaction(u.id, tx.id).categoryId).toBeNull();
+  });
+
+  it("setCategory refuses another user's category and transaction", async () => {
+    const a = await createTestUser();
+    const b = await createTestUser();
+    const accA = seedAccount(a.id);
+    const accB = seedAccount(b.id);
+    const tx = seedImportedTransaction(a.id, accA.id);
+    const theirs = createCategory(b.id, {
+      name: "Theirs",
+      kind: "expense",
+      parentId: null,
+      color: null,
+      icon: null,
+    });
+    expect(
+      await run("setCategory", a, accA.id, {
+        transactionId: tx.id,
+        categoryId: theirs.id,
+      }),
+    ).toEqual({ type: "error", status: 404 });
+    expect(
+      await run("setCategory", b, accB.id, {
+        transactionId: tx.id,
+        categoryId: theirs.id,
+      }),
+    ).toEqual({ type: "error", status: 404 });
+    expect(getTransaction(a.id, tx.id).categoryId).toBeNull();
   });
 
   describe("cross-user", () => {
