@@ -60,7 +60,7 @@
 <div class="mb-6">
   <h1 class="text-2xl font-semibold tracking-tight">Reports</h1>
   <p class="text-muted-foreground mt-1 text-sm">
-    Generate PDF reports to keep or share. Integrations in
+    Generate PDF reports to keep or share. More options in
     <a
       class="underline underline-offset-2"
       href={resolve("/(app)/settings/account")}>Settings</a

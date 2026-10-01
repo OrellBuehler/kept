@@ -30,6 +30,9 @@
             href={resolve(item.href)}
             {...props}
             aria-current={isActive(item.href) ? "page" : undefined}
+            aria-label={item.badge
+              ? `${item.label}, ${item.badge} overdue`
+              : undefined}
             onclick={() => sidebar.setOpenMobile(false)}
           >
             <item.icon />
@@ -40,9 +43,9 @@
       {#if item.badge}
         <Sidebar.MenuBadge
           class="bg-destructive text-white peer-hover/menu-button:text-white peer-data-[active=true]/menu-button:text-white"
-          aria-label={`${item.badge} overdue`}
+          aria-hidden="true"
         >
-          {item.badge}
+          {item.badge > 99 ? "99+" : item.badge}
         </Sidebar.MenuBadge>
       {/if}
     </Sidebar.MenuItem>

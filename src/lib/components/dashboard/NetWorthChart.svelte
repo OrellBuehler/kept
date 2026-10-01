@@ -10,7 +10,13 @@
     currency,
     points,
     color = "var(--color-chart-1)",
-  }: { currency: string; points: Point[]; color?: string } = $props();
+    range = "12m",
+  }: {
+    currency: string;
+    points: Point[];
+    color?: string;
+    range?: string;
+  } = $props();
 
   const exponent = $derived(currencyExponent(currency));
 
@@ -49,12 +55,27 @@
     value: { label: `Net worth ${currency}`, color },
   } satisfies Chart.ChartConfig);
 
+  const summary = $derived.by(() => {
+    const first = points[0];
+    const last = points[points.length - 1];
+    if (!first || !last) return "";
+    const amounts = points.map((p) => p.amount);
+    const lo = Math.min(...amounts) as Minor;
+    const hi = Math.max(...amounts) as Minor;
+    return `Net worth in ${currency} from ${formatDate(first.date)} to ${formatDate(last.date)}: ${formatAmount(first.amount, currency)} to ${formatAmount(last.amount, currency)}, lowest ${formatAmount(lo, currency)}, highest ${formatAmount(hi, currency)}.`;
+  });
+
   function isoOf(d: Date) {
     return d.toISOString().slice(0, 10);
   }
 </script>
 
-<Chart.Container {config} class="aspect-auto h-52 w-full sm:h-60">
+<p class="sr-only">{summary}</p>
+<Chart.Container
+  {config}
+  aria-hidden="true"
+  class="aspect-auto h-52 w-full sm:h-60"
+>
   <AreaChart
     data={rows}
     x="date"
@@ -67,7 +88,9 @@
       xAxis: {
         ticks: 5,
         format: (v: Date) =>
-          `${dateTick.format(v)} '${String(v.getUTCFullYear()).slice(2)}`,
+          range === "3m"
+            ? `${v.getUTCDate()} ${dateTick.format(v)}`
+            : `${dateTick.format(v)} '${String(v.getUTCFullYear()).slice(2)}`,
       },
       yAxis: {
         ticks: 4,

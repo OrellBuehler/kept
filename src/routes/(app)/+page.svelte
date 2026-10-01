@@ -71,6 +71,10 @@
     ),
   );
 
+  const lastRowStart = $derived(
+    sortedAccounts.length - (sortedAccounts.length % 2 === 0 ? 2 : 1),
+  );
+
   const monthRows = $derived(
     d.month.totals.map((t, i) => ({
       currency: t.currency,
@@ -164,7 +168,7 @@
               <a
                 href="{resolve('/(app)')}?range={r.value}"
                 data-sveltekit-noscroll
-                aria-current={d.range === r.value ? "true" : undefined}
+                aria-current={d.range === r.value ? "page" : undefined}
                 class={cn(
                   "rounded-md px-2.5 py-1 text-xs font-medium transition-colors",
                   d.range === r.value
@@ -196,6 +200,7 @@
               <NetWorthChart
                 currency={total.currency}
                 points={series.points}
+                range={d.range}
                 color={chartColors[i % chartColors.length]}
               />
             {:else}
@@ -446,8 +451,15 @@
       </Card.Header>
       <Card.Content>
         <ul class="grid gap-x-8 lg:grid-cols-2">
-          {#each sortedAccounts as a (a.id)}
-            <li class="border-b py-3 last:border-b-0 lg:nth-last-2:border-b-0">
+          {#each sortedAccounts as a, i (a.id)}
+            <li
+              class={cn(
+                "border-b py-3",
+                i === sortedAccounts.length - 1
+                  ? "border-b-0"
+                  : i >= lastRowStart && "lg:border-b-0",
+              )}
+            >
               <div class="flex items-start justify-between gap-3">
                 <div class="min-w-0">
                   <p class="truncate text-sm font-medium">{a.name}</p>
