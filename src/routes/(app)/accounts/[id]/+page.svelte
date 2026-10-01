@@ -94,7 +94,9 @@
     <div class="flex flex-wrap items-start justify-between gap-4">
       <div class="grid min-w-0 gap-2">
         <div class="flex flex-wrap items-center gap-2">
-          <h1 class="text-2xl font-semibold tracking-tight break-words">
+          <h1
+            class="text-2xl font-semibold tracking-tight break-words md:text-3xl"
+          >
             {account.name}
           </h1>
           <AccountTypeBadge type={account.type} />

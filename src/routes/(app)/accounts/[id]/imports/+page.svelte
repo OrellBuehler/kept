@@ -61,7 +61,9 @@
       {account.name}
     </Button>
     <div class="flex flex-wrap items-center justify-between gap-3">
-      <h1 class="text-2xl font-semibold tracking-tight">Import history</h1>
+      <h1 class="text-2xl font-semibold tracking-tight md:text-3xl">
+        Import history
+      </h1>
       <Button href={importHref}><UploadIcon />Import transactions</Button>
     </div>
   </div>

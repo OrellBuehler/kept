@@ -1,4 +1,5 @@
 <script lang="ts">
+  import PageHeader from "$lib/components/app/page-header.svelte";
   import { resolve } from "$app/paths";
   import { cn } from "$lib/utils";
   import * as Card from "$lib/components/ui/card";
@@ -54,9 +55,8 @@
   <title>Budgets · Kept</title>
 </svelte:head>
 
-<div class="mb-6 flex flex-wrap items-center justify-between gap-3">
-  <h1 class="text-2xl font-semibold tracking-tight">Budgets</h1>
-  <div class="flex items-center gap-2">
+<PageHeader title="Budgets" class="mb-6">
+  {#snippet actions()}
     <nav class="flex items-center gap-1" aria-label="Month">
       <Button
         variant="outline"
@@ -92,8 +92,8 @@
     >
       <PlusIcon /> Add budget
     </Button>
-  </div>
-</div>
+  {/snippet}
+</PageHeader>
 
 {#if expenseCategories.length === 0}
   <Empty.Root class="border border-dashed">

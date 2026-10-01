@@ -85,7 +85,9 @@
   <title>Paperless-ngx settings · Kept</title>
 </svelte:head>
 
-<h1 class="mb-2 text-2xl font-semibold tracking-tight">Paperless-ngx</h1>
+<h1 class="mb-2 text-2xl font-semibold tracking-tight md:text-3xl">
+  Paperless-ngx
+</h1>
 <p class="text-muted-foreground mb-6 max-w-2xl text-sm">
   An optional integration: Kept works fully without it. When connected, Kept
   pulls bills from a tag or saved view in Paperless, links each bill back to its

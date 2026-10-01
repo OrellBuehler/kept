@@ -17,6 +17,7 @@
       <Sidebar.MenuButton
         isActive={isActive(item.href)}
         tooltipContent={item.label}
+        class="text-sidebar-foreground/80 data-[active=true]:[&>svg]:text-sidebar-primary h-9 transition-colors"
       >
         {#snippet child({ props })}
           <a

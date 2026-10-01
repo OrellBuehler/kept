@@ -1,4 +1,5 @@
 <script lang="ts">
+  import PageHeader from "$lib/components/app/page-header.svelte";
   import { resolve } from "$app/paths";
   import * as Card from "$lib/components/ui/card";
   import * as DropdownMenu from "$lib/components/ui/dropdown-menu";
@@ -100,9 +101,8 @@
 </svelte:head>
 
 <div class="grid gap-6">
-  <div class="flex flex-wrap items-center justify-between gap-3">
-    <h1 class="text-2xl font-semibold tracking-tight">Accounts</h1>
-    <div class="flex flex-wrap items-center gap-2">
+  <PageHeader title="Accounts">
+    {#snippet actions()}
       {#if archivedCount > 0}
         <div class="flex items-center gap-2 pe-2">
           <Switch id="show-archived" bind:checked={showArchived} />
@@ -117,8 +117,8 @@
       <Button onclick={() => openAddAccount()}>
         <PlusIcon /> Add account
       </Button>
-    </div>
-  </div>
+    {/snippet}
+  </PageHeader>
 
   {#if data.accounts.length === 0}
     <Empty.Root class="border border-dashed">

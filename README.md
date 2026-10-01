@@ -38,7 +38,7 @@ e-banking and upload it as a bill — the QR data is read from it.
 docker run -d --name kept -p 3000:3000 -v kept-data:/data \
   -e KEPT_SECRET_KEY="$(openssl rand -base64 32)" \
   -e ORIGIN=https://kept.example.org \
-  ghcr.io/orellbuehler/kept:main
+  ghcr.io/orellbuehler/kept:latest
 ```
 
 Open the app and create the first user at `/setup` — it becomes the administrator. Until that

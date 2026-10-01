@@ -50,7 +50,7 @@
     >
       <ArrowLeftIcon class="size-4" /> Bills
     </a>
-    <h1 class="text-2xl font-semibold tracking-tight">Add bill</h1>
+    <h1 class="text-2xl font-semibold tracking-tight md:text-3xl">Add bill</h1>
   </div>
 
   {#if !showForm}

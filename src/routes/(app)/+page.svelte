@@ -5,6 +5,7 @@
   import * as Empty from "$lib/components/ui/empty";
   import { Badge } from "$lib/components/ui/badge";
   import { Button } from "$lib/components/ui/button";
+  import PageHeader from "$lib/components/app/page-header.svelte";
   import Amount from "$lib/components/Amount.svelte";
   import AccountTypeBadge from "$lib/components/AccountTypeBadge.svelte";
   import CategoryBadge from "$lib/components/CategoryBadge.svelte";
@@ -128,7 +129,11 @@
   <title>Dashboard · Kept</title>
 </svelte:head>
 
-<h1 class="mb-6 text-2xl font-semibold tracking-tight">Dashboard</h1>
+<PageHeader
+  title="Dashboard"
+  description={`Where things stand on ${formatDate(d.today)}.`}
+  class="mb-6"
+/>
 
 {#if d.accounts.length === 0}
   <Empty.Root class="border border-dashed">
@@ -154,7 +159,7 @@
   </Empty.Root>
 {:else}
   <div class="grid gap-4 lg:grid-cols-2">
-    <Card.Root class="lg:col-span-2">
+    <Card.Root class="surface-hero shadow-raised overflow-hidden lg:col-span-2">
       <Card.Header>
         <Card.Title>Net worth</Card.Title>
         <Card.Description>
@@ -171,7 +176,7 @@
                 data-sveltekit-noscroll
                 aria-current={d.range === r.value ? "page" : undefined}
                 class={cn(
-                  "rounded-md px-2.5 py-1 text-xs font-medium transition-colors",
+                  "focus-visible:ring-ring/50 rounded-md px-2.5 py-1 text-xs font-medium transition-colors outline-none focus-visible:ring-[3px]",
                   d.range === r.value
                     ? "bg-background text-foreground shadow-sm"
                     : "text-muted-foreground hover:text-foreground",
@@ -181,17 +186,20 @@
           </nav>
         </Card.Action>
       </Card.Header>
-      <Card.Content class="space-y-6">
+      <Card.Content class="space-y-8">
         {#each d.netWorth.totals as total, i (total.currency)}
           {@const series = d.netWorth.series.find(
             (s) => s.currency === total.currency,
           )}
-          <section aria-label={`Net worth ${total.currency}`}>
-            <div class="mb-2 flex flex-wrap items-baseline gap-x-3 gap-y-1">
+          <section
+            aria-label={`Net worth ${total.currency}`}
+            class="not-first:border-t not-first:pt-6"
+          >
+            <div class="mb-3 flex flex-wrap items-baseline gap-x-3 gap-y-1">
               <Amount
                 value={total.balance}
                 currency={total.currency}
-                class="text-3xl font-semibold tracking-tight"
+                class="text-4xl font-semibold tracking-tight"
               />
               <span class="text-muted-foreground text-sm">
                 {plural(total.accountCount, "account")}
@@ -334,7 +342,7 @@
               row.tone === "destructive" && row.bucket.count > 0}
             <li
               class={cn(
-                "flex items-center justify-between gap-3 rounded-md border px-3 py-2",
+                "flex items-center justify-between gap-3 rounded-lg border px-3 py-2.5 transition-colors",
                 isAlert && "border-destructive/50 bg-destructive/5",
               )}
             >

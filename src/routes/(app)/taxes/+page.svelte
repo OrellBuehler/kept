@@ -1,4 +1,5 @@
 <script lang="ts">
+  import PageHeader from "$lib/components/app/page-header.svelte";
   import { resolve } from "$app/paths";
   import CircleCheckIcon from "@lucide/svelte/icons/circle-check";
   import ScaleIcon from "@lucide/svelte/icons/scale";
@@ -20,13 +21,10 @@
 </svelte:head>
 
 <div class="grid gap-6">
-  <div>
-    <h1 class="text-2xl font-semibold tracking-tight">Taxes</h1>
-    <p class="text-muted-foreground mt-1 text-sm">
-      Compare what you paid with what the tax office counted, year by year.
-      Payments count once you mark a transaction, or a bill, with its tax year.
-    </p>
-  </div>
+  <PageHeader
+    title="Taxes"
+    description="Compare what you paid with what the tax office counted, year by year. Payments count once you mark a transaction, or a bill, with its tax year."
+  />
 
   {#if data.years.length === 0}
     <Empty.Root class="border border-dashed">

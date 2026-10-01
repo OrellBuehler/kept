@@ -1,4 +1,5 @@
 <script lang="ts">
+  import PageHeader from "$lib/components/app/page-header.svelte";
   import { resolve } from "$app/paths";
   import PlusIcon from "@lucide/svelte/icons/plus";
   import ReceiptIcon from "@lucide/svelte/icons/receipt";
@@ -54,12 +55,13 @@
 </svelte:head>
 
 <div class="grid gap-6">
-  <div class="flex flex-wrap items-center justify-between gap-3">
-    <h1 class="text-2xl font-semibold tracking-tight">Bills</h1>
-    <Button href={resolve("/(app)/bills/new")}>
-      <PlusIcon /> Add bill
-    </Button>
-  </div>
+  <PageHeader title="Bills">
+    {#snippet actions()}
+      <Button href={resolve("/(app)/bills/new")}>
+        <PlusIcon /> Add bill
+      </Button>
+    {/snippet}
+  </PageHeader>
 
   {#if data.autoMatched > 0}
     <Alert.Root>

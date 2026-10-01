@@ -97,7 +97,9 @@
 
 <div class="grid max-w-4xl gap-6">
   <div class="grid gap-3">
-    <h1 class="text-2xl font-semibold tracking-tight">Import transactions</h1>
+    <h1 class="text-2xl font-semibold tracking-tight md:text-3xl">
+      Import transactions
+    </h1>
     <ImportSteps current={accountId ? 2 : 1} />
   </div>
 

@@ -1,4 +1,5 @@
 <script lang="ts">
+  import PageHeader from "$lib/components/app/page-header.svelte";
   import { resolve } from "$app/paths";
   import DownloadIcon from "@lucide/svelte/icons/download";
   import * as Card from "$lib/components/ui/card/index.js";
@@ -19,7 +20,7 @@
   <title>Backup · Kept</title>
 </svelte:head>
 
-<h1 class="mb-6 text-2xl font-semibold tracking-tight">Backup</h1>
+<PageHeader title="Backup" class="mb-6" />
 
 <div class="grid max-w-3xl grid-cols-[minmax(0,1fr)] gap-6">
   <Card.Root>
