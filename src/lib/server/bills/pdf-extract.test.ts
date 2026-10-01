@@ -5,7 +5,7 @@ import {
   EXAMPLE_SCOR,
 } from "$lib/testing/fixtures/bill-identifiers";
 import { formatIban } from "$lib/iban";
-import { formatReference } from "./references";
+import { formatReference } from "$lib/references";
 import { buildBillPdf } from "$lib/testing/fixtures/bills/pdf";
 import {
   PLAIN_IBAN,

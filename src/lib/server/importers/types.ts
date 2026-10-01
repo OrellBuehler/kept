@@ -1,6 +1,7 @@
 import type { Minor } from "$lib/money";
 
-export type ReferenceType = "QRR" | "SCOR";
+import type { ReferenceType } from "$lib/references";
+export type { ReferenceType };
 
 export interface NormalizedTransaction {
   externalId: string;

@@ -1,6 +1,6 @@
 import { isQrIban, isValidIban, normalizeIban } from "$lib/iban";
 import { parseAmount, type Minor } from "$lib/money";
-import { isValidQrr, isValidScor, normalizeReference } from "./references";
+import { isValidQrr, isValidScor, normalizeReference } from "$lib/references";
 
 export interface QrBillParty {
   name: string;
