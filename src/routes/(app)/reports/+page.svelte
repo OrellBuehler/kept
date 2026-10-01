@@ -11,6 +11,7 @@
   import { Label } from "$lib/components/ui/label";
   import { NativeSelect } from "$lib/components/ui/native-select";
   import { Switch } from "$lib/components/ui/switch";
+  import SendToPaperless from "$lib/components/reports/SendToPaperless.svelte";
   import FormField from "$lib/components/FormField.svelte";
   import type { PageProps } from "./$types";
 
@@ -61,8 +62,9 @@
   <h1 class="text-2xl font-semibold tracking-tight">Reports</h1>
   <p class="text-muted-foreground mt-1 text-sm">
     Generate PDF reports to keep or share. Once Paperless-ngx is connected in
-    <a class="underline underline-offset-2" href={resolve("/settings/account")}
-      >settings</a
+    <a
+      class="underline underline-offset-2"
+      href={resolve("/(app)/settings/paperless")}>settings</a
     >, reports can be sent there as well.
   </p>
 </div>
@@ -96,8 +98,15 @@
           action={resolve("/reports/statement")}
           data-sveltekit-reload
           class="grid gap-4 sm:grid-cols-2"
+          onsubmit={(e) => {
+            if (!canDownload) e.preventDefault();
+          }}
         >
-          <FormField label="Account" for="report-account" class="sm:col-span-2">
+          <FormField
+            label="Account"
+            for="report-account"
+            class="sm:col-span-2 [&_[data-slot=native-select-wrapper]]:w-full"
+          >
             <NativeSelect
               id="report-account"
               name="account"
@@ -147,13 +156,20 @@
               aria-invalid={rangeInvalid}
             />
           </FormField>
-          <div class="sm:col-span-2">
+          <div class="flex flex-wrap gap-2 sm:col-span-2">
             <Button type="submit" disabled={!canDownload}>
               <DownloadIcon />
               Download PDF
             </Button>
           </div>
         </form>
+        <div class="mt-2">
+          <SendToPaperless
+            kind="statement"
+            fields={{ account: accountId, from, to }}
+            disabled={!canDownload}
+          />
+        </div>
       {/if}
     </Card.Content>
   </Card.Root>
@@ -165,9 +181,10 @@
         All bills with their status, amounts and due dates.
       </Card.Description>
     </Card.Header>
-    <Card.Content>
+    <Card.Content class="grid content-start gap-2">
       <Button
         variant="outline"
+        class="w-fit"
         href={resolve("/reports/bills")}
         data-sveltekit-reload
         download
@@ -175,6 +192,7 @@
         <DownloadIcon />
         Download PDF
       </Button>
+      <div><SendToPaperless kind="bills" /></div>
     </Card.Content>
   </Card.Root>
 
@@ -185,9 +203,10 @@
         Current balances per account and net worth over time, per currency.
       </Card.Description>
     </Card.Header>
-    <Card.Content>
+    <Card.Content class="grid content-start gap-2">
       <Button
         variant="outline"
+        class="w-fit"
         href={resolve("/reports/net-worth")}
         data-sveltekit-reload
         download
@@ -195,6 +214,7 @@
         <DownloadIcon />
         Download PDF
       </Button>
+      <div><SendToPaperless kind="net-worth" /></div>
     </Card.Content>
   </Card.Root>
 </div>

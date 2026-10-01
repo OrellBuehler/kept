@@ -372,9 +372,12 @@
                 {@const amount = bill.remaining ?? bill.amount}
                 <li class="flex items-center justify-between gap-3 py-2">
                   <div class="min-w-0">
-                    <p class="truncate text-sm">
+                    <a
+                      href={resolve("/(app)/bills/[id]", { id: bill.id })}
+                      class="block truncate text-sm hover:underline"
+                    >
                       {bill.creditorName}
-                    </p>
+                    </a>
                     <p class="text-muted-foreground text-xs">
                       {#if bill.dueDate === null || bill.dueInDays === null}
                         No due date
