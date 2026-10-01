@@ -44,8 +44,37 @@ happens, anyone who can reach the server can claim it, so do this right after st
 | `ADDRESS_HEADER`, `XFF_DEPTH` | Client address behind a proxy (e.g. `X-Forwarded-For`, `1`) so login rate limiting works per client.                                                   |
 | `KEPT_COOKIE_SECURE=false`    | Only when serving over plain HTTP on a trusted network.                                                                                                |
 | `DATABASE_PATH`               | Defaults to `/data/kept.db` in the image. Uploaded bills and pending imports live next to it.                                                          |
+| `KEPT_BACKUP_DIR`             | Optional. Writes a daily database backup into this directory (e.g. `/data/backups`).                                                                   |
+| `KEPT_BACKUP_KEEP`            | How many scheduled backups to keep; older ones are deleted. Defaults to `7`.                                                                           |
 
-Back up the `/data` volume; it holds everything.
+### Backup and restore
+
+The database holds everything except uploaded bill PDFs, which live next to it in
+`/data/documents`. Back up the whole `/data` volume, and keep `KEPT_SECRET_KEY` with it.
+
+- **Download:** the administrator can download a consistent copy of the database under
+  **Backup** in the sidebar. It is taken with SQLite's `VACUUM INTO`, so it is safe while Kept is
+  running.
+- **Scheduled:** set `KEPT_BACKUP_DIR` to write `kept-backup-YYYYMMDD-HHMMSS.db` once a day
+  (checked hourly, first run a minute after start) and keep the newest `KEPT_BACKUP_KEEP`. The
+  directory should be on a different disk or synced elsewhere, otherwise it does not protect
+  against losing the volume.
+
+Restoring is done on the server, because the database file must not be replaced while Kept runs:
+
+```bash
+docker stop kept
+# replace the database; remove the old WAL files so they are not applied to the restored file
+docker run --rm -v kept-data:/data -v "$PWD":/backup alpine sh -c \
+  'rm -f /data/kept.db-wal /data/kept.db-shm && cp /backup/kept-backup-20260101-030000.db /data/kept.db && chown 1001:1001 /data/kept.db'
+docker start kept
+```
+
+Restore a backup taken by the same or an older version of Kept; pending migrations run on start.
+A backup from a newer version than the running image is not supported. Restore the matching
+`documents` folder too if bills must show their PDFs, and use the same `KEPT_SECRET_KEY`,
+otherwise stored integration tokens can't be decrypted. Check that you can sign in before deleting
+the volume's previous contents.
 
 ### Paperless-ngx
 

@@ -185,6 +185,16 @@ const matrix: Record<string, Entry> = {
         (m as unknown as { POST: (event: never) => unknown }).POST(e),
     },
   },
+  "/src/routes/(app)/admin/backup/+page.server.ts": {
+    access: "admin",
+    handlers: { load: (m, e) => m.load(e) },
+  },
+  "/src/routes/(app)/admin/backup/download/+server.ts": {
+    access: "admin",
+    handlers: {
+      GET: (m, e) => (m as never as { GET: (e: never) => unknown }).GET(e),
+    },
+  },
   "/src/routes/(app)/admin/users/+page.server.ts": {
     access: "admin",
     handlers: {

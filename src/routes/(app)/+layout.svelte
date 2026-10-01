@@ -12,6 +12,7 @@
   import FileTextIcon from "@lucide/svelte/icons/file-text";
   import SettingsIcon from "@lucide/svelte/icons/settings";
   import UsersIcon from "@lucide/svelte/icons/users";
+  import DatabaseBackupIcon from "@lucide/svelte/icons/database-backup";
   import ChevronsUpDownIcon from "@lucide/svelte/icons/chevrons-up-down";
   import LogOutIcon from "@lucide/svelte/icons/log-out";
   import SunIcon from "@lucide/svelte/icons/sun";
@@ -42,7 +43,14 @@
     { href: "/reports", label: "Reports", icon: FileTextIcon },
     { href: "/settings/account", label: "Settings", icon: SettingsIcon },
     ...(data.user.role === "admin"
-      ? [{ href: "/admin/users" as const, label: "Users", icon: UsersIcon }]
+      ? [
+          { href: "/admin/users" as const, label: "Users", icon: UsersIcon },
+          {
+            href: "/admin/backup" as const,
+            label: "Backup",
+            icon: DatabaseBackupIcon,
+          },
+        ]
       : []),
   ]);
 
