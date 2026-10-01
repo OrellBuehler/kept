@@ -538,8 +538,31 @@ describe("candidateTransactions", () => {
       minor(5000),
       "user",
     );
-    const refunds = candidateTransactions(u.id, inv.id).items;
-    const refund = refunds.find((i) => i.id === incoming.id)!;
+    expect(candidateTransactions(u.id, inv.id).items.map((i) => i.id)).toEqual([
+      outgoing.id,
+    ]);
+  });
+
+  it("offers refunds (the surplus) only while an invoice is overpaid", async () => {
+    const { u, account } = await setup();
+    const incoming = seedImportedTransaction(u.id, account.id, {
+      amount: minor(2000),
+    });
+    const inv = seedBill(u.id, { amount: minor(5000) });
+    expect(candidateTransactions(u.id, inv.id).items).toEqual([]);
+
+    const payment = pay(u.id, account.id, 5000, { bookingDate: "2026-09-01" });
+    allocate(u.id, inv.id, payment.id, minor(5000), "user");
+    expect(
+      candidateTransactions(u.id, inv.id).items.map((i) => i.id),
+    ).not.toContain(incoming.id);
+
+    const over = seedBill(u.id, { amount: minor(5000) });
+    const big = pay(u.id, account.id, 7000, { bookingDate: "2026-09-02" });
+    allocate(u.id, over.id, big.id, minor(7000), "user");
+    const refund = candidateTransactions(u.id, over.id).items.find(
+      (i) => i.id === incoming.id,
+    )!;
     expect(refund.suggestedAmount).toBe(-2000);
   });
 

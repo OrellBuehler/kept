@@ -12,7 +12,9 @@ import {
   QR_IBAN,
   buildPayload,
 } from "$lib/testing/fixtures/bills/payloads";
-import { seedAccount } from "$lib/testing/ledger";
+import { seedAccount, seedImportedTransaction } from "$lib/testing/ledger";
+import { minor } from "$lib/money";
+import { load as detailLoad } from "../[id]/+page.server";
 import { actions, load } from "./+page.server";
 
 type User = Awaited<ReturnType<typeof createTestUser>>;
@@ -49,6 +51,39 @@ const loadAs = (user: User, query = "") =>
 describe("new bill page", () => {
   useTestDB();
   useTestDocuments();
+
+  it("a bill created for an already booked payment is Paid on the next detail load", async () => {
+    const u = await createTestUser();
+    const account = seedAccount(u.id);
+    seedImportedTransaction(u.id, account.id, {
+      amount: minor(-10000),
+      bookingDate: "2026-09-10",
+      reference: QRR,
+    });
+    const created = await outcome(() =>
+      actions.create(
+        createTestEvent({
+          user: u,
+          form: billForm({
+            amount: "100.00",
+            creditorIban: QR_IBAN,
+            reference: QRR,
+            referenceType: "QRR",
+          }),
+        }) as never,
+      ),
+    );
+    expect(created.type).toBe("redirect");
+    const [bill] = listBills(u.id);
+    const detail = await detailLoad(
+      createTestEvent({
+        user: u,
+        params: { id: bill!.id },
+        url: `http://localhost/bills/${bill!.id}`,
+      }) as never,
+    );
+    expect((detail as { bill: { status: string } }).bill.status).toBe("paid");
+  });
 
   it("loads an empty form with the user's accounts", async () => {
     const u = await createTestUser();

@@ -20,6 +20,7 @@ import {
   billInputSchema,
   optionalDocumentIdSchema,
 } from "$lib/server/bills/schemas";
+import { autoMatchQuietly } from "$lib/server/bills/suggestions";
 import { parseForm, safeValues } from "$lib/server/forms";
 import { listAccounts } from "$lib/server/ledger/accounts";
 import { ledgerFailure, orNotFound } from "$lib/server/ledger/http";
@@ -93,6 +94,7 @@ export const actions: Actions = {
     } catch (err) {
       return ledgerFailure("create", err, values);
     }
+    autoMatchQuietly(user.id);
     redirect(303, `/bills/${id}`);
   },
 };

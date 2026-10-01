@@ -86,6 +86,7 @@ describe("mappingContext", () => {
       format: "csv",
       saved: false,
       rowCount: 6,
+      dataRowCount: 5,
       errors: [],
     });
     expect(ctx.detected.map((c) => c.name)).toEqual([
@@ -129,6 +130,21 @@ describe("mappingContext", () => {
     expect(ctx.sampleRows).toHaveLength(20);
     expect(ctx.preview).toHaveLength(50);
     expect(ctx.rowCount).toBe(81);
+    expect(ctx.dataRowCount).toBe(80);
+  });
+
+  it("counts data rows without preamble, blank lines and footer", async () => {
+    const { user, account } = await setup();
+    const id = uploadFixture(user.id, account.id, "csv/preamble-footer.csv");
+    const ctx = mappingContext(user.id, id, {
+      ...SIMPLE_CSV_PROFILE,
+      headerRow: 5,
+      skipFooterRows: 2,
+      delimiter: ";",
+      dateFormat: "DD.MM.YYYY",
+      columns: { bookingDate: "Date", description: "Text", amount: "Amount" },
+    });
+    expect(ctx.dataRowCount).toBe(3);
   });
 
   it("previews a draft and reports row errors inline", async () => {

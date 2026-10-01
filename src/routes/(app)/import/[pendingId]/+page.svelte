@@ -414,16 +414,10 @@
           setErrors: (e) => (confirmErrors = e),
         })}
       >
-        {#if data.canConfirm && nothingNew}
-          <span class="text-muted-foreground text-sm"
-            >Nothing new to import</span
-          >
-        {/if}
         <Button type="submit" disabled={busy || !data.canConfirm || nothingNew}>
-          {#if confirming}<Spinner />Importing…{:else}Import {plural(
-              data.counts.new,
-              "transaction",
-            )}{/if}
+          {#if confirming}<Spinner
+            />Importing…{:else if data.canConfirm && nothingNew}Nothing new to
+            import{:else}Import {plural(data.counts.new, "transaction")}{/if}
         </Button>
       </form>
     </div>

@@ -68,6 +68,18 @@ export interface PreviewOptions {
   profile?: CsvMappingProfile;
 }
 
+/** The declared period, or the first and last booking date when the file declares none. */
+function statementPeriod(statement: NormalizedStatement): {
+  fromDate: string | null;
+  toDate: string | null;
+} {
+  const dates = statement.transactions.map((t) => t.bookingDate).sort();
+  return {
+    fromDate: statement.fromDate ?? dates[0] ?? null,
+    toDate: statement.toDate ?? dates[dates.length - 1] ?? null,
+  };
+}
+
 // --- statement selection ---------------------------------------------------
 
 function mergeStatements(list: NormalizedStatement[]): NormalizedStatement {
@@ -453,8 +465,7 @@ export function buildPreview(
     statement: {
       accountIban: statement.accountIban,
       currency: statement.currency,
-      fromDate: statement.fromDate,
-      toDate: statement.toDate,
+      ...statementPeriod(statement),
       openingBalance: statement.openingBalance,
       closingBalance: statement.closingBalance,
     },

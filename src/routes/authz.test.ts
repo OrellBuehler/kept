@@ -60,6 +60,10 @@ const matrix: Record<string, Entry> = {
       GET: (m, e) => (m as never as { GET: (e: never) => unknown }).GET(e),
     },
   },
+  "/src/routes/(app)/settings/+page.server.ts": {
+    access: "user",
+    handlers: { load: (m, e) => m.load(e) },
+  },
   "/src/routes/(app)/settings/account/+page.server.ts": {
     access: "user",
     handlers: {

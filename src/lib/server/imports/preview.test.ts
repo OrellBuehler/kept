@@ -140,7 +140,10 @@ describe("buildPreview: camt.053", () => {
       date: "2024-04-30",
       amount: 13000,
     });
-    expect(p.statement?.toDate ?? "2024-04-30").toBe("2024-04-30");
+    expect(p.statement).toMatchObject({
+      fromDate: "2024-03-10",
+      toDate: "2024-04-10",
+    });
   });
 
   it("warns when the account has no IBAN", async () => {
@@ -172,6 +175,38 @@ describe("buildPreview: camt.053", () => {
     );
     expect(p.errors).toEqual([]);
     expect(p.rows.some((r) => r.tx.originalCurrency === "USD")).toBe(true);
+  });
+
+  it("falls back to the first and last booking date when the file declares no period", async () => {
+    const { user, account } = await setup();
+    const id = uploadBytes(
+      user.id,
+      account.id,
+      buildCamt({
+        iban: EXAMPLE_IBAN,
+        entries: [
+          { date: "2024-05-20", amount: "5.00", sign: "CRDT", ref: "P2" },
+          { date: "2024-05-03", amount: "9.00", sign: "DBIT", ref: "P1" },
+        ],
+      }),
+    );
+    const p = buildPreview(user.id, id);
+    expect(p.statement).toMatchObject({
+      fromDate: "2024-05-03",
+      toDate: "2024-05-20",
+    });
+  });
+
+  it("keeps the declared period when the file has one", async () => {
+    const { user, account } = await setup();
+    const p = buildPreview(
+      user.id,
+      uploadFixture(user.id, account.id, "camt053/overlap-a.xml"),
+    );
+    expect(p.statement).toMatchObject({
+      fromDate: "2024-07-01",
+      toDate: "2024-07-10",
+    });
   });
 
   it("an empty statement has no rows but keeps its balances and warns", async () => {

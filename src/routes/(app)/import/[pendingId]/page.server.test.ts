@@ -2,7 +2,14 @@ import { describe, expect, it } from "vitest";
 import { createTestUser } from "$lib/testing/auth";
 import { useTestDB } from "$lib/testing/db";
 import { createTestEvent, outcome } from "$lib/testing/event";
-import { EXAMPLE_IBAN } from "$lib/testing/fixtures/bill-identifiers";
+import { listBillAllocations } from "$lib/server/bills/allocations";
+import { billView } from "$lib/server/bills/status";
+import { seedBill } from "$lib/testing/bills";
+import {
+  EXAMPLE_IBAN,
+  EXAMPLE_QRR,
+} from "$lib/testing/fixtures/bill-identifiers";
+import { IBAN_QR } from "$lib/testing/fixtures/camt053/examples";
 import { buildCamt } from "$lib/testing/fixtures/camt053/build";
 import {
   uploadBytes,
@@ -159,6 +166,27 @@ describe("/import/[pendingId] actions", () => {
     );
     expect(getDB().select().from(transactions).all()).toHaveLength(5);
     expect(() => getPendingMeta(user.id, id)).toThrow();
+  });
+
+  it("confirm auto-matches an open bill by its exact reference", async () => {
+    const user = await createTestUser();
+    const account = seedAccount(user.id, { iban: IBAN_QR });
+    const bill = seedBill(user.id, {
+      kind: "credit_note",
+      amount: 1000 as never,
+      reference: EXAMPLE_QRR,
+      referenceType: "QRR",
+    });
+    expect(billView(user.id, bill.id, { today: "2026-10-01" }).status).toBe(
+      "credit_due",
+    );
+    const id = uploadFixture(user.id, account.id, "camt053/qr-reference.xml");
+    const r = await act("confirm", user, id);
+    expect(r).toMatchObject({ type: "redirect", status: 303 });
+    expect(listBillAllocations(user.id, bill.id)).toHaveLength(1);
+    expect(billView(user.id, bill.id, { today: "2026-10-01" }).status).toBe(
+      "paid",
+    );
   });
 
   it("confirm with blocking errors fails with 400 and imports nothing", async () => {

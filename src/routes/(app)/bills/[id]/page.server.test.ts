@@ -14,7 +14,10 @@ import {
   QR_IBAN,
   buildPayload,
 } from "$lib/testing/fixtures/bills/payloads";
-import { EXAMPLE_IBAN } from "$lib/testing/fixtures/bill-identifiers";
+import {
+  EXAMPLE_IBAN,
+  EXAMPLE_QRR,
+} from "$lib/testing/fixtures/bill-identifiers";
 import { seedAccount, seedImportedTransaction } from "$lib/testing/ledger";
 import { actions, load } from "./+page.server";
 import { GET } from "./document/+server";
@@ -49,6 +52,76 @@ const qrPdf = () =>
 describe("bill detail page", () => {
   useTestDB();
   useTestDocuments();
+
+  const refForm = (over: Record<string, string> = {}) =>
+    billForm({
+      creditorIban: QR_IBAN,
+      reference: EXAMPLE_QRR,
+      referenceType: "QRR",
+      amount: "100.00",
+      ...over,
+    });
+  const statusOf = async (u: User, id: string) =>
+    (
+      (await loadAs(u, id)) as unknown as {
+        value: { bill: { status: string } };
+      }
+    ).value.bill.status;
+
+  it("update auto-matches a transaction that carries the bill's new reference", async () => {
+    const u = await createTestUser();
+    const account = seedAccount(u.id);
+    const bill = seedBill(u.id);
+    seedImportedTransaction(u.id, account.id, {
+      amount: minor(-10000),
+      bookingDate: "2026-09-10",
+      reference: EXAMPLE_QRR,
+    });
+    expect(
+      await outcome(() =>
+        actions.update!(
+          createTestEvent({
+            user: u,
+            params: { id: bill.id },
+            form: refForm(),
+          }) as never,
+        ),
+      ),
+    ).toMatchObject({ type: "return" });
+    expect(listBillAllocations(u.id, bill.id)).toHaveLength(1);
+    expect(await statusOf(u, bill.id)).toBe("paid");
+  });
+
+  it("the detail load auto-matches a payment that arrived after the bill was saved", async () => {
+    const u = await createTestUser();
+    const account = seedAccount(u.id);
+    const bill = seedBill(u.id, {
+      reference: EXAMPLE_QRR,
+      referenceType: "QRR",
+    });
+    seedImportedTransaction(u.id, account.id, {
+      amount: minor(-10000),
+      bookingDate: "2026-09-10",
+      reference: EXAMPLE_QRR,
+    });
+    expect(await statusOf(u, bill.id)).toBe("paid");
+  });
+
+  it("does not match another user's transactions", async () => {
+    const u = await createTestUser();
+    const other = await createTestUser();
+    const account = seedAccount(other.id);
+    seedImportedTransaction(other.id, account.id, {
+      amount: minor(-10000),
+      bookingDate: "2026-09-10",
+      reference: EXAMPLE_QRR,
+    });
+    const bill = seedBill(u.id, {
+      reference: EXAMPLE_QRR,
+      referenceType: "QRR",
+    });
+    expect(await statusOf(u, bill.id)).toBe("open");
+  });
 
   it("load returns the bill, allocations, suggestions, candidates, accounts and document", async () => {
     const u = await createTestUser();
@@ -257,6 +330,7 @@ describe("bill detail page", () => {
       "default-src 'none'; object-src 'none'; frame-ancestors 'self'",
     );
     expect(res.headers.get("Cache-Control")).toBe("private, no-store");
+    expect(res.headers.get("Referrer-Policy")).toBe("no-referrer");
     expect((await res.arrayBuffer()).byteLength).toBe(pdf.byteLength);
 
     const re = await run("reextract", u, bill.id);

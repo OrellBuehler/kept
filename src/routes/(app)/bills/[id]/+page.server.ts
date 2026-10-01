@@ -28,6 +28,7 @@ import {
 } from "$lib/server/bills/schemas";
 import { billView } from "$lib/server/bills/status";
 import {
+  autoMatchQuietly,
   dismissSuggestion,
   getSuggestions,
   listDismissed,
@@ -47,6 +48,7 @@ function positiveInt(value: string | null): number {
 
 export const load: PageServerLoad = ({ locals, params, url }) => {
   const user = requireUser(locals);
+  autoMatchQuietly(user.id);
   const bill = orNotFound(() =>
     billView(user.id, params.id, { today: todayLocal() }),
   );
@@ -82,6 +84,7 @@ export const actions: Actions = {
     }
     try {
       updateBill(user.id, params.id, parsed.data);
+      autoMatchQuietly(user.id);
       return { success: true as const, action: "update" as const };
     } catch (err) {
       return ledgerFailure("update", err, values);

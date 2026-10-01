@@ -28,6 +28,7 @@ export const GET: RequestHandler = ({ locals, params }) => {
       "Content-Security-Policy":
         "default-src 'none'; object-src 'none'; frame-ancestors 'self'",
       "Cache-Control": "private, no-store",
+      "Referrer-Policy": "no-referrer",
     },
   });
 };

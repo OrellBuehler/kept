@@ -56,6 +56,13 @@
       : null,
   );
 
+  let showCandidates = $state(false);
+  const candidatesCollapsed = $derived(
+    (bill.status === "paid" || bill.status === "cancelled") &&
+      !showCandidates &&
+      !data.candidateQuery,
+  );
+
   let editOpen = $state(false);
   let deleteOpen = $state(false);
   let showIban = $state(false);
@@ -457,64 +464,82 @@
       </Card.Description>
     </Card.Header>
     <Card.Content class="grid gap-4">
-      <form method="GET" class="flex gap-2" role="search">
-        <Input
-          name="q"
-          type="search"
-          value={data.candidateQuery}
-          placeholder="Search counterparty, description, reference or amount"
-          aria-label="Search transactions"
-          autocomplete="off"
-        />
-        <Button type="submit" variant="outline">
-          <SearchIcon /> Search
-        </Button>
-      </form>
-
-      {#if data.candidates.items.length > 0}
-        <ul class="divide-y rounded-lg border">
-          {#each data.candidates.items as candidate (candidate.id)}
-            <CandidateRow {candidate} currency={bill.currency} />
-          {/each}
-        </ul>
-        {#if data.candidates.pageCount > 1}
-          <nav
-            class="flex items-center justify-between gap-2 text-sm"
-            aria-label="Pages"
-          >
-            {#if data.candidates.page > 1}
-              <Button
-                variant="outline"
-                size="sm"
-                href={pageHref(data.candidates.page - 1)}>Previous</Button
-              >
-            {:else}
-              <span></span>
-            {/if}
-            <span class="text-muted-foreground tabular-nums">
-              Page {data.candidates.page} of {data.candidates.pageCount}
-            </span>
-            {#if data.candidates.page < data.candidates.pageCount}
-              <Button
-                variant="outline"
-                size="sm"
-                href={pageHref(data.candidates.page + 1)}>Next</Button
-              >
-            {:else}
-              <span></span>
-            {/if}
-          </nav>
-        {/if}
-      {:else}
-        <p
-          class="text-muted-foreground rounded-md border border-dashed p-3 text-sm"
+      {#if candidatesCollapsed}
+        <div
+          class="text-muted-foreground flex flex-wrap items-center justify-between gap-2 rounded-md border border-dashed p-3 text-sm"
         >
-          {#if data.candidateQuery}
-            No transactions match "{data.candidateQuery}".
-          {:else}
-            No unmatched {bill.currency} transactions to offer for this bill.
+          <span>
+            {bill.status === "cancelled"
+              ? "This bill is cancelled."
+              : "This bill is fully paid."}
+          </span>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onclick={() => (showCandidates = true)}>Show anyway</Button
+          >
+        </div>
+      {:else}
+        <form method="GET" class="flex gap-2" role="search">
+          <Input
+            name="q"
+            type="search"
+            value={data.candidateQuery}
+            placeholder="Search counterparty, description, reference or amount"
+            aria-label="Search transactions"
+            autocomplete="off"
+          />
+          <Button type="submit" variant="outline">
+            <SearchIcon /> Search
+          </Button>
+        </form>
+
+        {#if data.candidates.items.length > 0}
+          <ul class="divide-y rounded-lg border">
+            {#each data.candidates.items as candidate (candidate.id)}
+              <CandidateRow {candidate} currency={bill.currency} />
+            {/each}
+          </ul>
+          {#if data.candidates.pageCount > 1}
+            <nav
+              class="flex items-center justify-between gap-2 text-sm"
+              aria-label="Pages"
+            >
+              {#if data.candidates.page > 1}
+                <Button
+                  variant="outline"
+                  size="sm"
+                  href={pageHref(data.candidates.page - 1)}>Previous</Button
+                >
+              {:else}
+                <span></span>
+              {/if}
+              <span class="text-muted-foreground tabular-nums">
+                Page {data.candidates.page} of {data.candidates.pageCount}
+              </span>
+              {#if data.candidates.page < data.candidates.pageCount}
+                <Button
+                  variant="outline"
+                  size="sm"
+                  href={pageHref(data.candidates.page + 1)}>Next</Button
+                >
+              {:else}
+                <span></span>
+              {/if}
+            </nav>
           {/if}
-        </p>
+        {:else}
+          <p
+            class="text-muted-foreground rounded-md border border-dashed p-3 text-sm"
+          >
+            {#if data.candidateQuery}
+              No transactions match "{data.candidateQuery}".
+            {:else}
+              No unmatched {bill.currency} transactions to offer for this bill.
+            {/if}
+          </p>
+        {/if}
       {/if}
     </Card.Content>
   </Card.Root>
