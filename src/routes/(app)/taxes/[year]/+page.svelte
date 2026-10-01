@@ -1,4 +1,5 @@
 <script lang="ts">
+  import PageHeader from "$lib/components/app/page-header.svelte";
   import { enhance } from "$app/forms";
   import { resolve } from "$app/paths";
   import ArrowLeftIcon from "@lucide/svelte/icons/arrow-left";
@@ -92,24 +93,21 @@
     >
       <ArrowLeftIcon class="size-4" /> Taxes
     </a>
-    <div class="flex flex-wrap items-start justify-between gap-3">
-      <div>
-        <h1 class="text-2xl font-semibold tracking-tight">
-          Tax {year.year}
-        </h1>
-        <p class="text-muted-foreground text-sm">
-          {year.authority ?? "No tax authority entered"}
-        </p>
-      </div>
-      <Button
-        variant="outline"
-        href={reportHref}
-        data-sveltekit-reload
-        download
-      >
-        <DownloadIcon /> PDF report
-      </Button>
-    </div>
+    <PageHeader
+      title="Tax {year.year}"
+      description={year.authority ?? "No tax authority entered"}
+    >
+      {#snippet actions()}
+        <Button
+          variant="outline"
+          href={reportHref}
+          data-sveltekit-reload
+          download
+        >
+          <DownloadIcon /> PDF report
+        </Button>
+      {/snippet}
+    </PageHeader>
   </div>
 
   <div class="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
