@@ -1,6 +1,7 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { minor } from "$lib/money";
 import { allocate, listBillAllocations } from "$lib/server/bills/allocations";
+import { runAutoMatching } from "$lib/server/bills/suggestions";
 import { attachDocument, getBill, listBills } from "$lib/server/bills/bills";
 import { getDocumentMeta, storeDocument } from "$lib/server/bills/documents";
 import { createTestUser } from "$lib/testing/auth";
@@ -21,6 +22,17 @@ import {
 import { seedAccount, seedImportedTransaction } from "$lib/testing/ledger";
 import { actions, load } from "./+page.server";
 import { GET } from "./document/+server";
+
+vi.mock("$lib/server/bills/suggestions", async (orig) => {
+  const actual = await orig<typeof import("$lib/server/bills/suggestions")>();
+  return { ...actual, runAutoMatching: vi.fn(actual.runAutoMatching) };
+});
+const failMatching = () => {
+  vi.mocked(runAutoMatching).mockImplementationOnce(() => {
+    throw new Error("boom");
+  });
+  vi.spyOn(console, "warn").mockImplementation(() => {});
+};
 
 type User = Awaited<ReturnType<typeof createTestUser>>;
 const run = (
@@ -90,6 +102,25 @@ describe("bill detail page", () => {
     ).toMatchObject({ type: "return" });
     expect(listBillAllocations(u.id, bill.id)).toHaveLength(1);
     expect(await statusOf(u, bill.id)).toBe("paid");
+  });
+
+  it("a failing auto-match never fails update or load", async () => {
+    const u = await createTestUser();
+    const bill = seedBill(u.id);
+    failMatching();
+    expect(
+      await outcome(() =>
+        actions.update!(
+          createTestEvent({
+            user: u,
+            params: { id: bill.id },
+            form: billForm({ amount: "50.00" }),
+          }) as never,
+        ),
+      ),
+    ).toMatchObject({ type: "return" });
+    failMatching();
+    expect((await loadAs(u, bill.id)).type).toBe("return");
   });
 
   it("the detail load auto-matches a payment that arrived after the bill was saved", async () => {

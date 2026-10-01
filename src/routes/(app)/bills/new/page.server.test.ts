@@ -1,4 +1,5 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
+import { runAutoMatching } from "$lib/server/bills/suggestions";
 import { getBill, listBills } from "$lib/server/bills/bills";
 import { storeDocument } from "$lib/server/bills/documents";
 import { createTestUser } from "$lib/testing/auth";
@@ -16,6 +17,17 @@ import { seedAccount, seedImportedTransaction } from "$lib/testing/ledger";
 import { minor } from "$lib/money";
 import { load as detailLoad } from "../[id]/+page.server";
 import { actions, load } from "./+page.server";
+
+vi.mock("$lib/server/bills/suggestions", async (orig) => {
+  const actual = await orig<typeof import("$lib/server/bills/suggestions")>();
+  return { ...actual, runAutoMatching: vi.fn(actual.runAutoMatching) };
+});
+const failMatching = () => {
+  vi.mocked(runAutoMatching).mockImplementationOnce(() => {
+    throw new Error("boom");
+  });
+  vi.spyOn(console, "warn").mockImplementation(() => {});
+};
 
 type User = Awaited<ReturnType<typeof createTestUser>>;
 
@@ -51,6 +63,16 @@ const loadAs = (user: User, query = "") =>
 describe("new bill page", () => {
   useTestDB();
   useTestDocuments();
+
+  it("a failing auto-match never fails the save", async () => {
+    const u = await createTestUser();
+    failMatching();
+    const created = await outcome(() =>
+      actions.create(createTestEvent({ user: u, form: billForm() }) as never),
+    );
+    expect(created.type).toBe("redirect");
+    expect(listBills(u.id)).toHaveLength(1);
+  });
 
   it("a bill created for an already booked payment is Paid on the next detail load", async () => {
     const u = await createTestUser();

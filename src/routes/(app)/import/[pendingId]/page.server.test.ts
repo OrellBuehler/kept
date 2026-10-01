@@ -1,7 +1,8 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { createTestUser } from "$lib/testing/auth";
 import { useTestDB } from "$lib/testing/db";
 import { createTestEvent, outcome } from "$lib/testing/event";
+import { runAutoMatching } from "$lib/server/bills/suggestions";
 import { listBillAllocations } from "$lib/server/bills/allocations";
 import { billView } from "$lib/server/bills/status";
 import { seedBill } from "$lib/testing/bills";
@@ -20,6 +21,17 @@ import { seedAccount } from "$lib/testing/ledger";
 import { confirmImport, getPendingMeta } from "$lib/server/imports";
 import { getDB, transactions } from "$lib/server/db";
 import { actions, load } from "./+page.server";
+
+vi.mock("$lib/server/bills/suggestions", async (orig) => {
+  const actual = await orig<typeof import("$lib/server/bills/suggestions")>();
+  return { ...actual, runAutoMatching: vi.fn(actual.runAutoMatching) };
+});
+const failMatching = () => {
+  vi.mocked(runAutoMatching).mockImplementationOnce(() => {
+    throw new Error("boom");
+  });
+  vi.spyOn(console, "warn").mockImplementation(() => {});
+};
 
 useTestDB();
 usePendingDir();
@@ -187,6 +199,15 @@ describe("/import/[pendingId] actions", () => {
     expect(billView(user.id, bill.id, { today: "2026-10-01" }).status).toBe(
       "paid",
     );
+  });
+
+  it("a failing auto-match never fails the import", async () => {
+    const { user, account } = await setup();
+    const id = uploadFixture(user.id, account.id, "camt053/overlap-a.xml");
+    failMatching();
+    const r = await act("confirm", user, id);
+    expect(r).toMatchObject({ type: "redirect", status: 303 });
+    expect(getDB().select().from(transactions).all()).toHaveLength(5);
   });
 
   it("confirm with blocking errors fails with 400 and imports nothing", async () => {

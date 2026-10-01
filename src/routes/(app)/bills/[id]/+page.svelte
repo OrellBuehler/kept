@@ -56,10 +56,10 @@
       : null,
   );
 
-  let showCandidates = $state(false);
+  let shownFor = $state<string | null>(null);
   const candidatesCollapsed = $derived(
     (bill.status === "paid" || bill.status === "cancelled") &&
-      !showCandidates &&
+      shownFor !== bill.id &&
       !data.candidateQuery,
   );
 
@@ -477,7 +477,7 @@
             type="button"
             variant="outline"
             size="sm"
-            onclick={() => (showCandidates = true)}>Show anyway</Button
+            onclick={() => (shownFor = bill.id)}>Show anyway</Button
           >
         </div>
       {:else}

@@ -20,7 +20,7 @@ import {
   billInputSchema,
   optionalDocumentIdSchema,
 } from "$lib/server/bills/schemas";
-import { autoMatchQuietly } from "$lib/server/bills/suggestions";
+import { autoMatchQuietly } from "$lib/server/bills/auto-match";
 import { parseForm, safeValues } from "$lib/server/forms";
 import { listAccounts } from "$lib/server/ledger/accounts";
 import { ledgerFailure, orNotFound } from "$lib/server/ledger/http";
