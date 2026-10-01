@@ -295,7 +295,7 @@
     </div>
     <p class="text-muted-foreground text-sm break-words">
       {data.fileName} · {data.account.name} ({data.account.currency}) · {plural(
-        data.rowCount,
+        data.dataRowCount,
         "row",
       )}. The mapping is saved for this account and reused for future files.
     </p>
@@ -706,7 +706,10 @@
         <Card.Header>
           <Card.Title class="text-base">File contents</Card.Title>
           <Card.Description>
-            First {result.sampleRows.length} of {plural(result.rowCount, "row")}
+            First {result.sampleRows.length} of {plural(
+              result.rowCount,
+              "line",
+            )}
             as found in the file; the header row is highlighted.
           </Card.Description>
         </Card.Header>

@@ -98,6 +98,39 @@ function resolveRef(
   return index;
 }
 
+function dataEndOf(
+  rows: string[][],
+  headerRow: number,
+  skipFooterRows: number,
+): number {
+  let dataEnd = rows.length;
+  let toSkip = skipFooterRows;
+  while (dataEnd > headerRow) {
+    const row = rows[dataEnd - 1]!;
+    if (isBlank(row)) {
+      dataEnd--;
+    } else if (toSkip > 0) {
+      toSkip--;
+      dataEnd--;
+    } else {
+      break;
+    }
+  }
+  return dataEnd;
+}
+
+/** Non-blank rows between the header row and the footer: what an import would read. */
+export function countDataRows(
+  rows: string[][],
+  headerRow: number,
+  skipFooterRows: number,
+): number {
+  const end = dataEndOf(rows, headerRow, skipFooterRows);
+  let n = 0;
+  for (let i = headerRow; i < end; i++) if (!isBlank(rows[i]!)) n++;
+  return n;
+}
+
 function layoutOf(rows: string[][], profile: CsvMappingProfile): Layout {
   const { headerRow } = profile;
   if (rows.length === 0) throw new ImportFormatError("File is empty");
@@ -116,19 +149,7 @@ function layoutOf(rows: string[][], profile: CsvMappingProfile): Layout {
     );
   }
 
-  let dataEnd = rows.length;
-  let toSkip = profile.skipFooterRows;
-  while (dataEnd > headerRow) {
-    const row = rows[dataEnd - 1]!;
-    if (isBlank(row)) {
-      dataEnd--;
-    } else if (toSkip > 0) {
-      toSkip--;
-      dataEnd--;
-    } else {
-      break;
-    }
-  }
+  const dataEnd = dataEndOf(rows, headerRow, profile.skipFooterRows);
   return { columns, dataStart: headerRow, dataEnd };
 }
 

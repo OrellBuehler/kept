@@ -13,6 +13,7 @@ import {
   uncancelBill,
   updateBill,
 } from "$lib/server/bills/bills";
+import { autoMatchQuietly } from "$lib/server/bills/auto-match";
 import { candidateTransactions } from "$lib/server/bills/candidates";
 import { todayLocal } from "$lib/server/bills/dates";
 import { pdfErrorMessage } from "$lib/server/bills/draft";
@@ -47,6 +48,7 @@ function positiveInt(value: string | null): number {
 
 export const load: PageServerLoad = ({ locals, params, url }) => {
   const user = requireUser(locals);
+  const matched = autoMatchQuietly(user.id);
   const bill = orNotFound(() =>
     billView(user.id, params.id, { today: todayLocal() }),
   );
@@ -54,7 +56,9 @@ export const load: PageServerLoad = ({ locals, params, url }) => {
   return {
     bill,
     allocations: listBillAllocations(user.id, bill.id),
-    suggestions: getSuggestions(user.id, { billId: bill.id }),
+    suggestions: matched
+      ? matched.suggestions.filter((s) => s.billId === bill.id)
+      : getSuggestions(user.id, { billId: bill.id }),
     dismissed: listDismissed(user.id, bill.id),
     candidates: candidateTransactions(user.id, bill.id, {
       q,
@@ -82,6 +86,7 @@ export const actions: Actions = {
     }
     try {
       updateBill(user.id, params.id, parsed.data);
+      autoMatchQuietly(user.id);
       return { success: true as const, action: "update" as const };
     } catch (err) {
       return ledgerFailure("update", err, values);

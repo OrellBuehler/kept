@@ -32,8 +32,8 @@ function escapeLike(value: string): string {
  * Transactions that could be allocated to the bill: same currency, something
  * left unallocated, not already allocated to this bill, and the right direction
  * (outgoing for invoices, incoming for credit notes). Incoming payments for an
- * invoice (and outgoing for a credit note) are offered only once something is
- * settled, as refunds. Searchable by counterparty, description, reference or amount.
+ * invoice (and outgoing for a credit note) are offered only while the bill is
+ * overpaid, as refunds of the surplus. Searchable by counterparty, description, reference or amount.
  */
 export function candidateTransactions(
   userId: string,
@@ -56,7 +56,7 @@ export function candidateTransactions(
       ),
     )
     .all();
-  const { settled, remaining } = computeBillStatus(
+  const { status, settled, remaining } = computeBillStatus(
     toMatchBill(bill),
     billAllocs,
   );
@@ -76,7 +76,7 @@ export function candidateTransactions(
     bill.kind === "invoice"
       ? sql`${transactions.amount} > 0`
       : sql`${transactions.amount} < 0`;
-  const direction = settled > 0 ? or(primary, opposite) : primary;
+  const direction = status === "overpaid" ? or(primary, opposite) : primary;
 
   const used = sql`coalesce((select sum(abs(${billAllocations.amount})) from ${billAllocations} where ${billAllocations.transactionId} = ${transactions.id}), 0)`;
   const notOnBill = sql`not exists (select 1 from ${billAllocations} where ${billAllocations.transactionId} = ${transactions.id} and ${billAllocations.billId} = ${billId})`;
@@ -128,7 +128,7 @@ export function candidateTransactions(
       bill.kind === "invoice" ? tx.amount < 0 : tx.amount > 0;
     const suggestedAmount = sameDirection
       ? minor(remaining === null ? free : Math.min(remaining, free))
-      : minor(-Math.min(free, settled));
+      : minor(-Math.min(free, settled - (bill.amount ?? 0)));
     return {
       ...tx,
       unallocated,

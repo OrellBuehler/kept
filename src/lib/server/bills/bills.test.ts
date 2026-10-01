@@ -538,9 +538,53 @@ describe("candidateTransactions", () => {
       minor(5000),
       "user",
     );
-    const refunds = candidateTransactions(u.id, inv.id).items;
-    const refund = refunds.find((i) => i.id === incoming.id)!;
+    expect(candidateTransactions(u.id, inv.id).items.map((i) => i.id)).toEqual([
+      outgoing.id,
+    ]);
+  });
+
+  it("offers refunds (the surplus) only while an invoice is overpaid", async () => {
+    const { u, account } = await setup();
+    const incoming = seedImportedTransaction(u.id, account.id, {
+      amount: minor(4000),
+    });
+    const inv = seedBill(u.id, { amount: minor(5000) });
+    expect(candidateTransactions(u.id, inv.id).items).toEqual([]);
+
+    const payment = pay(u.id, account.id, 5000, { bookingDate: "2026-09-01" });
+    allocate(u.id, inv.id, payment.id, minor(5000), "user");
+    expect(
+      candidateTransactions(u.id, inv.id).items.map((i) => i.id),
+    ).not.toContain(incoming.id);
+
+    const over = seedBill(u.id, { amount: minor(5000) });
+    const big = pay(u.id, account.id, 7000, { bookingDate: "2026-09-02" });
+    allocate(u.id, over.id, big.id, minor(7000), "user");
+    const refund = candidateTransactions(u.id, over.id).items.find(
+      (i) => i.id === incoming.id,
+    )!;
     expect(refund.suggestedAmount).toBe(-2000);
+  });
+
+  it("offers outgoing refunds only while a credit note is overpaid", async () => {
+    const { u, account } = await setup();
+    const note = seedBill(u.id, { kind: "credit_note", amount: minor(2000) });
+    const outgoing = pay(u.id, account.id, 1500);
+    const incoming = seedImportedTransaction(u.id, account.id, {
+      amount: minor(2000),
+    });
+    allocate(u.id, note.id, incoming.id, minor(2000), "user");
+    expect(candidateTransactions(u.id, note.id).items).toEqual([]);
+
+    const over = seedBill(u.id, { kind: "credit_note", amount: minor(2000) });
+    const big = seedImportedTransaction(u.id, account.id, {
+      amount: minor(3000),
+    });
+    allocate(u.id, over.id, big.id, minor(3000), "user");
+    const item = candidateTransactions(u.id, over.id).items.find(
+      (i) => i.id === outgoing.id,
+    )!;
+    expect(item.suggestedAmount).toBe(-1000);
   });
 
   it("searches counterparty, description, reference and amount, and paginates", async () => {

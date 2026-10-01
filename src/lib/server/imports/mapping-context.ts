@@ -1,4 +1,5 @@
 import {
+  countDataRows,
   detectColumns,
   previewTabular,
   type DetectedColumn,
@@ -36,6 +37,8 @@ export interface MappingContext {
   saved: boolean;
   savedName: string | null;
   rowCount: number;
+  /** Rows below the header row, excluding blank lines and footer rows. */
+  dataRowCount: number;
   /** Validation problems of the draft, or structural problems such as a missing column. */
   errors: string[];
 }
@@ -212,6 +215,14 @@ export function mappingContext(
     saved: draftObject === null && saved !== null,
     savedName: saved?.name ?? null,
     rowCount: rows.length,
+    dataRowCount: countDataRows(
+      rows,
+      Math.max(0, headerRow),
+      Number.isInteger(source?.skipFooterRows) &&
+        (source!.skipFooterRows as number) > 0
+        ? (source!.skipFooterRows as number)
+        : 0,
+    ),
     errors,
   };
 }

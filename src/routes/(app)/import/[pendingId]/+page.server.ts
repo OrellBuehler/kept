@@ -7,6 +7,7 @@ import {
   deletePending,
   MAPPING_REQUIRED,
 } from "$lib/server/imports";
+import { autoMatchQuietly } from "$lib/server/bills/auto-match";
 import { ledgerFailure, orNotFound } from "$lib/server/ledger/http";
 import type { Actions, PageServerLoad } from "./$types";
 
@@ -54,6 +55,7 @@ export const actions: Actions = {
     } catch (err) {
       return ledgerFailure("confirm", err);
     }
+    autoMatchQuietly(user.id);
     redirect(303, target);
   },
 
