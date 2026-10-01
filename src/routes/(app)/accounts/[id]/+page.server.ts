@@ -36,6 +36,8 @@ import {
   listTransactions,
   updateTransaction,
 } from "$lib/server/ledger/transactions";
+import { taxTagSchema } from "$lib/server/tax/schemas";
+import { setTransactionTaxYear } from "$lib/server/tax/tax";
 import type { Actions, PageServerLoad } from "./$types";
 
 const accountFields = [
@@ -192,6 +194,32 @@ export const actions: Actions = {
       };
     } catch (err) {
       return ledgerFailure("updateTransaction", err, values);
+    }
+  },
+
+  setTaxYear: async ({ locals, params, request }) => {
+    const user = requireUser(locals);
+    const account = orNotFound(() => getAccount(user.id, params.id));
+    const form = await request.formData();
+    const values = safeValues(form, ["transactionId", "taxYear"]);
+    const parsed = parseForm(taxTagSchema, form);
+    if (!parsed.ok) {
+      return fail(400, {
+        action: "setTaxYear",
+        errors: parsed.errors,
+        values,
+      });
+    }
+    const existing = ownedTransaction(
+      user.id,
+      account.id,
+      parsed.data.transactionId,
+    );
+    try {
+      setTransactionTaxYear(user.id, existing.id, parsed.data.taxYear);
+      return { success: true as const, action: "setTaxYear" as const };
+    } catch (err) {
+      return ledgerFailure("setTaxYear", err, values);
     }
   },
 

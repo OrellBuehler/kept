@@ -1,8 +1,6 @@
 <script lang="ts">
   import { page } from "$app/state";
   import { resolve, asset } from "$app/paths";
-  import type { Pathname } from "$app/types";
-  import type { Component } from "svelte";
   import { cn } from "$lib/utils";
   import { userPrefersMode, setMode } from "mode-watcher";
   import LayoutDashboardIcon from "@lucide/svelte/icons/layout-dashboard";
@@ -10,6 +8,7 @@
   import UploadIcon from "@lucide/svelte/icons/upload";
   import PiggyBankIcon from "@lucide/svelte/icons/piggy-bank";
   import ReceiptIcon from "@lucide/svelte/icons/receipt";
+  import ScaleIcon from "@lucide/svelte/icons/scale";
   import FileTextIcon from "@lucide/svelte/icons/file-text";
   import SettingsIcon from "@lucide/svelte/icons/settings";
   import UsersIcon from "@lucide/svelte/icons/users";
@@ -22,16 +21,12 @@
   import * as Sidebar from "$lib/components/ui/sidebar/index.js";
   import * as DropdownMenu from "$lib/components/ui/dropdown-menu/index.js";
   import AppNav from "$lib/components/app/app-nav.svelte";
+  import type { NavItem } from "$lib/components/app/nav";
   import type { LayoutProps } from "./$types";
 
   let { data, children }: LayoutProps = $props();
 
-  const nav: {
-    href: Pathname;
-    label: string;
-    icon: Component;
-    badge?: number;
-  }[] = $derived([
+  const nav: NavItem[] = $derived([
     { href: "/", label: "Dashboard", icon: LayoutDashboardIcon },
     { href: "/accounts", label: "Accounts", icon: LandmarkIcon },
     { href: "/import", label: "Import", icon: UploadIcon },
@@ -42,6 +37,7 @@
       badge: data.overdueBills,
     },
     { href: "/budgets", label: "Budgets", icon: PiggyBankIcon },
+    { href: "/taxes", label: "Taxes", icon: ScaleIcon },
     { href: "/reports", label: "Reports", icon: FileTextIcon },
     { href: "/settings/account", label: "Settings", icon: SettingsIcon },
     ...(data.user.role === "admin"

@@ -107,6 +107,7 @@ const matrix: Record<string, Entry> = {
       "actions.addTransaction": (m, e) => m.actions.addTransaction(e),
       "actions.updateTransaction": (m, e) => m.actions.updateTransaction(e),
       "actions.deleteTransaction": (m, e) => m.actions.deleteTransaction(e),
+      "actions.setTaxYear": (m, e) => m.actions.setTaxYear(e),
       "actions.addSnapshot": (m, e) => m.actions.addSnapshot(e),
       "actions.deleteSnapshot": (m, e) => m.actions.deleteSnapshot(e),
       "actions.setCategory": (m, e) => m.actions.setCategory(e),
@@ -170,6 +171,25 @@ const matrix: Record<string, Entry> = {
     access: "user",
     handlers: {
       GET: (m, e) => (m as never as { GET: (e: never) => unknown }).GET(e),
+    },
+  },
+  "/src/routes/(app)/taxes/+page.server.ts": {
+    access: "user",
+    handlers: {
+      load: (m, e) => m.load(e),
+      "actions.create": (m, e) => m.actions.create(e),
+    },
+  },
+  "/src/routes/(app)/taxes/[year]/+page.server.ts": {
+    access: "user",
+    handlers: {
+      load: (m, e) => m.load(e),
+      "actions.saveDetails": (m, e) => m.actions.saveDetails(e),
+      "actions.deleteYear": (m, e) => m.actions.deleteYear(e),
+      "actions.addCredit": (m, e) => m.actions.addCredit(e),
+      "actions.deleteCredit": (m, e) => m.actions.deleteCredit(e),
+      "actions.tag": (m, e) => m.actions.tag(e),
+      "actions.untag": (m, e) => m.actions.untag(e),
     },
   },
   "/src/routes/(app)/import/+page.server.ts": {

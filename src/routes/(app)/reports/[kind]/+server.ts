@@ -13,6 +13,7 @@ export const GET: RequestHandler = async ({ locals, params, url }) => {
       account: url.searchParams.get("account"),
       from: url.searchParams.get("from"),
       to: url.searchParams.get("to"),
+      year: url.searchParams.get("year"),
     });
     return new Response(bytes as BodyInit, {
       headers: {

@@ -1,19 +1,12 @@
 <script lang="ts">
-  import type { Component } from "svelte";
   import { resolve } from "$app/paths";
-  import type { Pathname } from "$app/types";
+  import type { NavItem } from "./nav";
   import * as Sidebar from "$lib/components/ui/sidebar/index.js";
 
-  type Item = {
-    href: Pathname;
-    label: string;
-    icon: Component;
-    badge?: number;
-  };
   let {
     items,
     isActive,
-  }: { items: Item[]; isActive: (href: string) => boolean } = $props();
+  }: { items: NavItem[]; isActive: (href: string) => boolean } = $props();
 
   const sidebar = Sidebar.useSidebar();
 </script>

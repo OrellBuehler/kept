@@ -259,6 +259,8 @@ export const transactions = sqliteTable(
     categoryId: text("category_id").references(() => categories.id, {
       onDelete: "set null",
     }),
+    /** Counts as a payment to the tax office for this tax year. */
+    taxYear: integer("tax_year"),
     ...timestamps,
   },
   (t) => [
@@ -266,6 +268,7 @@ export const transactions = sqliteTable(
       t.accountId,
       t.externalId,
     ),
+    index("transactions_user_tax_year_idx").on(t.userId, t.taxYear),
     index("transactions_account_booking_idx").on(t.accountId, t.bookingDate),
     index("transactions_user_id_idx").on(t.userId),
     index("transactions_import_id_idx").on(t.importId),
@@ -368,7 +371,7 @@ export const bills = sqliteTable(
       { onDelete: "set null" },
     ),
     notes: text("notes"),
-    /** Reserved for tax reconciliation; stored as given. */
+    /** Payments allocated to this bill count as tax paid for this year. */
     taxYear: integer("tax_year"),
     /** Set by an integration adapter; the core does not interpret these. */
     externalSource: text("external_source"),
@@ -380,6 +383,7 @@ export const bills = sqliteTable(
   },
   (t) => [
     index("bills_user_id_idx").on(t.userId),
+    index("bills_user_tax_year_idx").on(t.userId, t.taxYear),
     index("bills_user_due_idx").on(t.userId, t.dueDate),
     index("bills_document_id_idx").on(t.documentId),
     index("bills_expected_account_id_idx").on(t.expectedAccountId),
@@ -388,6 +392,45 @@ export const bills = sqliteTable(
       t.externalSource,
       t.externalRef,
     ),
+  ],
+);
+
+export const taxYears = sqliteTable(
+  "tax_years",
+  {
+    id: id(),
+    userId: userId(),
+    year: integer("year").notNull(),
+    /** Free text; no tax office is known to the code. */
+    authority: text("authority"),
+    currency: text("currency").notNull(),
+    /** Minor units, >= 0; the total the assessment says is owed for the year. */
+    assessedTotal: minor("assessed_total"),
+    notes: text("notes"),
+    ...timestamps,
+  },
+  (t) => [uniqueIndex("tax_years_user_year_uq").on(t.userId, t.year)],
+);
+
+/** A line from the tax office's account statement: what they counted as received. */
+export const taxCredits = sqliteTable(
+  "tax_credits",
+  {
+    id: id(),
+    userId: userId(),
+    taxYearId: text("tax_year_id")
+      .notNull()
+      .references(() => taxYears.id, { onDelete: "cascade" }),
+    bookingDate: text("booking_date").notNull(),
+    /** Signed: positive is a payment they counted, negative a repayment to you. */
+    amount: minor("amount").notNull(),
+    reference: text("reference"),
+    description: text("description"),
+    ...timestamps,
+  },
+  (t) => [
+    index("tax_credits_user_id_idx").on(t.userId),
+    index("tax_credits_tax_year_id_idx").on(t.taxYearId),
   ],
 );
 

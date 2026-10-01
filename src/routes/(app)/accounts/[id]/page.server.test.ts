@@ -397,6 +397,7 @@ describe("account detail page", () => {
       expect(getTransaction(a.id, tx.id).description).toBe(
         "secret description",
       );
+      expect(getTransaction(a.id, tx.id).taxYear).toBeNull();
       expect(getTransaction(a.id, imported.id).note).toBeNull();
       expect(listSnapshots(a.id, acc.id)).toHaveLength(1);
     });
@@ -410,6 +411,7 @@ describe("account detail page", () => {
         ],
         ["updateTransaction", { transactionId: imported.id, note: "x" }],
         ["deleteTransaction", { transactionId: tx.id }],
+        ["setTaxYear", { transactionId: tx.id, taxYear: "2025" }],
         ["deleteSnapshot", { snapshotId: snap.id }],
       ];
       for (const [name, form] of attempts) {
@@ -423,5 +425,25 @@ describe("account detail page", () => {
       );
       expect(listSnapshots(a.id, snap.accountId)).toHaveLength(1);
     });
+  });
+  it("marks a transaction as a tax payment and clears it again", async () => {
+    const u = await createTestUser();
+    const acc = seedAccount(u.id);
+    const tx = manualTx(u.id, acc.id);
+    expect(
+      await run("setTaxYear", u, acc.id, {
+        transactionId: tx.id,
+        taxYear: "2025",
+      }),
+    ).toMatchObject({ type: "return" });
+    expect(getTransaction(u.id, tx.id).taxYear).toBe(2025);
+    expect(
+      await run("setTaxYear", u, acc.id, {
+        transactionId: tx.id,
+        taxYear: "x",
+      }),
+    ).toMatchObject({ type: "fail", status: 400 });
+    await run("setTaxYear", u, acc.id, { transactionId: tx.id, taxYear: "" });
+    expect(getTransaction(u.id, tx.id).taxYear).toBeNull();
   });
 });

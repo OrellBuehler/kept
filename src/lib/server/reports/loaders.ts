@@ -5,10 +5,12 @@ import { accountBalances } from "$lib/server/dashboard/accounts";
 import { netWorthSeries } from "$lib/server/dashboard/net-worth";
 import { getAccount } from "$lib/server/ledger/accounts";
 import { accountBalanceAt, localToday } from "$lib/server/ledger/balances";
-import { LedgerError } from "$lib/server/ledger/errors";
+import { LedgerError, notFound } from "$lib/server/ledger/errors";
 import { addDays } from "$lib/server/dashboard/dates";
 import type { BillsReportInput } from "./bills-report";
+import { reconcileYear } from "$lib/server/tax/tax";
 import type { NetWorthReportInput } from "./net-worth-report";
+import type { TaxReportInput } from "./tax-report";
 import type { AccountStatementInput } from "./statement";
 
 /** A statement covers at most this many transactions; choose a shorter period otherwise. */
@@ -86,4 +88,14 @@ export function loadNetWorthReport(
     balances: accountBalances(userId, today),
     asOf: today,
   };
+}
+
+export function loadTaxReport(
+  userId: string,
+  year: number,
+  today: string = localToday(),
+): TaxReportInput {
+  const reconciliation = reconcileYear(userId, year);
+  if (!reconciliation) throw notFound("Tax year");
+  return { reconciliation, asOf: today };
 }

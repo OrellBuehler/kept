@@ -7,6 +7,7 @@
   import { maskIban } from "$lib/iban";
   import { formatAmount } from "$lib/money";
   import Trash2Icon from "@lucide/svelte/icons/trash-2";
+  import TaxYearTag from "./TaxYearTag.svelte";
   import TransactionForm from "./TransactionForm.svelte";
   import type { PageData } from "./$types";
 
@@ -127,6 +128,13 @@
             successMessage="Transaction updated"
             onSuccess={() => (open = false)}
             onCancel={() => (open = false)}
+          />
+        {/key}
+
+        {#key transaction.id + ":" + transaction.taxYear}
+          <TaxYearTag
+            transactionId={transaction.id}
+            taxYear={transaction.taxYear}
           />
         {/key}
 
