@@ -411,6 +411,7 @@ describe("settings/paperless", () => {
       expect(r).toMatchObject({
         success: true,
         action: "uploadReport",
+        alreadyUploaded: false,
         upload: { status: "success", paperlessDocumentId: 900 },
       });
       expect(typeof (r.upload as { id: string }).id).toBe("string");
@@ -461,6 +462,8 @@ describe("settings/paperless", () => {
       const second = value(
         await act("uploadReport", user, { kind: "net-worth" }),
       );
+      expect(first.alreadyUploaded).toBe(false);
+      expect(second.alreadyUploaded).toBe(true);
       expect((second.upload as { id: string }).id).toBe(
         (first.upload as { id: string }).id,
       );
@@ -471,6 +474,10 @@ describe("settings/paperless", () => {
       await connect();
       const mine = seedAccount(user.id);
       const other = await createTestUser();
+      expect(
+        (await loaded(user)).accounts.map((a: { id: string }) => a.id),
+      ).toEqual([mine.id]);
+      expect((await loaded(other)).accounts).toEqual([]);
       // No connection for the other user.
       const noConn = failure(
         await act("uploadReport", other, { kind: "bills" }),

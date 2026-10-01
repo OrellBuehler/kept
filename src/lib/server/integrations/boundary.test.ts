@@ -55,6 +55,8 @@ describe("integration boundary", () => {
       .filter((f) => !mayImportIntegrations(f.path))
       .filter((f) => !f.path.endsWith(".test.ts"))
       .filter((f) => f.path !== "lib/server/schema.ts")
+      // The settings sub-navigation links to the integration's own page.
+      .filter((f) => f.path !== "routes/(app)/settings/+layout.svelte")
       .filter((f) => /paperless/i.test(f.text))
       .map((f) => f.path);
     expect(offenders).toEqual([]);

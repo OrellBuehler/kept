@@ -44,6 +44,7 @@ import {
   workflowRecipe,
 } from "$lib/server/integrations/paperless/setup";
 import { syncConnection } from "$lib/server/integrations/paperless/sync";
+import { listAccounts } from "$lib/server/ledger/accounts";
 import { ledgerFailure } from "$lib/server/ledger/http";
 import { parseForm, safeValues } from "$lib/server/forms";
 import type { Actions, PageServerLoad } from "./$types";
@@ -108,6 +109,7 @@ export const load: PageServerLoad = ({ locals, url }) => {
       lastSync: null,
       recentDocuments: [],
       uploads,
+      accounts: [],
       lookups: null,
     };
   }
@@ -151,6 +153,11 @@ export const load: PageServerLoad = ({ locals, url }) => {
     },
     recentDocuments,
     uploads,
+    accounts: listAccounts(user.id).map((a) => ({
+      id: a.id,
+      name: a.name,
+      archived: a.archived,
+    })),
     // Streamed: Paperless may be slow or down, which must not block the page.
     lookups: loadLookups(user.id),
   };
@@ -359,6 +366,7 @@ export const actions: Actions = {
       return {
         success: true as const,
         action: "uploadReport" as const,
+        alreadyUploaded: upload.alreadyUploaded,
         upload: {
           id: upload.id,
           status: upload.status,
