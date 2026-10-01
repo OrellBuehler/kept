@@ -25,7 +25,9 @@
   <title>Account settings · Kept</title>
 </svelte:head>
 
-<h1 class="mb-6 text-2xl font-semibold tracking-tight">Account settings</h1>
+<h1 class="mb-6 text-2xl font-semibold tracking-tight md:text-3xl">
+  Account settings
+</h1>
 
 <div class="grid max-w-xl gap-6">
   <Card.Root>

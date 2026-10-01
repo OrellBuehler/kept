@@ -92,7 +92,9 @@
 
 <div class="grid gap-6">
   <div class="grid gap-3">
-    <h1 class="text-2xl font-semibold tracking-tight">Review import</h1>
+    <h1 class="text-2xl font-semibold tracking-tight md:text-3xl">
+      Review import
+    </h1>
     <ImportSteps current={3} />
   </div>
 

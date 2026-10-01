@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { AreaChart } from "layerchart";
+  import { Area, AreaChart, LinearGradient } from "layerchart";
   import * as Chart from "$lib/components/ui/chart/index.js";
   import { formatDate } from "$lib/format";
   import { currencyExponent, formatAmount, type Minor } from "$lib/money";
@@ -84,7 +84,7 @@
     series={[{ key: "value", label: config.value.label, color }]}
     padding={{ left: 48, bottom: 24, top: 8, right: 8 }}
     props={{
-      area: { "fill-opacity": 0.2, line: { class: "stroke-2" } },
+      area: { line: { class: "stroke-2" } },
       xAxis: {
         ticks: 5,
         format: (v: Date) =>
@@ -98,6 +98,24 @@
       },
     }}
   >
+    {#snippet marks({ getAreaProps })}
+      <LinearGradient vertical>
+        {#snippet stopsContent()}
+          <stop offset="0%" stop-color={color} stop-opacity="0.4" />
+          <stop offset="100%" stop-color={color} stop-opacity="0" />
+        {/snippet}
+        {#snippet children({ gradient })}
+          <Area
+            {...getAreaProps(
+              { key: "value", label: config.value.label, color },
+              0,
+            )}
+            fill={gradient}
+            fillOpacity={1}
+          />
+        {/snippet}
+      </LinearGradient>
+    {/snippet}
     {#snippet tooltip()}
       <Chart.Tooltip
         indicator="dot"

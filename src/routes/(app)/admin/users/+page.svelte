@@ -1,4 +1,5 @@
 <script lang="ts">
+  import PageHeader from "$lib/components/app/page-header.svelte";
   import { enhance } from "$app/forms";
   import { toast } from "svelte-sonner";
   import UserPlusIcon from "@lucide/svelte/icons/user-plus";
@@ -38,13 +39,14 @@
   <title>Users · Kept</title>
 </svelte:head>
 
-<div class="mb-6 flex flex-wrap items-center justify-between gap-3">
-  <h1 class="text-2xl font-semibold tracking-tight">Users</h1>
-  <Button onclick={() => (addOpen = true)}>
-    <UserPlusIcon />
-    Add user
-  </Button>
-</div>
+<PageHeader title="Users" class="mb-6">
+  {#snippet actions()}
+    <Button onclick={() => (addOpen = true)}>
+      <UserPlusIcon />
+      Add user
+    </Button>
+  {/snippet}
+</PageHeader>
 
 {#snippet roleBadge(role: string)}
   <Badge variant={role === "admin" ? "default" : "secondary"}>

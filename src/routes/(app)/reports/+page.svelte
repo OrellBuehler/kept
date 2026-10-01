@@ -1,4 +1,5 @@
 <script lang="ts">
+  import PageHeader from "$lib/components/app/page-header.svelte";
   import { resolve } from "$app/paths";
   import { untrack } from "svelte";
   import DownloadIcon from "@lucide/svelte/icons/download";
@@ -57,16 +58,15 @@
   <title>Reports · Kept</title>
 </svelte:head>
 
-<div class="mb-6">
-  <h1 class="text-2xl font-semibold tracking-tight">Reports</h1>
-  <p class="text-muted-foreground mt-1 text-sm">
+<PageHeader title="Reports" class="mb-6">
+  {#snippet description()}
     Generate PDF reports to keep or share. More options in
     <a
       class="underline underline-offset-2"
       href={resolve("/(app)/settings/account")}>Settings</a
     > can file these reports automatically.
-  </p>
-</div>
+  {/snippet}
+</PageHeader>
 
 <div class="grid gap-4 lg:grid-cols-2">
   <Card.Root class="lg:col-span-2">

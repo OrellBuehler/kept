@@ -290,7 +290,9 @@
 <div class="grid gap-6">
   <div class="grid gap-3">
     <div class="flex flex-wrap items-center gap-2">
-      <h1 class="text-2xl font-semibold tracking-tight">Map columns</h1>
+      <h1 class="text-2xl font-semibold tracking-tight md:text-3xl">
+        Map columns
+      </h1>
       <Badge variant="outline">{FORMAT_LABELS[data.format]}</Badge>
     </div>
     <p class="text-muted-foreground text-sm break-words">
