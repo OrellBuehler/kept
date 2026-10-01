@@ -43,6 +43,13 @@
       "when": 1790883192087,
       "tag": "0005_stormy_silvermane",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "6",
+      "when": 1790892599497,
+      "tag": "0006_wet_robbie_robertson",
+      "breakpoints": true
     }
   ]
 }

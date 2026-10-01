@@ -29,6 +29,7 @@ export interface TransactionView {
   reversal: boolean;
   note: string | null;
   categoryId: string | null;
+  taxYear: number | null;
   createdAt: number;
 }
 
@@ -60,6 +61,7 @@ const columns = {
   reversal: transactions.reversal,
   note: transactions.note,
   categoryId: transactions.categoryId,
+  taxYear: transactions.taxYear,
   createdAt: sql<number>`${transactions.createdAt}`,
 };
 

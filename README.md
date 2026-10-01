@@ -21,7 +21,10 @@ history — on your own server, in a single SQLite file.
   monthly budgets per category showing spent against budget, per currency.
 - **Dashboard**: net worth over time per currency (no currency conversion), this month's income
   and expenses, overdue and upcoming bills, and accounts whose last import is getting old.
-- **PDF reports**: account statement, open bills, net worth.
+- **Taxes**: mark transactions and bills with a tax year, enter the lines from the tax office's
+  statement and the assessed total, and see per year what you paid against what they counted —
+  missing lines, amount differences and the remaining balance (amount due or refund).
+- **PDF reports**: account statement, open bills, net worth, tax reconciliation.
 - **Paperless-ngx (optional)**: pull bills from a tag or saved view, write amount, due date,
   reference and status back to custom fields, and file reports into Paperless.
 - Local users with an admin who creates the others; every user only sees their own data.

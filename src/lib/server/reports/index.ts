@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { yearSchema } from "$lib/server/tax/schemas";
 import { LedgerError } from "$lib/server/ledger/errors";
 import { localToday } from "$lib/server/ledger/balances";
 import { billsReport, billsReportTitle } from "./bills-report";
@@ -6,16 +7,19 @@ import {
   loadAccountStatement,
   loadBillsReport,
   loadNetWorthReport,
+  loadTaxReport,
 } from "./loaders";
 import { netWorthReport, netWorthReportTitle } from "./net-worth-report";
+import { taxReport, taxReportTitle } from "./tax-report";
 import { accountStatementReport, accountStatementTitle } from "./statement";
 
 export * from "./bills-report";
 export * from "./loaders";
 export * from "./net-worth-report";
 export * from "./statement";
+export * from "./tax-report";
 
-export const REPORT_KINDS = ["statement", "bills", "net-worth"] as const;
+export const REPORT_KINDS = ["statement", "bills", "net-worth", "tax"] as const;
 export type ReportKind = (typeof REPORT_KINDS)[number];
 
 const isoDate = z
@@ -29,6 +33,8 @@ const isoDate = z
     );
   }, "Not a valid date.");
 
+const taxParams = z.object({ year: yearSchema });
+
 const statementParams = z.object({
   account: z.string().min(1, "Choose an account.").max(100),
   from: isoDate,
@@ -41,6 +47,7 @@ export interface ReportParams {
   account?: string | null;
   from?: string | null;
   to?: string | null;
+  year?: string | null;
 }
 
 export interface BuiltReport {
@@ -96,6 +103,18 @@ export async function buildReport(
       bytes: await billsReport(input),
       fileName,
       title: billsReportTitle(input),
+    };
+  }
+  if (kind === "tax") {
+    const parsed = taxParams.safeParse({ year: params.year ?? undefined });
+    if (!parsed.success) {
+      throw new LedgerError("invalid", parsed.error.issues[0]!.message, "year");
+    }
+    const input = loadTaxReport(userId, parsed.data.year, today);
+    return {
+      bytes: await taxReport(input),
+      fileName: `kept-tax-${parsed.data.year}-${today}.pdf`,
+      title: taxReportTitle(input),
     };
   }
   const input = loadNetWorthReport(userId, today);
