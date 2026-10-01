@@ -51,14 +51,8 @@ describe("integration boundary", () => {
   });
 
   it("the core does not name Paperless in code outside the schema", () => {
-    // UI entry points that only link or post to the settings route
-    const uiEntryPoints = [
-      "routes/(app)/reports/+page.svelte",
-      "lib/components/reports/SendToPaperless.svelte",
-    ];
     const offenders = files
       .filter((f) => !mayImportIntegrations(f.path))
-      .filter((f) => !uiEntryPoints.includes(f.path))
       .filter((f) => !f.path.endsWith(".test.ts"))
       .filter((f) => f.path !== "lib/server/schema.ts")
       .filter((f) => /paperless/i.test(f.text))

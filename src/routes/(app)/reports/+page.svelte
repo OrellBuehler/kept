@@ -11,7 +11,6 @@
   import { Label } from "$lib/components/ui/label";
   import { NativeSelect } from "$lib/components/ui/native-select";
   import { Switch } from "$lib/components/ui/switch";
-  import SendToPaperless from "$lib/components/reports/SendToPaperless.svelte";
   import FormField from "$lib/components/FormField.svelte";
   import type { PageProps } from "./$types";
 
@@ -61,11 +60,11 @@
 <div class="mb-6">
   <h1 class="text-2xl font-semibold tracking-tight">Reports</h1>
   <p class="text-muted-foreground mt-1 text-sm">
-    Generate PDF reports to keep or share. Once Paperless-ngx is connected in
+    Generate PDF reports to keep or share. Integrations in
     <a
       class="underline underline-offset-2"
-      href={resolve("/(app)/settings/paperless")}>settings</a
-    >, reports can be sent there as well.
+      href={resolve("/(app)/settings/account")}>Settings</a
+    > can file these reports automatically.
   </p>
 </div>
 
@@ -163,13 +162,6 @@
             </Button>
           </div>
         </form>
-        <div class="mt-2">
-          <SendToPaperless
-            kind="statement"
-            fields={{ account: accountId, from, to }}
-            disabled={!canDownload}
-          />
-        </div>
       {/if}
     </Card.Content>
   </Card.Root>
@@ -192,7 +184,6 @@
         <DownloadIcon />
         Download PDF
       </Button>
-      <div><SendToPaperless kind="bills" /></div>
     </Card.Content>
   </Card.Root>
 
@@ -214,7 +205,6 @@
         <DownloadIcon />
         Download PDF
       </Button>
-      <div><SendToPaperless kind="net-worth" /></div>
     </Card.Content>
   </Card.Root>
 </div>
