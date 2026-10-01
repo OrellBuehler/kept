@@ -4,7 +4,12 @@
   import type { Pathname } from "$app/types";
   import * as Sidebar from "$lib/components/ui/sidebar/index.js";
 
-  type Item = { href: Pathname; label: string; icon: Component };
+  type Item = {
+    href: Pathname;
+    label: string;
+    icon: Component;
+    badge?: number;
+  };
   let {
     items,
     isActive,
@@ -25,6 +30,9 @@
             href={resolve(item.href)}
             {...props}
             aria-current={isActive(item.href) ? "page" : undefined}
+            aria-label={item.badge
+              ? `${item.label}, ${item.badge} overdue`
+              : undefined}
             onclick={() => sidebar.setOpenMobile(false)}
           >
             <item.icon />
@@ -32,6 +40,14 @@
           </a>
         {/snippet}
       </Sidebar.MenuButton>
+      {#if item.badge}
+        <Sidebar.MenuBadge
+          class="bg-destructive text-white peer-hover/menu-button:text-white peer-data-[active=true]/menu-button:text-white"
+          aria-hidden="true"
+        >
+          {item.badge > 99 ? "99+" : item.badge}
+        </Sidebar.MenuBadge>
+      {/if}
     </Sidebar.MenuItem>
   {/each}
 </Sidebar.Menu>
