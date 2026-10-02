@@ -26,7 +26,9 @@ import type { PaperlessBillSource } from "$lib/server/db";
 import { PaperlessClient, PaperlessError, errorCode } from "./client";
 import {
   clientForRow,
+  externalRef,
   getConnectionRow,
+  isDismissed,
   recordConnectionState,
   rememberServerInfo,
   requireConnectionRow,
@@ -34,6 +36,8 @@ import {
 } from "./connection";
 import { pushBillSafely } from "./push";
 import { savedViewRuleSchema, translateFilterRules } from "./saved-views";
+
+export { externalRef, instanceKey } from "./connection";
 
 export const EXTERNAL_SOURCE = "paperless";
 export const REVIEW_NOTE = "Imported from Paperless — please check.";
@@ -86,15 +90,6 @@ const emptyResult = (): SyncResult => ({
 });
 
 type Outcome = "imported" | "updated" | "unchanged" | "skipped" | "failed";
-
-/** Stable per Paperless server, so reconnecting never duplicates bills. */
-export function instanceKey(baseUrl: string): string {
-  return createHash("sha256").update(baseUrl).digest("hex").slice(0, 12);
-}
-
-export function externalRef(baseUrl: string, paperlessId: number): string {
-  return `${instanceKey(baseUrl)}:${paperlessId}`;
-}
 
 class SourceError extends Error {
   constructor(readonly code: string) {
@@ -537,6 +532,10 @@ async function processDocument(
   }
 
   const ref = externalRef(row.baseUrl, doc.id);
+  if (!link && isDismissed(userId, ref)) {
+    saveLink(row, doc.id, { modified, status: "imported", billId: null });
+    return "unchanged";
+  }
   if (!link) {
     const existing = findBillByRef(userId, ref);
     if (existing) {

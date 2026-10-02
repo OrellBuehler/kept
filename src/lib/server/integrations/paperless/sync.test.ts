@@ -476,6 +476,33 @@ describe("syncConnection", () => {
     expect(linkOf(94)).toMatchObject({ billId: original.id });
   });
 
+  it("does not bring back a deleted bill after reconnecting", async () => {
+    fake.addDoc({ id: 96, original: pdfEnergy });
+    await syncConnection(user.id);
+    deleteBill(user.id, listBills(user.id)[0]!.id);
+
+    deleteConnection(user.id);
+    seedConnection(user.id, fake);
+    const r = await syncConnection(user.id);
+
+    expect(r).toMatchObject({ imported: 0, unchanged: 1 });
+    expect(listBills(user.id)).toHaveLength(0);
+    expect(linkOf(96)).toMatchObject({ billId: null, status: "imported" });
+  });
+
+  it("does not bring back a deleted bill after moving to another address and back", async () => {
+    fake.addDoc({ id: 97, original: pdfEnergy });
+    await syncConnection(user.id);
+    deleteBill(user.id, listBills(user.id)[0]!.id);
+
+    const input = { token: null, allowInsecureTls: false };
+    saveConnection(user.id, { ...input, baseUrl: `${fake.origin}/other` });
+    saveConnection(user.id, { ...input, baseUrl: fake.baseUrl });
+    await syncConnection(user.id);
+
+    expect(listBills(user.id)).toHaveLength(0);
+  });
+
   it("changing the address drops the links and the watermark", async () => {
     fake.addDoc({ id: 95, original: pdfEnergy });
     await syncConnection(user.id);
