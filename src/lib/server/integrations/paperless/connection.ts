@@ -1,10 +1,11 @@
 import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
-import { and, eq } from "drizzle-orm";
+import { and, eq, isNull } from "drizzle-orm";
 import { z } from "zod";
 import { decryptSecret, encryptSecret } from "$lib/server/crypto";
 import {
   getDB,
   paperlessConnections,
+  paperlessDismissed,
   paperlessDocuments,
   type PaperlessBillSource,
   type PaperlessFieldMapping,
@@ -26,6 +27,57 @@ import {
 export const MIN_PAPERLESS_VERSION = "2.16.0";
 
 export type ConnectionRow = typeof paperlessConnections.$inferSelect;
+
+/** Stable per Paperless server, so reconnecting never duplicates bills. */
+export function instanceKey(baseUrl: string): string {
+  return createHash("sha256").update(baseUrl).digest("hex").slice(0, 12);
+}
+
+export function externalRef(baseUrl: string, paperlessId: number): string {
+  return `${instanceKey(baseUrl)}:${paperlessId}`;
+}
+
+export function isDismissed(userId: string, ref: string): boolean {
+  const found = getDB()
+    .select({ id: paperlessDismissed.id })
+    .from(paperlessDismissed)
+    .where(
+      and(
+        eq(paperlessDismissed.userId, userId),
+        eq(paperlessDismissed.externalRef, ref),
+      ),
+    )
+    .get();
+  return found !== undefined;
+}
+
+type Tx = Parameters<Parameters<ReturnType<typeof getDB>["transaction"]>[0]>[0];
+
+/** Before link rows go away: keeps the documents whose bill the user deleted from coming back. */
+function rememberDismissed(tx: Tx, row: ConnectionRow): void {
+  const dismissed = tx
+    .select({ paperlessId: paperlessDocuments.paperlessId })
+    .from(paperlessDocuments)
+    .where(
+      and(
+        eq(paperlessDocuments.userId, row.userId),
+        eq(paperlessDocuments.connectionId, row.id),
+        eq(paperlessDocuments.status, "imported"),
+        isNull(paperlessDocuments.billId),
+      ),
+    )
+    .all();
+  if (dismissed.length === 0) return;
+  tx.insert(paperlessDismissed)
+    .values(
+      dismissed.map((d) => ({
+        userId: row.userId,
+        externalRef: externalRef(row.baseUrl, d.paperlessId),
+      })),
+    )
+    .onConflictDoNothing()
+    .run();
+}
 
 /** Everything the UI may see: no token, no secret hash. */
 export interface ConnectionView {
@@ -191,6 +243,7 @@ export function saveConnection(
   const row = db.transaction((tx) => {
     if (moved) {
       // Another server has other document ids: old links and watermark are meaningless.
+      rememberDismissed(tx, existing);
       tx.delete(paperlessDocuments)
         .where(
           and(
@@ -248,15 +301,17 @@ export function rotateWebhookSecret(userId: string): string {
 /** Removes the connection and its link rows. Bills and their stored documents stay. */
 export function deleteConnection(userId: string): void {
   const row = requireConnectionRow(userId);
-  getDB()
-    .delete(paperlessConnections)
-    .where(
-      and(
-        eq(paperlessConnections.userId, userId),
-        eq(paperlessConnections.id, row.id),
-      ),
-    )
-    .run();
+  getDB().transaction((tx) => {
+    rememberDismissed(tx, row);
+    tx.delete(paperlessConnections)
+      .where(
+        and(
+          eq(paperlessConnections.userId, userId),
+          eq(paperlessConnections.id, row.id),
+        ),
+      )
+      .run();
+  });
 }
 
 export function setEnabled(userId: string, enabled: boolean): ConnectionView {

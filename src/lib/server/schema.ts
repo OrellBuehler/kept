@@ -574,6 +574,21 @@ export const paperlessDocuments = sqliteTable(
   ],
 );
 
+/** Paperless documents whose bill the user deleted; outlives the connection and its links. */
+export const paperlessDismissed = sqliteTable(
+  "paperless_dismissed",
+  {
+    id: id(),
+    userId: userId(),
+    /** `externalRef(baseUrl, paperlessId)`, as stored on bills. */
+    externalRef: text("external_ref").notNull(),
+    ...timestamps,
+  },
+  (t) => [
+    uniqueIndex("paperless_dismissed_user_ref_uq").on(t.userId, t.externalRef),
+  ],
+);
+
 export const paperlessReportUploads = sqliteTable(
   "paperless_report_uploads",
   {
