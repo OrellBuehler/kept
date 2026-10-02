@@ -28,6 +28,9 @@
   } from "$lib/import-ui";
   import { cn } from "$lib/utils";
   import type { PageProps } from "./$types";
+  import { usePreferences } from "$lib/preferences.svelte";
+
+  const prefs = usePreferences();
 
   let { data, form }: PageProps = $props();
 
@@ -290,7 +293,13 @@
               class="text-muted-foreground flex flex-wrap items-center gap-x-4 gap-y-1"
             >
               <span>{imp.accountName}</span>
-              <span>{formatPeriod(imp.statementFrom, imp.statementTo)}</span>
+              <span
+                >{formatPeriod(
+                  imp.statementFrom,
+                  imp.statementTo,
+                  prefs.locale,
+                )}</span
+              >
               <span class="tabular-nums"
                 >{imp.newCount} new · {imp.duplicateCount} duplicate</span
               >

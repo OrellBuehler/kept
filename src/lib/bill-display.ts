@@ -96,13 +96,13 @@ export interface BillFormValues {
   taxYear: string;
 }
 
-export function emptyBillValues(): BillFormValues {
+export function emptyBillValues(currency = "CHF"): BillFormValues {
   return {
     kind: "invoice",
     creditorName: "",
     creditorIban: "",
     amount: "",
-    currency: "CHF",
+    currency,
     issueDate: "",
     dueDate: "",
     reference: "",

@@ -19,11 +19,14 @@
   import FormField from "$lib/components/FormField.svelte";
   import ColumnSelect from "$lib/components/import/ColumnSelect.svelte";
   import ImportSteps from "$lib/components/import/ImportSteps.svelte";
-  import { formatDate } from "$lib/format";
+
   import { submitHandler } from "$lib/form-submit";
   import { DATE_FORMATS, DELIMITERS, ENCODINGS } from "$lib/import-constants";
   import { FORMAT_LABELS, plural } from "$lib/import-ui";
   import type { PageProps } from "./$types";
+  import { usePreferences } from "$lib/preferences.svelte";
+
+  const prefs = usePreferences();
 
   let { data, form }: PageProps = $props();
 
@@ -672,7 +675,7 @@
                       </Table.Cell>
                       {#if tx}
                         <Table.Cell class="whitespace-nowrap">
-                          {formatDate(tx.bookingDate)}
+                          {prefs.date(tx.bookingDate)}
                         </Table.Cell>
                         <Table.Cell class="text-end">
                           <Amount

@@ -24,11 +24,13 @@
   import { Spinner } from "$lib/components/ui/spinner";
   import { formError, type FormErrors } from "$lib/form-errors";
   import { submitHandler } from "$lib/form-submit";
-  import { formatDate, todayIso } from "$lib/format";
-  import { formatAmount } from "$lib/money";
+  import { todayIso } from "$lib/format";
   import type { RowKind } from "$lib/server/tax/tax";
   import { cn } from "$lib/utils";
   import type { PageProps } from "./$types";
+  import { usePreferences } from "$lib/preferences.svelte";
+
+  const prefs = usePreferences();
 
   let { data }: PageProps = $props();
 
@@ -149,7 +151,10 @@
         </Card.Title>
         {#if balance.remainingByMe !== null && balance.remainingByMe !== balance.remaining}
           <p class="text-muted-foreground text-xs">
-            By your payments: {formatAmount(balance.remainingByMe, currency)}
+            By your payments: <Amount
+              value={balance.remainingByMe}
+              {currency}
+            />
           </p>
         {/if}
       </Card.Header>
@@ -221,7 +226,7 @@
                 {#if row.mine}
                   <div class="flex items-start justify-between gap-2">
                     <div class="min-w-0">
-                      <p class="text-sm">{formatDate(row.mine.date)}</p>
+                      <p class="text-sm">{prefs.date(row.mine.date)}</p>
                       {#if row.mine.label}
                         <p class="truncate text-sm">{row.mine.label}</p>
                       {/if}
@@ -283,7 +288,7 @@
                 {#if row.office}
                   <div class="flex items-start justify-between gap-2">
                     <div class="min-w-0">
-                      <p class="text-sm">{formatDate(row.office.date)}</p>
+                      <p class="text-sm">{prefs.date(row.office.date)}</p>
                       {#if row.office.description}
                         <p class="truncate text-sm">{row.office.description}</p>
                       {/if}
@@ -334,10 +339,10 @@
                 </Badge>
                 {#if row.kind !== "matched"}
                   <span class="text-xs whitespace-nowrap tabular-nums">
-                    {row.difference > 0 ? "+" : ""}{formatAmount(
-                      row.difference,
-                      currency,
-                    )}
+                    {row.difference > 0 ? "+" : ""}<Amount
+                      value={row.difference}
+                      {currency}
+                    />
                   </span>
                 {/if}
               </div>
@@ -348,7 +353,7 @@
                     class="bg-background flex flex-wrap items-center justify-between gap-2 rounded-md border p-2 text-sm sm:col-span-3"
                   >
                     <span class="min-w-0">
-                      Possible payment: {formatDate(s.bookingDate)}
+                      Possible payment: {prefs.date(s.bookingDate)}
                       {#if s.label}· {s.label}{/if}
                       · <Amount value={s.amount} {currency} />
                     </span>

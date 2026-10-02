@@ -13,8 +13,8 @@ import {
 
 export type NetWorthBalance = Pick<
   AccountBalanceView,
-  "name" | "type" | "currency" | "ibanMasked" | "balance"
-> & { institution: { name: string } | null };
+  "name" | "type" | "currency" | "balance"
+> & { ibanMasked: string | null; institution: { name: string } | null };
 
 export interface NetWorthReportInput {
   /** History per currency; all series share the same dates. */

@@ -10,6 +10,7 @@
   import { categoryLabel, type CategoryOption } from "$lib/category-types";
   import type { FormErrors } from "$lib/form-errors";
   import { submitHandler } from "$lib/form-submit";
+  import { usePreferences } from "$lib/preferences.svelte";
   import { currencyExponent, toDecimalString, type Minor } from "$lib/money";
 
   interface Editable {
@@ -33,6 +34,7 @@
     currencies: string[];
   } = $props();
 
+  const prefs = usePreferences();
   const uid = $props.id();
   let pending = $state(false);
   let errors = $state<NonNullable<FormErrors>>({});
@@ -109,7 +111,7 @@
             list="{uid}-currencies"
             class="font-mono uppercase"
             placeholder="CHF"
-            value={currency || currencies[0] || ""}
+            value={currency || currencies[0] || prefs.defaultCurrency}
             aria-invalid={!!errors.currency}
           />
           <datalist id="{uid}-currencies">

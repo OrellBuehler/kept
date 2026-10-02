@@ -17,6 +17,9 @@
   import LocalTime from "$lib/components/import/LocalTime.svelte";
   import { FORMAT_LABELS, formatPeriod, plural } from "$lib/import-ui";
   import type { PageProps } from "./$types";
+  import { usePreferences } from "$lib/preferences.svelte";
+
+  const prefs = usePreferences();
 
   let { data, form }: PageProps = $props();
 
@@ -130,7 +133,7 @@
                 {/if}
               </Table.Cell>
               <Table.Cell class="align-top whitespace-nowrap">
-                {formatPeriod(imp.statementFrom, imp.statementTo)}
+                {formatPeriod(imp.statementFrom, imp.statementTo, prefs.locale)}
               </Table.Cell>
               <Table.Cell class="text-end align-top">
                 {#if imp.openingBalance !== null || imp.closingBalance !== null}
@@ -186,7 +189,7 @@
             <Badge variant="outline">{FORMAT_LABELS[imp.format]}</Badge>
           </div>
           <div class="text-muted-foreground">
-            {formatPeriod(imp.statementFrom, imp.statementTo)}
+            {formatPeriod(imp.statementFrom, imp.statementTo, prefs.locale)}
           </div>
           {#if imp.openingBalance !== null || imp.closingBalance !== null}
             <div class="flex flex-wrap items-center gap-x-1">

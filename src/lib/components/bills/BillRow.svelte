@@ -4,9 +4,12 @@
   import Amount from "$lib/components/Amount.svelte";
   import BillStatusBadge from "$lib/components/bills/BillStatusBadge.svelte";
   import { KIND_LABELS, dueHint } from "$lib/bill-display";
-  import { formatDate } from "$lib/format";
+
   import type { BillWithStatus } from "$lib/server/bills/status";
   import { cn } from "$lib/utils";
+  import { usePreferences } from "$lib/preferences.svelte";
+
+  const prefs = usePreferences();
 
   let { bill }: { bill: BillWithStatus } = $props();
 
@@ -56,7 +59,7 @@
       <span class="text-xs">
         {#if bill.dueDate}
           <span class="text-muted-foreground">
-            Due {formatDate(bill.dueDate)}
+            Due {prefs.date(bill.dueDate)}
           </span>
         {:else}
           <span class="text-muted-foreground">No due date</span>

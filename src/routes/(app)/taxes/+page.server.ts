@@ -7,6 +7,7 @@ import {
   TAX_YEAR_FORM_FIELDS,
   taxYearInputSchema,
 } from "$lib/server/tax/schemas";
+import { getPreferences } from "$lib/server/preferences";
 import { listTaxYears, upsertTaxYear } from "$lib/server/tax/tax";
 import type { Actions, PageServerLoad } from "./$types";
 
@@ -17,7 +18,8 @@ export const load: PageServerLoad = ({ locals }) => {
     years: listTaxYears(user.id),
     defaultYear: Number(today.slice(0, 4)) - 1,
     defaultCurrency:
-      listAccounts(user.id, today).find((a) => !a.archived)?.currency ?? "CHF",
+      listAccounts(user.id, today).find((a) => !a.archived)?.currency ??
+      getPreferences(user.id).defaultCurrency,
   };
 };
 

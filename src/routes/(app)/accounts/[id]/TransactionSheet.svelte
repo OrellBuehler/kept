@@ -3,13 +3,15 @@
   import { Badge } from "$lib/components/ui/badge";
   import { Button } from "$lib/components/ui/button";
   import Amount from "$lib/components/Amount.svelte";
-  import { formatDate } from "$lib/format";
-  import { maskIban } from "$lib/iban";
-  import { formatAmount } from "$lib/money";
+
+  import { formatIban } from "$lib/iban";
   import Trash2Icon from "@lucide/svelte/icons/trash-2";
   import TaxYearTag from "./TaxYearTag.svelte";
   import TransactionForm from "./TransactionForm.svelte";
   import type { PageData } from "./$types";
+  import { usePreferences } from "$lib/preferences.svelte";
+
+  const prefs = usePreferences();
 
   type Tx = PageData["transactions"]["items"][number];
 
@@ -49,7 +51,7 @@
           {/if}
         </Sheet.Title>
         <Sheet.Description class="flex flex-col gap-1">
-          <span>{formatDate(transaction.bookingDate)}</span>
+          <span>{prefs.date(transaction.bookingDate)}</span>
           <Amount
             value={transaction.amount}
             {currency}
@@ -64,27 +66,29 @@
           <dl class="grid grid-cols-[auto_1fr] gap-x-4 gap-y-2 text-sm">
             {#if transaction.valueDate}
               <dt class="text-muted-foreground">Value date</dt>
-              <dd>{formatDate(transaction.valueDate)}</dd>
+              <dd>{prefs.date(transaction.valueDate)}</dd>
             {/if}
             {#if transaction.counterpartyName}
               <dt class="text-muted-foreground">Counterparty</dt>
               <dd class="break-words">{transaction.counterpartyName}</dd>
             {/if}
-            {#if transaction.counterpartyIban}
+            {#if transaction.counterpartyIban && prefs.ibanDisplay !== "hidden"}
               <dt class="text-muted-foreground">IBAN</dt>
               <dd class="flex items-center gap-2">
                 <span class="font-mono break-all">
                   {showIban
-                    ? transaction.counterpartyIban
-                    : maskIban(transaction.counterpartyIban)}
+                    ? formatIban(transaction.counterpartyIban)
+                    : prefs.iban(transaction.counterpartyIban)}
                 </span>
-                <button
-                  type="button"
-                  class="text-muted-foreground text-xs underline"
-                  onclick={() => (showIban = !showIban)}
-                >
-                  {showIban ? "hide" : "show"}
-                </button>
+                {#if prefs.ibanDisplay === "masked"}
+                  <button
+                    type="button"
+                    class="text-muted-foreground text-xs underline"
+                    onclick={() => (showIban = !showIban)}
+                  >
+                    {showIban ? "hide" : "show"}
+                  </button>
+                {/if}
               </dd>
             {/if}
             {#if transaction.description}
@@ -105,10 +109,10 @@
             {#if transaction.originalAmount !== null && transaction.originalCurrency}
               <dt class="text-muted-foreground">Original</dt>
               <dd class="tabular-nums">
-                {formatAmount(
-                  transaction.originalAmount,
-                  transaction.originalCurrency,
-                )}
+                <Amount
+                  value={transaction.originalAmount}
+                  currency={transaction.originalCurrency}
+                />
               </dd>
             {/if}
           </dl>
