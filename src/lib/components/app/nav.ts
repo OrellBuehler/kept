@@ -6,6 +6,7 @@ export type NavHref =
   | "/import"
   | "/bills"
   | "/budgets"
+  | "/recurring"
   | "/taxes"
   | "/review"
   | "/reports"

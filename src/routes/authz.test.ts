@@ -135,6 +135,16 @@ const matrix: Record<string, Entry> = {
       "actions.deleteBudget": (m, e) => m.actions.deleteBudget(e),
     },
   },
+  "/src/routes/(app)/recurring/+page.server.ts": {
+    access: "user",
+    handlers: {
+      load: (m, e) => m.load(e),
+      "actions.confirm": (m, e) => m.actions.confirm(e),
+      "actions.dismiss": (m, e) => m.actions.dismiss(e),
+      "actions.restore": (m, e) => m.actions.restore(e),
+      "actions.edit": (m, e) => m.actions.edit(e),
+    },
+  },
   "/src/routes/(app)/review/+page.server.ts": {
     access: "user",
     handlers: {

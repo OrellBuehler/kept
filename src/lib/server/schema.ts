@@ -20,6 +20,7 @@ import {
   DOCUMENT_SOURCES,
 } from "$lib/bill-types";
 import { AMOUNT_SIGNS, CATEGORY_KINDS } from "$lib/category-types";
+import { CADENCES, SERIES_STATUSES } from "$lib/recurring-types";
 import type { Minor } from "$lib/money";
 
 export { ACCOUNT_TYPES, IMPORT_FORMATS, REFERENCE_TYPES, ROW_SOURCES };
@@ -261,6 +262,42 @@ export const budgets = sqliteTable(
     ),
     index("budgets_user_id_idx").on(t.userId),
     index("budgets_category_id_idx").on(t.categoryId),
+  ],
+);
+
+/**
+ * A recurring payment (subscription, rent, salary ...) found in the
+ * transactions. Detection refreshes the statistics; the status and any edited
+ * fields are the user's decision and survive re-detection.
+ */
+export const recurringSeries = sqliteTable(
+  "recurring_series",
+  {
+    id: id(),
+    userId: userId(),
+    /** Detection identity: counterparty (IBAN or name), currency and direction. */
+    key: text("key").notNull(),
+    status: text("status", { enum: SERIES_STATUSES })
+      .notNull()
+      .default("suggested"),
+    /** Name, cadence or amount was edited by hand; detection no longer overwrites them. */
+    edited: integer("edited", { mode: "boolean" }).notNull().default(false),
+    name: text("name").notNull(),
+    counterpartyIban: text("counterparty_iban"),
+    cadence: text("cadence", { enum: CADENCES }).notNull(),
+    currency: text("currency").notNull(),
+    /** Signed typical amount: negative for payments, positive for income. */
+    amount: minor("amount").notNull(),
+    firstDate: text("first_date").notNull(),
+    lastDate: text("last_date").notNull(),
+    lastAmount: minor("last_amount").notNull(),
+    previousAmount: minor("previous_amount"),
+    occurrences: integer("occurrences").notNull(),
+    ...timestamps,
+  },
+  (t) => [
+    uniqueIndex("recurring_series_user_key_uq").on(t.userId, t.key),
+    index("recurring_series_user_id_idx").on(t.userId),
   ],
 );
 
