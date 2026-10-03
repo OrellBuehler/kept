@@ -1,5 +1,10 @@
 import { fail, redirect } from "@sveltejs/kit";
 import { requireUser } from "$lib/server/auth/guards";
+import {
+  getInboxView,
+  readInboxConfig,
+  startInboxReview,
+} from "$lib/server/inbox";
 import { listRecentImports, startUpload } from "$lib/server/imports";
 import { listAccounts } from "$lib/server/ledger/accounts";
 import { ledgerFailure } from "$lib/server/ledger/http";
@@ -20,11 +25,32 @@ export const load: PageServerLoad = ({ locals, url }) => {
   return {
     accounts,
     recentImports: listRecentImports(user.id, 10),
+    inbox: getInboxView(user.id, user.username),
     selectedAccountId: accounts.find((a) => a.id === requested)?.id ?? null,
   };
 };
 
 export const actions: Actions = {
+  reviewInbox: async ({ locals, request }) => {
+    const user = requireUser(locals);
+    const form = await request.formData();
+    const entryId = form.get("entryId");
+    const config = readInboxConfig();
+    if (typeof entryId !== "string" || !config) {
+      return fail(400, {
+        action: "reviewInbox",
+        errors: { form: ["This inbox file cannot be reviewed."] },
+        values: { accountId: "" },
+      });
+    }
+    let target: string;
+    try {
+      target = await startInboxReview(config, user, entryId);
+    } catch (err) {
+      return ledgerFailure("reviewInbox", err, { accountId: "" });
+    }
+    redirect(303, target);
+  },
   upload: async ({ locals, request }) => {
     const user = requireUser(locals);
     let form: FormData;
