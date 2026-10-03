@@ -1,6 +1,7 @@
 import { sql } from "drizzle-orm";
 import {
   type AnySQLiteColumn,
+  blob,
   index,
   integer,
   sqliteTable,
@@ -21,6 +22,7 @@ import {
 } from "$lib/bill-types";
 import { AMOUNT_SIGNS, CATEGORY_KINDS } from "$lib/category-types";
 import { CHANNEL_KINDS } from "$lib/notification-types";
+import { CADENCES, SERIES_STATUSES } from "$lib/recurring-types";
 import type { Minor } from "$lib/money";
 
 export { ACCOUNT_TYPES, IMPORT_FORMATS, REFERENCE_TYPES, ROW_SOURCES };
@@ -89,6 +91,9 @@ export const institutions = sqliteTable(
     name: text("name").notNull(),
     bic: text("bic"),
     color: text("color"),
+    logo: blob("logo", { mode: "buffer" }),
+    logoMime: text("logo_mime"),
+    logoVersion: text("logo_version"),
     ...timestamps,
   },
   (t) => [
@@ -150,6 +155,42 @@ export const imports = sqliteTable(
   (t) => [
     index("imports_user_id_idx").on(t.userId),
     index("imports_account_id_idx").on(t.accountId),
+  ],
+);
+
+export const INBOX_STATUSES = [
+  "imported",
+  "review",
+  "failed",
+  "duplicate",
+] as const;
+export type InboxStatus = (typeof INBOX_STATUSES)[number];
+
+export const inboxFiles = sqliteTable(
+  "inbox_files",
+  {
+    id: id(),
+    userId: userId(),
+    fileName: text("file_name").notNull(),
+    sha256: text("sha256").notNull(),
+    status: text("status", { enum: INBOX_STATUSES }).notNull(),
+    /** Why a file needs review or failed; never contains transaction data. */
+    reason: text("reason"),
+    accountId: text("account_id").references(() => accounts.id, {
+      onDelete: "set null",
+    }),
+    importId: text("import_id").references(() => imports.id, {
+      onDelete: "set null",
+    }),
+    newCount: integer("new_count"),
+    duplicateCount: integer("duplicate_count"),
+    /** File name inside the user's review/ folder while the file awaits review. */
+    reviewFile: text("review_file"),
+    ...timestamps,
+  },
+  (t) => [
+    uniqueIndex("inbox_files_user_sha_uq").on(t.userId, t.sha256),
+    index("inbox_files_user_created_idx").on(t.userId, t.createdAt),
   ],
 );
 
@@ -226,6 +267,42 @@ export const budgets = sqliteTable(
     ),
     index("budgets_user_id_idx").on(t.userId),
     index("budgets_category_id_idx").on(t.categoryId),
+  ],
+);
+
+/**
+ * A recurring payment (subscription, rent, salary ...) found in the
+ * transactions. Detection refreshes the statistics; the status and any edited
+ * fields are the user's decision and survive re-detection.
+ */
+export const recurringSeries = sqliteTable(
+  "recurring_series",
+  {
+    id: id(),
+    userId: userId(),
+    /** Detection identity: counterparty (IBAN or name), currency and direction. */
+    key: text("key").notNull(),
+    status: text("status", { enum: SERIES_STATUSES })
+      .notNull()
+      .default("suggested"),
+    /** Name, cadence or amount was edited by hand; detection no longer overwrites them. */
+    edited: integer("edited", { mode: "boolean" }).notNull().default(false),
+    name: text("name").notNull(),
+    counterpartyIban: text("counterparty_iban"),
+    cadence: text("cadence", { enum: CADENCES }).notNull(),
+    currency: text("currency").notNull(),
+    /** Signed typical amount: negative for payments, positive for income. */
+    amount: minor("amount").notNull(),
+    firstDate: text("first_date").notNull(),
+    lastDate: text("last_date").notNull(),
+    lastAmount: minor("last_amount").notNull(),
+    previousAmount: minor("previous_amount"),
+    occurrences: integer("occurrences").notNull(),
+    ...timestamps,
+  },
+  (t) => [
+    uniqueIndex("recurring_series_user_key_uq").on(t.userId, t.key),
+    index("recurring_series_user_id_idx").on(t.userId),
   ],
 );
 
@@ -670,5 +747,50 @@ export const notificationsSent = sqliteTable(
   },
   (t) => [
     uniqueIndex("notifications_sent_user_key_uq").on(t.userId, t.eventKey),
+  ],
+);
+
+/** One-off expected income or expense used by the cash-flow forecast. */
+export const plannedItems = sqliteTable(
+  "planned_items",
+  {
+    id: id(),
+    userId: userId(),
+    accountId: text("account_id").references(() => accounts.id, {
+      onDelete: "set null",
+    }),
+    date: text("date").notNull(),
+    /** Signed minor units: positive is income, negative is an expense; never 0. */
+    amount: minor("amount").notNull(),
+    currency: text("currency").notNull(),
+    label: text("label").notNull(),
+    ...timestamps,
+  },
+  (t) => [
+    index("planned_items_user_date_idx").on(t.userId, t.date),
+    index("planned_items_account_id_idx").on(t.accountId),
+  ],
+);
+
+/** Per-account forecast preferences: low-balance threshold and default payment account. */
+export const forecastAccountSettings = sqliteTable(
+  "forecast_account_settings",
+  {
+    id: id(),
+    userId: userId(),
+    accountId: text("account_id")
+      .notNull()
+      .references(() => accounts.id, { onDelete: "cascade" }),
+    /** Warn when the projected balance falls below this (minor units); null means 0. */
+    threshold: minor("threshold"),
+    /** Bills without a paying account are projected on this account (one per currency). */
+    isDefaultPayment: integer("is_default_payment", { mode: "boolean" })
+      .notNull()
+      .default(false),
+    ...timestamps,
+  },
+  (t) => [
+    uniqueIndex("forecast_account_settings_account_uq").on(t.accountId),
+    index("forecast_account_settings_user_id_idx").on(t.userId),
   ],
 );

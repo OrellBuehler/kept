@@ -11,11 +11,13 @@
     points,
     color = "var(--color-chart-1)",
     range = "12m",
+    label = "Net worth",
   }: {
     currency: string;
     points: Point[];
     color?: string;
     range?: string;
+    label?: string;
   } = $props();
 
   const exponent = $derived(currencyExponent(currency));
@@ -52,7 +54,7 @@
   });
 
   const config = $derived({
-    value: { label: `Net worth ${currency}`, color },
+    value: { label: `${label} ${currency}`, color },
   } satisfies Chart.ChartConfig);
 
   const summary = $derived.by(() => {
@@ -62,7 +64,7 @@
     const amounts = points.map((p) => p.amount);
     const lo = Math.min(...amounts) as Minor;
     const hi = Math.max(...amounts) as Minor;
-    return `Net worth in ${currency} from ${formatDate(first.date)} to ${formatDate(last.date)}: ${formatAmount(first.amount, currency)} to ${formatAmount(last.amount, currency)}, lowest ${formatAmount(lo, currency)}, highest ${formatAmount(hi, currency)}.`;
+    return `${label} in ${currency} from ${formatDate(first.date)} to ${formatDate(last.date)}: ${formatAmount(first.amount, currency)} to ${formatAmount(last.amount, currency)}, lowest ${formatAmount(lo, currency)}, highest ${formatAmount(hi, currency)}.`;
   });
 
   function isoOf(d: Date) {
@@ -88,7 +90,7 @@
       xAxis: {
         ticks: 5,
         format: (v: Date) =>
-          range === "3m"
+          range === "3m" || range === "days"
             ? `${v.getUTCDate()} ${dateTick.format(v)}`
             : `${dateTick.format(v)} '${String(v.getUTCFullYear()).slice(2)}`,
       },
@@ -122,7 +124,7 @@
         labelFormatter={(v: Date) => formatDate(isoOf(v))}
       >
         {#snippet formatter({ item })}
-          <span class="text-muted-foreground">Net worth</span>
+          <span class="text-muted-foreground">{label}</span>
           <span class="text-foreground ms-auto font-medium tabular-nums">
             {formatAmount(item.payload.amount as Minor, currency)}
           </span>
