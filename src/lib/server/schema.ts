@@ -686,3 +686,48 @@ export const paperlessReportUploads = sqliteTable(
     index("paperless_report_uploads_user_id_idx").on(t.userId),
   ],
 );
+
+/** One-off expected income or expense used by the cash-flow forecast. */
+export const plannedItems = sqliteTable(
+  "planned_items",
+  {
+    id: id(),
+    userId: userId(),
+    accountId: text("account_id").references(() => accounts.id, {
+      onDelete: "set null",
+    }),
+    date: text("date").notNull(),
+    /** Signed minor units: positive is income, negative is an expense; never 0. */
+    amount: minor("amount").notNull(),
+    currency: text("currency").notNull(),
+    label: text("label").notNull(),
+    ...timestamps,
+  },
+  (t) => [
+    index("planned_items_user_date_idx").on(t.userId, t.date),
+    index("planned_items_account_id_idx").on(t.accountId),
+  ],
+);
+
+/** Per-account forecast preferences: low-balance threshold and default payment account. */
+export const forecastAccountSettings = sqliteTable(
+  "forecast_account_settings",
+  {
+    id: id(),
+    userId: userId(),
+    accountId: text("account_id")
+      .notNull()
+      .references(() => accounts.id, { onDelete: "cascade" }),
+    /** Warn when the projected balance falls below this (minor units); null means 0. */
+    threshold: minor("threshold"),
+    /** Bills without a paying account are projected on this account (one per currency). */
+    isDefaultPayment: integer("is_default_payment", { mode: "boolean" })
+      .notNull()
+      .default(false),
+    ...timestamps,
+  },
+  (t) => [
+    uniqueIndex("forecast_account_settings_account_uq").on(t.accountId),
+    index("forecast_account_settings_user_id_idx").on(t.userId),
+  ],
+);

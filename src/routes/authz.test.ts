@@ -135,6 +135,16 @@ const matrix: Record<string, Entry> = {
       "actions.deleteBudget": (m, e) => m.actions.deleteBudget(e),
     },
   },
+  "/src/routes/(app)/forecast/+page.server.ts": {
+    access: "user",
+    handlers: {
+      load: (m, e) => m.load(e),
+      "actions.createPlanned": (m, e) => m.actions.createPlanned(e),
+      "actions.updatePlanned": (m, e) => m.actions.updatePlanned(e),
+      "actions.deletePlanned": (m, e) => m.actions.deletePlanned(e),
+      "actions.saveSettings": (m, e) => m.actions.saveSettings(e),
+    },
+  },
   "/src/routes/(app)/recurring/+page.server.ts": {
     access: "user",
     handlers: {
