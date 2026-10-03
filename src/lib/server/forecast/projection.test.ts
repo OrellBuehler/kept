@@ -54,7 +54,7 @@ describe("projectForecast", () => {
     const p = f.accounts[0]!;
     expect(p.points).toHaveLength(6);
     expect(p.points.map((x) => x.balance)).toEqual([
-      100_000, 100_000, 100_000, 80_000, 80_000, 80_000,
+      100_000, 100_000, 80_000, 80_000, 80_000, 80_000,
     ]);
     expect(p.startBalance).toBe(100_000);
     expect(p.endBalance).toBe(80_000);
@@ -210,7 +210,9 @@ describe("projectForecast", () => {
       from: FROM,
       days: 10,
     });
-    expect(f.accounts.map((a) => a.endBalance)).toEqual([100_000, 10_000, 0]);
+    expect(f.accounts.map((a) => a.endBalance)).toEqual([
+      100_000, 10_000, 100_000,
+    ]);
     expect(f.unassigned).toEqual([]);
   });
 

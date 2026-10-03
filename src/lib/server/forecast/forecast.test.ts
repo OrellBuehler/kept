@@ -169,9 +169,17 @@ describe("forecast", () => {
     const u = await createTestUser();
     const low = seedAccount(u.id, {
       name: "Low",
-      openingBalance: minor(1_000),
+      openingBalance: minor(2_000),
     });
-    seedAccount(u.id, { name: "Fine", openingBalance: minor(1_000_000) });
+    seedImportedTransaction(u.id, low.id, {
+      bookingDate: "2026-09-20",
+      amount: minor(-1_000),
+    });
+    const fine = seedAccount(u.id, {
+      name: "Fine",
+      openingBalance: minor(1_000_000),
+    });
+    seedImportedTransaction(u.id, fine.id, { bookingDate: "2026-09-20" });
     seedBill(u.id, {
       amount: minor(5_000),
       dueDate: "2026-10-08",
