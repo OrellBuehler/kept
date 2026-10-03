@@ -141,3 +141,24 @@ export const passwordChangeLimiter = new LoginRateLimiter(
   Infinity,
   Infinity,
 );
+
+/** Second-step codes at login, keyed by user id and IP. */
+export const secondFactorLimiter = new LoginRateLimiter();
+
+/** Password + code re-authentication for 2FA changes, keyed by user id (ip "-"). */
+export const twoFactorManageLimiter = new LoginRateLimiter(
+  Date.now,
+  WINDOW_MS,
+  MAX_FAILURES_PER_USER_IP,
+  Infinity,
+  Infinity,
+);
+
+/** Passwordless passkey sign-in attempts per IP (call with username "passkey"). */
+export const passkeyLoginLimiter = new LoginRateLimiter(
+  Date.now,
+  WINDOW_MS,
+  MAX_FAILURES_PER_USER_IP * 2,
+  Infinity,
+  Infinity,
+);
