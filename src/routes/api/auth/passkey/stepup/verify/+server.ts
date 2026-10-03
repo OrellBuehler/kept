@@ -12,10 +12,9 @@ import { passkeyStepUpVerifySchema } from "$lib/server/auth/schemas";
 import {
   getTwoFactorStatus,
   markSessionReauthenticated,
-  reauthenticate,
+  reauthenticatePasswordOnly,
 } from "$lib/server/auth/two-factor";
 import { AuthError } from "$lib/server/auth/types";
-import { twoFactorManageLimiter } from "$lib/server/auth/rate-limit";
 import type { RequestHandler } from "./$types";
 
 /** Password plus a fresh assertion from the caller's own passkey starts the step-up window. */
@@ -48,13 +47,7 @@ export const POST: RequestHandler = async ({ locals, request, url }) => {
   }
 
   try {
-    await reauthenticate(
-      user.id,
-      body.password,
-      "",
-      twoFactorManageLimiter,
-      Date.now(),
-    );
+    await reauthenticatePasswordOnly(user.id, body.password);
   } catch (err) {
     if (err instanceof RateLimitedError) {
       return json({ message: err.message }, { status: 429 });

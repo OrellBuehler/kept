@@ -1,4 +1,6 @@
 import { json } from "@sveltejs/kit";
+import { clientKey } from "$lib/server/auth/login";
+import { passkeyOptionsLimiter } from "$lib/server/auth/rate-limit";
 import {
   PENDING_COOKIE,
   createWebauthnChallenge,
@@ -15,9 +17,26 @@ import type { RequestHandler } from "./$types";
  * Public. "second_factor" needs the pending-login cookie and only offers that
  * user's passkeys; "passwordless" starts a usernameless ceremony.
  */
-export const POST: RequestHandler = async ({ request, url, cookies }) => {
+export const POST: RequestHandler = async ({
+  request,
+  url,
+  cookies,
+  getClientAddress,
+}) => {
   const body = await readJsonBody(request, url, passkeyLoginOptionsSchema);
   const config = webauthnConfig(url);
+  const gate = passkeyOptionsLimiter.acquire(
+    "options",
+    clientKey(getClientAddress),
+  );
+  if (!gate.allowed) {
+    return json(
+      {
+        message: `Too many attempts, try again in ${gate.retryAfterMinutes} minutes.`,
+      },
+      { status: 429 },
+    );
+  }
 
   if (body.mode === "passwordless") {
     const options = await beginAuthentication(null, config);

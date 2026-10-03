@@ -15,6 +15,8 @@ import {
   disableTotp,
   getTwoFactorStatus,
   regenerateRecoveryCodes,
+  reauthenticate,
+  reauthenticatePasswordOnly,
   resetTwoFactor,
   startTotpEnrolment,
   verifySecondFactorCode,
@@ -198,5 +200,40 @@ describe("two-factor", () => {
       .get()!;
     expect(event).toMatchObject({ userId: u.id, actorId: admin.id });
     expect(() => resetTwoFactor(admin.id, "missing")).toThrow(AuthError);
+  });
+
+  it("passkey-only users cannot pass the password+code reauthentication", async () => {
+    const u = await createTestUser();
+    getDB()
+      .insert(passkeys)
+      .values({
+        userId: u.id,
+        name: "k",
+        credentialId: "c",
+        publicKey: "pk",
+        deviceType: "singleDevice",
+        backedUp: false,
+      })
+      .run();
+    await expect(
+      reauthenticate(u.id, u.password, "", limiter, NOW),
+    ).rejects.toMatchObject({ code: "passkey_required" });
+    await expect(
+      regenerateRecoveryCodes(u.id, u.password, "", limiter),
+    ).rejects.toBeInstanceOf(AuthError);
+    await expect(
+      reauthenticatePasswordOnly(u.id, u.password, limiter),
+    ).resolves.toBeUndefined();
+    await expect(
+      reauthenticatePasswordOnly(u.id, "wrong-wrong-wrong", limiter),
+    ).rejects.toMatchObject({ code: "invalid_credentials" });
+  });
+
+  it("totp users need the code even for reauthentication", async () => {
+    const u = await createTestUser();
+    await enrol(u.id, u.username);
+    await expect(
+      reauthenticate(u.id, u.password, "", limiter, NOW),
+    ).rejects.toMatchObject({ code: "invalid_code" });
   });
 });

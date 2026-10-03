@@ -162,3 +162,12 @@ export const passkeyLoginLimiter = new LoginRateLimiter(
   Infinity,
   Infinity,
 );
+
+/** Unauthenticated passkey option requests per IP (each creates a challenge row); never refunded. */
+export const passkeyOptionsLimiter = new LoginRateLimiter(
+  Date.now,
+  WINDOW_MS,
+  60,
+  Infinity,
+  Infinity,
+);

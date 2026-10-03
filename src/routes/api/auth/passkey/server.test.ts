@@ -6,6 +6,7 @@ import {
 } from "$lib/server/auth/challenges";
 import {
   passkeyLoginLimiter,
+  passkeyOptionsLimiter,
   secondFactorLimiter,
 } from "$lib/server/auth/rate-limit";
 import {
@@ -104,6 +105,7 @@ describe("passkey api", () => {
     verifyReg.mockReset();
     verifyAuth.mockReset();
     passkeyLoginLimiter.reset();
+    passkeyOptionsLimiter.reset();
     secondFactorLimiter.reset();
   });
 
@@ -442,5 +444,19 @@ describe("passkey api", () => {
     expect(
       (await call(stepupOptions, post("/x", {}, sess(u, null)))).status,
     ).toBe(400);
+  });
+
+  it("rate limits unauthenticated passkey login options per address", async () => {
+    let last = 0;
+    for (let i = 0; i < 61; i++) {
+      last = (await call(loginOptions, post("/x", { mode: "passwordless" })))
+        .status;
+    }
+    expect(last).toBe(429);
+    const other = await call(
+      loginOptions,
+      post("/x", { mode: "passwordless" }, { ip: "198.51.100.9" }),
+    );
+    expect(other.status).toBe(200);
   });
 });

@@ -260,13 +260,11 @@ export function verifySecondFactorCode(
 export const REAUTH_WINDOW_MS = 5 * 60 * 1000;
 
 /** Re-authentication for sensitive changes: current password plus a second-factor code. */
-export async function reauthenticate(
+async function checkPassword(
   userId: string,
   password: string,
-  code: string,
   limiter: LoginRateLimiter,
-  now: number,
-): Promise<void> {
+): Promise<() => void> {
   const release = limiter.acquireOrThrow(userId, "-");
   const row = getDB()
     .select({ passwordHash: users.passwordHash })
@@ -277,11 +275,41 @@ export async function reauthenticate(
   if (!(await verifyPassword(password, row.passwordHash))) {
     throw new AuthError("invalid_credentials", "Password is incorrect.");
   }
-  // A code is only demanded when an authenticator app is on; passkey-only users confirm with the password.
-  if (
-    getTwoFactorStatus(userId).totpEnabled &&
-    !verifySecondFactorCode(userId, code, now)
-  ) {
+  return release;
+}
+
+/**
+ * Password only. Reserved for the passkey step-up verify path, where the
+ * WebAuthn assertion is the proof of possession.
+ */
+export async function reauthenticatePasswordOnly(
+  userId: string,
+  password: string,
+  limiter: LoginRateLimiter = twoFactorManageLimiter,
+): Promise<void> {
+  (await checkPassword(userId, password, limiter))();
+}
+
+/**
+ * Password plus a second-factor code. A user whose only factor is a passkey
+ * cannot use this: they must go through the passkey step-up instead.
+ */
+export async function reauthenticate(
+  userId: string,
+  password: string,
+  code: string,
+  limiter: LoginRateLimiter,
+  now: number,
+): Promise<void> {
+  const status = getTwoFactorStatus(userId);
+  if (!status.totpEnabled && status.passkeyCount > 0) {
+    throw new AuthError(
+      "passkey_required",
+      "Confirm with one of your passkeys.",
+    );
+  }
+  const release = await checkPassword(userId, password, limiter);
+  if (status.totpEnabled && !verifySecondFactorCode(userId, code, now)) {
     throw new AuthError("invalid_code", "That code is not valid.");
   }
   release();
