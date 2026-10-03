@@ -8,6 +8,7 @@ export type NavHref =
   | "/budgets"
   | "/recurring"
   | "/taxes"
+  | "/review"
   | "/reports"
   | "/settings/account"
   | "/admin/users"
