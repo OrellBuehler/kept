@@ -20,6 +20,7 @@ import {
   DOCUMENT_SOURCES,
 } from "$lib/bill-types";
 import { AMOUNT_SIGNS, CATEGORY_KINDS } from "$lib/category-types";
+import { DEDUCTION_TYPES } from "$lib/tax-deductions";
 import type { Minor } from "$lib/money";
 
 export { ACCOUNT_TYPES, IMPORT_FORMATS, REFERENCE_TYPES, ROW_SOURCES };
@@ -228,6 +229,27 @@ export const budgets = sqliteTable(
   ],
 );
 
+/** Maps one of the user's categories to a code-defined deduction type; subcategories inherit it. */
+export const deductionMappings = sqliteTable(
+  "deduction_mappings",
+  {
+    id: id(),
+    userId: userId(),
+    categoryId: text("category_id")
+      .notNull()
+      .references(() => categories.id, { onDelete: "cascade" }),
+    deductionType: text("deduction_type", { enum: DEDUCTION_TYPES }).notNull(),
+    ...timestamps,
+  },
+  (t) => [
+    uniqueIndex("deduction_mappings_user_category_uq").on(
+      t.userId,
+      t.categoryId,
+    ),
+    index("deduction_mappings_category_id_idx").on(t.categoryId),
+  ],
+);
+
 export const transactions = sqliteTable(
   "transactions",
   {
@@ -261,6 +283,10 @@ export const transactions = sqliteTable(
     }),
     /** Counts as a payment to the tax office for this tax year. */
     taxYear: integer("tax_year"),
+    /** Left out of the tax deductions summary. */
+    deductionExcluded: integer("deduction_excluded", { mode: "boolean" })
+      .notNull()
+      .default(false),
     ...timestamps,
   },
   (t) => [
