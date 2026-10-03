@@ -8,6 +8,7 @@
   import UploadIcon from "@lucide/svelte/icons/upload";
   import PiggyBankIcon from "@lucide/svelte/icons/piggy-bank";
   import ReceiptIcon from "@lucide/svelte/icons/receipt";
+  import TrendingUpIcon from "@lucide/svelte/icons/trending-up";
   import ScaleIcon from "@lucide/svelte/icons/scale";
   import FileTextIcon from "@lucide/svelte/icons/file-text";
   import SettingsIcon from "@lucide/svelte/icons/settings";
@@ -37,6 +38,7 @@
       badge: data.overdueBills,
     },
     { href: "/budgets", label: "Budgets", icon: PiggyBankIcon },
+    { href: "/forecast", label: "Forecast", icon: TrendingUpIcon },
     { href: "/taxes", label: "Taxes", icon: ScaleIcon },
     { href: "/reports", label: "Reports", icon: FileTextIcon },
     { href: "/settings/account", label: "Settings", icon: SettingsIcon },
