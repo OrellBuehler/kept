@@ -152,6 +152,42 @@ export const imports = sqliteTable(
   ],
 );
 
+export const INBOX_STATUSES = [
+  "imported",
+  "review",
+  "failed",
+  "duplicate",
+] as const;
+export type InboxStatus = (typeof INBOX_STATUSES)[number];
+
+export const inboxFiles = sqliteTable(
+  "inbox_files",
+  {
+    id: id(),
+    userId: userId(),
+    fileName: text("file_name").notNull(),
+    sha256: text("sha256").notNull(),
+    status: text("status", { enum: INBOX_STATUSES }).notNull(),
+    /** Why a file needs review or failed; never contains transaction data. */
+    reason: text("reason"),
+    accountId: text("account_id").references(() => accounts.id, {
+      onDelete: "set null",
+    }),
+    importId: text("import_id").references(() => imports.id, {
+      onDelete: "set null",
+    }),
+    newCount: integer("new_count"),
+    duplicateCount: integer("duplicate_count"),
+    /** File name inside the user's review/ folder while the file awaits review. */
+    reviewFile: text("review_file"),
+    ...timestamps,
+  },
+  (t) => [
+    uniqueIndex("inbox_files_user_sha_uq").on(t.userId, t.sha256),
+    index("inbox_files_user_created_idx").on(t.userId, t.createdAt),
+  ],
+);
+
 export const categories = sqliteTable(
   "categories",
   {
