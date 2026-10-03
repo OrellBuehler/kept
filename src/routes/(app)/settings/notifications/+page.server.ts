@@ -1,6 +1,8 @@
 import { fail } from "@sveltejs/kit";
 import { CHANNEL_KINDS, type ChannelKind } from "$lib/notification-types";
 import { requireUser } from "$lib/server/auth/guards";
+import { assertAllowedUrl } from "$lib/server/notifications/channels/guard";
+import { ChannelError } from "$lib/server/notifications/types";
 import { parseForm } from "$lib/server/forms";
 import { getSmtpConfig } from "$lib/server/notifications";
 import { sendTest } from "$lib/server/notifications/dispatch";
@@ -81,6 +83,21 @@ export const actions: Actions = {
     }
     if (kind === "webhook" && data.secret === undefined && previous?.secret) {
       data.secret = previous.secret;
+    }
+    const target =
+      "serverUrl" in data ? data.serverUrl : "url" in data ? data.url : null;
+    if (target) {
+      try {
+        await assertAllowedUrl(target);
+      } catch (err) {
+        if (!(err instanceof ChannelError)) throw err;
+        const field = kind === "ntfy" ? "serverUrl" : "url";
+        return fail(400, {
+          action: "channel",
+          kind,
+          errors: { [field]: [err.reason] },
+        });
+      }
     }
     saveChannel(user.id, kind, data);
     return { success: true as const, action: "channel" as const, kind };

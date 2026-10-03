@@ -1,4 +1,5 @@
 import { ChannelError } from "../types";
+import { assertAllowedUrl } from "./guard";
 
 export type FetchFn = (
   input: string | URL | Request,
@@ -14,6 +15,7 @@ export async function postJson(
   body: string,
   headers: Record<string, string>,
 ): Promise<void> {
+  await assertAllowedUrl(url);
   let res: Response;
   try {
     res = await fetchFn(url, {
@@ -30,6 +32,8 @@ export async function postJson(
     }
     throw new ChannelError("network", "The server could not be reached.");
   }
+  // The response body is never read, logged or shown: the channel must not be a read oracle.
+  void res.body?.cancel().catch(() => undefined);
   if (res.status >= 300 && res.status < 400) {
     throw new ChannelError(
       "redirect",
@@ -45,7 +49,7 @@ export async function postJson(
   if (!res.ok) {
     throw new ChannelError(
       "http",
-      `The server answered with status ${res.status}.`,
+      `The server answered with a ${Math.floor(res.status / 100)}xx status.`,
     );
   }
 }

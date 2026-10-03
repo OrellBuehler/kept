@@ -43,7 +43,10 @@ describe("settings/notifications", () => {
   beforeEach(async () => {
     user = await createTestUser();
   });
-  afterEach(() => vi.unstubAllGlobals());
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    vi.unstubAllEnvs();
+  });
 
   it("loads defaults and hides email without SMTP", async () => {
     const data = (await load(
@@ -132,6 +135,16 @@ describe("settings/notifications", () => {
     await act("toggleChannel", user, { kind: "webhook", enabled: "false" });
     expect(listChannels(user.id)[0].enabled).toBe(false);
     await act("deleteChannel", user, { kind: "webhook" });
+    expect(listChannels(user.id)).toEqual([]);
+  });
+
+  it("rejects private destinations at save time when blocking is on", async () => {
+    vi.stubEnv("KEPT_NOTIFY_BLOCK_PRIVATE", "true");
+    const res = await act("saveChannel", user, {
+      kind: "webhook",
+      url: "http://127.0.0.1:9000/hook",
+    });
+    expect(res.type).toBe("fail");
     expect(listChannels(user.id)).toEqual([]);
   });
 

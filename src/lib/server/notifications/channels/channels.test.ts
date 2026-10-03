@@ -91,6 +91,31 @@ describe("ntfy", () => {
   });
 });
 
+describe("upstream responses", () => {
+  it("never surface the response body, only the status class", async () => {
+    const f = vi.fn<FetchFn>(
+      async () => new Response("internal-secret-body", { status: 502 }),
+    );
+    const err = await webhookChannel({ url: "https://hooks.example.org/k" }, f)
+      .send(message)
+      .catch((e) => e);
+    expect(err.reason).toContain("5xx");
+    expect(JSON.stringify([err.message, err.reason, err.code])).not.toContain(
+      "internal-secret-body",
+    );
+  });
+
+  it("passes a timeout signal and manual redirect handling", async () => {
+    const f = mockFetch();
+    await webhookChannel({ url: "https://hooks.example.org/k" }, f).send(
+      message,
+    );
+    const init = call(f).init;
+    expect(init.redirect).toBe("manual");
+    expect(init.signal).toBeInstanceOf(AbortSignal);
+  });
+});
+
 describe("webhook", () => {
   const now = () => new Date("2026-10-03T08:00:00.000Z");
 
@@ -129,7 +154,7 @@ describe("webhook", () => {
     );
     const err = await channel.send(message).catch((e) => e);
     expect(err).toBeInstanceOf(ChannelError);
-    expect(err.reason).toContain("404");
+    expect(err.reason).toContain("4xx");
   });
 });
 

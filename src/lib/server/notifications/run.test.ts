@@ -83,7 +83,7 @@ describe("runNotifications", () => {
     await runNotifications({ fetch: failing, smtp: null }, NOW);
     expect(sentCount()).toBe(0);
     const [view] = listChannels(user.id);
-    expect(view.lastError).toContain("500");
+    expect(view.lastError).toContain("5xx");
     expect(view.lastSuccessAt).toBeNull();
     const logged = JSON.stringify(errors.mock.calls);
     expect(logged).not.toContain("Example Supplier");
