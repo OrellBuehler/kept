@@ -1,0 +1,275 @@
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readdirSync,
+  readFileSync,
+  rmSync,
+  utimesSync,
+  writeFileSync,
+} from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { eq } from "drizzle-orm";
+import { getDB, inboxFiles, transactions } from "$lib/server/db";
+import { saveCsvProfile } from "$lib/server/imports";
+import { createTestUser } from "$lib/testing/auth";
+import { useTestDB } from "$lib/testing/db";
+import { EXAMPLE_IBAN } from "$lib/testing/fixtures/bill-identifiers";
+import { IBAN_DE } from "$lib/testing/fixtures/values";
+import { buildCamt } from "$lib/testing/fixtures/camt053/build";
+import { fixture } from "$lib/testing/fixtures";
+import { SIMPLE_CSV_PROFILE, usePendingDir } from "$lib/testing/imports";
+import { seedAccount } from "$lib/testing/ledger";
+import {
+  getInboxView,
+  listInboxEntries,
+  readInboxConfig,
+  scanInbox,
+  startInboxReview,
+  type InboxConfig,
+} from "./inbox";
+
+useTestDB();
+usePendingDir();
+
+let config: InboxConfig;
+beforeEach(() => {
+  config = {
+    dir: mkdtempSync(join(tmpdir(), "kept-inbox-")),
+    intervalSeconds: 60,
+  };
+});
+afterEach(() => rmSync(config.dir, { recursive: true, force: true }));
+
+const NOW = Date.UTC(2025, 0, 15, 12, 0, 0);
+const scan = (settleMs = 10_000) => scanInbox(config, { now: NOW, settleMs });
+
+function drop(
+  username: string,
+  name: string,
+  bytes: Uint8Array,
+  folder?: string,
+  ageMs = 60_000,
+) {
+  const dir = folder
+    ? join(config.dir, username, folder)
+    : join(config.dir, username);
+  mkdirSync(dir, { recursive: true });
+  const path = join(dir, name);
+  writeFileSync(path, bytes);
+  const t = new Date(NOW - ageMs);
+  utimesSync(path, t, t);
+  return path;
+}
+
+const names = (user: string, folder: string) => {
+  const dir = join(config.dir, user, folder);
+  return existsSync(dir) ? readdirSync(dir) : [];
+};
+
+async function setup() {
+  const user = await createTestUser({ username: "alice" });
+  const account = seedAccount(user.id, { name: "Main", iban: EXAMPLE_IBAN });
+  return { user, account };
+}
+
+const count = (accountId: string) =>
+  getDB()
+    .select()
+    .from(transactions)
+    .where(eq(transactions.accountId, accountId))
+    .all().length;
+
+describe("readInboxConfig", () => {
+  it("is off without KEPT_INBOX_DIR and validates the interval", () => {
+    expect(readInboxConfig({})).toBeNull();
+    expect(readInboxConfig({ KEPT_INBOX_DIR: "/data/inbox" })).toEqual({
+      dir: "/data/inbox",
+      intervalSeconds: 60,
+    });
+    expect(() =>
+      readInboxConfig({ KEPT_INBOX_DIR: "/x", KEPT_INBOX_INTERVAL: "1" }),
+    ).toThrow(/Invalid inbox configuration/);
+  });
+});
+
+describe("scanInbox", () => {
+  it("imports a camt file whose IBAN matches an account and moves it to processed", async () => {
+    const { user, account } = await setup();
+    drop("alice", "stmt.xml", fixture("camt053/overlap-a.xml"));
+    const summary = await scan();
+    expect(summary).toMatchObject({ imported: 1, failed: 0, review: 0 });
+    expect(count(account.id)).toBe(5);
+    expect(names("alice", "processed")).toHaveLength(1);
+    expect(names("alice", "processed")[0]).toMatch(/stmt\.xml$/);
+    expect(readdirSync(join(config.dir, "alice")).sort()).toEqual([
+      "processed",
+    ]);
+    expect(listInboxEntries(user.id)[0]).toMatchObject({
+      status: "imported",
+      accountName: "Main",
+      newCount: 5,
+    });
+  });
+
+  it("fails a camt file with an unknown IBAN and writes a reason file", async () => {
+    const { user, account } = await setup();
+    drop(
+      "alice",
+      "other.xml",
+      buildCamt({
+        iban: IBAN_DE,
+        entries: [
+          { date: "2024-07-01", amount: "1.00", sign: "CRDT", ref: "X1" },
+        ],
+      }),
+    );
+    expect(await scan()).toMatchObject({ failed: 1, imported: 0 });
+    expect(count(account.id)).toBe(0);
+    const failed = names("alice", "failed");
+    expect(failed).toHaveLength(2);
+    const reasonFile = failed.find((f) => f.endsWith(".reason.txt"))!;
+    const reason = readFileSync(
+      join(config.dir, "alice", "failed", reasonFile),
+      "utf8",
+    );
+    expect(reason).toMatch(/No account of yours has the statement's IBAN/);
+    expect(reason).not.toContain(IBAN_DE);
+    expect(listInboxEntries(user.id)[0]).toMatchObject({ status: "failed" });
+  });
+
+  it("imports a csv in an account folder using the saved profile", async () => {
+    const { user, account } = await setup();
+    saveCsvProfile(user.id, account.id, "Simple", SIMPLE_CSV_PROFILE);
+    drop("alice", "export.csv", fixture("csv/overlap-a.csv"), "main");
+    const summary = await scan();
+    expect(summary.imported).toBe(1);
+    expect(count(account.id)).toBeGreaterThan(0);
+    expect(names("alice", "processed")).toHaveLength(1);
+  });
+
+  it("leaves a csv without a profile for review and the user can continue it", async () => {
+    const { user, account } = await setup();
+    drop("alice", "export.csv", fixture("csv/overlap-a.csv"), "Main");
+    expect(await scan()).toMatchObject({ review: 1, imported: 0 });
+    expect(count(account.id)).toBe(0);
+    expect(names("alice", "review")).toHaveLength(1);
+    const [entry] = listInboxEntries(user.id);
+    expect(entry).toMatchObject({ status: "review" });
+    const target = await startInboxReview(config, user, entry!.id);
+    expect(target).toMatch(/^\/import\/[\w-]+\/mapping$/);
+    expect(getInboxView(user.id, user.username, config).entries).toHaveLength(
+      1,
+    );
+  });
+
+  it("fails csv in the root and in a folder matching no account", async () => {
+    await setup();
+    drop("alice", "a.csv", fixture("csv/overlap-a.csv"));
+    drop("alice", "b.csv", fixture("csv/overlap-b.csv"), "nonexistent");
+    expect(await scan()).toMatchObject({ failed: 2 });
+  });
+
+  it("does not process the same file twice", async () => {
+    const { account } = await setup();
+    drop("alice", "one.xml", fixture("camt053/overlap-a.xml"));
+    await scan();
+    drop("alice", "copy.xml", fixture("camt053/overlap-a.xml"));
+    const summary = await scan();
+    expect(summary).toMatchObject({ duplicate: 1, imported: 0 });
+    expect(count(account.id)).toBe(5);
+    expect(names("alice", "processed")).toHaveLength(2);
+    expect(getDB().select().from(inboxFiles).all()).toHaveLength(1);
+  });
+
+  it("skips files that are still being written", async () => {
+    const { account } = await setup();
+    const path = drop(
+      "alice",
+      "growing.xml",
+      fixture("camt053/overlap-a.xml"),
+      undefined,
+      2_000,
+    );
+    expect(await scan()).toMatchObject({ skipped: 1, imported: 0 });
+    expect(existsSync(path)).toBe(true);
+    expect(count(account.id)).toBe(0);
+    const t = new Date(NOW - 60_000);
+    utimesSync(path, t, t);
+    expect(await scan()).toMatchObject({ imported: 1 });
+    expect(existsSync(path)).toBe(false);
+  });
+
+  it("ignores partial-download names and unsupported extensions", async () => {
+    await setup();
+    drop("alice", "x.xml.part", fixture("camt053/overlap-a.xml"));
+    drop("alice", ".hidden.xml", fixture("camt053/overlap-a.xml"));
+    drop("alice", "notes.pdf", new Uint8Array([1, 2, 3]));
+    expect(await scan()).toMatchObject({
+      imported: 0,
+      failed: 0,
+      skipped: 0,
+    });
+  });
+
+  it("imports overlapping statements without duplicating transactions", async () => {
+    const { account } = await setup();
+    drop("alice", "a.xml", fixture("camt053/overlap-a.xml"));
+    await scan();
+    drop("alice", "b.xml", fixture("camt053/overlap-b.xml"));
+    const summary = await scan();
+    // Either imported cleanly or held back for review because of balance
+    // warnings; in both cases no transaction exists twice.
+    expect(summary.imported + summary.review).toBe(1);
+    const rows = getDB()
+      .select({ id: transactions.externalId })
+      .from(transactions)
+      .where(eq(transactions.accountId, account.id))
+      .all();
+    expect(new Set(rows.map((r) => r.id)).size).toBe(rows.length);
+  });
+
+  it("holds back a file whose preview has warnings instead of importing it", async () => {
+    const { account } = await setup();
+    drop(
+      "alice",
+      "first.xml",
+      buildCamt({
+        iban: EXAMPLE_IBAN,
+        opening: { amount: "100.00", date: "2024-07-01" },
+        closing: { amount: "110.00", date: "2024-07-05" },
+        entries: [
+          { date: "2024-07-02", amount: "10.00", sign: "CRDT", ref: "R1" },
+        ],
+      }),
+    );
+    await scan();
+    drop(
+      "alice",
+      "gap.xml",
+      buildCamt({
+        iban: EXAMPLE_IBAN,
+        opening: { amount: "500.00", date: "2024-08-01" },
+        closing: { amount: "510.00", date: "2024-08-05" },
+        entries: [
+          { date: "2024-08-02", amount: "10.00", sign: "CRDT", ref: "R2" },
+        ],
+      }),
+    );
+    expect(await scan()).toMatchObject({ review: 1, imported: 0 });
+    expect(count(account.id)).toBe(1);
+    expect(names("alice", "review")).toHaveLength(1);
+  });
+
+  it("only looks at the folder of each user", async () => {
+    await setup();
+    const bob = await createTestUser({ username: "bob" });
+    const bobAccount = seedAccount(bob.id, { name: "Bob", iban: EXAMPLE_IBAN });
+    drop("bob", "stmt.xml", fixture("camt053/overlap-a.xml"));
+    await scan();
+    expect(count(bobAccount.id)).toBe(5);
+    expect(names("alice", "processed")).toHaveLength(0);
+  });
+});

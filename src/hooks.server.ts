@@ -2,6 +2,7 @@ import { json, type Handle } from "@sveltejs/kit";
 import { warmDummyHash } from "$lib/server/auth/password";
 import { assertSecretKeyConfigured } from "$lib/server/crypto";
 import { registerBackups } from "$lib/server/backup";
+import { registerInbox } from "$lib/server/inbox";
 import { runMigrations } from "$lib/server/db";
 import { registerPaperless } from "$lib/server/integrations/paperless";
 import {
@@ -18,6 +19,7 @@ export async function init() {
   assertSecretKeyConfigured();
   runMigrations();
   registerBackups();
+  registerInbox();
   await warmDummyHash();
   registerPaperless();
 }
