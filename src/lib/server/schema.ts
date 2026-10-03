@@ -21,6 +21,7 @@ import {
   DOCUMENT_SOURCES,
 } from "$lib/bill-types";
 import { AMOUNT_SIGNS, CATEGORY_KINDS } from "$lib/category-types";
+import { CHANNEL_KINDS } from "$lib/notification-types";
 import { CADENCES, SERIES_STATUSES } from "$lib/recurring-types";
 import type { Minor } from "$lib/money";
 
@@ -688,6 +689,64 @@ export const paperlessReportUploads = sqliteTable(
       t.sha256,
     ),
     index("paperless_report_uploads_user_id_idx").on(t.userId),
+  ],
+);
+/** Which notification triggers a user has switched on, with their parameters. */
+export const notificationSettings = sqliteTable("notification_settings", {
+  id: id(),
+  userId: userId().unique(),
+  billDueEnabled: integer("bill_due_enabled", { mode: "boolean" })
+    .notNull()
+    .default(false),
+  billDueDays: integer("bill_due_days").notNull().default(3),
+  billOverdueEnabled: integer("bill_overdue_enabled", { mode: "boolean" })
+    .notNull()
+    .default(false),
+  budgetEnabled: integer("budget_enabled", { mode: "boolean" })
+    .notNull()
+    .default(false),
+  /** Notify once spending reaches this share of a monthly budget. */
+  budgetPercent: integer("budget_percent").notNull().default(100),
+  staleImportEnabled: integer("stale_import_enabled", { mode: "boolean" })
+    .notNull()
+    .default(false),
+  staleImportDays: integer("stale_import_days").notNull().default(14),
+  ...timestamps,
+});
+
+/** One delivery channel per kind and user. */
+export const notificationChannels = sqliteTable(
+  "notification_channels",
+  {
+    id: id(),
+    userId: userId(),
+    kind: text("kind", { enum: CHANNEL_KINDS }).notNull(),
+    /** JSON, encrypted with `encryptSecret`; never returned to the client. */
+    configEncrypted: text("config_encrypted").notNull(),
+    enabled: integer("enabled", { mode: "boolean" }).notNull().default(true),
+    lastSuccessAt: integer("last_success_at", { mode: "timestamp_ms" }),
+    /** Short reason, never message content. */
+    lastError: text("last_error"),
+    lastErrorAt: integer("last_error_at", { mode: "timestamp_ms" }),
+    ...timestamps,
+  },
+  (t) => [
+    uniqueIndex("notification_channels_user_kind_uq").on(t.userId, t.kind),
+  ],
+);
+
+/** Events already notified, so each one is sent once. */
+export const notificationsSent = sqliteTable(
+  "notifications_sent",
+  {
+    id: id(),
+    userId: userId(),
+    /** e.g. `bill-overdue:<billId>:<dueDate>`. */
+    eventKey: text("event_key").notNull(),
+    ...timestamps,
+  },
+  (t) => [
+    uniqueIndex("notifications_sent_user_key_uq").on(t.userId, t.eventKey),
   ],
 );
 

@@ -71,6 +71,17 @@ const matrix: Record<string, Entry> = {
       "actions.changePassword": (m, e) => m.actions.changePassword(e),
     },
   },
+  "/src/routes/(app)/settings/notifications/+page.server.ts": {
+    access: "user",
+    handlers: {
+      load: (m, e) => m.load(e),
+      "actions.saveSettings": (m, e) => m.actions.saveSettings(e),
+      "actions.saveChannel": (m, e) => m.actions.saveChannel(e),
+      "actions.toggleChannel": (m, e) => m.actions.toggleChannel(e),
+      "actions.deleteChannel": (m, e) => m.actions.deleteChannel(e),
+      "actions.testChannel": (m, e) => m.actions.testChannel(e),
+    },
+  },
   "/src/routes/(app)/settings/paperless/+page.server.ts": {
     access: "user",
     handlers: {
