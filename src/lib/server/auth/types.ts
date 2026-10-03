@@ -26,7 +26,13 @@ export class AuthError extends Error {
       | "invalid_credentials"
       | "user_not_found"
       | "cannot_delete_self"
-      | "cannot_delete_last_admin",
+      | "cannot_delete_last_admin"
+      | "invalid_code"
+      | "pending_expired"
+      | "totp_already_enabled"
+      | "totp_not_pending"
+      | "totp_not_enabled"
+      | "passkey_not_found",
     message: string,
   ) {
     super(message);

@@ -4,6 +4,7 @@ import {
   authenticate,
   clientKey,
 } from "$lib/server/auth/login";
+import { setPendingCookie } from "$lib/server/auth/challenges";
 import { safeRedirectTo } from "$lib/server/auth/routing";
 import { loginSchema } from "$lib/server/auth/schemas";
 import { invalidateSession, setSessionCookie } from "$lib/server/auth/sessions";
@@ -43,13 +44,19 @@ export const actions: Actions = {
       });
     }
 
+    const redirectTo = safeRedirectTo(
+      parsed.data.redirectTo ?? url.searchParams.get("redirectTo"),
+    );
+    if ("secondFactorRequired" in result) {
+      setPendingCookie(cookies, result.token, result.expiresAt);
+      redirect(
+        303,
+        `/login/verify?redirectTo=${encodeURIComponent(redirectTo)}`,
+      );
+    }
+
     if (locals.session) invalidateSession(locals.session.id);
     setSessionCookie(cookies, result.token, result.session.expiresAt);
-    redirect(
-      303,
-      safeRedirectTo(
-        parsed.data.redirectTo ?? url.searchParams.get("redirectTo"),
-      ),
-    );
+    redirect(303, redirectTo);
   },
 };
