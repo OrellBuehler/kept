@@ -61,6 +61,18 @@ const matrix: Record<string, Entry> = {
       POST: (m, e) => (m as never as { POST: (e: never) => unknown }).POST(e),
     },
   },
+  "/src/routes/api/auth/passkey/stepup/options/+server.ts": {
+    access: "user",
+    handlers: {
+      POST: (m, e) => (m as never as { POST: (e: never) => unknown }).POST(e),
+    },
+  },
+  "/src/routes/api/auth/passkey/stepup/verify/+server.ts": {
+    access: "user",
+    handlers: {
+      POST: (m, e) => (m as never as { POST: (e: never) => unknown }).POST(e),
+    },
+  },
   "/src/routes/(app)/settings/security/+page.server.ts": {
     access: "user",
     handlers: {
@@ -71,6 +83,7 @@ const matrix: Record<string, Entry> = {
       "actions.disableTotp": (m, e) => m.actions.disableTotp(e),
       "actions.regenerateRecoveryCodes": (m, e) =>
         m.actions.regenerateRecoveryCodes(e),
+      "actions.stepUp": (m, e) => m.actions.stepUp(e),
       "actions.renamePasskey": (m, e) => m.actions.renamePasskey(e),
       "actions.deletePasskey": (m, e) => m.actions.deletePasskey(e),
     },

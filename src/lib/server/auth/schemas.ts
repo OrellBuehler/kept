@@ -123,3 +123,14 @@ export const passkeyLoginVerifySchema = z.object({
 export const passkeyLoginOptionsSchema = z.object({
   mode: z.enum(["passwordless", "second_factor"]),
 });
+
+export const stepUpSchema = z.object({
+  password: z.string().min(1, "Enter your password.").max(PASSWORD_MAX),
+  code: z.string().trim().max(64).optional().default(""),
+});
+
+export const passkeyStepUpVerifySchema = z.object({
+  challengeId: z.string().min(1).max(128),
+  password: z.string().min(1).max(PASSWORD_MAX),
+  credential: webauthnCredential,
+});

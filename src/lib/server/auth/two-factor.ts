@@ -5,6 +5,7 @@ import {
   passkeys,
   recoveryCodes,
   authChallenges,
+  sessions,
   totpCredentials,
   users,
 } from "$lib/server/db";
@@ -256,8 +257,10 @@ export function verifySecondFactorCode(
   return consumeRecoveryCode(userId, code);
 }
 
+export const REAUTH_WINDOW_MS = 5 * 60 * 1000;
+
 /** Re-authentication for sensitive changes: current password plus a second-factor code. */
-async function reauthenticate(
+export async function reauthenticate(
   userId: string,
   password: string,
   code: string,
@@ -274,10 +277,59 @@ async function reauthenticate(
   if (!(await verifyPassword(password, row.passwordHash))) {
     throw new AuthError("invalid_credentials", "Password is incorrect.");
   }
-  if (!verifySecondFactorCode(userId, code, now)) {
+  // A code is only demanded when an authenticator app is on; passkey-only users confirm with the password.
+  if (
+    getTwoFactorStatus(userId).totpEnabled &&
+    !verifySecondFactorCode(userId, code, now)
+  ) {
     throw new AuthError("invalid_code", "That code is not valid.");
   }
   release();
+}
+
+/** Step-up for a session: password (+ code if TOTP is on), then valid for REAUTH_WINDOW_MS. */
+export async function stepUpSession(
+  userId: string,
+  sessionId: string,
+  password: string,
+  code: string,
+  limiter: LoginRateLimiter = twoFactorManageLimiter,
+  now: number = Date.now(),
+): Promise<void> {
+  const status = getTwoFactorStatus(userId);
+  if (!status.totpEnabled && status.passkeyCount > 0) {
+    throw new AuthError(
+      "passkey_required",
+      "Confirm with one of your passkeys.",
+    );
+  }
+  await reauthenticate(userId, password, code, limiter, now);
+  markSessionReauthenticated(userId, sessionId, now);
+}
+
+export function markSessionReauthenticated(
+  userId: string,
+  sessionId: string,
+  now: number = Date.now(),
+): void {
+  getDB()
+    .update(sessions)
+    .set({ reauthAt: new Date(now) })
+    .where(and(eq(sessions.id, sessionId), eq(sessions.userId, userId)))
+    .run();
+}
+
+export function hasRecentReauth(
+  sessionId: string | undefined,
+  now: number = Date.now(),
+): boolean {
+  if (!sessionId) return false;
+  const row = getDB()
+    .select({ reauthAt: sessions.reauthAt })
+    .from(sessions)
+    .where(eq(sessions.id, sessionId))
+    .get();
+  return !!row?.reauthAt && now - row.reauthAt.getTime() <= REAUTH_WINDOW_MS;
 }
 
 export async function disableTotp(

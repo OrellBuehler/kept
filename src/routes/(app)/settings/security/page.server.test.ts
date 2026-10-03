@@ -4,13 +4,32 @@ import { totpCode } from "$lib/server/auth/totp";
 import {
   confirmTotpEnrolment,
   getTwoFactorStatus,
+  hasRecentReauth,
   startTotpEnrolment,
 } from "$lib/server/auth/two-factor";
-import { createTestUser } from "$lib/testing/auth";
+import { eq } from "drizzle-orm";
+import { validateSessionToken } from "$lib/server/auth/sessions";
+import { createTestUser, loginTestUser } from "$lib/testing/auth";
+import { REAUTH_WINDOW_MS } from "$lib/server/auth/two-factor";
 import { useTestDB } from "$lib/testing/db";
 import { createTestEvent, outcome } from "$lib/testing/event";
-import { getDB, passkeys } from "$lib/server/db";
+import { getDB, passkeys, sessions } from "$lib/server/db";
 import { actions, load } from "./+page.server";
+
+function sess(
+  u: Awaited<ReturnType<typeof createTestUser>>,
+  reauthAgeMs: number | null = 0,
+) {
+  const s = loginTestUser(u);
+  if (reauthAgeMs !== null) {
+    getDB()
+      .update(sessions)
+      .set({ reauthAt: new Date(Date.now() - reauthAgeMs) })
+      .where(eq(sessions.id, s.session.id))
+      .run();
+  }
+  return { user: u, session: s.session };
+}
 
 function seedPasskey(userId: string, credentialId = "cred") {
   getDB()
@@ -148,7 +167,7 @@ describe("settings/security", () => {
     );
     const crossDelete = await outcome(() =>
       actions.deletePasskey(
-        createTestEvent({ user: a, form: { id: pb.id } }) as never,
+        createTestEvent({ ...sess(a), form: { id: pb.id } }) as never,
       ),
     );
     expect(crossRename).toMatchObject({ type: "fail", status: 400 });
@@ -174,7 +193,7 @@ describe("settings/security", () => {
     ).toBe("Phone");
     await outcome(() =>
       actions.deletePasskey(
-        createTestEvent({ user: a, form: { id: pa.id } }) as never,
+        createTestEvent({ ...sess(a), form: { id: pa.id } }) as never,
       ),
     );
     expect(getDB().select().from(passkeys).all()).toHaveLength(1);
@@ -189,5 +208,117 @@ describe("settings/security", () => {
       ),
     );
     expect(r).toMatchObject({ type: "fail", status: 400 });
+  });
+
+  it("removing a passkey needs a recent step-up", async () => {
+    const a = await createTestUser();
+    const pa = seedPasskey(a.id);
+    for (const age of [null, REAUTH_WINDOW_MS + 1000]) {
+      const r = await outcome(() =>
+        actions.deletePasskey(
+          createTestEvent({ ...sess(a, age), form: { id: pa.id } }) as never,
+        ),
+      );
+      expect(r).toMatchObject({ type: "fail", status: 403 });
+    }
+    expect(getDB().select().from(passkeys).all()).toHaveLength(1);
+  });
+
+  it("stepUp needs the password (and a code when TOTP is on) and starts the window", async () => {
+    const u = await createTestUser();
+    const s = sess(u, null);
+    const wrong = await outcome(() =>
+      actions.stepUp(
+        createTestEvent({
+          ...s,
+          form: { password: "nope-nope-nope" },
+        }) as never,
+      ),
+    );
+    expect(wrong).toMatchObject({ type: "fail", status: 400 });
+    expect(hasRecentReauth(s.session.id)).toBe(false);
+    const ok = await outcome(() =>
+      actions.stepUp(
+        createTestEvent({ ...s, form: { password: u.password } }) as never,
+      ),
+    );
+    expect(ok).toMatchObject({ type: "return", value: { reauthed: true } });
+    expect(hasRecentReauth(s.session.id)).toBe(true);
+    expect(
+      hasRecentReauth(s.session.id, Date.now() + REAUTH_WINDOW_MS + 1000),
+    ).toBe(false);
+
+    const t = await createTestUser();
+    const { secret } = startTotpEnrolment(t.id, t.username);
+    confirmTotpEnrolment(
+      t.id,
+      totpCode(secret, Date.now() - 600_000),
+      Date.now() - 600_000,
+    );
+    const ts = sess(t, null);
+    const noCode = await outcome(() =>
+      actions.stepUp(
+        createTestEvent({ ...ts, form: { password: t.password } }) as never,
+      ),
+    );
+    expect(noCode).toMatchObject({ type: "fail", status: 400 });
+    expect(hasRecentReauth(ts.session.id)).toBe(false);
+  });
+
+  it("passkey-only users cannot step up with the password form alone", async () => {
+    const u = await createTestUser();
+    seedPasskey(u.id);
+    const s = sess(u, null);
+    const r = await outcome(() =>
+      actions.stepUp(
+        createTestEvent({ ...s, form: { password: u.password } }) as never,
+      ),
+    );
+    expect(r).toMatchObject({ type: "fail", status: 400 });
+    expect(hasRecentReauth(s.session.id)).toBe(false);
+  });
+
+  it("removing a passkey keeps this session and signs the others out", async () => {
+    const u = await createTestUser();
+    const pa = seedPasskey(u.id);
+    const mine = loginTestUser(u);
+    const other = loginTestUser(u);
+    getDB()
+      .update(sessions)
+      .set({ reauthAt: new Date() })
+      .where(eq(sessions.id, mine.session.id))
+      .run();
+    await outcome(() =>
+      actions.deletePasskey(
+        createTestEvent({
+          user: u,
+          session: mine.session,
+          form: { id: pa.id },
+        }) as never,
+      ),
+    );
+    expect(validateSessionToken(mine.token)).not.toBeNull();
+    expect(validateSessionToken(other.token)).toBeNull();
+  });
+
+  it("disabling the authenticator app keeps this session and signs the others out", async () => {
+    const u = await createTestUser();
+    const past = Date.now() - 600_000;
+    const { secret } = startTotpEnrolment(u.id, u.username);
+    const codes = confirmTotpEnrolment(u.id, totpCode(secret, past), past);
+    const mine = loginTestUser(u);
+    const other = loginTestUser(u);
+    const r = await outcome(() =>
+      actions.disableTotp(
+        createTestEvent({
+          user: u,
+          session: mine.session,
+          form: { password: u.password, code: codes[0] },
+        }) as never,
+      ),
+    );
+    expect(r).toMatchObject({ type: "return" });
+    expect(validateSessionToken(mine.token)).not.toBeNull();
+    expect(validateSessionToken(other.token)).toBeNull();
   });
 });

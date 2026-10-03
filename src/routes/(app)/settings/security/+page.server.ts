@@ -1,5 +1,6 @@
 import { fail } from "@sveltejs/kit";
 import QRCode from "qrcode";
+import { invalidateUserSessions } from "$lib/server/auth/sessions";
 import { requireUser } from "$lib/server/auth/guards";
 import {
   listPasskeys,
@@ -10,6 +11,7 @@ import { RateLimitedError } from "$lib/server/auth/rate-limit";
 import {
   passkeyIdSchema,
   renamePasskeySchema,
+  stepUpSchema,
   totpConfirmSchema,
   twoFactorReauthSchema,
 } from "$lib/server/auth/schemas";
@@ -19,6 +21,8 @@ import {
   disableTotp,
   getPendingTotpEnrolment,
   getTwoFactorStatus,
+  hasRecentReauth,
+  stepUpSession,
   regenerateRecoveryCodes,
   startTotpEnrolment,
 } from "$lib/server/auth/two-factor";
@@ -31,6 +35,7 @@ export const load: PageServerLoad = async ({ locals }) => {
   const pending = getPendingTotpEnrolment(user.id, user.username);
   return {
     status: getTwoFactorStatus(user.id),
+    reauthed: hasRecentReauth(locals.session?.id),
     passkeys: listPasskeys(user.id),
     enrolment: pending
       ? {
@@ -91,6 +96,7 @@ export const actions: Actions = {
     if (!parsed.ok) return fail(400, { errors: parsed.errors });
     try {
       await disableTotp(user.id, parsed.data.password, parsed.data.code);
+      invalidateUserSessions(user.id, locals.session?.id);
     } catch (err) {
       return reauthFailure(err);
     }
@@ -113,6 +119,25 @@ export const actions: Actions = {
     }
   },
 
+  stepUp: async ({ locals, request }) => {
+    const user = requireUser(locals);
+    if (!locals.session)
+      return fail(401, { errors: { form: ["No session."] } });
+    const parsed = parseForm(stepUpSchema, await request.formData());
+    if (!parsed.ok) return fail(400, { errors: parsed.errors });
+    try {
+      await stepUpSession(
+        user.id,
+        locals.session.id,
+        parsed.data.password,
+        parsed.data.code,
+      );
+    } catch (err) {
+      return reauthFailure(err);
+    }
+    return { reauthed: true as const };
+  },
+
   renamePasskey: async ({ locals, request }) => {
     const user = requireUser(locals);
     const parsed = parseForm(renamePasskeySchema, await request.formData());
@@ -127,10 +152,16 @@ export const actions: Actions = {
 
   deletePasskey: async ({ locals, request }) => {
     const user = requireUser(locals);
+    if (!hasRecentReauth(locals.session?.id)) {
+      return fail(403, {
+        errors: { form: ["Confirm your password before removing a passkey."] },
+      });
+    }
     const parsed = parseForm(passkeyIdSchema, await request.formData());
     if (!parsed.ok) return fail(400, { errors: parsed.errors });
     try {
       deletePasskey(user.id, parsed.data.id);
+      invalidateUserSessions(user.id, locals.session?.id);
     } catch (err) {
       return reauthFailure(err);
     }

@@ -63,6 +63,8 @@ export const sessions = sqliteTable(
       .notNull()
       .references(() => users.id, { onDelete: "cascade" }),
     expiresAt: integer("expires_at", { mode: "timestamp_ms" }).notNull(),
+    /** Last step-up authentication (password [+ code]); gates sensitive changes such as passkeys. */
+    reauthAt: integer("reauth_at", { mode: "timestamp_ms" }),
     ...timestamps,
   },
   (t) => [index("sessions_user_id_idx").on(t.userId)],
@@ -128,6 +130,7 @@ export const AUTH_CHALLENGE_KINDS = [
   "login",
   "passkey_register",
   "passkey_login",
+  "passkey_stepup",
 ] as const;
 export type AuthChallengeKind = (typeof AUTH_CHALLENGE_KINDS)[number];
 

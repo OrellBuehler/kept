@@ -1,7 +1,10 @@
 <script lang="ts">
   import { enhance } from "$app/forms";
   import { invalidateAll } from "$app/navigation";
-  import { startRegistration } from "@simplewebauthn/browser";
+  import {
+    startAuthentication,
+    startRegistration,
+  } from "@simplewebauthn/browser";
   import { toast } from "svelte-sonner";
   import KeyRoundIcon from "@lucide/svelte/icons/key-round";
   import Trash2Icon from "@lucide/svelte/icons/trash-2";
@@ -55,6 +58,52 @@
         }
       };
     };
+  }
+
+  const passkeyOnly = $derived(
+    !data.status.totpEnabled && data.status.passkeyCount > 0,
+  );
+  let stepUpPassword = $state("");
+
+  async function confirmWithPasskey() {
+    passkeyError = undefined;
+    passkeyBusy = true;
+    try {
+      const headers = { "content-type": "application/json" };
+      const optRes = await fetch("/api/auth/passkey/stepup/options", {
+        method: "POST",
+        headers,
+        body: "{}",
+      });
+      if (!optRes.ok) throw new Error("Could not start confirmation.");
+      const { options, challengeId } = await optRes.json();
+      const credential = await startAuthentication({ optionsJSON: options });
+      const res = await fetch("/api/auth/passkey/stepup/verify", {
+        method: "POST",
+        headers,
+        body: JSON.stringify({
+          challengeId,
+          password: stepUpPassword,
+          credential,
+        }),
+      });
+      if (!res.ok) {
+        const body = await res.json().catch(() => null);
+        throw new Error(body?.message ?? "Confirmation failed.");
+      }
+      stepUpPassword = "";
+      toast.success("Confirmed. You can change passkeys for 5 minutes.");
+      await invalidateAll();
+    } catch (err) {
+      passkeyError =
+        err instanceof Error && err.name === "NotAllowedError"
+          ? "Confirmation was cancelled."
+          : err instanceof Error
+            ? err.message
+            : "Confirmation failed.";
+    } finally {
+      passkeyBusy = false;
+    }
   }
 
   async function addPasskey() {
@@ -361,6 +410,76 @@
         message={formError(errorsFor("renamePasskey")) ??
           formError(errorsFor("deletePasskey"))}
       />
+      {#if !data.reauthed}
+        <form
+          method="POST"
+          action="?/stepUp"
+          class="flex flex-col gap-3"
+          use:enhance={submit(
+            "stepUp",
+            "Confirmed. You can change passkeys for 5 minutes.",
+          )}
+        >
+          <p class="text-muted-foreground text-sm">
+            Confirm it is you to add or remove passkeys.
+          </p>
+          <FormAlert message={formError(errorsFor("stepUp"))} />
+          <Field.Group>
+            <Field.Field>
+              <Field.Label for="stepup-password">Password</Field.Label>
+              <Input
+                id="stepup-password"
+                name="password"
+                type="password"
+                autocomplete="current-password"
+                required
+                bind:value={stepUpPassword}
+                aria-invalid={hasError(errorsFor("stepUp"), "password")}
+              />
+              <Field.Error
+                errors={fieldErrors(errorsFor("stepUp"), "password")}
+              />
+            </Field.Field>
+            {#if data.status.totpEnabled}
+              <Field.Field>
+                <Field.Label for="stepup-code">Authenticator code</Field.Label>
+                <Input
+                  id="stepup-code"
+                  name="code"
+                  inputmode="numeric"
+                  autocomplete="one-time-code"
+                  required
+                  aria-invalid={hasError(errorsFor("stepUp"), "code")}
+                />
+                <Field.Error
+                  errors={fieldErrors(errorsFor("stepUp"), "code")}
+                />
+              </Field.Field>
+            {/if}
+          </Field.Group>
+          <FormAlert message={passkeyError} />
+          {#if passkeyOnly}
+            <Button
+              type="button"
+              class="self-start"
+              disabled={passkeyBusy || stepUpPassword.length === 0}
+              onclick={confirmWithPasskey}
+            >
+              {#if passkeyBusy}<Spinner />{/if}
+              Confirm with passkey
+            </Button>
+          {:else}
+            <Button
+              type="submit"
+              class="self-start"
+              disabled={pending !== null}
+            >
+              {#if pending === "stepUp"}<Spinner />{/if}
+              Confirm
+            </Button>
+          {/if}
+        </form>
+      {/if}
       {#if passkeysSupported}
         <div class="flex flex-col gap-3">
           <FormAlert message={passkeyError} />
@@ -376,7 +495,7 @@
           <Button
             type="button"
             class="self-start"
-            disabled={passkeyBusy}
+            disabled={passkeyBusy || !data.reauthed}
             onclick={addPasskey}
           >
             {#if passkeyBusy}<Spinner />{/if}

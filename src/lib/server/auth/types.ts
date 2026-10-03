@@ -28,6 +28,7 @@ export class AuthError extends Error {
       | "cannot_delete_self"
       | "cannot_delete_last_admin"
       | "invalid_code"
+      | "passkey_required"
       | "pending_expired"
       | "totp_already_enabled"
       | "totp_not_pending"

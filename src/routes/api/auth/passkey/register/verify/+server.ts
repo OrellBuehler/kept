@@ -1,4 +1,5 @@
 import { json } from "@sveltejs/kit";
+import { hasRecentReauth } from "$lib/server/auth/two-factor";
 import type { RegistrationResponseJSON } from "@simplewebauthn/server";
 import { takeWebauthnChallenge } from "$lib/server/auth/challenges";
 import { requireUser } from "$lib/server/auth/guards";
@@ -9,6 +10,12 @@ import type { RequestHandler } from "./$types";
 
 export const POST: RequestHandler = async ({ locals, request, url }) => {
   const user = requireUser(locals);
+  if (!hasRecentReauth(locals.session?.id)) {
+    return json(
+      { message: "Confirm your password first.", code: "reauth_required" },
+      { status: 403 },
+    );
+  }
   const body = await readJsonBody(request, url, passkeyRegisterVerifySchema);
   const challenge = takeWebauthnChallenge(
     body.challengeId,
