@@ -3,6 +3,7 @@ import { warmDummyHash } from "$lib/server/auth/password";
 import { assertSecretKeyConfigured } from "$lib/server/crypto";
 import { registerBackups } from "$lib/server/backup";
 import { runMigrations } from "$lib/server/db";
+import { registerNotifications } from "$lib/server/notifications";
 import { registerPaperless } from "$lib/server/integrations/paperless";
 import {
   SESSION_COOKIE,
@@ -20,6 +21,7 @@ export async function init() {
   registerBackups();
   await warmDummyHash();
   registerPaperless();
+  registerNotifications();
 }
 
 function redirectResponse(location: string, clearCookie?: string): Response {
