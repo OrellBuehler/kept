@@ -9,6 +9,7 @@
   import { COLOR_PALETTE } from "$lib/account-types";
   import type { FormErrors } from "$lib/form-errors";
   import { submitHandler } from "$lib/form-submit";
+  import InstitutionLogo from "$lib/components/InstitutionLogo.svelte";
   import { cn } from "$lib/utils";
   import CheckIcon from "@lucide/svelte/icons/check";
 
@@ -22,6 +23,7 @@
       name: string;
       bic: string | null;
       color: string | null;
+      logoVersion: string | null;
     } | null;
   } = $props();
 
@@ -29,16 +31,34 @@
   let pending = $state(false);
   let errors = $state<NonNullable<FormErrors>>({});
   let color = $state("");
+  let removeLogo = $state(false);
+  let logoName = $state("");
+  const MAX_LOGO_BYTES = 512 * 1024;
 
   $effect(() => {
     if (!open) return;
     untrack(() => {
       errors = {};
       color = institution?.color ?? "";
+      removeLogo = false;
+      logoName = "";
     });
   });
 
   const editing = $derived(institution !== null);
+
+  function onLogoChange(e: Event & { currentTarget: HTMLInputElement }) {
+    const file = e.currentTarget.files?.[0];
+    if (file && file.size > MAX_LOGO_BYTES) {
+      errors = { ...errors, logo: ["The logo is larger than 512 KB."] };
+      e.currentTarget.value = "";
+      logoName = "";
+      return;
+    }
+    errors = { ...errors, logo: [] };
+    logoName = file?.name ?? "";
+    if (file) removeLogo = false;
+  }
 </script>
 
 <Dialog.Root bind:open>
@@ -54,11 +74,12 @@
     <form
       method="POST"
       action={editing ? "?/updateInstitution" : "?/createInstitution"}
+      enctype="multipart/form-data"
       class="grid gap-4"
       use:enhance={submitHandler({
         setPending: (v) => (pending = v),
         setErrors: (e) => (errors = e),
-        knownFields: ["name", "bic", "color"],
+        knownFields: ["name", "bic", "color", "logo"],
         successMessage: editing ? "Institution updated" : "Institution added",
         onSuccess: () => (open = false),
       })}
@@ -93,6 +114,43 @@
           value={institution?.bic ?? ""}
           aria-invalid={!!errors.bic}
         />
+      </FormField>
+      <FormField
+        label="Logo (optional)"
+        for="{uid}-logo"
+        errors={errors.logo}
+        hint="PNG, JPEG, WebP or SVG, up to 512 KB."
+      >
+        <div class="flex items-center gap-3">
+          {#if institution}
+            <InstitutionLogo
+              institution={removeLogo
+                ? { ...institution, logoVersion: null }
+                : institution}
+              size="lg"
+            />
+          {/if}
+          <Input
+            id="{uid}-logo"
+            name="logo"
+            type="file"
+            accept="image/png,image/jpeg,image/webp,image/svg+xml,.png,.jpg,.jpeg,.webp,.svg"
+            onchange={onLogoChange}
+            aria-invalid={!!errors.logo?.length}
+          />
+        </div>
+        {#if institution?.logoVersion}
+          <label class="flex items-center gap-2 text-sm">
+            <input
+              type="checkbox"
+              name="removeLogo"
+              value="1"
+              bind:checked={removeLogo}
+              disabled={!!logoName}
+            />
+            Remove current logo
+          </label>
+        {/if}
       </FormField>
       <div class="grid gap-1.5">
         <span class="text-sm leading-none font-medium">Colour</span>

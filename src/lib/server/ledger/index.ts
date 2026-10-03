@@ -5,3 +5,4 @@ export * from "./institutions";
 export * from "./schemas";
 export * from "./snapshots";
 export * from "./transactions";
+export * from "./logos";

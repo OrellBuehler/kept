@@ -4,6 +4,11 @@ import { parseForm, safeValues } from "$lib/server/forms";
 import { createAccount, listAccounts } from "$lib/server/ledger/accounts";
 import { ledgerFailure } from "$lib/server/ledger/http";
 import {
+  prepareLogo,
+  removeInstitutionLogo,
+  setInstitutionLogo,
+} from "$lib/server/ledger/logos";
+import {
   createInstitution,
   deleteInstitution,
   listInstitutions,
@@ -29,6 +34,14 @@ const accountFields = [
   "sortOrder",
 ] as const;
 
+async function readLogoUpload(form: FormData): Promise<Uint8Array | null> {
+  const file = form.get("logo");
+  if (!(file instanceof File) || file.size === 0) return null;
+  const bytes = new Uint8Array(await file.arrayBuffer());
+  prepareLogo(bytes);
+  return bytes;
+}
+
 export const load: PageServerLoad = ({ locals }) => {
   const user = requireUser(locals);
   return {
@@ -51,7 +64,9 @@ export const actions: Actions = {
       });
     }
     try {
+      const logo = await readLogoUpload(form);
       const created = createInstitution(user.id, parsed.data);
+      if (logo) setInstitutionLogo(user.id, created.id, logo);
       return {
         success: true as const,
         action: "createInstitution" as const,
@@ -79,7 +94,11 @@ export const actions: Actions = {
     }
     const { id, ...input } = parsed.data;
     try {
+      const logo = await readLogoUpload(form);
       updateInstitution(user.id, id, input);
+      if (logo) setInstitutionLogo(user.id, id, logo);
+      else if (form.get("removeLogo") === "1")
+        removeInstitutionLogo(user.id, id);
       return {
         success: true as const,
         action: "updateInstitution" as const,

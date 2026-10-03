@@ -62,6 +62,7 @@ describe("/import load", () => {
         name: account.name,
         currency: "CHF",
         institutionName: "Example Bank",
+        institution: expect.objectContaining({ name: "Example Bank" }),
       },
     ]);
     expect(data.recentImports).toHaveLength(1);

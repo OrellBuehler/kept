@@ -71,6 +71,17 @@ const matrix: Record<string, Entry> = {
       "actions.changePassword": (m, e) => m.actions.changePassword(e),
     },
   },
+  "/src/routes/(app)/settings/notifications/+page.server.ts": {
+    access: "user",
+    handlers: {
+      load: (m, e) => m.load(e),
+      "actions.saveSettings": (m, e) => m.actions.saveSettings(e),
+      "actions.saveChannel": (m, e) => m.actions.saveChannel(e),
+      "actions.toggleChannel": (m, e) => m.actions.toggleChannel(e),
+      "actions.deleteChannel": (m, e) => m.actions.deleteChannel(e),
+      "actions.testChannel": (m, e) => m.actions.testChannel(e),
+    },
+  },
   "/src/routes/(app)/settings/paperless/+page.server.ts": {
     access: "user",
     handlers: {
@@ -135,6 +146,32 @@ const matrix: Record<string, Entry> = {
       "actions.deleteBudget": (m, e) => m.actions.deleteBudget(e),
     },
   },
+  "/src/routes/(app)/forecast/+page.server.ts": {
+    access: "user",
+    handlers: {
+      load: (m, e) => m.load(e),
+      "actions.createPlanned": (m, e) => m.actions.createPlanned(e),
+      "actions.updatePlanned": (m, e) => m.actions.updatePlanned(e),
+      "actions.deletePlanned": (m, e) => m.actions.deletePlanned(e),
+      "actions.saveSettings": (m, e) => m.actions.saveSettings(e),
+    },
+  },
+  "/src/routes/(app)/recurring/+page.server.ts": {
+    access: "user",
+    handlers: {
+      load: (m, e) => m.load(e),
+      "actions.confirm": (m, e) => m.actions.confirm(e),
+      "actions.dismiss": (m, e) => m.actions.dismiss(e),
+      "actions.restore": (m, e) => m.actions.restore(e),
+      "actions.edit": (m, e) => m.actions.edit(e),
+    },
+  },
+  "/src/routes/(app)/review/+page.server.ts": {
+    access: "user",
+    handlers: {
+      load: (m, e) => m.load(e),
+    },
+  },
   "/src/routes/(app)/bills/+page.server.ts": {
     access: "user",
     handlers: {
@@ -168,6 +205,12 @@ const matrix: Record<string, Entry> = {
     },
   },
   "/src/routes/(app)/bills/[id]/document/+server.ts": {
+    access: "user",
+    handlers: {
+      GET: (m, e) => (m as never as { GET: (e: never) => unknown }).GET(e),
+    },
+  },
+  "/src/routes/(app)/institutions/[id]/logo/+server.ts": {
     access: "user",
     handlers: {
       GET: (m, e) => (m as never as { GET: (e: never) => unknown }).GET(e),
