@@ -57,6 +57,13 @@
       "when": 1790979349908,
       "tag": "0007_clumsy_diamondback",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "6",
+      "when": 1791017489507,
+      "tag": "0008_daffy_centennial",
+      "breakpoints": true
     }
   ]
 }
