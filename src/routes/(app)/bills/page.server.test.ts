@@ -14,8 +14,15 @@ import { seedAccount, seedImportedTransaction } from "$lib/testing/ledger";
 import { actions, load } from "./+page.server";
 
 type User = Awaited<ReturnType<typeof createTestUser>>;
-const loadAs = (user: User) =>
-  outcome(() => load(createTestEvent({ user }) as never));
+const loadAs = (user: User, search = "") =>
+  outcome(() =>
+    load(
+      createTestEvent({
+        user,
+        url: `http://localhost/bills${search}`,
+      }) as never,
+    ),
+  );
 const run = (
   name: keyof typeof actions,
   user: User,
@@ -57,18 +64,17 @@ describe("bills overview", () => {
       suggestions: unknown[];
       counts: Record<string, number>;
       autoMatched: number;
+      query: unknown;
+      list: { items: { id: string }[]; total: number };
     };
     expect(Object.keys(v.groups).sort()).toEqual([
       "awaitingRefund",
       "dueSoon",
-      "openOther",
       "overdue",
-      "recentlyPaid",
     ]);
     expect(v.autoMatched).toBe(1);
     expect(v.groups.overdue!.map((b) => b.id)).toEqual([overdue.id]);
     expect(v.groups.dueSoon!.map((b) => b.id)).toEqual([soon.id]);
-    expect(v.groups.recentlyPaid!.map((b) => b.id)).toEqual([paid.id]);
     expect(v.counts).toMatchObject({
       overdue: 1,
       dueSoon: 1,
@@ -77,9 +83,43 @@ describe("bills overview", () => {
       total: 3,
     });
     expect(v.suggestions).toEqual([]);
+    expect(v.query).toEqual({ q: "", status: "all", page: 1 });
+    expect(v.list.total).toBe(3);
+    expect(v.list.items.map((b) => b.id).sort()).toEqual(
+      [overdue.id, soon.id, paid.id].sort(),
+    );
 
     const again = (await loadAs(u)) as { value: { autoMatched: number } };
     expect(again.value.autoMatched).toBe(0);
+  });
+
+  it("filters and paginates the list from the query string", async () => {
+    const u = await createTestUser();
+    const other = await createTestUser();
+    const acme = seedBill(u.id, {
+      creditorName: "Acme Utilities",
+      dueDate: daysFromToday(-3),
+    });
+    seedBill(u.id, { creditorName: "Other Co", dueDate: daysFromToday(30) });
+    seedBill(other.id, { creditorName: "Acme Utilities" });
+
+    const val = async (search: string) =>
+      ((await loadAs(u, search)) as unknown as { value: never }).value as {
+        query: unknown;
+        list: { items: { id: string }[]; total: number; page: number };
+      };
+
+    const byText = await val("?q=acme");
+    expect(byText.query).toEqual({ q: "acme", status: "all", page: 1 });
+    expect(byText.list.items.map((b) => b.id)).toEqual([acme.id]);
+
+    const byStatus = await val("?status=overdue");
+    expect(byStatus.list.items.map((b) => b.id)).toEqual([acme.id]);
+    expect((await val("?status=paid")).list.total).toBe(0);
+
+    const paged = await val("?page=9&status=bogus");
+    expect(paged.query).toEqual({ q: "", status: "all", page: 9 });
+    expect(paged.list).toMatchObject({ total: 2, page: 1 });
   });
 
   it("only shows the user's own bills", async () => {
