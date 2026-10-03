@@ -17,6 +17,7 @@
   import LogOutIcon from "@lucide/svelte/icons/log-out";
   import SunIcon from "@lucide/svelte/icons/sun";
   import MoonIcon from "@lucide/svelte/icons/moon";
+  import CalendarRangeIcon from "@lucide/svelte/icons/calendar-range";
   import MonitorIcon from "@lucide/svelte/icons/monitor";
   import * as Sidebar from "$lib/components/ui/sidebar/index.js";
   import * as DropdownMenu from "$lib/components/ui/dropdown-menu/index.js";
@@ -38,6 +39,7 @@
     },
     { href: "/budgets", label: "Budgets", icon: PiggyBankIcon },
     { href: "/taxes", label: "Taxes", icon: ScaleIcon },
+    { href: "/review", label: "Year in review", icon: CalendarRangeIcon },
     { href: "/reports", label: "Reports", icon: FileTextIcon },
     { href: "/settings/account", label: "Settings", icon: SettingsIcon },
     ...(data.user.role === "admin"
