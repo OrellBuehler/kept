@@ -35,6 +35,10 @@ const isoDate = z
 
 const taxParams = z.object({ year: yearSchema });
 
+const netWorthParams = z.object({
+  basis: z.enum(["total", "share"], "Use total or share.").default("total"),
+});
+
 const statementParams = z.object({
   account: z.string().min(1, "Choose an account.").max(100),
   from: isoDate,
@@ -48,6 +52,8 @@ export interface ReportParams {
   from?: string | null;
   to?: string | null;
   year?: string | null;
+  /** Net worth only: "total" (default) or "share" (counted at the ownership share). */
+  basis?: string | null;
 }
 
 export interface BuiltReport {
@@ -117,10 +123,19 @@ export async function buildReport(
       title: taxReportTitle(input),
     };
   }
-  const input = loadNetWorthReport(userId, today);
+  const parsed = netWorthParams.safeParse({
+    basis: params.basis ?? undefined,
+  });
+  if (!parsed.success) {
+    throw new LedgerError("invalid", parsed.error.issues[0]!.message, "basis");
+  }
+  const input = loadNetWorthReport(userId, today, parsed.data.basis);
   return {
     bytes: await netWorthReport(input),
-    fileName,
+    fileName:
+      parsed.data.basis === "share"
+        ? `kept-net-worth-share-${today}.pdf`
+        : fileName,
     title: netWorthReportTitle(input),
   };
 }

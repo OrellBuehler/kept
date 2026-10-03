@@ -19,6 +19,10 @@ export interface AccountBalanceView {
   ibanMasked: string | null;
   institution: { id: string; name: string; color: string | null } | null;
   balance: Minor;
+  shareBps: number;
+  sharedWith: string | null;
+  /** `balance` at the ownership share. */
+  shareBalance: Minor;
   lastBookingDate: string | null;
   /** Instant (ms since epoch) of the latest import, or null if never imported. */
   lastImportAt: number | null;
@@ -37,6 +41,8 @@ export interface AccountBalanceView {
 export interface CurrencyTotal {
   currency: string;
   balance: Minor;
+  /** Sum of the balances at each account's ownership share. */
+  shareBalance: Minor;
   accountCount: number;
 }
 
@@ -86,6 +92,9 @@ export function accountBalances(
         ibanMasked: a.ibanMasked,
         institution: a.institution,
         balance: a.balance,
+        shareBps: a.shareBps,
+        sharedWith: a.sharedWith,
+        shareBalance: a.shareBalance,
         lastBookingDate: a.lastBookingDate,
         lastImportAt: a.lastImportAt,
         lastSnapshotDate,
@@ -100,18 +109,23 @@ export function accountBalances(
 }
 
 export function balanceTotals(
-  accounts: readonly Pick<AccountBalanceView, "currency" | "balance">[],
+  accounts: readonly Pick<
+    AccountBalanceView,
+    "currency" | "balance" | "shareBalance"
+  >[],
 ): CurrencyTotal[] {
-  const totals = new Map<string, { sum: number; n: number }>();
+  const totals = new Map<string, { sum: number; share: number; n: number }>();
   for (const a of accounts) {
-    const t = totals.get(a.currency) ?? { sum: 0, n: 0 };
+    const t = totals.get(a.currency) ?? { sum: 0, share: 0, n: 0 };
     t.sum += a.balance;
+    t.share += a.shareBalance;
     t.n += 1;
     totals.set(a.currency, t);
   }
   return [...totals.keys()].sort().map((currency) => ({
     currency,
     balance: minor(totals.get(currency)!.sum),
+    shareBalance: minor(totals.get(currency)!.share),
     accountCount: totals.get(currency)!.n,
   }));
 }

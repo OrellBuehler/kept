@@ -12,6 +12,8 @@
   import AccountTypeBadge from "$lib/components/AccountTypeBadge.svelte";
   import Amount from "$lib/components/Amount.svelte";
   import ConfirmActionDialog from "$lib/components/ConfirmActionDialog.svelte";
+  import ShareBadge from "$lib/components/ShareBadge.svelte";
+  import { FULL_SHARE_BPS, shareOf } from "$lib/money";
   import { submitHandler } from "$lib/form-submit";
   import ArchiveIcon from "@lucide/svelte/icons/archive";
   import ArchiveRestoreIcon from "@lucide/svelte/icons/archive-restore";
@@ -100,6 +102,10 @@
             {account.name}
           </h1>
           <AccountTypeBadge type={account.type} />
+          <ShareBadge
+            shareBps={account.shareBps}
+            sharedWith={account.sharedWith}
+          />
           {#if account.archived}
             <Badge variant="outline">Archived</Badge>
           {/if}
@@ -142,6 +148,15 @@
             currency={account.currency}
             class="text-3xl font-semibold"
           />
+          {#if account.shareBps < FULL_SHARE_BPS}
+            <div class="text-muted-foreground text-xs">
+              My share
+              <Amount
+                value={shareOf(data.balance, account.shareBps)}
+                currency={account.currency}
+              />
+            </div>
+          {/if}
         </div>
         <DropdownMenu.Root>
           <DropdownMenu.Trigger>
@@ -206,6 +221,7 @@
   <TransactionsCard
     accountId={account.id}
     currency={account.currency}
+    shareBps={account.shareBps}
     transactions={data.transactions}
     categories={data.categories}
     filters={data.filters}

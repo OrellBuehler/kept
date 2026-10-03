@@ -14,6 +14,7 @@ export const GET: RequestHandler = async ({ locals, params, url }) => {
       from: url.searchParams.get("from"),
       to: url.searchParams.get("to"),
       year: url.searchParams.get("year"),
+      basis: url.searchParams.get("basis"),
     });
     return new Response(bytes as BodyInit, {
       headers: {

@@ -7,6 +7,9 @@ history — on your own server, in a single SQLite file.
 
 - **Accounts** grouped by institution: current, savings, credit card, investment, pension, cash.
   Accounts you don't import can be tracked with manual balance snapshots.
+- **Shared accounts**: set "my share" (e.g. 50% or 33.33%) on an account you co-own. Imports and
+  transactions keep their full amounts; a "My share" view on the dashboard, net worth chart and
+  report, budgets and category totals counts them at your share (the co-owner needs no account).
 - **Statement import** from ISO 20022 camt.053 (`.001.02`/`.04`/`.08` and later) and from any
   CSV or Excel export through a column mapping you set up once per account, with a live preview.
   Re-importing overlapping files never duplicates transactions; Kept warns when a file's opening

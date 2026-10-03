@@ -12,7 +12,7 @@
   import { minorToSignedInput } from "$lib/amount-input";
   import type { FormErrors } from "$lib/form-errors";
   import { submitHandler } from "$lib/form-submit";
-  import type { Minor } from "$lib/money";
+  import { shareToInput, type Minor } from "$lib/money";
 
   interface EditableAccount {
     institution: { id: string } | null;
@@ -22,6 +22,8 @@
     iban: string | null;
     openingBalance: Minor;
     openingDate: string | null;
+    shareBps: number;
+    sharedWith: string | null;
   }
 
   let {
@@ -89,6 +91,8 @@
           "iban",
           "openingBalance",
           "openingDate",
+          "share",
+          "sharedWith",
         ],
         successMessage: editing ? "Account updated" : "Account added",
         onSuccess: () => (open = false),
@@ -230,6 +234,41 @@
             type="date"
             value={account?.openingDate ?? ""}
             aria-invalid={!!errors.openingDate}
+          />
+        </FormField>
+      </div>
+
+      <div class="grid gap-4 sm:grid-cols-2">
+        <FormField
+          label="My share (%)"
+          for="{uid}-share"
+          errors={errors.share}
+          hint="Your ownership share if you co-own this account, e.g. 50 or 33.33. Leave at 100 otherwise. Imported amounts stay at 100%."
+        >
+          <Input
+            id="{uid}-share"
+            name="share"
+            inputmode="decimal"
+            autocomplete="off"
+            class="tabular-nums"
+            placeholder="100"
+            value={account ? shareToInput(account.shareBps) : "100"}
+            aria-invalid={!!errors.share}
+          />
+        </FormField>
+        <FormField
+          label="Shared with (optional)"
+          for="{uid}-shared-with"
+          errors={errors.sharedWith}
+          hint="A label only, e.g. a first name."
+        >
+          <Input
+            id="{uid}-shared-with"
+            name="sharedWith"
+            maxlength={80}
+            autocomplete="off"
+            value={account?.sharedWith ?? ""}
+            aria-invalid={!!errors.sharedWith}
           />
         </FormField>
       </div>

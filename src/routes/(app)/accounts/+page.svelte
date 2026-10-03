@@ -12,9 +12,10 @@
   import AccountTypeBadge from "$lib/components/AccountTypeBadge.svelte";
   import Amount from "$lib/components/Amount.svelte";
   import ConfirmActionDialog from "$lib/components/ConfirmActionDialog.svelte";
+  import ShareBadge from "$lib/components/ShareBadge.svelte";
   import InstitutionFormDialog from "$lib/components/InstitutionFormDialog.svelte";
   import { daysSince, formatAgo, formatDate } from "$lib/format";
-  import { minor, type Minor } from "$lib/money";
+  import { FULL_SHARE_BPS, minor, type Minor } from "$lib/money";
   import LandmarkIcon from "@lucide/svelte/icons/landmark";
   import MoreHorizontalIcon from "@lucide/svelte/icons/ellipsis";
   import PencilIcon from "@lucide/svelte/icons/pencil";
@@ -46,14 +47,17 @@
 
   const totals = $derived.by(() => {
     const currencies = [...new Set(active.map((a) => a.currency))].sort();
-    return currencies.map((currency) => ({
-      currency,
-      sum: minor(
-        active
-          .filter((a) => a.currency === currency)
-          .reduce((sum, a) => sum + a.balance, 0),
-      ) as Minor,
-    }));
+    return currencies.map((currency) => {
+      const inCurrency = active.filter((a) => a.currency === currency);
+      return {
+        currency,
+        sum: minor(inCurrency.reduce((sum, a) => sum + a.balance, 0)) as Minor,
+        share: minor(
+          inCurrency.reduce((sum, a) => sum + a.shareBalance, 0),
+        ) as Minor,
+        shared: inCurrency.some((a) => a.shareBps < FULL_SHARE_BPS),
+      };
+    });
   });
 
   const groups = $derived.by(() => {
@@ -152,12 +156,19 @@
               <Card.Title class="text-2xl">
                 <Amount value={t.sum} currency={t.currency} />
               </Card.Title>
+              {#if t.shared}
+                <p class="text-muted-foreground text-xs">
+                  My share
+                  <Amount value={t.share} currency={t.currency} />
+                </p>
+              {/if}
             </Card.Header>
           </Card.Root>
         {/each}
       </div>
       <p class="text-muted-foreground text-xs">
-        Sum of active accounts per currency. Currencies are not converted.
+        Sum of active accounts per currency at full amounts. Currencies are not
+        converted.
       </p>
     </section>
   {/if}
@@ -246,6 +257,10 @@
                     <div class="flex flex-wrap items-center gap-2">
                       <span class="truncate font-medium">{account.name}</span>
                       <AccountTypeBadge type={account.type} />
+                      <ShareBadge
+                        shareBps={account.shareBps}
+                        sharedWith={account.sharedWith}
+                      />
                       {#if account.archived}
                         <Badge variant="outline">Archived</Badge>
                       {/if}
@@ -271,11 +286,22 @@
                       </span>
                     {/if}
                   </div>
-                  <Amount
-                    value={account.balance}
-                    currency={account.currency}
-                    class="shrink-0 text-end text-lg font-semibold"
-                  />
+                  <div class="shrink-0 text-end">
+                    <Amount
+                      value={account.balance}
+                      currency={account.currency}
+                      class="text-lg font-semibold"
+                    />
+                    {#if account.shareBps < FULL_SHARE_BPS}
+                      <p class="text-muted-foreground text-xs">
+                        My share
+                        <Amount
+                          value={account.shareBalance}
+                          currency={account.currency}
+                        />
+                      </p>
+                    {/if}
+                  </div>
                 </a>
               </li>
             {/each}

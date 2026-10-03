@@ -1,6 +1,6 @@
 import { and, asc, eq, ne, sql } from "drizzle-orm";
 import type { AccountType } from "$lib/ledger-types";
-import type { Minor } from "$lib/money";
+import { shareOf, type Minor } from "$lib/money";
 import {
   accounts,
   balanceSnapshots,
@@ -25,9 +25,14 @@ export interface AccountView {
   openingDate: string | null;
   archived: boolean;
   sortOrder: number;
+  /** Ownership share in basis points (10000 = 100%); stored amounts are always 100%. */
+  shareBps: number;
+  sharedWith: string | null;
   institution: { id: string; name: string; color: string | null } | null;
   /** Latest known balance in the account currency (see balances.ts). */
   balance: Minor;
+  /** `balance` at the ownership share. */
+  shareBalance: Minor;
   lastBookingDate: string | null;
   /** Instant (ms since epoch) of the most recent import, or null. */
   lastImportAt: number | null;
@@ -45,6 +50,8 @@ function baseRows(userId: string, accountId?: string) {
       openingDate: accounts.openingDate,
       archived: accounts.archived,
       sortOrder: accounts.sortOrder,
+      shareBps: accounts.shareBps,
+      sharedWith: accounts.sharedWith,
       institutionId: institutions.id,
       institutionName: institutions.name,
       institutionColor: institutions.color,
@@ -114,6 +121,8 @@ function toViews(
     openingDate: r.openingDate,
     archived: r.archived,
     sortOrder: r.sortOrder,
+    shareBps: r.shareBps,
+    sharedWith: r.sharedWith,
     institution: r.institutionId
       ? {
           id: r.institutionId,
@@ -122,6 +131,7 @@ function toViews(
         }
       : null,
     balance: balances.get(r.id)!,
+    shareBalance: shareOf(balances.get(r.id)!, r.shareBps),
     lastBookingDate: lastBooking.get(r.id) ?? null,
     lastImportAt: lastImport.get(r.id) ?? null,
   }));

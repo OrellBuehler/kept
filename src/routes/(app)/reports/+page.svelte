@@ -192,9 +192,12 @@
       <Card.Title>Net worth</Card.Title>
       <Card.Description>
         Current balances per account and net worth over time, per currency.
+        {#if data.hasShared}
+          Shared accounts are counted in full, or at your share.
+        {/if}
       </Card.Description>
     </Card.Header>
-    <Card.Content class="grid content-start gap-2">
+    <Card.Content class="flex flex-wrap content-start gap-2">
       <Button
         variant="outline"
         class="w-fit"
@@ -203,8 +206,20 @@
         download
       >
         <DownloadIcon />
-        Download PDF
+        {data.hasShared ? "Download PDF (total)" : "Download PDF"}
       </Button>
+      {#if data.hasShared}
+        <Button
+          variant="outline"
+          class="w-fit"
+          href="{resolve('/reports/net-worth')}?basis=share"
+          data-sveltekit-reload
+          download
+        >
+          <DownloadIcon />
+          Download PDF (my share)
+        </Button>
+      {/if}
     </Card.Content>
   </Card.Root>
 </div>
