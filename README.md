@@ -1,5 +1,7 @@
 <p align="center"><img src="static/brand/kept-lockup.svg" alt="Kept" height="64"></p>
 
+<p align="center"><a href="https://orellbuehler.github.io/kept/"><strong>Product page →</strong></a></p>
+
 Self-hosted personal finance. Import your accounts, match bills to payments and keep a balance
 history — on your own server, in a single SQLite file.
 
