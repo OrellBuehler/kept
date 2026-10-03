@@ -173,6 +173,12 @@ const matrix: Record<string, Entry> = {
       GET: (m, e) => (m as never as { GET: (e: never) => unknown }).GET(e),
     },
   },
+  "/src/routes/(app)/institutions/[id]/logo/+server.ts": {
+    access: "user",
+    handlers: {
+      GET: (m, e) => (m as never as { GET: (e: never) => unknown }).GET(e),
+    },
+  },
   "/src/routes/(app)/taxes/+page.server.ts": {
     access: "user",
     handlers: {

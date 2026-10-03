@@ -14,6 +14,13 @@ import { LedgerError, notFound } from "./errors";
 import { maskIban } from "$lib/iban";
 import type { AccountInput } from "./schemas";
 
+export interface InstitutionRef {
+  id: string;
+  name: string;
+  color: string | null;
+  logoVersion: string | null;
+}
+
 export interface AccountView {
   id: string;
   name: string;
@@ -25,7 +32,7 @@ export interface AccountView {
   openingDate: string | null;
   archived: boolean;
   sortOrder: number;
-  institution: { id: string; name: string; color: string | null } | null;
+  institution: InstitutionRef | null;
   /** Latest known balance in the account currency (see balances.ts). */
   balance: Minor;
   lastBookingDate: string | null;
@@ -48,6 +55,7 @@ function baseRows(userId: string, accountId?: string) {
       institutionId: institutions.id,
       institutionName: institutions.name,
       institutionColor: institutions.color,
+      institutionLogoVersion: institutions.logoVersion,
     })
     .from(accounts)
     .leftJoin(institutions, eq(institutions.id, accounts.institutionId))
@@ -119,6 +127,7 @@ function toViews(
           id: r.institutionId,
           name: r.institutionName!,
           color: r.institutionColor,
+          logoVersion: r.institutionLogoVersion,
         }
       : null,
     balance: balances.get(r.id)!,

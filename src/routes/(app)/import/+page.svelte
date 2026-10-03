@@ -1,4 +1,5 @@
 <script lang="ts">
+  import InstitutionLogo from "$lib/components/InstitutionLogo.svelte";
   import { enhance } from "$app/forms";
   import { resolve } from "$app/paths";
   import { untrack } from "svelte";
@@ -148,24 +149,32 @@
             errors={errors.accountId}
             class="max-w-md"
           >
-            <NativeSelect
-              id="import-account"
-              name="accountId"
-              bind:value={accountId}
-              class="w-full"
-              required
-              disabled={pending}
-              aria-invalid={!!errors.accountId?.length}
-            >
-              <option value="" disabled>Choose an account</option>
-              {#each data.accounts as account (account.id)}
-                <option value={account.id}>
-                  {account.name} ({account.currency}){account.institutionName
-                    ? ` · ${account.institutionName}`
-                    : ""}
-                </option>
-              {/each}
-            </NativeSelect>
+            <div class="flex items-center gap-2">
+              {#if selectedAccount?.institution}
+                <InstitutionLogo
+                  institution={selectedAccount.institution}
+                  size="md"
+                />
+              {/if}
+              <NativeSelect
+                id="import-account"
+                name="accountId"
+                bind:value={accountId}
+                class="w-full"
+                required
+                disabled={pending}
+                aria-invalid={!!errors.accountId?.length}
+              >
+                <option value="" disabled>Choose an account</option>
+                {#each data.accounts as account (account.id)}
+                  <option value={account.id}>
+                    {account.name} ({account.currency}){account.institutionName
+                      ? ` · ${account.institutionName}`
+                      : ""}
+                  </option>
+                {/each}
+              </NativeSelect>
+            </div>
           </FormField>
 
           <FormField

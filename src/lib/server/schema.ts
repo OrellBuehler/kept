@@ -1,6 +1,7 @@
 import { sql } from "drizzle-orm";
 import {
   type AnySQLiteColumn,
+  blob,
   index,
   integer,
   sqliteTable,
@@ -88,6 +89,9 @@ export const institutions = sqliteTable(
     name: text("name").notNull(),
     bic: text("bic"),
     color: text("color"),
+    logo: blob("logo", { mode: "buffer" }),
+    logoMime: text("logo_mime"),
+    logoVersion: text("logo_version"),
     ...timestamps,
   },
   (t) => [
