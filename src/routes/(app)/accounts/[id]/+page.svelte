@@ -27,6 +27,9 @@
   import TransactionSheet from "./TransactionSheet.svelte";
   import TransactionsCard from "./TransactionsCard.svelte";
   import type { PageProps } from "./$types";
+  import { usePreferences } from "$lib/preferences.svelte";
+
+  const prefs = usePreferences();
 
   let { data }: PageProps = $props();
 
@@ -117,9 +120,9 @@
               {account.institution.name}
             </span>
           {/if}
-          {#if account.ibanMasked}
+          {#if account.iban && prefs.ibanDisplay !== "hidden"}
             <span class="flex items-center gap-1">
-              <span class="font-mono">{account.ibanMasked}</span>
+              <span class="font-mono">{prefs.iban(account.iban)}</span>
               <Button
                 variant="ghost"
                 size="icon-sm"

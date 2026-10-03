@@ -21,6 +21,7 @@ import {
 } from "$lib/bill-types";
 import { AMOUNT_SIGNS, CATEGORY_KINDS } from "$lib/category-types";
 import type { Minor } from "$lib/money";
+import { IBAN_DISPLAY, LOCALES } from "$lib/preferences";
 
 export { ACCOUNT_TYPES, IMPORT_FORMATS, REFERENCE_TYPES, ROW_SOURCES };
 export type { AccountType, ImportFormat, RowSource } from "$lib/ledger-types";
@@ -612,4 +613,19 @@ export const paperlessReportUploads = sqliteTable(
     ),
     index("paperless_report_uploads_user_id_idx").on(t.userId),
   ],
+);
+
+export const userPreferences = sqliteTable(
+  "user_preferences",
+  {
+    id: id(),
+    userId: userId(),
+    ibanDisplay: text("iban_display", { enum: IBAN_DISPLAY }).notNull(),
+    blurAmounts: integer("blur_amounts", { mode: "boolean" }).notNull(),
+    locale: text("locale", { enum: LOCALES }).notNull(),
+    defaultCurrency: text("default_currency").notNull(),
+    pageSize: integer("page_size").notNull(),
+    ...timestamps,
+  },
+  (t) => [uniqueIndex("user_preferences_user_id_uq").on(t.userId)],
 );

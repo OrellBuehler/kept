@@ -13,7 +13,10 @@
   import { NativeSelect } from "$lib/components/ui/native-select";
   import { Switch } from "$lib/components/ui/switch";
   import FormField from "$lib/components/FormField.svelte";
+  import { usePreferences } from "$lib/preferences.svelte";
   import type { PageProps } from "./$types";
+
+  const prefs = usePreferences();
 
   let { data }: PageProps = $props();
 
@@ -116,8 +119,9 @@
               <option value="" disabled>Choose an account</option>
               {#each visible as account (account.id)}
                 <option value={account.id}>
-                  {account.name} ({account.currency}){account.ibanMasked
-                    ? ` · ${account.ibanMasked}`
+                  {account.name} ({account.currency}){account.iban &&
+                  prefs.iban(account.iban)
+                    ? ` · ${prefs.iban(account.iban)}`
                     : ""}{account.archived ? " · archived" : ""}
                 </option>
               {/each}

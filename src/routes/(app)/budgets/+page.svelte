@@ -10,6 +10,7 @@
   import CategoryBadge from "$lib/components/CategoryBadge.svelte";
   import ConfirmActionDialog from "$lib/components/ConfirmActionDialog.svelte";
   import { minor } from "$lib/money";
+  import { usePreferences } from "$lib/preferences.svelte";
   import ChevronLeftIcon from "@lucide/svelte/icons/chevron-left";
   import ChevronRightIcon from "@lucide/svelte/icons/chevron-right";
   import MoreHorizontalIcon from "@lucide/svelte/icons/ellipsis";
@@ -22,6 +23,8 @@
 
   type Row = PageData["report"]["currencies"][number]["rows"][number];
 
+  const prefs = usePreferences();
+
   let { data }: PageProps = $props();
 
   let formOpen = $state(false);
@@ -29,14 +32,7 @@
   let deleteOpen = $state(false);
   let deleting = $state<Row | null>(null);
 
-  const monthFormat = new Intl.DateTimeFormat("en", {
-    month: "long",
-    year: "numeric",
-    timeZone: "UTC",
-  });
-  const monthLabel = $derived(
-    monthFormat.format(new Date(`${data.month}-01T00:00:00Z`)),
-  );
+  const monthLabel = $derived(prefs.month(data.month));
   const expenseCategories = $derived(
     data.categories.filter((c) => c.kind === "expense"),
   );

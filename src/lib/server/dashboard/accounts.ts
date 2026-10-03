@@ -16,7 +16,7 @@ export interface AccountBalanceView {
   name: string;
   type: AccountType;
   currency: string;
-  ibanMasked: string | null;
+  iban: string | null;
   institution: { id: string; name: string; color: string | null } | null;
   balance: Minor;
   lastBookingDate: string | null;
@@ -83,7 +83,7 @@ export function accountBalances(
         name: a.name,
         type: a.type,
         currency: a.currency,
-        ibanMasked: a.ibanMasked,
+        iban: a.iban,
         institution: a.institution,
         balance: a.balance,
         lastBookingDate: a.lastBookingDate,

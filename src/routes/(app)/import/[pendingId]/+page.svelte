@@ -16,15 +16,21 @@
   import FormAlert from "$lib/components/app/form-alert.svelte";
   import ImportSteps from "$lib/components/import/ImportSteps.svelte";
   import LocalTime from "$lib/components/import/LocalTime.svelte";
-  import { formatDate } from "$lib/format";
+
   import { formError } from "$lib/form-errors";
   import { submitHandler } from "$lib/form-submit";
-  import { maskIban } from "$lib/iban";
   import { FORMAT_LABELS, formatPeriod, plural } from "$lib/import-ui";
   import { cn } from "$lib/utils";
   import type { PageProps } from "./$types";
+  import { usePreferences } from "$lib/preferences.svelte";
+
+  const prefs = usePreferences();
 
   let { data }: PageProps = $props();
+
+  const warningCount = $derived(
+    data.warnings.length + data.balanceWarnings.length,
+  );
 
   let confirming = $state(false);
   let cancelling = $state(false);
@@ -105,8 +111,9 @@
         <Badge variant="outline">{FORMAT_LABELS[data.format]}</Badge>
       </Card.Title>
       <Card.Description>
-        Into {data.account.name}{data.account.iban
-          ? ` · ${maskIban(data.account.iban)}`
+        Into {data.account.name}{data.account.iban &&
+        prefs.iban(data.account.iban)
+          ? ` · ${prefs.iban(data.account.iban)}`
           : ""}
       </Card.Description>
     </Card.Header>
@@ -116,7 +123,11 @@
           <dt class="text-muted-foreground text-xs">Statement period</dt>
           <dd class="font-medium">
             {#if data.statement}
-              {formatPeriod(data.statement.fromDate, data.statement.toDate)}
+              {formatPeriod(
+                data.statement.fromDate,
+                data.statement.toDate,
+                prefs.locale,
+              )}
             {:else}
               <span class="text-muted-foreground font-normal">Unknown</span>
             {/if}
@@ -131,7 +142,7 @@
                 currency={data.statement.openingBalance.currency}
               />
               <div class="text-muted-foreground text-xs font-normal">
-                {formatDate(data.statement.openingBalance.date)}
+                {prefs.date(data.statement.openingBalance.date)}
               </div>
             {:else}
               <span class="text-muted-foreground font-normal">Not in file</span>
@@ -147,7 +158,7 @@
                 currency={data.statement.closingBalance.currency}
               />
               <div class="text-muted-foreground text-xs font-normal">
-                {formatDate(data.statement.closingBalance.date)}
+                {prefs.date(data.statement.closingBalance.date)}
               </div>
             {:else}
               <span class="text-muted-foreground font-normal">Not in file</span>
@@ -192,16 +203,38 @@
     </Alert.Root>
   {/if}
 
-  {#if data.warnings.length > 0}
+  {#if warningCount > 0}
     <Alert.Root
       class="border-amber-500/50 bg-amber-500/10 text-amber-900 dark:text-amber-200"
     >
       <TriangleAlertIcon />
-      <Alert.Title>{plural(data.warnings.length, "warning")}</Alert.Title>
+      <Alert.Title>{plural(warningCount, "warning")}</Alert.Title>
       <Alert.Description class="text-inherit">
         <ul class="list-disc ps-4">
           {#each data.warnings as warning (warning)}
             <li>{warning}</li>
+          {/each}
+          {#each data.balanceWarnings as w (w.code)}
+            <li>
+              {#if w.code === "opening_mismatch"}
+                The file's opening balance (<Amount
+                  value={w.fileAmount}
+                  currency={w.currency}
+                />
+                on {prefs.date(w.date)}) does not match the ledger balance at
+                the end of the previous day (<Amount
+                  value={w.ledgerAmount}
+                  currency={w.currency}
+                />).
+              {:else}
+                After this import the ledger balance on {prefs.date(w.date)}
+                would be
+                <Amount value={w.ledgerAmount} currency={w.currency} />, but the
+                file's closing balance is
+                <Amount value={w.fileAmount} currency={w.currency} />.
+              {/if}
+              This usually means a gap between imports or missing transactions.
+            </li>
           {/each}
         </ul>
       </Alert.Description>
@@ -287,7 +320,7 @@
             {#each data.rows as row (row.index)}
               <Table.Row>
                 <Table.Cell class="align-top whitespace-nowrap">
-                  {formatDate(row.tx.bookingDate)}
+                  {prefs.date(row.tx.bookingDate)}
                 </Table.Cell>
                 <Table.Cell class="max-w-md align-top whitespace-normal">
                   <div class="font-medium break-words">
@@ -348,7 +381,7 @@
             {/if}
             <div class="flex items-center justify-between gap-2">
               <span class="text-muted-foreground text-xs">
-                {formatDate(row.tx.bookingDate)}
+                {prefs.date(row.tx.bookingDate)}
               </span>
               {@render statusBadge(row.status)}
             </div>

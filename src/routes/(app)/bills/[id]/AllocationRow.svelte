@@ -7,8 +7,11 @@
   import { Spinner } from "$lib/components/ui/spinner";
   import type { FormErrors } from "$lib/form-errors";
   import { submitHandler } from "$lib/form-submit";
-  import { formatDate } from "$lib/format";
+
   import type { AllocationView } from "$lib/server/bills/allocations";
+  import { usePreferences } from "$lib/preferences.svelte";
+
+  const prefs = usePreferences();
 
   let {
     allocation,
@@ -28,7 +31,7 @@
         {tx.counterpartyName ?? tx.description ?? "Transaction"}
       </span>
       <span class="text-muted-foreground truncate text-xs">
-        {tx.accountName} · {formatDate(tx.bookingDate)}
+        {tx.accountName} · {prefs.date(tx.bookingDate)}
       </span>
       <span>
         <Badge variant={allocation.origin === "auto" ? "secondary" : "outline"}>

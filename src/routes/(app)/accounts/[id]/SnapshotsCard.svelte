@@ -11,13 +11,16 @@
   import Amount from "$lib/components/Amount.svelte";
   import ConfirmActionDialog from "$lib/components/ConfirmActionDialog.svelte";
   import FormField from "$lib/components/FormField.svelte";
-  import { formatDate, todayIso } from "$lib/format";
+  import { todayIso } from "$lib/format";
   import type { FormErrors } from "$lib/form-errors";
   import { submitHandler } from "$lib/form-submit";
   import PlusIcon from "@lucide/svelte/icons/plus";
   import Trash2Icon from "@lucide/svelte/icons/trash-2";
   import ScaleIcon from "@lucide/svelte/icons/scale";
   import type { PageData } from "./$types";
+  import { usePreferences } from "$lib/preferences.svelte";
+
+  const prefs = usePreferences();
 
   type Snapshot = PageData["snapshots"][number];
 
@@ -87,7 +90,7 @@
           {#each snapshots as s (s.id)}
             <Table.Row>
               <Table.Cell class="whitespace-nowrap">
-                {formatDate(s.date)}
+                {prefs.date(s.date)}
                 <div class="text-muted-foreground text-xs sm:hidden">
                   {s.source === "manual" ? "manual" : "imported"}
                 </div>
@@ -112,7 +115,7 @@
                   <Button
                     variant="ghost"
                     size="icon-sm"
-                    aria-label="Delete snapshot from {formatDate(s.date)}"
+                    aria-label="Delete snapshot from {prefs.date(s.date)}"
                     onclick={() => askDelete(s)}
                   >
                     <Trash2Icon />
@@ -202,7 +205,7 @@
   bind:open={deleteOpen}
   title="Delete this snapshot?"
   description="The balance recorded on {deleting
-    ? formatDate(deleting.date)
+    ? prefs.date(deleting.date)
     : ''} will be removed. Your transactions are not affected."
   action="?/deleteSnapshot"
   fields={{ snapshotId: deleting?.id ?? "" }}

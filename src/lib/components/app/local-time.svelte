@@ -1,6 +1,8 @@
 <script lang="ts">
   import { onMount } from "svelte";
-  import { formatDateTime } from "$lib/format";
+  import { usePreferences } from "$lib/preferences.svelte";
+
+  const prefs = usePreferences();
 
   let { ms }: { ms: number } = $props();
 
@@ -9,7 +11,7 @@
   onMount(() => (mounted = true));
 
   const text = $derived(
-    mounted ? formatDateTime(ms) : `${formatDateTime(ms, "UTC")} UTC`,
+    mounted ? prefs.dateTime(ms) : `${prefs.dateTime(ms, "UTC")} UTC`,
   );
 </script>
 

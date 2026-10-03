@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { formatAmount } from "$lib/money";
+  import Amount from "$lib/components/Amount.svelte";
   import type { TaxBalance } from "$lib/server/tax/matching";
   import { cn } from "$lib/utils";
 
@@ -12,7 +12,7 @@
 
 {#if balance.outcome === "due"}
   <span class={cn("font-medium whitespace-nowrap tabular-nums", className)}>
-    Due {formatAmount(balance.amountDue, currency)}
+    Due <Amount value={balance.amountDue} {currency} />
   </span>
 {:else if balance.outcome === "refund"}
   <span
@@ -21,7 +21,7 @@
       className,
     )}
   >
-    Refund {formatAmount(balance.refundExpected, currency)}
+    Refund <Amount value={balance.refundExpected} {currency} />
   </span>
 {:else if balance.outcome === "settled"}
   <span class={cn("text-muted-foreground", className)}>Settled</span>
