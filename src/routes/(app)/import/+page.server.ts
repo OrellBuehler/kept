@@ -19,6 +19,7 @@ export const load: PageServerLoad = ({ locals, url }) => {
       name: a.name,
       currency: a.currency,
       institutionName: a.institution?.name ?? null,
+      institution: a.institution,
     }));
   const requested = url.searchParams.get("account");
   return {

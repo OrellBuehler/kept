@@ -2,7 +2,7 @@ import { and, eq, lte, max } from "drizzle-orm";
 import type { AccountType } from "$lib/ledger-types";
 import { minor, type Minor } from "$lib/money";
 import { balanceSnapshots, getDB } from "$lib/server/db";
-import { listAccounts } from "$lib/server/ledger/accounts";
+import { listAccounts, type InstitutionRef } from "$lib/server/ledger/accounts";
 import { localToday } from "$lib/server/ledger/balances";
 import { daysBetween } from "./dates";
 
@@ -17,7 +17,7 @@ export interface AccountBalanceView {
   type: AccountType;
   currency: string;
   ibanMasked: string | null;
-  institution: { id: string; name: string; color: string | null } | null;
+  institution: InstitutionRef | null;
   balance: Minor;
   lastBookingDate: string | null;
   /** Instant (ms since epoch) of the latest import, or null if never imported. */

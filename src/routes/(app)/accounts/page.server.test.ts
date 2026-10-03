@@ -33,7 +33,14 @@ describe("accounts page", () => {
       r as { value: { institutions: unknown[]; accounts: unknown[] } }
     ).value;
     expect(data.institutions).toEqual([
-      { id: inst.id, name: "Inst A", bic: null, color: null, accountCount: 1 },
+      {
+        id: inst.id,
+        name: "Inst A",
+        bic: null,
+        color: null,
+        logoVersion: null,
+        accountCount: 1,
+      },
     ]);
     expect(data.accounts).toEqual([
       expect.objectContaining({
@@ -41,7 +48,12 @@ describe("accounts page", () => {
         balance: 0,
         ibanMasked: maskIban(LEDGER_IBAN_A),
         archived: false,
-        institution: { id: inst.id, name: "Inst A", color: null },
+        institution: {
+          id: inst.id,
+          name: "Inst A",
+          color: null,
+          logoVersion: null,
+        },
         lastBookingDate: null,
         lastImportAt: null,
       }),

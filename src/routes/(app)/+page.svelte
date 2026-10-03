@@ -1,4 +1,5 @@
 <script lang="ts">
+  import InstitutionLogo from "$lib/components/InstitutionLogo.svelte";
   import { resolve } from "$app/paths";
   import { cn } from "$lib/utils";
   import * as Card from "$lib/components/ui/card";
@@ -580,6 +581,7 @@
                     class="text-muted-foreground mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs"
                   >
                     {#if a.institution}
+                      <InstitutionLogo institution={a.institution} size="sm" />
                       <span class="truncate">{a.institution.name}</span>
                     {/if}
                     <AccountTypeBadge type={a.type} />

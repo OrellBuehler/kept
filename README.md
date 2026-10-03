@@ -86,7 +86,7 @@ write access to the directory.
 
 ### Backup and restore
 
-The database holds everything except uploaded bill PDFs, which live next to it in
+The database holds everything (including institution logos) except uploaded bill PDFs, which live next to it in
 `/data/documents`. Back up the whole `/data` volume, and keep `KEPT_SECRET_KEY` with it.
 
 - **Download:** the administrator can download a consistent copy of the database under
