@@ -32,8 +32,15 @@
   let errors = $state<NonNullable<FormErrors>>({});
   let color = $state("");
   let removeLogo = $state(false);
-  let logoName = $state("");
+  let logoPreview = $state<string | null>(null);
   const MAX_LOGO_BYTES = 512 * 1024;
+
+  function setLogoPreview(file: File | null) {
+    if (logoPreview) URL.revokeObjectURL(logoPreview);
+    logoPreview = file ? URL.createObjectURL(file) : null;
+  }
+
+  $effect(() => () => setLogoPreview(null));
 
   $effect(() => {
     if (!open) return;
@@ -41,7 +48,7 @@
       errors = {};
       color = institution?.color ?? "";
       removeLogo = false;
-      logoName = "";
+      setLogoPreview(null);
     });
   });
 
@@ -52,11 +59,11 @@
     if (file && file.size > MAX_LOGO_BYTES) {
       errors = { ...errors, logo: ["The logo is larger than 512 KB."] };
       e.currentTarget.value = "";
-      logoName = "";
+      setLogoPreview(null);
       return;
     }
     errors = { ...errors, logo: [] };
-    logoName = file?.name ?? "";
+    setLogoPreview(file ?? null);
     if (file) removeLogo = false;
   }
 </script>
@@ -122,7 +129,13 @@
         hint="PNG, JPEG, WebP or SVG, up to 512 KB."
       >
         <div class="flex items-center gap-3">
-          {#if institution}
+          {#if logoPreview}
+            <img
+              src={logoPreview}
+              alt=""
+              class="bg-background size-12 shrink-0 rounded-md border object-contain p-0.5"
+            />
+          {:else if institution}
             <InstitutionLogo
               institution={removeLogo
                 ? { ...institution, logoVersion: null }
@@ -146,7 +159,7 @@
               name="removeLogo"
               value="1"
               bind:checked={removeLogo}
-              disabled={!!logoName}
+              disabled={!!logoPreview}
             />
             Remove current logo
           </label>
