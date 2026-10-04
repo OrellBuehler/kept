@@ -25,10 +25,10 @@ describe("contribution detection", () => {
 
   it("agrees with the SQL detection for every reference variant", async () => {
     const user = await createTestUser();
-    const threeA = seedPillar3aAccount(user.id);
+    const threeA = await seedPillar3aAccount(user.id);
     const ref = makeQrr(1);
-    seedPortfolio(user.id, threeA.id, { depositReference: ref });
-    const current = seedAccount(user.id);
+    await seedPortfolio(user.id, threeA.id, { depositReference: ref });
+    const current = await seedAccount(user.id);
     const variants = [
       ref,
       `${ref.slice(0, 2)} ${ref.slice(2)}`,
@@ -36,18 +36,21 @@ describe("contribution detection", () => {
       `${ref.slice(0, 2)}${NBSP}${ref.slice(2)}`,
       `${ref.slice(0, 2)}${THIN}${ref.slice(2)}`,
     ];
-    const txs = variants.map((reference, i) =>
-      seedImportedTransaction(user.id, current.id, {
-        amount: minor(-1000),
-        currency: "CHF",
-        bookingDate: `2026-02-0${i + 1}`,
-        reference,
-      }),
-    );
+    const txs = [];
+    for (const [i, reference] of variants.entries()) {
+      txs.push(
+        await seedImportedTransaction(user.id, current.id, {
+          amount: minor(-1000),
+          currency: "CHF",
+          bookingDate: `2026-02-0${i + 1}`,
+          reference,
+        }),
+      );
+    }
     const detected = new Set(
-      detectedContributions(user.id).map((d) => d.transactionId),
+      (await detectedContributions(user.id)).map((d) => d.transactionId),
     );
-    const refs = portfolioDepositReferences(user.id);
+    const refs = await portfolioDepositReferences(user.id);
     for (const [i, t] of txs.entries()) {
       expect(isContributionPayment(refs, t), variants[i]).toBe(
         detected.has(t.id),

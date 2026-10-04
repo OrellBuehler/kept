@@ -163,12 +163,12 @@ export function setCategoryDeduction(
     .run();
 }
 
-export function setTransactionDeductionExcluded(
+export async function setTransactionDeductionExcluded(
   userId: string,
   transactionId: string,
   excluded: boolean,
-): void {
-  assertNotMirror(userId, transactionId, "left out of the deductions");
+): Promise<void> {
+  await assertNotMirror(userId, transactionId, "left out of the deductions");
   const updated = getDB()
     .update(transactions)
     .set({ deductionExcluded: excluded })
@@ -193,10 +193,10 @@ export function setTransactionDeductionExcluded(
  * counted as a contribution, never as a category-mapped line, so it cannot
  * land in two tax years.
  */
-export function deductionSummary(
+export async function deductionSummary(
   userId: string,
   year: number,
-): DeductionSummary {
+): Promise<DeductionSummary> {
   if (!Number.isInteger(year)) {
     throw new LedgerError("invalid", "Enter a valid year.", "year");
   }
@@ -221,7 +221,7 @@ export function deductionSummary(
   if (own.size > 0) {
     // A detected 3a payment belongs to its contribution (and credit-date year).
     const detected = new Set(
-      detectedContributions(userId).map((d) => d.transactionId),
+      (await detectedContributions(userId)).map((d) => d.transactionId),
     );
     const parents = new Map(
       getDB()
@@ -295,7 +295,7 @@ export function deductionSummary(
     }
   }
 
-  const contributions = listContributions(userId, { year });
+  const contributions = await listContributions(userId, { year });
   if (contributions.length > 0) {
     const flagged = new Set(
       getDB()
@@ -349,12 +349,12 @@ export function deductionSummary(
 }
 
 /** Deducts a transaction in `year` instead of its booking year, or clears the override with null. */
-export function setTransactionDeductionYear(
+export async function setTransactionDeductionYear(
   userId: string,
   transactionId: string,
   year: number | null,
-): void {
-  assertNotMirror(userId, transactionId, "deducted in another year");
+): Promise<void> {
+  await assertNotMirror(userId, transactionId, "deducted in another year");
   const updated = getDB()
     .update(transactions)
     .set({ deductionYear: year })

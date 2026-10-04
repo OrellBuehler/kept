@@ -281,15 +281,19 @@ describe("categories", () => {
   it("assigns and clears a transaction's category, only with own rows", async () => {
     const a = await createTestUser();
     const b = await createTestUser();
-    const acc = seedAccount(a.id);
-    const tx = seedImportedTransaction(a.id, acc.id);
+    const acc = await seedAccount(a.id);
+    const tx = await seedImportedTransaction(a.id, acc.id);
     const mine = createCategory(a.id, cat("Mine"));
     const theirs = createCategory(b.id, cat("Theirs"));
 
     assignCategory(a.id, tx.id, mine.id);
-    expect(listTransactions(a.id, acc.id).items[0]!.categoryId).toBe(mine.id);
+    expect((await listTransactions(a.id, acc.id)).items[0]!.categoryId).toBe(
+      mine.id,
+    );
     assignCategory(a.id, tx.id, null);
-    expect(listTransactions(a.id, acc.id).items[0]!.categoryId).toBeNull();
+    expect(
+      (await listTransactions(a.id, acc.id)).items[0]!.categoryId,
+    ).toBeNull();
 
     expect(() => assignCategory(b.id, tx.id, theirs.id)).toThrow(/not found/i);
     expect(() => assignCategory(a.id, tx.id, theirs.id)).toThrow(/not found/i);
@@ -297,9 +301,11 @@ describe("categories", () => {
 
   it("uncategorizes transactions when their category is deleted", async () => {
     const u = await createTestUser();
-    const acc = seedAccount(u.id);
+    const acc = await seedAccount(u.id);
     const c = createCategory(u.id, cat("Gone"));
-    const tx = seedImportedTransaction(u.id, acc.id, { categoryId: c.id });
+    const tx = await seedImportedTransaction(u.id, acc.id, {
+      categoryId: c.id,
+    });
     deleteCategory(u.id, c.id);
     const row = getDB()
       .select()
@@ -366,18 +372,18 @@ describe("rules", () => {
 
   it("re-runs on uncategorized transactions and never overrides a manual choice", async () => {
     const u = await createTestUser();
-    const acc = seedAccount(u.id);
+    const acc = await seedAccount(u.id);
     const food = createCategory(u.id, cat("Food"));
     const manual = createCategory(u.id, cat("Manual"));
     createRule(u.id, rule(food.id, { counterpartyContains: "grocer" }));
 
-    const open = seedImportedTransaction(u.id, acc.id, {
+    const open = await seedImportedTransaction(u.id, acc.id, {
       counterpartyName: "Example Grocer",
     });
-    const chosen = seedImportedTransaction(u.id, acc.id, {
+    const chosen = await seedImportedTransaction(u.id, acc.id, {
       counterpartyName: "Example Grocer",
     });
-    const unrelated = seedImportedTransaction(u.id, acc.id, {
+    const unrelated = await seedImportedTransaction(u.id, acc.id, {
       counterpartyName: "Somebody",
     });
     assignCategory(u.id, chosen.id, manual.id);
@@ -387,7 +393,10 @@ describe("rules", () => {
       categorized: 1,
     });
     const byId = new Map(
-      listTransactions(u.id, acc.id).items.map((t) => [t.id, t.categoryId]),
+      (await listTransactions(u.id, acc.id)).items.map((t) => [
+        t.id,
+        t.categoryId,
+      ]),
     );
     expect(byId.get(open.id)).toBe(food.id);
     expect(byId.get(chosen.id)).toBe(manual.id);
@@ -401,8 +410,8 @@ describe("rules", () => {
   it("never touches another user's transactions", async () => {
     const a = await createTestUser();
     const b = await createTestUser();
-    const accB = seedAccount(b.id);
-    const tx = seedImportedTransaction(b.id, accB.id, {
+    const accB = await seedAccount(b.id);
+    const tx = await seedImportedTransaction(b.id, accB.id, {
       counterpartyName: "Example Grocer",
     });
     const food = createCategory(a.id, cat("Food"));
@@ -411,7 +420,9 @@ describe("rules", () => {
       scanned: 0,
       categorized: 0,
     });
-    expect(listTransactions(b.id, accB.id).items[0]!.categoryId).toBeNull();
+    expect(
+      (await listTransactions(b.id, accB.id)).items[0]!.categoryId,
+    ).toBeNull();
     expect(tx.categoryId).toBeNull();
   });
 });

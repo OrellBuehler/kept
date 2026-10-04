@@ -232,12 +232,12 @@ export function deleteTaxCredit(userId: string, creditId: string): number {
 }
 
 /** Marks a transaction as a tax payment for `year`, or clears the mark with null. */
-export function setTransactionTaxYear(
+export async function setTransactionTaxYear(
   userId: string,
   transactionId: string,
   year: number | null,
-): void {
-  assertNotMirror(userId, transactionId, "tagged as a tax payment");
+): Promise<void> {
+  await assertNotMirror(userId, transactionId, "tagged as a tax payment");
   const updated = getDB()
     .update(transactions)
     .set({ taxYear: year })

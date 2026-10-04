@@ -35,10 +35,10 @@ export interface MonthSummary {
  * check is unchanged. Amounts are bucketed by the account's currency (as in net worth). Income is the sum of positive amounts, expenses the sum of
  * negative ones (reversals are not netted against the original).
  */
-export function monthSummary(
+export async function monthSummary(
   userId: string,
   { month, basis = "total" }: { month: string; basis?: ShareBasis },
-): MonthSummary {
+): Promise<MonthSummary> {
   const db = getDB();
   const prev = previousMonth(month);
   const own = db
@@ -55,7 +55,7 @@ export function monthSummary(
     own.filter((a) => !a.archived).map((a) => [a.id, a.currency]),
   );
   const shareBpsOf = new Map(own.map((a) => [a.id, a.shareBps]));
-  const exclusion = loadTransferExclusion(userId);
+  const exclusion = await loadTransferExclusion(userId);
 
   const rows = db
     .select({

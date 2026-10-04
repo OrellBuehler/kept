@@ -69,12 +69,14 @@ const byCurrency = (a: CurrencyTotal, b: CurrencyTotal) =>
  * Current holdings of the user's non-archived accounts, as totals per account
  * currency and grouped by security. One batched load for all accounts.
  */
-export function investmentsOverview(
+export async function investmentsOverview(
   userId: string,
   today: string,
-): InvestmentsOverview {
-  const accounts = listAccounts(userId, today).filter((a) => !a.archived);
-  const inputs = loadHoldingsInputs(
+): Promise<InvestmentsOverview> {
+  const accounts = (await listAccounts(userId, today)).filter(
+    (a) => !a.archived,
+  );
+  const inputs = await loadHoldingsInputs(
     userId,
     accounts.map((a) => a.id),
     today,

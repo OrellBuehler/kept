@@ -91,7 +91,7 @@ export const actions: Actions = {
       });
     }
     try {
-      allocateFromInput(
+      await allocateFromInput(
         user.id,
         parsed.data.billId,
         parsed.data.transactionId,

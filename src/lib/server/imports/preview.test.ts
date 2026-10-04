@@ -27,7 +27,7 @@ useTestStore();
 
 async function setup(over: Parameters<typeof seedAccount>[1] = {}) {
   const user = await createTestUser();
-  const account = seedAccount(user.id, { iban: EXAMPLE_IBAN, ...over });
+  const account = await seedAccount(user.id, { iban: EXAMPLE_IBAN, ...over });
   return { user, account };
 }
 
@@ -259,7 +259,7 @@ describe("buildPreview: camt.053", () => {
       user.id,
       await uploadFixture(user.id, account.id, "camt053/v04-basic.xml"),
     );
-    seedImportedTransaction(user.id, account.id, {
+    await seedImportedTransaction(user.id, account.id, {
       externalId: first.rows[0]!.tx.externalId,
       bookingDate: "2020-01-01",
     });
@@ -285,7 +285,7 @@ describe("buildPreview: camt.053", () => {
       "ntry:4:2024-07-05:8000",
       "ntry:5:2024-07-08:-1200",
     ]) {
-      seedImportedTransaction(user.id, account.id, { externalId });
+      await seedImportedTransaction(user.id, account.id, { externalId });
     }
     const p = await buildPreview(
       user.id,
@@ -309,10 +309,10 @@ describe("buildPreview: camt.053", () => {
     );
     const fresh = await buildPreview(user.id, pending);
     expect(fresh.rows.every((r) => r.matchedBy === null)).toBe(true);
-    seedImportedTransaction(user.id, account.id, {
+    await seedImportedTransaction(user.id, account.id, {
       externalId: fresh.rows[0]!.tx.externalId,
     });
-    seedImportedTransaction(user.id, account.id, {
+    await seedImportedTransaction(user.id, account.id, {
       externalId: fresh.rows[1]!.tx.legacyExternalIds![0]!,
     });
     const p = await buildPreview(user.id, pending);
@@ -357,7 +357,7 @@ describe("buildPreview: csv and xlsx", () => {
 
   it("falls back to the account's saved profile", async () => {
     const { user, account } = await setup();
-    saveCsvProfile(user.id, account.id, "Mine", SIMPLE_CSV_PROFILE);
+    await saveCsvProfile(user.id, account.id, "Mine", SIMPLE_CSV_PROFILE);
     const p = await buildPreview(
       user.id,
       await uploadFixture(user.id, account.id, "csv/overlap-a.csv"),
@@ -640,12 +640,12 @@ describe("buildPreview: isolation", () => {
   it("duplicates are only detected against the same user's account", async () => {
     const { user, account } = await setup();
     const other = await createTestUser();
-    const theirs = seedAccount(other.id, { iban: EXAMPLE_IBAN });
+    const theirs = await seedAccount(other.id, { iban: EXAMPLE_IBAN });
     const first = await buildPreview(
       user.id,
       await uploadFixture(user.id, account.id, "camt053/v04-basic.xml"),
     );
-    seedImportedTransaction(other.id, theirs.id, {
+    await seedImportedTransaction(other.id, theirs.id, {
       externalId: first.rows[0]!.tx.externalId,
     });
     const p = await buildPreview(

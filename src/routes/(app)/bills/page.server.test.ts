@@ -42,7 +42,7 @@ describe("bills overview", () => {
 
   it("groups bills and reports counts; the exact reference match waits for the user", async () => {
     const u = await createTestUser();
-    const account = seedAccount(u.id);
+    const account = await seedAccount(u.id);
     const overdue = seedBill(u.id, { dueDate: daysFromToday(-3) });
     const soon = seedBill(u.id, { dueDate: daysFromToday(5) });
     const paid = seedBill(u.id, {
@@ -52,7 +52,7 @@ describe("bills overview", () => {
       dueDate: daysFromToday(2),
       issueDate: daysFromToday(-20),
     });
-    seedImportedTransaction(u.id, account.id, {
+    await seedImportedTransaction(u.id, account.id, {
       amount: minor(-10000),
       bookingDate: daysFromToday(-1),
       reference: EXAMPLE_QRR,
@@ -114,7 +114,7 @@ describe("bills overview", () => {
 
   it("load writes nothing", async () => {
     const u = await createTestUser();
-    const account = seedAccount(u.id);
+    const account = await seedAccount(u.id);
     seedBill(u.id, {
       creditorIban: EXAMPLE_IBAN_OTHER,
       reference: EXAMPLE_QRR,
@@ -122,7 +122,7 @@ describe("bills overview", () => {
       dueDate: daysFromToday(2),
       issueDate: daysFromToday(-20),
     });
-    seedImportedTransaction(u.id, account.id, {
+    await seedImportedTransaction(u.id, account.id, {
       amount: minor(-10000),
       bookingDate: daysFromToday(-1),
       reference: EXAMPLE_QRR,
@@ -146,12 +146,12 @@ describe("bills overview", () => {
   it("matchNow only touches the current user's bills", async () => {
     const u = await createTestUser();
     const other = await createTestUser();
-    const account = seedAccount(other.id);
+    const account = await seedAccount(other.id);
     const bill = seedBill(other.id, {
       reference: EXAMPLE_QRR,
       referenceType: "QRR",
     });
-    seedImportedTransaction(other.id, account.id, {
+    await seedImportedTransaction(other.id, account.id, {
       amount: minor(-10000),
       bookingDate: daysFromToday(-1),
       reference: EXAMPLE_QRR,
@@ -201,9 +201,9 @@ describe("bills overview", () => {
 
   it("confirms a suggestion with a typed amount and dismisses others", async () => {
     const u = await createTestUser();
-    const account = seedAccount(u.id);
+    const account = await seedAccount(u.id);
     const bill = seedBill(u.id);
-    const tx = seedImportedTransaction(u.id, account.id, {
+    const tx = await seedImportedTransaction(u.id, account.id, {
       amount: minor(-2550),
     });
 
@@ -250,14 +250,14 @@ describe("bills overview", () => {
   it("cannot confirm or dismiss another user's suggestion", async () => {
     const a = await createTestUser();
     const b = await createTestUser();
-    const accountA = seedAccount(a.id);
+    const accountA = await seedAccount(a.id);
     const billA = seedBill(a.id);
-    const txA = seedImportedTransaction(a.id, accountA.id, {
+    const txA = await seedImportedTransaction(a.id, accountA.id, {
       amount: minor(-1000),
     });
-    const accountB = seedAccount(b.id);
+    const accountB = await seedAccount(b.id);
     const billB = seedBill(b.id);
-    const txB = seedImportedTransaction(b.id, accountB.id, {
+    const txB = await seedImportedTransaction(b.id, accountB.id, {
       amount: minor(-1000),
     });
 

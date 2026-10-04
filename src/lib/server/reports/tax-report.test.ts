@@ -23,12 +23,12 @@ describe("tax report", () => {
 
   it("renders the reconciliation with its discrepancies", async () => {
     const user = await createTestUser();
-    const account = seedAccount(user.id);
-    const tx = seedImportedTransaction(user.id, account.id, {
+    const account = await seedAccount(user.id);
+    const tx = await seedImportedTransaction(user.id, account.id, {
       amount: minor(-100000),
       bookingDate: "2025-03-10",
     });
-    setTransactionTaxYear(user.id, tx.id, 2025);
+    await setTransactionTaxYear(user.id, tx.id, 2025);
     upsertTaxYear(
       user.id,
       taxYearInputSchema.parse({
@@ -60,10 +60,14 @@ describe("tax report", () => {
   it("rejects a missing year and hides other users' years", async () => {
     const a = await createTestUser();
     const b = await createTestUser();
-    const account = seedAccount(a.id);
-    setTransactionTaxYear(
+    const account = await seedAccount(a.id);
+    await setTransactionTaxYear(
       a.id,
-      seedImportedTransaction(a.id, account.id, { amount: minor(-1000) }).id,
+      (
+        await seedImportedTransaction(a.id, account.id, {
+          amount: minor(-1000),
+        })
+      ).id,
       2025,
     );
 

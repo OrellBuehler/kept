@@ -32,11 +32,13 @@ export interface TransferExclusion {
  * deposit reference. A row the user unlinked (a `dismissed` transfer) is no
  * transfer to the IBAN heuristic either: "this is not a transfer" wins.
  */
-export function loadTransferExclusion(userId: string): TransferExclusion {
+export async function loadTransferExclusion(
+  userId: string,
+): Promise<TransferExclusion> {
   const db = getDB();
   const linked = new Set<string>();
   const dismissed = new Set<string>();
-  for (const r of db
+  for (const r of await db
     .select({
       out: transfers.outTransactionId,
       in: transfers.inTransactionId,
@@ -48,26 +50,24 @@ export function loadTransferExclusion(userId: string): TransferExclusion {
         eq(transfers.userId, userId),
         inArray(transfers.status, ["linked", "dismissed"]),
       ),
-    )
-    .all()) {
+    )) {
     const into = r.status === "linked" ? linked : dismissed;
     if (r.out) into.add(r.out);
     if (r.in) into.add(r.in);
   }
   const ibanOwner = new Map<string, string>();
-  for (const a of db
+  for (const a of await db
     .select({
       id: accounts.id,
       iban: accounts.iban,
       depositIban: accounts.depositIban,
     })
     .from(accounts)
-    .where(eq(accounts.userId, userId))
-    .all()) {
+    .where(eq(accounts.userId, userId))) {
     if (a.iban) ibanOwner.set(normalizeIban(a.iban), a.id);
     if (a.depositIban) ibanOwner.set(normalizeIban(a.depositIban), a.id);
   }
-  const depositReferences = portfolioDepositReferences(userId);
+  const depositReferences = await portfolioDepositReferences(userId);
   return {
     isTransfer(row) {
       if (linked.has(row.id)) return true;

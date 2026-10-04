@@ -67,7 +67,7 @@ describe("detectFormat", () => {
 
 async function setup() {
   const user = await createTestUser();
-  const account = seedAccount(user.id);
+  const account = await seedAccount(user.id);
   return { user, account };
 }
 
@@ -210,7 +210,7 @@ describe("pending uploads", () => {
 
   it("cascades with the account and the user", async () => {
     const { user, account } = await setup();
-    const other = seedAccount(user.id, { name: "Other" });
+    const other = await seedAccount(user.id, { name: "Other" });
     await store(user.id, account.id);
     const kept = await store(user.id, other.id);
     getDB().delete(accounts).where(eq(accounts.id, account.id)).run();

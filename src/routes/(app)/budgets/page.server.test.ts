@@ -28,20 +28,20 @@ describe("budgets page", () => {
   it("load reports the requested month for the current user only", async () => {
     const a = await createTestUser();
     const b = await createTestUser();
-    const accA = seedAccount(a.id);
-    const accB = seedAccount(b.id, { currency: "EUR" });
+    const accA = await seedAccount(a.id);
+    const accB = await seedAccount(b.id, { currency: "EUR" });
     const food = createCategory(a.id, { name: "Food", ...expense });
     createBudget(a.id, {
       categoryId: food.id,
       currency: "CHF",
       amount: minor(10000),
     });
-    seedImportedTransaction(a.id, accA.id, {
+    await seedImportedTransaction(a.id, accA.id, {
       categoryId: food.id,
       amount: minor(-2500),
       bookingDate: "2026-03-10",
     });
-    seedImportedTransaction(b.id, accB.id, {
+    await seedImportedTransaction(b.id, accB.id, {
       amount: minor(-9999),
       bookingDate: "2026-03-10",
       currency: "EUR",

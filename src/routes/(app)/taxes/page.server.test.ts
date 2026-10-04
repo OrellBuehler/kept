@@ -70,8 +70,8 @@ describe("taxes routes", () => {
 
   it("shows the reconciliation, adds and deletes statement lines", async () => {
     const u = await createTestUser();
-    const account = seedAccount(u.id);
-    const tx = seedImportedTransaction(u.id, account.id, {
+    const account = await seedAccount(u.id);
+    const tx = await seedImportedTransaction(u.id, account.id, {
       amount: minor(-100000),
       bookingDate: "2025-03-10",
     });
@@ -142,11 +142,11 @@ describe("taxes routes", () => {
   it("keeps users apart", async () => {
     const a = await createTestUser();
     const b = await createTestUser();
-    const accountA = seedAccount(a.id);
-    const tx = seedImportedTransaction(a.id, accountA.id, {
+    const accountA = await seedAccount(a.id);
+    const tx = await seedImportedTransaction(a.id, accountA.id, {
       amount: minor(-1000),
     });
-    setTransactionTaxYear(a.id, tx.id, 2025);
+    await setTransactionTaxYear(a.id, tx.id, 2025);
     await runList(a, yearForm());
     const line = addTaxCredit(
       a.id,
@@ -190,9 +190,9 @@ describe("taxes routes", () => {
       (none as { value: { pillar3a: unknown } }).value.pillar3a,
     ).toBeNull();
 
-    const acc = seedPillar3aAccount(u.id);
-    const p = seedPortfolio(u.id, acc.id);
-    addManualContribution(
+    const acc = await seedPillar3aAccount(u.id);
+    const p = await seedPortfolio(u.id, acc.id);
+    await addManualContribution(
       u.id,
       {
         portfolioId: p.id,
@@ -224,10 +224,10 @@ describe("taxes routes", () => {
   it("keeps an excluded 3a payment in the limit figures but not in deductible", async () => {
     const u = await createTestUser();
     await runList(u, yearForm({ year: "2025" }));
-    const acc = seedPillar3aAccount(u.id);
-    seedPortfolio(u.id, acc.id, { depositReference: makeQrr(1) });
-    const current = seedAccount(u.id);
-    seedImportedTransaction(u.id, current.id, {
+    const acc = await seedPillar3aAccount(u.id);
+    await seedPortfolio(u.id, acc.id, { depositReference: makeQrr(1) });
+    const current = await seedAccount(u.id);
+    await seedImportedTransaction(u.id, current.id, {
       bookingDate: "2025-05-01",
       amount: minor(-100_000),
       currency: "CHF",
@@ -250,10 +250,10 @@ describe("taxes routes", () => {
     const other = await createTestUser();
     await runList(u, yearForm({ year: "2024" }));
     await runList(other, yearForm({ year: "2024" }));
-    const mine = seedAccount(u.id);
-    const theirs = seedAccount(other.id);
-    const moved = (userId: string, accountId: string) => {
-      const t = seedImportedTransaction(userId, accountId, {
+    const mine = await seedAccount(u.id);
+    const theirs = await seedAccount(other.id);
+    const moved = async (userId: string, accountId: string) => {
+      const t = await seedImportedTransaction(userId, accountId, {
         deductionYear: 2024,
       });
       getDB()
@@ -262,8 +262,8 @@ describe("taxes routes", () => {
         .run();
       return t;
     };
-    const tx = moved(u.id, mine.id);
-    const theirTx = moved(other.id, theirs.id);
+    const tx = await moved(u.id, mine.id);
+    const theirTx = await moved(other.id, theirs.id);
     const count = async (user: User) =>
       (
         (await loadDetail(user, "2024")) as {

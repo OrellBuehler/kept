@@ -29,7 +29,7 @@ const plannedFields = [
   "currency",
 ] as const;
 
-export const load: PageServerLoad = ({ locals, url }) => {
+export const load: PageServerLoad = async ({ locals, url }) => {
   const user = requireUser(locals);
   const today = localToday();
   const days = parseHorizon(url.searchParams.get("days"));
@@ -37,7 +37,7 @@ export const load: PageServerLoad = ({ locals, url }) => {
     today,
     days,
     horizons: HORIZONS,
-    forecast: forecast(user.id, today, days),
+    forecast: await forecast(user.id, today, days),
     planned: listPlannedItems(user.id),
     settings: listAccountSettings(user.id),
   };
@@ -47,7 +47,7 @@ function formAction<S extends z.ZodType>(
   action: string,
   schema: S,
   fields: readonly string[],
-  run: (userId: string, data: z.output<S>) => void,
+  run: (userId: string, data: z.output<S>) => unknown,
 ) {
   return async ({ locals, request }: RequestEvent) => {
     const user = requireUser(locals);
@@ -58,7 +58,7 @@ function formAction<S extends z.ZodType>(
       return fail(400, { action, errors: parsed.errors, values });
     }
     try {
-      run(user.id, parsed.data);
+      await run(user.id, parsed.data);
       return { success: true as const, action };
     } catch (err) {
       return ledgerFailure(action, err, values);
@@ -71,13 +71,13 @@ export const actions = {
     "createPlanned",
     plannedItemInputSchema,
     plannedFields,
-    (userId, data) => void createPlannedItem(userId, data),
+    (userId, data) => createPlannedItem(userId, data),
   ),
   updatePlanned: formAction(
     "updatePlanned",
     plannedItemInputSchema.and(idFormSchema("id")),
     ["id", ...plannedFields],
-    (userId, { id, ...input }) => void updatePlannedItem(userId, id, input),
+    (userId, { id, ...input }) => updatePlannedItem(userId, id, input),
   ),
   deletePlanned: formAction(
     "deletePlanned",

@@ -24,7 +24,11 @@ import {
   unarchiveAccount,
   updateAccount,
 } from "$lib/server/ledger/accounts";
-import { ledgerFailure, orNotFound } from "$lib/server/ledger/http";
+import {
+  ledgerFailure,
+  orNotFound,
+  orNotFoundAsync,
+} from "$lib/server/ledger/http";
 import { listInstitutions } from "$lib/server/ledger/institutions";
 import {
   accountInputSchema,
@@ -132,21 +136,21 @@ const tradeFields = [
   "note",
 ] as const;
 
-export const load: PageServerLoad = ({ locals, params, url }) => {
+export const load: PageServerLoad = async ({ locals, params, url }) => {
   const user = requireUser(locals);
-  const account = orNotFound(() => getAccount(user.id, params.id));
+  const account = await orNotFoundAsync(() => getAccount(user.id, params.id));
   const query = parseListQuery(
     url.searchParams,
     account.currency,
     getPreferences(user.id).pageSize,
   );
   const trades = listTrades(user.id, account.id);
-  const portfolios = listPortfolios(user.id, account.id);
+  const portfolios = await listPortfolios(user.id, account.id);
   const hasHoldings = account.type === "investment" || trades.length > 0;
   const showPortfolios = account.type === "pillar_3a" || portfolios.length > 0;
   const portfolioValues: Record<string, PortfolioValueView[]> = {};
   for (const p of portfolios) {
-    portfolioValues[p.id] = listValues(user.id, p.id);
+    portfolioValues[p.id] = await listValues(user.id, p.id);
   }
   return {
     account,
@@ -154,7 +158,7 @@ export const load: PageServerLoad = ({ locals, params, url }) => {
     // Cash, holdings and portfolios are only broken out where they are in play.
     value:
       hasHoldings || showPortfolios
-        ? accountValue(user.id, account.id, localToday())
+        ? await accountValue(user.id, account.id, localToday())
         : null,
     hasHoldings,
     showPortfolios,
@@ -162,23 +166,23 @@ export const load: PageServerLoad = ({ locals, params, url }) => {
     portfolioValues,
     trades,
     securities: listSecurities(user.id),
-    institutions: listInstitutions(user.id).map((i) => ({
+    institutions: (await listInstitutions(user.id)).map((i) => ({
       id: i.id,
       name: i.name,
     })),
-    transactions: listTransactions(user.id, account.id, {
+    transactions: await listTransactions(user.id, account.id, {
       filters: query.filters,
       page: query.page,
       pageSize: query.pageSize,
     }),
-    snapshots: listSnapshots(user.id, account.id),
+    snapshots: await listSnapshots(user.id, account.id),
     transfers: {
       /** Mirrored transactions on this account (for the confirm dialog when filling is turned off). */
-      mirrorCount: countMirrors(user.id, account.id),
+      mirrorCount: await countMirrors(user.id, account.id),
       /** Never-imported account that is not filled yet: transfers other accounts show to its IBAN. */
-      fillSuggestion: fillSuggestion(user.id, account.id),
+      fillSuggestion: await fillSuggestion(user.id, account.id),
       /** FX transfers waiting for the amount this account received or paid. */
-      needsAmount: listNeedsAmount(user.id, account.id),
+      needsAmount: await listNeedsAmount(user.id, account.id),
     },
     categories: listCategories(user.id),
     filters: query.raw,
@@ -186,8 +190,8 @@ export const load: PageServerLoad = ({ locals, params, url }) => {
   };
 };
 
-function ownedTransaction(userId: string, accountId: string, id: string) {
-  const tx = orNotFound(() => getTransaction(userId, id));
+async function ownedTransaction(userId: string, accountId: string, id: string) {
+  const tx = await orNotFoundAsync(() => getTransaction(userId, id));
   if (tx.accountId !== accountId) error(404, "Transaction not found.");
   return tx;
 }
@@ -198,8 +202,8 @@ function ownedTrade(userId: string, accountId: string, id: string) {
   return trade;
 }
 
-function ownedPortfolio(userId: string, accountId: string, id: string) {
-  const portfolio = orNotFound(() => getPortfolio(userId, id));
+async function ownedPortfolio(userId: string, accountId: string, id: string) {
+  const portfolio = await orNotFoundAsync(() => getPortfolio(userId, id));
   if (portfolio.accountId !== accountId) error(404, "Portfolio not found.");
   return portfolio;
 }
@@ -207,7 +211,7 @@ function ownedPortfolio(userId: string, accountId: string, id: string) {
 export const actions: Actions = {
   updateAccount: async ({ locals, params, request }) => {
     const user = requireUser(locals);
-    orNotFound(() => getAccount(user.id, params.id));
+    await orNotFoundAsync(() => getAccount(user.id, params.id));
     const form = await request.formData();
     const values = safeValues(form, accountFields);
     const parsed = parseForm(accountInputSchema, form);
@@ -219,34 +223,34 @@ export const actions: Actions = {
       });
     }
     try {
-      updateAccount(user.id, params.id, parsed.data);
+      await updateAccount(user.id, params.id, parsed.data);
       return { success: true as const, action: "updateAccount" as const };
     } catch (err) {
       return ledgerFailure("updateAccount", err, values);
     }
   },
 
-  archive: ({ locals, params }) => {
+  archive: async ({ locals, params }) => {
     const user = requireUser(locals);
-    orNotFound(() => archiveAccount(user.id, params.id));
+    await orNotFoundAsync(() => archiveAccount(user.id, params.id));
     return { success: true as const, action: "archive" as const };
   },
 
-  unarchive: ({ locals, params }) => {
+  unarchive: async ({ locals, params }) => {
     const user = requireUser(locals);
-    orNotFound(() => unarchiveAccount(user.id, params.id));
+    await orNotFoundAsync(() => unarchiveAccount(user.id, params.id));
     return { success: true as const, action: "unarchive" as const };
   },
 
-  deleteAccount: ({ locals, params }) => {
+  deleteAccount: async ({ locals, params }) => {
     const user = requireUser(locals);
-    orNotFound(() => deleteAccount(user.id, params.id));
+    await orNotFoundAsync(() => deleteAccount(user.id, params.id));
     redirect(303, "/accounts");
   },
 
   addTransaction: async ({ locals, params, request }) => {
     const user = requireUser(locals);
-    const account = orNotFound(() => getAccount(user.id, params.id));
+    const account = await orNotFoundAsync(() => getAccount(user.id, params.id));
     const form = await request.formData();
     const values = safeValues(form, transactionFields);
     const parsed = parseForm(transactionInputSchema(account.currency), form);
@@ -258,7 +262,11 @@ export const actions: Actions = {
       });
     }
     try {
-      const created = createManualTransaction(user.id, account.id, parsed.data);
+      const created = await createManualTransaction(
+        user.id,
+        account.id,
+        parsed.data,
+      );
       return {
         success: true as const,
         action: "addTransaction" as const,
@@ -271,7 +279,7 @@ export const actions: Actions = {
 
   updateTransaction: async ({ locals, params, request }) => {
     const user = requireUser(locals);
-    const account = orNotFound(() => getAccount(user.id, params.id));
+    const account = await orNotFoundAsync(() => getAccount(user.id, params.id));
     const form = await request.formData();
     const values = safeValues(form, ["transactionId", ...transactionFields]);
     const idParsed = parseForm(idFormSchema("transactionId"), form);
@@ -282,7 +290,7 @@ export const actions: Actions = {
         values,
       });
     }
-    const existing = ownedTransaction(
+    const existing = await ownedTransaction(
       user.id,
       account.id,
       idParsed.data.transactionId,
@@ -299,7 +307,7 @@ export const actions: Actions = {
       });
     }
     try {
-      updateTransaction(user.id, existing.id, parsed.data);
+      await updateTransaction(user.id, existing.id, parsed.data);
       return {
         success: true as const,
         action: "updateTransaction" as const,
@@ -312,7 +320,7 @@ export const actions: Actions = {
 
   setTaxYear: async ({ locals, params, request }) => {
     const user = requireUser(locals);
-    const account = orNotFound(() => getAccount(user.id, params.id));
+    const account = await orNotFoundAsync(() => getAccount(user.id, params.id));
     const form = await request.formData();
     const values = safeValues(form, ["transactionId", "taxYear"]);
     const parsed = parseForm(taxTagSchema, form);
@@ -323,13 +331,13 @@ export const actions: Actions = {
         values,
       });
     }
-    const existing = ownedTransaction(
+    const existing = await ownedTransaction(
       user.id,
       account.id,
       parsed.data.transactionId,
     );
     try {
-      setTransactionTaxYear(user.id, existing.id, parsed.data.taxYear);
+      await setTransactionTaxYear(user.id, existing.id, parsed.data.taxYear);
       return { success: true as const, action: "setTaxYear" as const };
     } catch (err) {
       return ledgerFailure("setTaxYear", err, values);
@@ -338,7 +346,7 @@ export const actions: Actions = {
 
   setDeductionYear: async ({ locals, params, request }) => {
     const user = requireUser(locals);
-    const account = orNotFound(() => getAccount(user.id, params.id));
+    const account = await orNotFoundAsync(() => getAccount(user.id, params.id));
     const form = await request.formData();
     const values = safeValues(form, ["transactionId", "deductionYear"]);
     const parsed = parseForm(deductionYearTagSchema, form);
@@ -349,13 +357,13 @@ export const actions: Actions = {
         values,
       });
     }
-    const existing = ownedTransaction(
+    const existing = await ownedTransaction(
       user.id,
       account.id,
       parsed.data.transactionId,
     );
     try {
-      setTransactionDeductionYear(
+      await setTransactionDeductionYear(
         user.id,
         existing.id,
         parsed.data.deductionYear,
@@ -371,7 +379,7 @@ export const actions: Actions = {
 
   deleteTransaction: async ({ locals, params, request }) => {
     const user = requireUser(locals);
-    const account = orNotFound(() => getAccount(user.id, params.id));
+    const account = await orNotFoundAsync(() => getAccount(user.id, params.id));
     const form = await request.formData();
     const values = safeValues(form, ["transactionId"]);
     const parsed = parseForm(idFormSchema("transactionId"), form);
@@ -382,13 +390,13 @@ export const actions: Actions = {
         values,
       });
     }
-    const existing = ownedTransaction(
+    const existing = await ownedTransaction(
       user.id,
       account.id,
       parsed.data.transactionId,
     );
     try {
-      deleteTransaction(user.id, existing.id);
+      await deleteTransaction(user.id, existing.id);
       return {
         success: true as const,
         action: "deleteTransaction" as const,
@@ -401,7 +409,7 @@ export const actions: Actions = {
 
   unlinkTransfer: async ({ locals, params, request }) => {
     const user = requireUser(locals);
-    const account = orNotFound(() => getAccount(user.id, params.id));
+    const account = await orNotFoundAsync(() => getAccount(user.id, params.id));
     const form = await request.formData();
     const values = safeValues(form, ["transactionId"]);
     const parsed = parseForm(idFormSchema("transactionId"), form);
@@ -412,14 +420,14 @@ export const actions: Actions = {
         values,
       });
     }
-    const existing = ownedTransaction(
+    const existing = await ownedTransaction(
       user.id,
       account.id,
       parsed.data.transactionId,
     );
     if (!existing.transfer) error(404, "Transfer not found.");
     try {
-      unlink(user.id, existing.transfer.id);
+      await unlink(user.id, existing.transfer.id);
       return {
         success: true as const,
         action: "unlinkTransfer" as const,
@@ -432,7 +440,7 @@ export const actions: Actions = {
 
   linkTransfer: async ({ locals, params, request }) => {
     const user = requireUser(locals);
-    const account = orNotFound(() => getAccount(user.id, params.id));
+    const account = await orNotFoundAsync(() => getAccount(user.id, params.id));
     const form = await request.formData();
     const values = safeValues(form, ["transactionId", "peerId"]);
     const parsed = parseForm(
@@ -446,17 +454,19 @@ export const actions: Actions = {
         values,
       });
     }
-    const existing = ownedTransaction(
+    const existing = await ownedTransaction(
       user.id,
       account.id,
       parsed.data.transactionId,
     );
-    const peer = orNotFound(() => getTransaction(user.id, parsed.data.peerId));
+    const peer = await orNotFoundAsync(() =>
+      getTransaction(user.id, parsed.data.peerId),
+    );
     try {
       const transferId =
         existing.amount < 0
-          ? linkManually(user.id, existing.id, peer.id)
-          : linkManually(user.id, peer.id, existing.id);
+          ? await linkManually(user.id, existing.id, peer.id)
+          : await linkManually(user.id, peer.id, existing.id);
       return {
         success: true as const,
         action: "linkTransfer" as const,
@@ -471,7 +481,7 @@ export const actions: Actions = {
   /** Suggestions for the "Link as transfer" picker: `candidates` in the action result. */
   transferCandidates: async ({ locals, params, request }) => {
     const user = requireUser(locals);
-    const account = orNotFound(() => getAccount(user.id, params.id));
+    const account = await orNotFoundAsync(() => getAccount(user.id, params.id));
     const form = await request.formData();
     const values = safeValues(form, ["transactionId"]);
     const parsed = parseForm(idFormSchema("transactionId"), form);
@@ -482,7 +492,7 @@ export const actions: Actions = {
         values,
       });
     }
-    const existing = ownedTransaction(
+    const existing = await ownedTransaction(
       user.id,
       account.id,
       parsed.data.transactionId,
@@ -491,13 +501,13 @@ export const actions: Actions = {
       success: true as const,
       action: "transferCandidates" as const,
       transactionId: existing.id,
-      candidates: transferCandidates(user.id, existing.id),
+      candidates: await transferCandidates(user.id, existing.id),
     };
   },
 
   resolveNeedsAmount: async ({ locals, params, request }) => {
     const user = requireUser(locals);
-    const account = orNotFound(() => getAccount(user.id, params.id));
+    const account = await orNotFoundAsync(() => getAccount(user.id, params.id));
     const form = await request.formData();
     const values = safeValues(form, ["transferId", "amount"]);
     const idParsed = parseForm(idFormSchema("transferId"), form);
@@ -508,7 +518,7 @@ export const actions: Actions = {
         values,
       });
     }
-    const pending = listNeedsAmount(user.id, account.id).find(
+    const pending = (await listNeedsAmount(user.id, account.id)).find(
       (n) => n.transferId === idParsed.data.transferId,
     );
     if (!pending) error(404, "Transfer not found.");
@@ -526,7 +536,7 @@ export const actions: Actions = {
       });
     }
     try {
-      resolveNeedsAmount(user.id, pending.transferId, parsed.data.amount);
+      await resolveNeedsAmount(user.id, pending.transferId, parsed.data.amount);
       return {
         success: true as const,
         action: "resolveNeedsAmount" as const,
@@ -540,7 +550,7 @@ export const actions: Actions = {
   /** "Link instead": ties the source of a needs-amount transfer to a booked row of this account. */
   linkNeedsAmount: async ({ locals, params, request }) => {
     const user = requireUser(locals);
-    const account = orNotFound(() => getAccount(user.id, params.id));
+    const account = await orNotFoundAsync(() => getAccount(user.id, params.id));
     const form = await request.formData();
     const values = safeValues(form, ["transferId", "peerId"]);
     const parsed = parseForm(
@@ -554,12 +564,12 @@ export const actions: Actions = {
         values,
       });
     }
-    const pending = listNeedsAmount(user.id, account.id).find(
+    const pending = (await listNeedsAmount(user.id, account.id)).find(
       (n) => n.transferId === parsed.data.transferId,
     );
     if (!pending) error(404, "Transfer not found.");
     try {
-      linkNeedsAmountTo(user.id, pending.transferId, parsed.data.peerId);
+      await linkNeedsAmountTo(user.id, pending.transferId, parsed.data.peerId);
       return {
         success: true as const,
         action: "linkNeedsAmount" as const,
@@ -571,11 +581,11 @@ export const actions: Actions = {
   },
 
   /** Turns on "fill from transfers" and creates the mirrors for the account's whole history. */
-  enableFillFromTransfers: ({ locals, params }) => {
+  enableFillFromTransfers: async ({ locals, params }) => {
     const user = requireUser(locals);
-    const account = orNotFound(() => getAccount(user.id, params.id));
+    const account = await orNotFoundAsync(() => getAccount(user.id, params.id));
     try {
-      const result = enableFill(user.id, account.id);
+      const result = await enableFill(user.id, account.id);
       return {
         success: true as const,
         action: "enableFillFromTransfers" as const,
@@ -588,7 +598,7 @@ export const actions: Actions = {
 
   setCategory: async ({ locals, params, request }) => {
     const user = requireUser(locals);
-    const account = orNotFound(() => getAccount(user.id, params.id));
+    const account = await orNotFoundAsync(() => getAccount(user.id, params.id));
     const form = await request.formData();
     const values = safeValues(form, ["transactionId", "categoryId"]);
     const parsed = parseForm(assignCategorySchema, form);
@@ -599,7 +609,7 @@ export const actions: Actions = {
         values,
       });
     }
-    const existing = ownedTransaction(
+    const existing = await ownedTransaction(
       user.id,
       account.id,
       parsed.data.transactionId,
@@ -618,7 +628,7 @@ export const actions: Actions = {
 
   addSnapshot: async ({ locals, params, request }) => {
     const user = requireUser(locals);
-    const account = orNotFound(() => getAccount(user.id, params.id));
+    const account = await orNotFoundAsync(() => getAccount(user.id, params.id));
     const form = await request.formData();
     const values = safeValues(form, snapshotFields);
     const parsed = parseForm(snapshotInputSchema(account.currency), form);
@@ -630,7 +640,7 @@ export const actions: Actions = {
       });
     }
     try {
-      const created = createSnapshot(user.id, account.id, parsed.data);
+      const created = await createSnapshot(user.id, account.id, parsed.data);
       return {
         success: true as const,
         action: "addSnapshot" as const,
@@ -643,7 +653,7 @@ export const actions: Actions = {
 
   deleteSnapshot: async ({ locals, params, request }) => {
     const user = requireUser(locals);
-    const account = orNotFound(() => getAccount(user.id, params.id));
+    const account = await orNotFoundAsync(() => getAccount(user.id, params.id));
     const form = await request.formData();
     const values = safeValues(form, ["snapshotId"]);
     const parsed = parseForm(idFormSchema("snapshotId"), form);
@@ -654,12 +664,12 @@ export const actions: Actions = {
         values,
       });
     }
-    const existing = orNotFound(() =>
+    const existing = await orNotFoundAsync(() =>
       getSnapshot(user.id, parsed.data.snapshotId),
     );
     if (existing.accountId !== account.id) error(404, "Balance not found.");
     try {
-      deleteSnapshot(user.id, existing.id);
+      await deleteSnapshot(user.id, existing.id);
       return {
         success: true as const,
         action: "deleteSnapshot" as const,
@@ -672,7 +682,7 @@ export const actions: Actions = {
 
   addTrade: async ({ locals, params, request }) => {
     const user = requireUser(locals);
-    const account = orNotFound(() => getAccount(user.id, params.id));
+    const account = await orNotFoundAsync(() => getAccount(user.id, params.id));
     const form = await request.formData();
     const values = safeValues(form, tradeFields);
     const parsed = parseForm(tradeInputSchema(account.currency), form);
@@ -693,7 +703,7 @@ export const actions: Actions = {
 
   updateTrade: async ({ locals, params, request }) => {
     const user = requireUser(locals);
-    const account = orNotFound(() => getAccount(user.id, params.id));
+    const account = await orNotFoundAsync(() => getAccount(user.id, params.id));
     const form = await request.formData();
     const values = safeValues(form, ["tradeId", ...tradeFields]);
     const idParsed = parseForm(idFormSchema("tradeId"), form);
@@ -727,7 +737,7 @@ export const actions: Actions = {
 
   deleteTrade: async ({ locals, params, request }) => {
     const user = requireUser(locals);
-    const account = orNotFound(() => getAccount(user.id, params.id));
+    const account = await orNotFoundAsync(() => getAccount(user.id, params.id));
     const form = await request.formData();
     const values = safeValues(form, ["tradeId"]);
     const parsed = parseForm(idFormSchema("tradeId"), form);
@@ -753,7 +763,7 @@ export const actions: Actions = {
 
   addPortfolio: async ({ locals, params, request }) => {
     const user = requireUser(locals);
-    const account = orNotFound(() => getAccount(user.id, params.id));
+    const account = await orNotFoundAsync(() => getAccount(user.id, params.id));
     const form = await request.formData();
     const values = safeValues(form, portfolioFields);
     const parsed = parseForm(portfolioInputSchema, form);
@@ -765,7 +775,7 @@ export const actions: Actions = {
       });
     }
     try {
-      const created = createPortfolio(user.id, account.id, parsed.data);
+      const created = await createPortfolio(user.id, account.id, parsed.data);
       return {
         success: true as const,
         action: "addPortfolio" as const,
@@ -778,7 +788,7 @@ export const actions: Actions = {
 
   updatePortfolio: async ({ locals, params, request }) => {
     const user = requireUser(locals);
-    const account = orNotFound(() => getAccount(user.id, params.id));
+    const account = await orNotFoundAsync(() => getAccount(user.id, params.id));
     const form = await request.formData();
     const values = safeValues(form, ["portfolioId", ...portfolioFields]);
     const idParsed = parseForm(idFormSchema("portfolioId"), form);
@@ -789,7 +799,7 @@ export const actions: Actions = {
         values,
       });
     }
-    const existing = ownedPortfolio(
+    const existing = await ownedPortfolio(
       user.id,
       account.id,
       idParsed.data.portfolioId,
@@ -803,7 +813,7 @@ export const actions: Actions = {
       });
     }
     try {
-      updatePortfolio(user.id, existing.id, parsed.data);
+      await updatePortfolio(user.id, existing.id, parsed.data);
       return {
         success: true as const,
         action: "updatePortfolio" as const,
@@ -816,7 +826,7 @@ export const actions: Actions = {
 
   closePortfolio: async ({ locals, params, request }) => {
     const user = requireUser(locals);
-    const account = orNotFound(() => getAccount(user.id, params.id));
+    const account = await orNotFoundAsync(() => getAccount(user.id, params.id));
     const form = await request.formData();
     const values = safeValues(form, ["portfolioId", "closedOn", "closeReason"]);
     const idParsed = parseForm(idFormSchema("portfolioId"), form);
@@ -827,7 +837,7 @@ export const actions: Actions = {
         values,
       });
     }
-    const existing = ownedPortfolio(
+    const existing = await ownedPortfolio(
       user.id,
       account.id,
       idParsed.data.portfolioId,
@@ -841,7 +851,7 @@ export const actions: Actions = {
       });
     }
     try {
-      closePortfolio(user.id, existing.id, parsed.data);
+      await closePortfolio(user.id, existing.id, parsed.data);
       return {
         success: true as const,
         action: "closePortfolio" as const,
@@ -854,7 +864,7 @@ export const actions: Actions = {
 
   reopenPortfolio: async ({ locals, params, request }) => {
     const user = requireUser(locals);
-    const account = orNotFound(() => getAccount(user.id, params.id));
+    const account = await orNotFoundAsync(() => getAccount(user.id, params.id));
     const form = await request.formData();
     const values = safeValues(form, ["portfolioId"]);
     const parsed = parseForm(idFormSchema("portfolioId"), form);
@@ -865,13 +875,13 @@ export const actions: Actions = {
         values,
       });
     }
-    const existing = ownedPortfolio(
+    const existing = await ownedPortfolio(
       user.id,
       account.id,
       parsed.data.portfolioId,
     );
     try {
-      reopenPortfolio(user.id, existing.id);
+      await reopenPortfolio(user.id, existing.id);
       return {
         success: true as const,
         action: "reopenPortfolio" as const,
@@ -884,7 +894,7 @@ export const actions: Actions = {
 
   deletePortfolio: async ({ locals, params, request }) => {
     const user = requireUser(locals);
-    const account = orNotFound(() => getAccount(user.id, params.id));
+    const account = await orNotFoundAsync(() => getAccount(user.id, params.id));
     const form = await request.formData();
     const values = safeValues(form, ["portfolioId"]);
     const parsed = parseForm(idFormSchema("portfolioId"), form);
@@ -895,13 +905,13 @@ export const actions: Actions = {
         values,
       });
     }
-    const existing = ownedPortfolio(
+    const existing = await ownedPortfolio(
       user.id,
       account.id,
       parsed.data.portfolioId,
     );
     try {
-      deletePortfolio(user.id, existing.id);
+      await deletePortfolio(user.id, existing.id);
       return {
         success: true as const,
         action: "deletePortfolio" as const,
@@ -914,7 +924,7 @@ export const actions: Actions = {
 
   setPortfolioValues: async ({ locals, params, request }) => {
     const user = requireUser(locals);
-    const account = orNotFound(() => getAccount(user.id, params.id));
+    const account = await orNotFoundAsync(() => getAccount(user.id, params.id));
     const form = await request.formData();
     const values: Record<string, string> = {};
     for (const [key, value] of form.entries()) {
@@ -930,7 +940,7 @@ export const actions: Actions = {
     }
     // setValues rejects portfolios of another account as not found.
     try {
-      setValues(
+      await setValues(
         user.id,
         account.id,
         parsed.data.date,
@@ -948,7 +958,7 @@ export const actions: Actions = {
 
   deletePortfolioValue: async ({ locals, params, request }) => {
     const user = requireUser(locals);
-    const account = orNotFound(() => getAccount(user.id, params.id));
+    const account = await orNotFoundAsync(() => getAccount(user.id, params.id));
     const form = await request.formData();
     const values = safeValues(form, ["portfolioId", "valueId"]);
     const parsed = parseForm(
@@ -962,17 +972,17 @@ export const actions: Actions = {
         values,
       });
     }
-    const portfolio = ownedPortfolio(
+    const portfolio = await ownedPortfolio(
       user.id,
       account.id,
       parsed.data.portfolioId,
     );
-    const belongs = orNotFound(() => listValues(user.id, portfolio.id)).some(
-      (v) => v.id === parsed.data.valueId,
-    );
+    const belongs = (
+      await orNotFoundAsync(() => listValues(user.id, portfolio.id))
+    ).some((v) => v.id === parsed.data.valueId);
     if (!belongs) error(404, "Value not found.");
     try {
-      deleteValue(user.id, parsed.data.valueId);
+      await deleteValue(user.id, parsed.data.valueId);
       return {
         success: true as const,
         action: "deletePortfolioValue" as const,

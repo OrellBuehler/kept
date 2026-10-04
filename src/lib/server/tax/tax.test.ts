@@ -21,18 +21,18 @@ import { taxCreditInputSchema, taxYearInputSchema } from "./schemas";
 
 const setup = async () => {
   const user = await createTestUser();
-  const account = seedAccount(user.id);
+  const account = await seedAccount(user.id);
   return { user, account };
 };
 
-const pay = (
+const pay = async (
   userId: string,
   accountId: string,
   cents: number,
   bookingDate: string,
   over = {},
 ) =>
-  seedImportedTransaction(userId, accountId, {
+  await seedImportedTransaction(userId, accountId, {
     amount: minor(-cents),
     bookingDate,
     ...over,
@@ -75,8 +75,8 @@ describe("tax reconciliation", () => {
       [100000, "2025-03-10"],
       [100000, "2025-06-10"],
     ] as const) {
-      const tx = pay(user.id, account.id, cents, date);
-      setTransactionTaxYear(user.id, tx.id, 2025);
+      const tx = await pay(user.id, account.id, cents, date);
+      await setTransactionTaxYear(user.id, tx.id, 2025);
     }
     upsertTaxYear(user.id, yearInput({ assessedTotal: "3000.00" }));
     addTaxCredit(user.id, 2025, credit("2025-03-12", "1000.00"));
@@ -102,8 +102,8 @@ describe("tax reconciliation", () => {
 
   it("reports an overpayment as a refund to expect", async () => {
     const { user, account } = await setup();
-    const tx = pay(user.id, account.id, 350000, "2025-03-10");
-    setTransactionTaxYear(user.id, tx.id, 2025);
+    const tx = await pay(user.id, account.id, 350000, "2025-03-10");
+    await setTransactionTaxYear(user.id, tx.id, 2025);
     upsertTaxYear(user.id, yearInput({ assessedTotal: "3000.00" }));
     addTaxCredit(user.id, 2025, credit("2025-03-11", "3500.00"));
 
@@ -120,9 +120,9 @@ describe("tax reconciliation", () => {
       [80000, "2025-06-10"],
       [50000, "2025-09-10"],
     ] as const) {
-      setTransactionTaxYear(
+      await setTransactionTaxYear(
         user.id,
-        pay(user.id, account.id, cents, date).id,
+        (await pay(user.id, account.id, cents, date)).id,
         2025,
       );
     }
@@ -155,11 +155,11 @@ describe("tax reconciliation", () => {
 
   it("does not count a donation with a deduction year as a tax payment", async () => {
     const { user, account } = await setup();
-    const donation = pay(user.id, account.id, 5000, "2025-01-10", {
+    const donation = await pay(user.id, account.id, 5000, "2025-01-10", {
       deductionYear: 2024,
     });
-    const taxPayment = pay(user.id, account.id, 100000, "2024-03-10");
-    setTransactionTaxYear(user.id, taxPayment.id, 2024);
+    const taxPayment = await pay(user.id, account.id, 100000, "2024-03-10");
+    await setTransactionTaxYear(user.id, taxPayment.id, 2024);
     expect(paymentLines(user.id, 2024).map((l) => l.transactionId)).toEqual([
       taxPayment.id,
     ]);
@@ -174,8 +174,8 @@ describe("tax reconciliation", () => {
       amount: minor(120000),
       taxYear: 2025,
     });
-    const tx = pay(user.id, account.id, 120000, "2025-04-01");
-    allocate(user.id, bill.id, tx.id, minor(120000), "user");
+    const tx = await pay(user.id, account.id, 120000, "2025-04-01");
+    await allocate(user.id, bill.id, tx.id, minor(120000), "user");
     seedBill(user.id, { taxYear: 2025, amount: minor(5000) });
 
     const lines = paymentLines(user.id, 2025);
@@ -192,9 +192,9 @@ describe("tax reconciliation", () => {
   it("counts a transaction once when it is tagged and its bill is too", async () => {
     const { user, account } = await setup();
     const bill = seedBill(user.id, { amount: minor(120000), taxYear: 2025 });
-    const tx = pay(user.id, account.id, 120000, "2025-04-01");
-    allocate(user.id, bill.id, tx.id, minor(120000), "user");
-    setTransactionTaxYear(user.id, tx.id, 2025);
+    const tx = await pay(user.id, account.id, 120000, "2025-04-01");
+    await allocate(user.id, bill.id, tx.id, minor(120000), "user");
+    await setTransactionTaxYear(user.id, tx.id, 2025);
 
     const lines = paymentLines(user.id, 2025);
     expect(lines).toHaveLength(1);
@@ -205,9 +205,9 @@ describe("tax reconciliation", () => {
   it("does not count a transaction tagged with another year through a bill", async () => {
     const { user, account } = await setup();
     const bill = seedBill(user.id, { amount: minor(120000), taxYear: 2025 });
-    const tx = pay(user.id, account.id, 120000, "2025-04-01");
-    allocate(user.id, bill.id, tx.id, minor(120000), "user");
-    setTransactionTaxYear(user.id, tx.id, 2024);
+    const tx = await pay(user.id, account.id, 120000, "2025-04-01");
+    await allocate(user.id, bill.id, tx.id, minor(120000), "user");
+    await setTransactionTaxYear(user.id, tx.id, 2024);
 
     expect(paymentLines(user.id, 2025)).toEqual([]);
     expect(paymentLines(user.id, 2024)).toHaveLength(1);
@@ -215,16 +215,16 @@ describe("tax reconciliation", () => {
 
   it("counts a received refund against the payments", async () => {
     const { user, account } = await setup();
-    setTransactionTaxYear(
+    await setTransactionTaxYear(
       user.id,
-      pay(user.id, account.id, 300000, "2025-03-10").id,
+      (await pay(user.id, account.id, 300000, "2025-03-10")).id,
       2025,
     );
-    const refund = seedImportedTransaction(user.id, account.id, {
+    const refund = await seedImportedTransaction(user.id, account.id, {
       amount: minor(20000),
       bookingDate: "2026-02-01",
     });
-    setTransactionTaxYear(user.id, refund.id, 2025);
+    await setTransactionTaxYear(user.id, refund.id, 2025);
     upsertTaxYear(user.id, yearInput({ assessedTotal: "2800.00" }));
     addTaxCredit(user.id, 2025, credit("2025-03-11", "3000.00"));
     addTaxCredit(user.id, 2025, credit("2026-02-02", "-200.00"));
@@ -236,15 +236,15 @@ describe("tax reconciliation", () => {
 
   it("leaves payments in another currency out and says so", async () => {
     const { user, account } = await setup();
-    const eur = seedAccount(user.id, { name: "Euro", currency: "EUR" });
-    setTransactionTaxYear(
+    const eur = await seedAccount(user.id, { name: "Euro", currency: "EUR" });
+    await setTransactionTaxYear(
       user.id,
-      pay(user.id, account.id, 1000, "2025-03-10").id,
+      (await pay(user.id, account.id, 1000, "2025-03-10")).id,
       2025,
     );
-    setTransactionTaxYear(
+    await setTransactionTaxYear(
       user.id,
-      pay(user.id, eur.id, 5000, "2025-03-10", { currency: "EUR" }).id,
+      (await pay(user.id, eur.id, 5000, "2025-03-10", { currency: "EUR" })).id,
       2025,
     );
     upsertTaxYear(user.id, yearInput());
@@ -255,9 +255,9 @@ describe("tax reconciliation", () => {
 
   it("derives a year from tagged payments before any details exist", async () => {
     const { user, account } = await setup();
-    setTransactionTaxYear(
+    await setTransactionTaxYear(
       user.id,
-      pay(user.id, account.id, 1000, "2025-03-10").id,
+      (await pay(user.id, account.id, 1000, "2025-03-10")).id,
       2025,
     );
     const rec = reconcileYear(user.id, 2025)!;
@@ -277,9 +277,9 @@ describe("tax reconciliation", () => {
     const { user, account } = await setup();
     upsertTaxYear(user.id, yearInput());
     const line = addTaxCredit(user.id, 2025, credit("2025-03-11", "1000.00"));
-    const candidate = pay(user.id, account.id, 100000, "2025-03-09");
-    pay(user.id, account.id, 99999, "2025-03-09");
-    pay(user.id, account.id, 100000, "2025-08-09");
+    const candidate = await pay(user.id, account.id, 100000, "2025-03-09");
+    await pay(user.id, account.id, 99999, "2025-03-09");
+    await pay(user.id, account.id, 100000, "2025-08-09");
 
     const rec = reconcileYear(user.id, 2025)!;
     expect(rec.counts.missing_mine).toBe(1);
@@ -290,7 +290,7 @@ describe("tax reconciliation", () => {
       }),
     ]);
 
-    setTransactionTaxYear(user.id, candidate.id, 2025);
+    await setTransactionTaxYear(user.id, candidate.id, 2025);
     const after = reconcileYear(user.id, 2025)!;
     expect(after.reconciled).toBe(true);
     expect(after.suggestions).toEqual([]);
@@ -298,9 +298,9 @@ describe("tax reconciliation", () => {
 
   it("clears a tag with null", async () => {
     const { user, account } = await setup();
-    const tx = pay(user.id, account.id, 1000, "2025-03-10");
-    setTransactionTaxYear(user.id, tx.id, 2025);
-    setTransactionTaxYear(user.id, tx.id, null);
+    const tx = await pay(user.id, account.id, 1000, "2025-03-10");
+    await setTransactionTaxYear(user.id, tx.id, 2025);
+    await setTransactionTaxYear(user.id, tx.id, null);
     expect(paymentLines(user.id, 2025)).toEqual([]);
     expect(listTaxYears(user.id)).toEqual([]);
   });
@@ -308,9 +308,9 @@ describe("tax reconciliation", () => {
   it("lists years newest first with their balance", async () => {
     const { user, account } = await setup();
     upsertTaxYear(user.id, yearInput({ year: "2024", assessedTotal: "10.00" }));
-    setTransactionTaxYear(
+    await setTransactionTaxYear(
       user.id,
-      pay(user.id, account.id, 1000, "2025-03-10").id,
+      (await pay(user.id, account.id, 1000, "2025-03-10")).id,
       2025,
     );
     seedBill(user.id, { taxYear: 2023 });
@@ -323,9 +323,9 @@ describe("tax reconciliation", () => {
 
   it("deletes a year's details and statement but keeps tags", async () => {
     const { user, account } = await setup();
-    setTransactionTaxYear(
+    await setTransactionTaxYear(
       user.id,
-      pay(user.id, account.id, 1000, "2025-03-10").id,
+      (await pay(user.id, account.id, 1000, "2025-03-10")).id,
       2025,
     );
     upsertTaxYear(user.id, yearInput());
@@ -358,9 +358,9 @@ describe("tax user scoping", () => {
   it("never mixes in another user's payments, bills or statement lines", async () => {
     const { user: a, account: accA } = await setup();
     const { user: b, account: accB } = await setup();
-    setTransactionTaxYear(
+    await setTransactionTaxYear(
       a.id,
-      pay(a.id, accA.id, 1000, "2025-03-10").id,
+      (await pay(a.id, accA.id, 1000, "2025-03-10")).id,
       2025,
     );
     seedBill(a.id, { taxYear: 2022 });
@@ -371,9 +371,9 @@ describe("tax user scoping", () => {
     expect(reconcileYear(b.id, 2025)).toBeNull();
     expect(paymentLines(b.id, 2025)).toEqual([]);
 
-    setTransactionTaxYear(
+    await setTransactionTaxYear(
       b.id,
-      pay(b.id, accB.id, 7777, "2025-05-05").id,
+      (await pay(b.id, accB.id, 7777, "2025-05-05")).id,
       2025,
     );
     const recB = reconcileYear(b.id, 2025)!;
@@ -389,7 +389,7 @@ describe("tax user scoping", () => {
   it("refuses to tag, or remove lines of, another user's rows", async () => {
     const { user: a, account: accA } = await setup();
     const { user: b } = await setup();
-    const tx = pay(a.id, accA.id, 1000, "2025-03-10");
+    const tx = await pay(a.id, accA.id, 1000, "2025-03-10");
     upsertTaxYear(a.id, yearInput());
     const line = addTaxCredit(a.id, 2025, credit("2025-03-11", "10.00"));
 
@@ -411,8 +411,10 @@ describe("tax user scoping", () => {
     const { user: a, account: accA } = await setup();
     const { user: b } = await setup();
     const bill = seedBill(b.id, { taxYear: 2025, amount: minor(1000) });
-    const tx = pay(a.id, accA.id, 1000, "2025-03-10");
-    expect(() => allocate(b.id, bill.id, tx.id, minor(1000), "user")).toThrow();
+    const tx = await pay(a.id, accA.id, 1000, "2025-03-10");
+    await expect(
+      allocate(b.id, bill.id, tx.id, minor(1000), "user"),
+    ).rejects.toThrow();
     expect(paymentLines(b.id, 2025)).toEqual([]);
   });
 });

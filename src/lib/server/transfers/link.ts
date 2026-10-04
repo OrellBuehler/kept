@@ -19,39 +19,58 @@ import {
   type PlannedLink,
 } from "./plan";
 
-/** A database or a transaction on it. */
-export type Conn = Pick<DB, "select" | "insert" | "update" | "delete">;
+/** A transaction (or the database): what the synchronous in-transaction helpers write through. */
+export type Tx = Pick<DB, "select" | "insert" | "update" | "delete">;
+type Reader = Pick<DB, "select">;
 
 const CHUNK = 500;
 
-export function loadPlanAccounts(userId: string, conn: Conn): PlanAccount[] {
-  const withPortfolios = new Set(
-    conn
+function planAccountQueries(conn: Reader, userId: string) {
+  return {
+    withPortfolios: conn
       .select({ id: portfolios.accountId })
       .from(portfolios)
-      .where(eq(portfolios.userId, userId))
-      .all()
-      .map((r) => r.id),
-  );
-  return conn
-    .select({
-      id: accounts.id,
-      name: accounts.name,
-      currency: accounts.currency,
-      type: accounts.type,
-      iban: accounts.iban,
-      openingDate: accounts.openingDate,
-      fillFromTransfers: accounts.fillFromTransfers,
-      archived: accounts.archived,
-    })
-    .from(accounts)
-    .where(eq(accounts.userId, userId))
-    .all()
-    .map((a) => ({
-      ...a,
-      iban: a.iban ? normalizeIban(a.iban) : null,
-      hasPortfolios: withPortfolios.has(a.id),
-    }));
+      .where(eq(portfolios.userId, userId)),
+    accounts: conn
+      .select({
+        id: accounts.id,
+        name: accounts.name,
+        currency: accounts.currency,
+        type: accounts.type,
+        iban: accounts.iban,
+        openingDate: accounts.openingDate,
+        fillFromTransfers: accounts.fillFromTransfers,
+        archived: accounts.archived,
+      })
+      .from(accounts)
+      .where(eq(accounts.userId, userId)),
+  };
+}
+
+function toPlanAccounts(
+  portfolioRows: readonly { id: string }[],
+  accountRows: readonly Omit<PlanAccount, "hasPortfolios">[],
+): PlanAccount[] {
+  const withPortfolios = new Set(portfolioRows.map((r) => r.id));
+  return accountRows.map((a) => ({
+    ...a,
+    iban: a.iban ? normalizeIban(a.iban) : null,
+    hasPortfolios: withPortfolios.has(a.id),
+  }));
+}
+
+export async function loadPlanAccounts(userId: string): Promise<PlanAccount[]> {
+  const q = planAccountQueries(getDB(), userId);
+  return toPlanAccounts(await q.withPortfolios, await q.accounts);
+}
+
+/** Sync twin of loadPlanAccounts, for the body of a transaction. */
+export function loadPlanAccountsInTx(
+  tx: Reader,
+  userId: string,
+): PlanAccount[] {
+  const q = planAccountQueries(tx, userId);
+  return toPlanAccounts(q.withPortfolios.all(), q.accounts.all());
 }
 
 /**
@@ -59,12 +78,9 @@ export function loadPlanAccounts(userId: string, conn: Conn): PlanAccount[] {
  * included. Only `iban` counts: a deposit IBAN (a QR-IBAN) is shared by many
  * customers, and pillar 3a payments are recognised by their reference.
  */
-export function ownIbans(
-  userId: string,
-  conn: Conn = getDB(),
-): Map<string, string> {
+export async function ownIbans(userId: string): Promise<Map<string, string>> {
   return new Map(
-    [...accountsByIban(loadPlanAccounts(userId, conn))].map(([iban, a]) => [
+    [...accountsByIban(await loadPlanAccounts(userId))].map(([iban, a]) => [
       iban,
       a.id,
     ]),
@@ -93,12 +109,12 @@ const planColumns = {
  * (those may still pair with a real counterpart).
  */
 export function transferClaims(
+  tx: Tx,
   userId: string,
-  conn: Conn,
 ): { taken: Set<string>; pending: Set<string> } {
   const taken = new Set<string>();
   const pending = new Set<string>();
-  for (const r of conn
+  for (const r of tx
     .select({
       out: transfers.outTransactionId,
       in: transfers.inTransactionId,
@@ -138,10 +154,10 @@ export interface LinkResult {
 const NONE: LinkResult = { paired: 0, mirrored: 0, needsAmount: 0 };
 
 function loadSources(
+  tx: Tx,
   userId: string,
   scope: LinkScope,
   accountList: readonly PlanAccount[],
-  conn: Conn,
 ): PlanTransaction[] {
   const base = [
     eq(transactions.userId, userId),
@@ -151,7 +167,7 @@ function loadSources(
     scope.to ? lte(transactions.bookingDate, scope.to) : undefined,
   ];
   const pick = (extra: ReturnType<typeof eq> | undefined) =>
-    conn
+    tx
       .select(planColumns)
       .from(transactions)
       .where(and(...base, extra))
@@ -195,10 +211,10 @@ function loadSources(
 }
 
 function loadCandidates(
+  tx: Tx,
   userId: string,
   sources: readonly PlanTransaction[],
   accountList: readonly PlanAccount[],
-  conn: Conn,
 ): PlanTransaction[] {
   const byIban = accountsByIban(accountList);
   const targetIds = new Set<string>();
@@ -212,7 +228,7 @@ function loadCandidates(
     if (s.bookingDate > last) last = s.bookingDate;
   }
   if (targetIds.size === 0) return [];
-  return conn
+  return tx
     .select(planColumns)
     .from(transactions)
     .where(
@@ -228,9 +244,8 @@ function loadCandidates(
 }
 
 /** Deletes the needs-amount rows of these transactions: their counter-side exists now. */
-function dropWaiting(userId: string, ids: readonly string[], conn: Conn): void {
-  conn
-    .delete(transfers)
+function dropWaiting(tx: Tx, userId: string, ids: readonly string[]): void {
+  tx.delete(transfers)
     .where(
       and(
         eq(transfers.userId, userId),
@@ -244,11 +259,11 @@ function dropWaiting(userId: string, ids: readonly string[], conn: Conn): void {
     .run();
 }
 
-function apply(userId: string, link: PlannedLink, conn: Conn): void {
+function apply(tx: Tx, userId: string, link: PlannedLink): void {
   if (link.kind === "pair") {
-    dropWaiting(userId, [link.sourceId, link.candidateId], conn);
+    dropWaiting(tx, userId, [link.sourceId, link.candidateId]);
   } else if (link.kind === "mirror") {
-    dropWaiting(userId, [link.sourceId], conn);
+    dropWaiting(tx, userId, [link.sourceId]);
   }
   let outId = link.outTransactionId;
   let inId = link.inTransactionId;
@@ -258,7 +273,7 @@ function apply(userId: string, link: PlannedLink, conn: Conn): void {
     method = "mirrored";
     const m = link.mirror;
     const externalId = `mirror:${link.sourceId}`;
-    const created = conn
+    const created = tx
       .insert(transactions)
       .values({
         userId,
@@ -285,7 +300,7 @@ function apply(userId: string, link: PlannedLink, conn: Conn): void {
       .get();
     const mirrorId =
       created?.id ??
-      conn
+      tx
         .select({ id: transactions.id })
         .from(transactions)
         .where(
@@ -301,8 +316,7 @@ function apply(userId: string, link: PlannedLink, conn: Conn): void {
     status = "needs_amount";
     method = "mirrored";
   }
-  conn
-    .insert(transfers)
+  tx.insert(transfers)
     .values({
       userId,
       outTransactionId: outId,
@@ -321,31 +335,36 @@ function apply(userId: string, link: PlannedLink, conn: Conn): void {
  * two booked sides, or mirrors the missing one onto an account that is filled
  * from transfers (see `planLinks`). Rows that already have a transfers row,
  * dismissed ones included, are left alone; a row waiting for an amount pairs
- * with its real counterpart once that shows up. Pass `conn` to run inside a
- * transaction you already hold; otherwise one is opened.
+ * with its real counterpart once that shows up. This one opens its own
+ * transaction; `linkTransfersInTx` runs inside one you already hold.
  */
-export function linkTransfers(
+export async function linkTransfers(
   userId: string,
   scope: LinkScope = {},
-  conn?: Conn,
+): Promise<LinkResult> {
+  return getDB().transaction((tx) => linkTransfersInTx(tx, userId, scope));
+}
+
+/** Sync twin of linkTransfers, for the body of a transaction. */
+export function linkTransfersInTx(
+  tx: Tx,
+  userId: string,
+  scope: LinkScope = {},
 ): LinkResult {
-  if (!conn) {
-    return getDB().transaction((tx) => linkTransfers(userId, scope, tx));
-  }
-  const accountList = loadPlanAccounts(userId, conn);
-  const sources = loadSources(userId, scope, accountList, conn);
+  const accountList = loadPlanAccountsInTx(tx, userId);
+  const sources = loadSources(tx, userId, scope, accountList);
   if (sources.length === 0) return { ...NONE };
-  const { taken, pending } = transferClaims(userId, conn);
+  const { taken, pending } = transferClaims(tx, userId);
   const plan = planLinks({
     sources,
-    candidates: loadCandidates(userId, sources, accountList, conn),
+    candidates: loadCandidates(tx, userId, sources, accountList),
     accounts: accountList,
     taken,
     pending,
   });
   const result = { ...NONE };
   for (const link of plan) {
-    apply(userId, link, conn);
+    apply(tx, userId, link);
     if (link.kind === "pair") result.paired += 1;
     else if (link.kind === "mirror") result.mirrored += 1;
     else result.needsAmount += 1;
@@ -356,25 +375,22 @@ export function linkTransfers(
 /**
  * After rows were written to `accountId`: looks at them as sources, and at
  * rows on other accounts that name this account's IBAN near their dates, so
- * a late counterpart pairs with what is already there.
+ * a late counterpart pairs with what is already there. Runs inside the
+ * transaction that wrote the rows.
  */
 export function linkAfterWrite(
+  tx: Tx,
   userId: string,
   accountId: string,
   transactionIds: readonly string[],
   dates: readonly string[],
-  conn: Conn,
 ): LinkResult {
   if (transactionIds.length === 0) return { ...NONE };
   const sorted = [...dates].sort();
-  return linkTransfers(
-    userId,
-    {
-      transactionIds,
-      targetAccountId: accountId,
-      from: shiftDate(sorted[0]!, -LINK_WINDOW_DAYS),
-      to: shiftDate(sorted[sorted.length - 1]!, LINK_WINDOW_DAYS),
-    },
-    conn,
-  );
+  return linkTransfersInTx(tx, userId, {
+    transactionIds,
+    targetAccountId: accountId,
+    from: shiftDate(sorted[0]!, -LINK_WINDOW_DAYS),
+    to: shiftDate(sorted[sorted.length - 1]!, LINK_WINDOW_DAYS),
+  });
 }

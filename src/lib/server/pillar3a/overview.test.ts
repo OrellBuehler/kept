@@ -23,17 +23,17 @@ const REF_B = makeQrr(2);
 
 async function setup() {
   const user = await createTestUser();
-  const acc = seedPillar3aAccount(user.id);
-  const a = seedPortfolio(user.id, acc.id, {
+  const acc = await seedPillar3aAccount(user.id);
+  const a = await seedPortfolio(user.id, acc.id, {
     name: "A",
     strategy: "Global 100",
     depositReference: REF_A,
   });
-  const b = seedPortfolio(user.id, acc.id, {
+  const b = await seedPortfolio(user.id, acc.id, {
     name: "B",
     depositReference: REF_B,
   });
-  const current = seedAccount(user.id, { name: "Current" });
+  const current = await seedAccount(user.id, { name: "Current" });
   return { user, acc, a, b, current };
 }
 
@@ -54,7 +54,7 @@ const manual = (
 describe("pillar3aOverview", () => {
   it("is empty and lists the running year for a new user", async () => {
     const user = await createTestUser();
-    const o = pillar3aOverview(user.id, TODAY);
+    const o = await pillar3aOverview(user.id, TODAY);
     expect(o.years.map((y) => y.year)).toEqual([2027, 2026, 2025]);
     expect(o.years[0]).toMatchObject({
       deduction: "small",
@@ -77,27 +77,27 @@ describe("pillar3aOverview", () => {
 
   it("sums years, marks gaps and buy-ins", async () => {
     const { user, a, b, current } = await setup();
-    seedImportedTransaction(user.id, current.id, {
+    await seedImportedTransaction(user.id, current.id, {
       bookingDate: "2025-05-01",
       amount: minor(-725_800),
       reference: REF_A,
     });
-    seedImportedTransaction(user.id, current.id, {
+    await seedImportedTransaction(user.id, current.id, {
       bookingDate: "2026-02-01",
       amount: minor(-300_000),
       reference: REF_B,
     });
-    addManualContribution(
+    await addManualContribution(
       user.id,
       manual(a.id, "2027-01-10", 200_000, { kind: "buy_in", gapYears: [2026] }),
       TODAY,
     );
-    setYearSetting(user.id, {
+    await setYearSetting(user.id, {
       year: 2027,
       deduction: "large",
       earnedIncome: minor(5_000_000),
     });
-    const o = pillar3aOverview(user.id, TODAY);
+    const o = await pillar3aOverview(user.id, TODAY);
     const byYear = new Map(o.years.map((y) => [y.year, y]));
     expect(byYear.get(2025)).toMatchObject({
       ordinary: 725_800,
@@ -128,10 +128,18 @@ describe("pillar3aOverview", () => {
 
   it("flags open gap years as eligible and reports over-limit payments", async () => {
     const { user, a } = await setup();
-    addManualContribution(user.id, manual(a.id, "2025-05-01", 100_000), TODAY);
-    addManualContribution(user.id, manual(a.id, "2026-05-01", 800_000), TODAY);
+    await addManualContribution(
+      user.id,
+      manual(a.id, "2025-05-01", 100_000),
+      TODAY,
+    );
+    await addManualContribution(
+      user.id,
+      manual(a.id, "2026-05-01", 800_000),
+      TODAY,
+    );
     const byYear = new Map(
-      pillar3aOverview(user.id, TODAY).years.map((y) => [y.year, y]),
+      (await pillar3aOverview(user.id, TODAY)).years.map((y) => [y.year, y]),
     );
     expect(byYear.get(2025)).toMatchObject({
       gap: 625_800,
@@ -146,8 +154,12 @@ describe("pillar3aOverview", () => {
 
   it("includes years before 2025 that have contributions", async () => {
     const { user, a } = await setup();
-    addManualContribution(user.id, manual(a.id, "2024-05-01", 100_000), TODAY);
-    const o = pillar3aOverview(user.id, TODAY);
+    await addManualContribution(
+      user.id,
+      manual(a.id, "2024-05-01", 100_000),
+      TODAY,
+    );
+    const o = await pillar3aOverview(user.id, TODAY);
     expect(o.years.map((y) => y.year)).toEqual([2027, 2026, 2025, 2024]);
     expect(o.years[3]).toMatchObject({
       limit: 705_600,
@@ -158,17 +170,29 @@ describe("pillar3aOverview", () => {
 
   it("computes value, contributed and gain per portfolio and in total", async () => {
     const { user, acc, a, b } = await setup();
-    addManualContribution(user.id, manual(a.id, "2026-05-01", 100_000), TODAY);
-    addManualContribution(user.id, manual(a.id, "2026-06-01", 50_000), TODAY);
-    addManualContribution(user.id, manual(b.id, "2026-06-01", 40_000), TODAY);
-    setValues(user.id, acc.id, "2026-12-31", [
+    await addManualContribution(
+      user.id,
+      manual(a.id, "2026-05-01", 100_000),
+      TODAY,
+    );
+    await addManualContribution(
+      user.id,
+      manual(a.id, "2026-06-01", 50_000),
+      TODAY,
+    );
+    await addManualContribution(
+      user.id,
+      manual(b.id, "2026-06-01", 40_000),
+      TODAY,
+    );
+    await setValues(user.id, acc.id, "2026-12-31", [
       { portfolioId: a.id, amount: minor(170_000) },
       { portfolioId: b.id, amount: minor(39_000) },
     ]);
-    setValues(user.id, acc.id, "2027-06-30", [
+    await setValues(user.id, acc.id, "2027-06-30", [
       { portfolioId: a.id, amount: minor(999_999) },
     ]);
-    const o = pillar3aOverview(user.id, TODAY);
+    const o = await pillar3aOverview(user.id, TODAY);
     expect(
       o.portfolios.map((p) => [
         p.name,
@@ -191,17 +215,25 @@ describe("pillar3aOverview", () => {
 
   it("keeps closed portfolios out of the totals but reports them", async () => {
     const { user, acc, a, b } = await setup();
-    addManualContribution(user.id, manual(a.id, "2026-05-01", 100_000), TODAY);
-    addManualContribution(user.id, manual(b.id, "2026-05-01", 40_000), TODAY);
-    setValues(user.id, acc.id, "2026-12-31", [
+    await addManualContribution(
+      user.id,
+      manual(a.id, "2026-05-01", 100_000),
+      TODAY,
+    );
+    await addManualContribution(
+      user.id,
+      manual(b.id, "2026-05-01", 40_000),
+      TODAY,
+    );
+    await setValues(user.id, acc.id, "2026-12-31", [
       { portfolioId: a.id, amount: minor(110_000) },
       { portfolioId: b.id, amount: minor(45_000) },
     ]);
-    closePortfolio(user.id, b.id, {
+    await closePortfolio(user.id, b.id, {
       closedOn: "2027-01-31",
       closeReason: "age",
     });
-    const o = pillar3aOverview(user.id, TODAY);
+    const o = await pillar3aOverview(user.id, TODAY);
     expect(o.portfolios.map((p) => [p.name, p.closeReason, p.gain])).toEqual([
       ["A", null, 10_000],
       ["B", "age", 5000],
@@ -216,13 +248,17 @@ describe("pillar3aOverview", () => {
 
   it("is scoped to the user", async () => {
     const { user, acc, a } = await setup();
-    addManualContribution(user.id, manual(a.id, "2026-05-01", 100_000), TODAY);
-    setValues(user.id, acc.id, "2026-12-31", [
+    await addManualContribution(
+      user.id,
+      manual(a.id, "2026-05-01", 100_000),
+      TODAY,
+    );
+    await setValues(user.id, acc.id, "2026-12-31", [
       { portfolioId: a.id, amount: minor(1) },
     ]);
     const other = await createTestUser();
-    seedPillar3aAccount(other.id);
-    const o = pillar3aOverview(other.id, TODAY);
+    await seedPillar3aAccount(other.id);
+    const o = await pillar3aOverview(other.id, TODAY);
     expect(o.portfolios).toEqual([]);
     expect(o.totals).toEqual({
       value: 0,
@@ -235,19 +271,27 @@ describe("pillar3aOverview", () => {
 
   it("leaves archived accounts out of the totals but keeps their contributions", async () => {
     const { user, acc, a } = await setup();
-    const other = seedPillar3aAccount(user.id, { name: "Other 3a" });
-    const c = seedPortfolio(user.id, other.id, { name: "C" });
-    setValues(user.id, acc.id, "2027-01-01", [
+    const other = await seedPillar3aAccount(user.id, { name: "Other 3a" });
+    const c = await seedPortfolio(user.id, other.id, { name: "C" });
+    await setValues(user.id, acc.id, "2027-01-01", [
       { portfolioId: a.id, amount: minor(100_000) },
     ]);
-    setValues(user.id, other.id, "2027-01-01", [
+    await setValues(user.id, other.id, "2027-01-01", [
       { portfolioId: c.id, amount: minor(50_000) },
     ]);
-    addManualContribution(user.id, manual(a.id, "2027-01-10", 60_000), TODAY);
-    addManualContribution(user.id, manual(c.id, "2027-01-11", 40_000), TODAY);
-    archiveAccount(user.id, other.id);
+    await addManualContribution(
+      user.id,
+      manual(a.id, "2027-01-10", 60_000),
+      TODAY,
+    );
+    await addManualContribution(
+      user.id,
+      manual(c.id, "2027-01-11", 40_000),
+      TODAY,
+    );
+    await archiveAccount(user.id, other.id);
 
-    const o = pillar3aOverview(user.id, TODAY);
+    const o = await pillar3aOverview(user.id, TODAY);
     expect(o.portfolios.find((p) => p.portfolioId === c.id)).toMatchObject({
       archived: true,
       latestValue: 50_000,

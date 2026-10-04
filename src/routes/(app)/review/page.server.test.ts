@@ -36,11 +36,11 @@ describe("review page", () => {
   it("reviews the requested year for the current user only", async () => {
     const a = await createTestUser();
     const b = await createTestUser();
-    seedImportedTransaction(a.id, seedAccount(a.id).id, {
+    await seedImportedTransaction(a.id, (await seedAccount(a.id)).id, {
       amount: minor(-1000),
       bookingDate: "2024-03-10",
     });
-    seedImportedTransaction(b.id, seedAccount(b.id).id, {
+    await seedImportedTransaction(b.id, (await seedAccount(b.id)).id, {
       amount: minor(-9999),
       bookingDate: "2024-03-10",
     });

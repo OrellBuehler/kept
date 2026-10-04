@@ -28,7 +28,7 @@ import type { Actions, PageServerLoad } from "./$types";
 
 export const load: PageServerLoad = async ({ locals, url }) => {
   const user = requireUser(locals);
-  const accounts = listAccounts(user.id)
+  const accounts = (await listAccounts(user.id))
     .filter((a) => !a.archived)
     .map((a) => ({ id: a.id, name: a.name, currency: a.currency }));
   const documentId = url.searchParams.get("document");

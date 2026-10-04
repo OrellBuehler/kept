@@ -7,11 +7,15 @@ import {
   getDB,
   matchDismissals,
   transactions,
+  type DB,
 } from "$lib/server/db";
 import { emitBillChanged } from "$lib/server/events";
 import { LedgerError } from "$lib/server/ledger/errors";
 import { parseMoneyInput } from "$lib/server/ledger/schemas";
-import { getTransaction } from "$lib/server/ledger/transactions";
+import {
+  getTransaction,
+  getTransactionRowInTx,
+} from "$lib/server/ledger/transactions";
 import { getBill, toMatchBill } from "./bills";
 import { transactionDisplayColumns, type TransactionDisplay } from "./display";
 import {
@@ -62,12 +66,28 @@ export function loadAllocations(userId: string): Allocation[] {
     .all();
 }
 
+type AllocationTransaction = Awaited<ReturnType<typeof getTransaction>>;
+
 /**
  * Allocates (part of) a transaction to a bill. The amount is signed in the bill's
  * direction; the pure engine validates it against the bill and every other
  * allocation of the transaction.
  */
-export function allocate(
+export async function allocate(
+  userId: string,
+  billId: string,
+  transactionId: string,
+  amount: Minor,
+  origin: AllocationOrigin,
+): Promise<{ id: string }> {
+  const bill = getBill(userId, billId);
+  const row = await getTransaction(userId, transactionId);
+  return allocateRow(userId, bill, row, amount, origin);
+}
+
+/** Sync twin of `allocate`, for the body of a transaction. */
+export function allocateInTx(
+  tx: Pick<DB, "select">,
   userId: string,
   billId: string,
   transactionId: string,
@@ -75,8 +95,20 @@ export function allocate(
   origin: AllocationOrigin,
 ): { id: string } {
   const bill = getBill(userId, billId);
-  const tx = getTransaction(userId, transactionId);
-  if (tx.source === "mirror") {
+  const row = getTransactionRowInTx(tx, userId, transactionId);
+  return allocateRow(userId, bill, row, amount, origin);
+}
+
+function allocateRow(
+  userId: string,
+  bill: ReturnType<typeof getBill>,
+  row: Omit<AllocationTransaction, "mirrorOf" | "transfer">,
+  amount: Minor,
+  origin: AllocationOrigin,
+): { id: string } {
+  const billId = bill.id;
+  const transactionId = row.id;
+  if (row.source === "mirror") {
     throw new LedgerError(
       "invalid",
       "A mirrored transfer cannot be allocated to a bill.",
@@ -113,7 +145,7 @@ export function allocate(
   }
   const problem = validateAllocation(
     toMatchBill(bill),
-    toMatchTransaction(tx),
+    toMatchTransaction(row),
     amount,
     related,
   );
@@ -139,17 +171,17 @@ export function allocate(
 }
 
 /** Like `allocate`, with the amount typed in the bill's currency (may be negative for refunds). */
-export function allocateFromInput(
+export async function allocateFromInput(
   userId: string,
   billId: string,
   transactionId: string,
   amountText: string,
   origin: AllocationOrigin,
-): { id: string } {
+): Promise<{ id: string }> {
   const bill = getBill(userId, billId);
   const parsed = parseMoneyInput(amountText, bill.currency);
   if (!parsed.ok) throw new LedgerError("invalid", parsed.message, "amount");
-  return allocate(userId, billId, transactionId, parsed.value, origin);
+  return await allocate(userId, billId, transactionId, parsed.value, origin);
 }
 
 export function listBillAllocations(

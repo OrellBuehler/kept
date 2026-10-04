@@ -83,34 +83,37 @@ describe("netWorthSeries", () => {
 
   it("sums accounts per currency, including snapshot-only accounts", async () => {
     const u = await createTestUser();
-    const current = seedAccount(u.id, {
+    const current = await seedAccount(u.id, {
       name: "Current",
       openingBalance: m(100000),
       openingDate: "2026-01-01",
     });
-    seedImportedTransaction(u.id, current.id, {
+    await seedImportedTransaction(u.id, current.id, {
       bookingDate: "2026-08-10",
       amount: m(-2500),
     });
-    const pension = seedAccount(u.id, { name: "Pension", type: "pension" });
-    createSnapshot(u.id, pension.id, {
+    const pension = await seedAccount(u.id, {
+      name: "Pension",
+      type: "pension",
+    });
+    await createSnapshot(u.id, pension.id, {
       date: "2026-06-30",
       amount: m(500000),
       note: null,
     } as never);
-    const euro = seedAccount(u.id, {
+    const euro = await seedAccount(u.id, {
       name: "Euro",
       currency: "EUR",
       openingBalance: m(3000),
       openingDate: "2026-01-01",
     });
-    seedImportedTransaction(u.id, euro.id, {
+    await seedImportedTransaction(u.id, euro.id, {
       bookingDate: "2026-09-02",
       amount: m(1000),
       currency: "EUR",
     });
 
-    const series = netWorthSeries(u.id, { today: TODAY });
+    const series = await netWorthSeries(u.id, { today: TODAY });
     expect(series.map((s) => s.currency)).toEqual(["CHF", "EUR"]);
     const chf = series[0]!;
     expect(chf.points).toHaveLength(13);
@@ -132,84 +135,94 @@ describe("netWorthSeries", () => {
   it("excludes archived accounts and other users", async () => {
     const u = await createTestUser();
     const other = await createTestUser();
-    const a = seedAccount(u.id, { openingBalance: m(1000) });
-    const archived = seedAccount(u.id, {
+    const a = await seedAccount(u.id, { openingBalance: m(1000) });
+    const archived = await seedAccount(u.id, {
       name: "Old",
       openingBalance: m(99999),
     });
-    seedImportedTransaction(u.id, archived.id, { amount: m(5) });
+    await seedImportedTransaction(u.id, archived.id, { amount: m(5) });
     const { archiveAccount } = await import("$lib/server/ledger");
-    archiveAccount(u.id, archived.id);
-    const foreign = seedAccount(other.id, { openingBalance: m(777777) });
-    seedImportedTransaction(other.id, foreign.id, {
+    await archiveAccount(u.id, archived.id);
+    const foreign = await seedAccount(other.id, { openingBalance: m(777777) });
+    await seedImportedTransaction(other.id, foreign.id, {
       bookingDate: "2026-09-01",
       amount: m(1),
     });
     expect(a.id).not.toBe(archived.id);
 
-    const series = netWorthSeries(u.id, { today: TODAY });
+    const series = await netWorthSeries(u.id, { today: TODAY });
     expect(series).toHaveLength(1);
     expect(series[0]!.points.at(-1)!.amount).toBe(1000);
     expect(
-      netWorthSeries(other.id, { today: TODAY })[0]!.points.at(-1)!.amount,
+      (await netWorthSeries(other.id, { today: TODAY }))[0]!.points.at(-1)!
+        .amount,
     ).toBe(777778);
   });
 
   it("supports weekly and daily steps and explicit ranges", async () => {
     const u = await createTestUser();
-    const a = seedAccount(u.id, {
+    const a = await seedAccount(u.id, {
       openingBalance: m(0),
       openingDate: "2026-09-01",
     });
-    seedImportedTransaction(u.id, a.id, {
+    await seedImportedTransaction(u.id, a.id, {
       bookingDate: "2026-10-08",
       amount: m(100),
     });
-    const week = netWorthSeries(u.id, {
-      from: "2026-10-01",
-      to: TODAY,
-      step: "week",
-      today: TODAY,
-    })[0]!;
+    const week = (
+      await netWorthSeries(u.id, {
+        from: "2026-10-01",
+        to: TODAY,
+        step: "week",
+        today: TODAY,
+      })
+    )[0]!;
     expect(week.points.map((p) => [p.date, p.amount])).toEqual([
       ["2026-10-01", 0],
       ["2026-10-08", 100],
       ["2026-10-15", 100],
     ]);
-    const day = netWorthSeries(u.id, {
-      from: "2026-10-14",
-      to: TODAY,
-      step: "day",
-      today: TODAY,
-    })[0]!;
+    const day = (
+      await netWorthSeries(u.id, {
+        from: "2026-10-14",
+        to: TODAY,
+        step: "day",
+        today: TODAY,
+      })
+    )[0]!;
     expect(day.points).toHaveLength(2);
   });
 
   it("keeps an archived account in the dates before it was archived", async () => {
     const u = await createTestUser();
     const other = await createTestUser();
-    const kept = seedAccount(u.id, { name: "Kept", openingBalance: m(100) });
-    const old = seedAccount(u.id, {
+    const kept = await seedAccount(u.id, {
+      name: "Kept",
+      openingBalance: m(100),
+    });
+    const old = await seedAccount(u.id, {
       name: "Old",
       openingBalance: m(1000),
       openingDate: "2026-01-01",
     });
-    const foreign = seedAccount(other.id, { openingBalance: m(5000) });
+    const foreign = await seedAccount(other.id, { openingBalance: m(5000) });
     expect(kept.id).not.toBe(old.id);
     const { archiveAccount } = await import("$lib/server/ledger");
-    archiveAccount(u.id, old.id);
-    archiveAccount(other.id, foreign.id);
+    await archiveAccount(u.id, old.id);
+    await archiveAccount(other.id, foreign.id);
     getDB()
       .update(accounts)
       .set({ archivedAt: new Date("2026-08-20T10:00:00") })
       .where(eq(accounts.id, old.id))
       .run();
-    const series = netWorthSeries(u.id, {
-      from: "2026-07-31",
-      to: "2026-09-30",
-      step: "month",
-      today: TODAY,
-    })[0]!;
+    const series = (
+      await netWorthSeries(u.id, {
+        from: "2026-07-31",
+        to: "2026-09-30",
+        step: "month",
+        today: TODAY,
+      })
+    )[0]!;
     expect(series.points.map((p) => [p.date, p.amount])).toEqual([
       ["2026-07-31", 1100],
       ["2026-08-31", 100],
@@ -219,52 +232,52 @@ describe("netWorthSeries", () => {
 
   it("sets archivedAt when archiving and clears it when unarchiving", async () => {
     const u = await createTestUser();
-    const a = seedAccount(u.id);
+    const a = await seedAccount(u.id);
     const { archiveAccount, unarchiveAccount } =
       await import("$lib/server/ledger");
     const before = Date.now();
-    archiveAccount(u.id, a.id);
+    await archiveAccount(u.id, a.id);
     const row = () =>
       getDB().select().from(accounts).where(eq(accounts.id, a.id)).get()!;
     expect(row().archivedAt!.getTime()).toBeGreaterThanOrEqual(before);
-    unarchiveAccount(u.id, a.id);
+    await unarchiveAccount(u.id, a.id);
     expect(row().archivedAt).toBeNull();
   });
 
   it("returns an empty list without accounts and finds the earliest date", async () => {
     const u = await createTestUser();
-    expect(netWorthSeries(u.id, { today: TODAY })).toEqual([]);
+    expect(await netWorthSeries(u.id, { today: TODAY })).toEqual([]);
     expect(earliestDataDate(u.id)).toBeNull();
-    const a = seedAccount(u.id, { openingDate: "2025-05-01" });
-    seedImportedTransaction(u.id, a.id, { bookingDate: "2025-03-15" });
+    const a = await seedAccount(u.id, { openingDate: "2025-05-01" });
+    await seedImportedTransaction(u.id, a.id, { bookingDate: "2025-03-15" });
     expect(earliestDataDate(u.id)).toBe("2025-03-15");
   });
 
   it("starts the range at an archived account that holds the earliest data", async () => {
     const u = await createTestUser();
-    const kept = seedAccount(u.id, { openingDate: "2026-02-01" });
-    const old = seedAccount(u.id, { openingDate: "2025-06-01" });
-    seedImportedTransaction(u.id, kept.id, { bookingDate: "2026-03-01" });
-    seedImportedTransaction(u.id, old.id, { bookingDate: "2025-07-10" });
+    const kept = await seedAccount(u.id, { openingDate: "2026-02-01" });
+    const old = await seedAccount(u.id, { openingDate: "2025-06-01" });
+    await seedImportedTransaction(u.id, kept.id, { bookingDate: "2026-03-01" });
+    await seedImportedTransaction(u.id, old.id, { bookingDate: "2025-07-10" });
     const { archiveAccount } = await import("$lib/server/ledger");
-    archiveAccount(u.id, old.id);
+    await archiveAccount(u.id, old.id);
     expect(earliestDataDate(u.id)).toBe("2025-06-01");
   });
 
   it("finds the earliest date when every account is archived", async () => {
     const u = await createTestUser();
-    const a = seedAccount(u.id, { openingDate: "2025-06-01" });
-    seedImportedTransaction(u.id, a.id, { bookingDate: "2025-04-10" });
+    const a = await seedAccount(u.id, { openingDate: "2025-06-01" });
+    await seedImportedTransaction(u.id, a.id, { bookingDate: "2025-04-10" });
     const { archiveAccount } = await import("$lib/server/ledger");
-    archiveAccount(u.id, a.id);
+    await archiveAccount(u.id, a.id);
     expect(earliestDataDate(u.id)).toBe("2025-04-10");
   });
 
   it("ignores an archived account without an archive timestamp", async () => {
     const u = await createTestUser();
-    const a = seedAccount(u.id, { openingDate: "2025-06-01" });
+    const a = await seedAccount(u.id, { openingDate: "2025-06-01" });
     const { archiveAccount } = await import("$lib/server/ledger");
-    archiveAccount(u.id, a.id);
+    await archiveAccount(u.id, a.id);
     getDB()
       .update(accounts)
       .set({ archivedAt: null })
@@ -276,7 +289,7 @@ describe("netWorthSeries", () => {
   it("does not see another user's earliest data", async () => {
     const u = await createTestUser();
     const other = await createTestUser();
-    seedAccount(other.id, { openingDate: "2020-01-01" });
+    await seedAccount(other.id, { openingDate: "2020-01-01" });
     expect(earliestDataDate(u.id)).toBeNull();
   });
 });
@@ -287,41 +300,54 @@ describe("accountBalances", () => {
   it("reports balances, institution, masked IBAN and staleness", async () => {
     const u = await createTestUser();
     const other = await createTestUser();
-    const fresh = seedAccount(u.id, {
+    const fresh = await seedAccount(u.id, {
       name: "Fresh",
       iban: EXAMPLE_IBAN,
       openingBalance: m(1000),
     });
-    seedImport(u.id, fresh.id, { createdAt: new Date("2026-10-10T12:00:00") });
-    seedImportedTransaction(u.id, fresh.id, {
+    await seedImport(u.id, fresh.id, {
+      createdAt: new Date("2026-10-10T12:00:00"),
+    });
+    await seedImportedTransaction(u.id, fresh.id, {
       bookingDate: "2026-10-09",
       amount: m(-200),
     });
-    const old = seedAccount(u.id, { name: "Old import" });
-    seedImport(u.id, old.id, { createdAt: new Date("2026-08-01T12:00:00") });
-    const boundary = seedAccount(u.id, { name: "Boundary" });
-    seedImport(u.id, boundary.id, {
+    const old = await seedAccount(u.id, { name: "Old import" });
+    await seedImport(u.id, old.id, {
+      createdAt: new Date("2026-08-01T12:00:00"),
+    });
+    const boundary = await seedAccount(u.id, { name: "Boundary" });
+    await seedImport(u.id, boundary.id, {
       createdAt: new Date("2026-08-31T12:00:00"),
     });
-    const pensionNew = seedAccount(u.id, { name: "P new", type: "pension" });
-    createSnapshot(u.id, pensionNew.id, {
+    const pensionNew = await seedAccount(u.id, {
+      name: "P new",
+      type: "pension",
+    });
+    await createSnapshot(u.id, pensionNew.id, {
       date: "2026-07-01",
       amount: m(10),
     } as never);
-    const pensionOld = seedAccount(u.id, { name: "P old", type: "pension" });
-    createSnapshot(u.id, pensionOld.id, {
+    const pensionOld = await seedAccount(u.id, {
+      name: "P old",
+      type: "pension",
+    });
+    await createSnapshot(u.id, pensionOld.id, {
       date: "2026-05-01",
       amount: m(10),
     } as never);
-    const future = seedAccount(u.id, { name: "Future snap", type: "pension" });
-    createSnapshot(u.id, future.id, {
+    const future = await seedAccount(u.id, {
+      name: "Future snap",
+      type: "pension",
+    });
+    await createSnapshot(u.id, future.id, {
       date: "2026-12-01",
       amount: m(10),
     } as never);
-    const empty = seedAccount(u.id, { name: "Empty" });
-    seedAccount(other.id, { name: "Foreign" });
+    const empty = await seedAccount(u.id, { name: "Empty" });
+    await seedAccount(other.id, { name: "Foreign" });
 
-    const list = accountBalances(u.id, TODAY);
+    const list = await accountBalances(u.id, TODAY);
     const by = Object.fromEntries(list.map((a) => [a.name, a]));
     expect(Object.keys(by).sort()).toEqual([
       "Boundary",
@@ -362,16 +388,16 @@ describe("accountBalances", () => {
     expect(by["P new"]!.noData).toBe(false);
     expect(empty.id).toBe(by.Empty!.id);
 
-    const imports = lastImports(u.id, TODAY);
+    const imports = await lastImports(u.id, TODAY);
     expect(imports.find((i) => i.accountName === "P old")!.stale).toBe(true);
   });
 
   it("omits archived accounts", async () => {
     const u = await createTestUser();
-    const a = seedAccount(u.id);
+    const a = await seedAccount(u.id);
     const { archiveAccount } = await import("$lib/server/ledger");
-    archiveAccount(u.id, a.id);
-    expect(accountBalances(u.id, TODAY)).toEqual([]);
+    await archiveAccount(u.id, a.id);
+    expect(await accountBalances(u.id, TODAY)).toEqual([]);
   });
 });
 
@@ -381,15 +407,15 @@ describe("monthSummary", () => {
   it("buckets by the account currency and keeps other users' IBANs out of the transfer rule", async () => {
     const u = await createTestUser();
     const other = await createTestUser();
-    const a = seedAccount(u.id, { iban: EXAMPLE_IBAN });
-    seedAccount(other.id, { iban: EXAMPLE_IBAN_OTHER });
-    seedImportedTransaction(u.id, a.id, {
+    const a = await seedAccount(u.id, { iban: EXAMPLE_IBAN });
+    await seedAccount(other.id, { iban: EXAMPLE_IBAN_OTHER });
+    await seedImportedTransaction(u.id, a.id, {
       bookingDate: "2026-10-03",
       amount: m(-400),
       currency: "EUR",
       counterpartyIban: EXAMPLE_IBAN_OTHER,
     });
-    const s = monthSummary(u.id, { month: "2026-10" });
+    const s = await monthSummary(u.id, { month: "2026-10" });
     expect(s.totals).toEqual([
       { currency: "CHF", income: 0, expenses: 400, net: -400 },
     ]);
@@ -397,29 +423,29 @@ describe("monthSummary", () => {
 
   it("splits income and expenses per currency at month boundaries", async () => {
     const u = await createTestUser();
-    const chf = seedAccount(u.id);
-    const eur = seedAccount(u.id, { name: "Eur", currency: "EUR" });
-    const tx = (
+    const chf = await seedAccount(u.id);
+    const eur = await seedAccount(u.id, { name: "Eur", currency: "EUR" });
+    const tx = async (
       accountId: string,
       bookingDate: string,
       amount: number,
       currency = "CHF",
     ) =>
-      seedImportedTransaction(u.id, accountId, {
+      await seedImportedTransaction(u.id, accountId, {
         bookingDate,
         amount: m(amount),
         currency,
       });
-    tx(chf.id, "2026-09-30", 100000);
-    tx(chf.id, "2026-09-30", -4000);
-    tx(chf.id, "2026-10-01", 50000);
-    tx(chf.id, "2026-10-31", -1234);
-    tx(chf.id, "2026-10-15", -766);
-    tx(chf.id, "2026-11-01", -99999);
-    tx(chf.id, "2026-08-31", -99999);
-    tx(eur.id, "2026-10-05", -300, "EUR");
+    await tx(chf.id, "2026-09-30", 100000);
+    await tx(chf.id, "2026-09-30", -4000);
+    await tx(chf.id, "2026-10-01", 50000);
+    await tx(chf.id, "2026-10-31", -1234);
+    await tx(chf.id, "2026-10-15", -766);
+    await tx(chf.id, "2026-11-01", -99999);
+    await tx(chf.id, "2026-08-31", -99999);
+    await tx(eur.id, "2026-10-05", -300, "EUR");
 
-    const s = monthSummary(u.id, { month: "2026-10" });
+    const s = await monthSummary(u.id, { month: "2026-10" });
     expect(s.previousMonth).toBe("2026-09");
     expect(s.totals).toEqual([
       { currency: "CHF", income: 50000, expenses: 2000, net: 48000 },
@@ -433,46 +459,46 @@ describe("monthSummary", () => {
 
   it("wraps across years and handles February", async () => {
     const u = await createTestUser();
-    const a = seedAccount(u.id);
-    seedImportedTransaction(u.id, a.id, {
+    const a = await seedAccount(u.id);
+    await seedImportedTransaction(u.id, a.id, {
       bookingDate: "2025-12-31",
       amount: m(-10),
     });
-    seedImportedTransaction(u.id, a.id, {
+    await seedImportedTransaction(u.id, a.id, {
       bookingDate: "2026-02-28",
       amount: m(-20),
     });
-    const jan = monthSummary(u.id, { month: "2026-01" });
+    const jan = await monthSummary(u.id, { month: "2026-01" });
     expect(jan.previousMonth).toBe("2025-12");
     expect(jan.previousTotals[0]!.expenses).toBe(10);
-    expect(monthSummary(u.id, { month: "2026-02" }).totals[0]!.expenses).toBe(
-      20,
-    );
+    expect(
+      (await monthSummary(u.id, { month: "2026-02" })).totals[0]!.expenses,
+    ).toBe(20);
   });
 
   it("excludes transfers between own accounts", async () => {
     const u = await createTestUser();
-    const a = seedAccount(u.id, { name: "A", iban: EXAMPLE_IBAN });
-    const b = seedAccount(u.id, { name: "B", iban: EXAMPLE_IBAN_OTHER });
-    const c = seedAccount(u.id, { name: "C", iban: null });
+    const a = await seedAccount(u.id, { name: "A", iban: EXAMPLE_IBAN });
+    const b = await seedAccount(u.id, { name: "B", iban: EXAMPLE_IBAN_OTHER });
+    const c = await seedAccount(u.id, { name: "C", iban: null });
     const base = { bookingDate: "2026-10-03" };
-    seedImportedTransaction(u.id, a.id, {
+    await seedImportedTransaction(u.id, a.id, {
       ...base,
       amount: m(-5000),
       counterpartyIban: " ch44 3199 9123 0008 8901 2 ",
     });
-    seedImportedTransaction(u.id, b.id, {
+    await seedImportedTransaction(u.id, b.id, {
       ...base,
       amount: m(5000),
       counterpartyIban: EXAMPLE_IBAN,
     });
     // external counterparty still counts
-    seedImportedTransaction(u.id, c.id, {
+    await seedImportedTransaction(u.id, c.id, {
       ...base,
       amount: m(-70),
       counterpartyIban: FOREIGN_IBANS[0],
     });
-    const s = monthSummary(u.id, { month: "2026-10" });
+    const s = await monthSummary(u.id, { month: "2026-10" });
     expect(s.totals).toEqual([
       { currency: "CHF", income: 0, expenses: 70, net: -70 },
     ]);
@@ -481,28 +507,28 @@ describe("monthSummary", () => {
   it("ignores archived accounts and other users", async () => {
     const u = await createTestUser();
     const other = await createTestUser();
-    const a = seedAccount(u.id);
-    const old = seedAccount(u.id, { name: "Old" });
-    const foreign = seedAccount(other.id);
+    const a = await seedAccount(u.id);
+    const old = await seedAccount(u.id, { name: "Old" });
+    const foreign = await seedAccount(other.id);
     const { archiveAccount } = await import("$lib/server/ledger");
-    seedImportedTransaction(u.id, a.id, {
+    await seedImportedTransaction(u.id, a.id, {
       bookingDate: "2026-10-03",
       amount: m(-100),
     });
-    seedImportedTransaction(u.id, old.id, {
+    await seedImportedTransaction(u.id, old.id, {
       bookingDate: "2026-10-03",
       amount: m(-900),
     });
-    archiveAccount(u.id, old.id);
-    seedImportedTransaction(other.id, foreign.id, {
+    await archiveAccount(u.id, old.id);
+    await seedImportedTransaction(other.id, foreign.id, {
       bookingDate: "2026-10-03",
       amount: m(-5000),
     });
-    const s = monthSummary(u.id, { month: "2026-10" });
+    const s = await monthSummary(u.id, { month: "2026-10" });
     expect(s.totals).toEqual([
       { currency: "CHF", income: 0, expenses: 100, net: -100 },
     ]);
-    expect(monthSummary(u.id, { month: "2024-01" }).totals).toEqual([]);
+    expect((await monthSummary(u.id, { month: "2024-01" })).totals).toEqual([]);
   });
 });
 
@@ -551,16 +577,16 @@ describe("billsSummary and unmatchedTransactions", () => {
 
   it("counts overpaid invoices as refunds and open-amount bills without a total", async () => {
     const u = await createTestUser();
-    const a = seedAccount(u.id);
+    const a = await seedAccount(u.id);
     const bill = seedBill(u.id, {
       amount: m(1000),
       dueDate: addDays(TODAY, 3),
     });
-    const tx = seedImportedTransaction(u.id, a.id, {
+    const tx = await seedImportedTransaction(u.id, a.id, {
       bookingDate: addDays(TODAY, -1),
       amount: m(-1300),
     });
-    allocate(u.id, bill.id, tx.id, m(1300), "user");
+    await allocate(u.id, bill.id, tx.id, m(1300), "user");
     seedBill(u.id, { amount: null, dueDate: addDays(TODAY, -2) });
     const s = billsSummary(u.id, TODAY);
     expect(s.awaitingRefund.totals).toEqual([{ currency: "CHF", amount: 300 }]);
@@ -570,7 +596,7 @@ describe("billsSummary and unmatchedTransactions", () => {
 
   it("counts read-only suggestions without matching anything", async () => {
     const u = await createTestUser();
-    const a = seedAccount(u.id);
+    const a = await seedAccount(u.id);
     seedBill(u.id, {
       amount: m(10000),
       creditorIban: EXAMPLE_IBAN_OTHER,
@@ -579,7 +605,7 @@ describe("billsSummary and unmatchedTransactions", () => {
       dueDate: addDays(TODAY, 2),
       issueDate: addDays(TODAY, -20),
     });
-    seedImportedTransaction(u.id, a.id, {
+    await seedImportedTransaction(u.id, a.id, {
       bookingDate: addDays(TODAY, -1),
       amount: m(-10000),
       reference: EXAMPLE_QRR,
@@ -594,26 +620,29 @@ describe("billsSummary and unmatchedTransactions", () => {
   it("finds outgoing referenced payments without allocation", async () => {
     const u = await createTestUser();
     const other = await createTestUser();
-    const a = seedAccount(u.id);
-    const foreign = seedAccount(other.id);
+    const a = await seedAccount(u.id);
+    const foreign = await seedAccount(other.id);
     const ref = { referenceType: "SCOR" as const, reference: EXAMPLE_SCOR };
-    const hit = (date: string, amount = -500, over = {}) =>
-      seedImportedTransaction(u.id, a.id, {
+    const hit = async (date: string, amount = -500, over = {}) =>
+      await seedImportedTransaction(u.id, a.id, {
         bookingDate: date,
         amount: m(amount),
         ...ref,
         ...over,
       });
-    hit(addDays(TODAY, -1));
-    hit(addDays(TODAY, -60));
-    hit(addDays(TODAY, -61));
-    hit(addDays(TODAY, 1));
-    hit(addDays(TODAY, -2), 500);
-    hit(addDays(TODAY, -2), -500, { referenceType: null, reference: null });
-    const allocated = hit(addDays(TODAY, -3));
+    await hit(addDays(TODAY, -1));
+    await hit(addDays(TODAY, -60));
+    await hit(addDays(TODAY, -61));
+    await hit(addDays(TODAY, 1));
+    await hit(addDays(TODAY, -2), 500);
+    await hit(addDays(TODAY, -2), -500, {
+      referenceType: null,
+      reference: null,
+    });
+    const allocated = await hit(addDays(TODAY, -3));
     const bill = seedBill(u.id, { amount: m(500) });
-    allocate(u.id, bill.id, allocated.id, m(500), "user");
-    seedImportedTransaction(other.id, foreign.id, {
+    await allocate(u.id, bill.id, allocated.id, m(500), "user");
+    await seedImportedTransaction(other.id, foreign.id, {
       bookingDate: addDays(TODAY, -1),
       amount: m(-500),
       ...ref,
@@ -634,21 +663,21 @@ describe("dashboard", () => {
   it("assembles everything and scopes it to the user", async () => {
     const u = await createTestUser();
     const other = await createTestUser();
-    const a = seedAccount(u.id, {
+    const a = await seedAccount(u.id, {
       openingBalance: m(5000),
       openingDate: "2026-01-01",
     });
-    seedImportedTransaction(u.id, a.id, {
+    await seedImportedTransaction(u.id, a.id, {
       bookingDate: "2026-10-02",
       amount: m(-1000),
     });
-    const foreign = seedAccount(other.id, { openingBalance: m(123456) });
+    const foreign = await seedAccount(other.id, { openingBalance: m(123456) });
     seedBill(other.id, { dueDate: addDays(TODAY, -5) });
-    seedImportedTransaction(other.id, foreign.id, {
+    await seedImportedTransaction(other.id, foreign.id, {
       bookingDate: "2026-10-02",
     });
 
-    const d = dashboard(u.id, TODAY);
+    const d = await dashboard(u.id, TODAY);
     expect(d.range).toBe("12m");
     expect(d.netWorth.totals).toEqual([
       { currency: "CHF", balance: 4000, shareBalance: 4000, accountCount: 1 },
@@ -661,16 +690,18 @@ describe("dashboard", () => {
     expect(d.imports).toHaveLength(1);
     expect(d.staleAccounts).toBe(0);
 
-    const all = dashboard(u.id, TODAY, { range: "all" });
+    const all = await dashboard(u.id, TODAY, { range: "all" });
     expect(all.range).toBe("all");
     expect(all.netWorth.from).toBe("2026-01-01");
-    expect(dashboard(u.id, TODAY, { range: "3m" }).netWorth.step).toBe("week");
-    expect(dashboard(other.id, TODAY).overdueBills).toBe(1);
+    expect((await dashboard(u.id, TODAY, { range: "3m" })).netWorth.step).toBe(
+      "week",
+    );
+    expect((await dashboard(other.id, TODAY)).overdueBills).toBe(1);
   });
 
   it("works for a user without data", async () => {
     const u = await createTestUser();
-    const d = dashboard(u.id, TODAY, { range: "all" });
+    const d = await dashboard(u.id, TODAY, { range: "all" });
     expect(d.netWorth.series).toEqual([]);
     expect(d.accounts).toEqual([]);
     expect(d.month.totals).toEqual([]);

@@ -21,16 +21,16 @@ import {
  * their security and account currency, prices, FX rates). Accounts without
  * trades dated <= `to` are absent from the result.
  */
-export function loadHoldingsInputs(
+export async function loadHoldingsInputs(
   userId: string,
   accountIds: readonly string[],
   to: string,
-): Map<string, HoldingsInput> {
+): Promise<Map<string, HoldingsInput>> {
   const result = new Map<string, HoldingsInput>();
   if (accountIds.length === 0) return result;
   const db = getDB();
 
-  const tradeRows = db
+  const tradeRows = await db
     .select({
       accountId: trades.accountId,
       accountCurrency: accounts.currency,
@@ -54,8 +54,7 @@ export function loadHoldingsInputs(
         inArray(trades.accountId, [...accountIds]),
         lte(trades.date, to),
       ),
-    )
-    .all();
+    );
   if (tradeRows.length === 0) return result;
 
   const securityIds = [...new Set(tradeRows.map((t) => t.securityId))];
@@ -66,7 +65,7 @@ export function loadHoldingsInputs(
   }
 
   const pricesBySecurity = new Map<string, HoldingPrice[]>();
-  for (const p of db
+  for (const p of await db
     .select({
       securityId: securityPrices.securityId,
       date: securityPrices.date,
@@ -80,14 +79,13 @@ export function loadHoldingsInputs(
         inArray(securityPrices.securityId, securityIds),
         lte(securityPrices.date, to),
       ),
-    )
-    .all()) {
+    )) {
     const list = pricesBySecurity.get(p.securityId) ?? [];
     list.push(p);
     pricesBySecurity.set(p.securityId, list);
   }
 
-  const fxRows: HoldingFxRate[] = db
+  const fxRows: HoldingFxRate[] = await db
     .select({
       base: fxRates.base,
       quote: fxRates.quote,
@@ -103,8 +101,7 @@ export function loadHoldingsInputs(
         inArray(fxRates.quote, [...currencies]),
         lte(fxRates.date, to),
       ),
-    )
-    .all();
+    );
 
   const byAccount = new Map<string, typeof tradeRows>();
   for (const t of tradeRows) {
@@ -152,11 +149,11 @@ export function loadHoldingsInputs(
  * `today`). Fetched prices arrive without the user looking at the account, so
  * they never count. Two queries.
  */
-export function latestHoldingsActivity(
+export async function latestHoldingsActivity(
   userId: string,
   accountIds: readonly string[],
   today: string,
-): Map<string, string> {
+): Promise<Map<string, string>> {
   const out = new Map<string, string>();
   if (accountIds.length === 0) return out;
   const db = getDB();
@@ -165,7 +162,7 @@ export function latestHoldingsActivity(
       out.set(accountId, date);
     }
   };
-  const rows = db
+  const rows = await db
     .select({
       accountId: trades.accountId,
       securityId: trades.securityId,
@@ -182,8 +179,7 @@ export function latestHoldingsActivity(
         inArray(trades.accountId, [...accountIds]),
         lte(trades.date, today),
       ),
-    )
-    .all();
+    );
   const grouped = new Map<string, typeof rows>();
   for (const r of rows) {
     const key = `${r.accountId}\u0000${r.securityId}`;
@@ -204,23 +200,23 @@ export function latestHoldingsActivity(
   ];
   if (heldIds.length === 0) return out;
   const lastManual = new Map(
-    db
-      .select({
-        securityId: securityPrices.securityId,
-        d: max(securityPrices.date),
-      })
-      .from(securityPrices)
-      .where(
-        and(
-          eq(securityPrices.userId, userId),
-          eq(securityPrices.source, "manual"),
-          inArray(securityPrices.securityId, heldIds),
-          lte(securityPrices.date, today),
-        ),
-      )
-      .groupBy(securityPrices.securityId)
-      .all()
-      .map((r) => [r.securityId, r.d]),
+    (
+      await db
+        .select({
+          securityId: securityPrices.securityId,
+          d: max(securityPrices.date),
+        })
+        .from(securityPrices)
+        .where(
+          and(
+            eq(securityPrices.userId, userId),
+            eq(securityPrices.source, "manual"),
+            inArray(securityPrices.securityId, heldIds),
+            lte(securityPrices.date, today),
+          ),
+        )
+        .groupBy(securityPrices.securityId)
+    ).map((r) => [r.securityId, r.d]),
   );
   for (const p of positions) {
     if (p.held > 0) note(p.accountId, lastManual.get(p.securityId) ?? null);

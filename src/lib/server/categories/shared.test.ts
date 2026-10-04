@@ -19,34 +19,37 @@ const category = (name: string, parentId: string | null = null) => ({
 
 async function setup() {
   const user = await createTestUser();
-  const full = seedAccount(user.id, { name: "Full" });
-  const half = seedAccount(user.id, { name: "Half", shareBps: 5000 });
-  const seventy = seedAccount(user.id, { name: "Seventy", shareBps: 7000 });
-  const euro = seedAccount(user.id, {
+  const full = await seedAccount(user.id, { name: "Full" });
+  const half = await seedAccount(user.id, { name: "Half", shareBps: 5000 });
+  const seventy = await seedAccount(user.id, {
+    name: "Seventy",
+    shareBps: 7000,
+  });
+  const euro = await seedAccount(user.id, {
     name: "Euro",
     currency: "EUR",
     shareBps: 5000,
   });
   const groceries = createCategory(user.id, category("Groceries"));
   const dairy = createCategory(user.id, category("Dairy", groceries.id));
-  const spend = (
+  const spend = async (
     accountId: string,
     categoryId: string | null,
     amount: number,
     currency = "CHF",
   ) =>
-    seedImportedTransaction(user.id, accountId, {
+    await seedImportedTransaction(user.id, accountId, {
       categoryId,
       amount: m(amount),
       bookingDate: "2026-10-05",
       currency,
     });
-  spend(full.id, groceries.id, -2000);
-  spend(half.id, groceries.id, -3001);
-  spend(half.id, groceries.id, 501); // refund
-  spend(seventy.id, dairy.id, -1001);
-  spend(euro.id, groceries.id, -5, "EUR");
-  spend(half.id, null, -999); // uncategorised
+  await spend(full.id, groceries.id, -2000);
+  await spend(half.id, groceries.id, -3001);
+  await spend(half.id, groceries.id, 501); // refund
+  await spend(seventy.id, dairy.id, -1001);
+  await spend(euro.id, groceries.id, -5, "EUR");
+  await spend(half.id, null, -999); // uncategorised
   return { user, groceries, dairy };
 }
 
@@ -99,9 +102,9 @@ describe("budgets and spending at the ownership share", () => {
   it("never scales the stored amounts and leaves other users alone", async () => {
     const { user } = await setup();
     const other = await createTestUser();
-    const a = seedAccount(other.id, { shareBps: 5000 });
+    const a = await seedAccount(other.id, { shareBps: 5000 });
     const cat = createCategory(other.id, category("Other"));
-    seedImportedTransaction(other.id, a.id, {
+    await seedImportedTransaction(other.id, a.id, {
       categoryId: cat.id,
       amount: m(-1000),
       bookingDate: "2026-10-05",

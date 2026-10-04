@@ -48,11 +48,14 @@ export interface ForecastView extends Forecast {
   unprojectedBills: UnprojectedBills;
 }
 
-function forecastAccounts(userId: string, today: string): ForecastAccount[] {
+async function forecastAccounts(
+  userId: string,
+  today: string,
+): Promise<ForecastAccount[]> {
   const settings = new Map(
     listAccountSettings(userId).map((s) => [s.accountId, s]),
   );
-  return accountBalances(userId, today).map((a) => ({
+  return (await accountBalances(userId, today)).map((a) => ({
     id: a.id,
     name: a.name,
     currency: a.currency,
@@ -62,16 +65,16 @@ function forecastAccounts(userId: string, today: string): ForecastAccount[] {
   }));
 }
 
-export function forecast(
+export async function forecast(
   userId: string,
   today: string,
   days: Horizon | number,
-): ForecastView {
+): Promise<ForecastView> {
   const to = addDays(today, days);
   const items = itemSources.flatMap((source) => source(userId, today, to));
   return {
     ...projectForecast({
-      accounts: forecastAccounts(userId, today),
+      accounts: await forecastAccounts(userId, today),
       items,
       from: today,
       days,
@@ -90,13 +93,13 @@ export interface LowBalanceAlert {
 }
 
 /** Accounts whose projected balance goes below zero within `days`, soonest first. */
-export function negativeBalanceAlerts(
+export async function negativeBalanceAlerts(
   userId: string,
   today: string,
   days = 30,
-): LowBalanceAlert[] {
-  return forecast(userId, today, days)
-    .accounts.filter((a) => a.negativeDate !== null)
+): Promise<LowBalanceAlert[]> {
+  return (await forecast(userId, today, days)).accounts
+    .filter((a) => a.negativeDate !== null)
     .map((a) => {
       const point = a.points.find((p) => p.date === a.negativeDate)!;
       return {

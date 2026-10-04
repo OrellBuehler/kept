@@ -63,10 +63,10 @@ export interface CurrencyTotal {
 }
 
 /** Non-archived accounts with their balance as of `today` and staleness. */
-export function accountBalances(
+export async function accountBalances(
   userId: string,
   today: string,
-): AccountBalanceView[] {
+): Promise<AccountBalanceView[]> {
   const lastSnapshot = new Map(
     getDB()
       .select({
@@ -84,13 +84,15 @@ export function accountBalances(
       .all()
       .map((r) => [r.accountId, r.d]),
   );
-  const accountRows = listAccounts(userId, today).filter((a) => !a.archived);
-  const holdingsActivity = latestHoldingsActivity(
+  const accountRows = (await listAccounts(userId, today)).filter(
+    (a) => !a.archived,
+  );
+  const holdingsActivity = await latestHoldingsActivity(
     userId,
     accountRows.map((a) => a.id),
     today,
   );
-  const portfolioValueDates = latestPortfolioValueDates(
+  const portfolioValueDates = await latestPortfolioValueDates(
     userId,
     accountRows.map((a) => a.id),
     today,
@@ -193,12 +195,13 @@ export interface LastImportView {
 }
 
 /** Per account: when it was last imported and whether it is stale. */
-export function lastImports(
+export async function lastImports(
   userId: string,
   today: string,
-  balances: readonly AccountBalanceView[] = accountBalances(userId, today),
-): LastImportView[] {
-  return balances.map((a) => ({
+  balances?: readonly AccountBalanceView[],
+): Promise<LastImportView[]> {
+  const rows = balances ?? (await accountBalances(userId, today));
+  return rows.map((a) => ({
     accountId: a.id,
     accountName: a.name,
     lastImportAt: a.lastImportAt,

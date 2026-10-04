@@ -37,16 +37,16 @@ const budget = (categoryId: string, amount: number, currency = "CHF") => ({
 
 async function setup() {
   const user = await createTestUser();
-  const chf = seedAccount(user.id, { name: "Main" });
-  const eur = seedAccount(user.id, { name: "Euro", currency: "EUR" });
-  const spend = (
+  const chf = await seedAccount(user.id, { name: "Main" });
+  const eur = await seedAccount(user.id, { name: "Euro", currency: "EUR" });
+  const spend = async (
     accountId: string,
     categoryId: string | null,
     amount: number,
     bookingDate = "2026-10-05",
     currency = "CHF",
   ) =>
-    seedImportedTransaction(user.id, accountId, {
+    await seedImportedTransaction(user.id, accountId, {
       categoryId,
       amount: minor(amount),
       bookingDate,
@@ -133,12 +133,12 @@ describe("budget report", () => {
     );
     createBudget(user.id, budget(food.id, 40000));
     createBudget(user.id, budget(groceries.id, 20000));
-    spend(chf.id, food.id, -10000);
-    spend(chf.id, groceries.id, -15000);
-    spend(chf.id, groceries.id, 2000);
-    spend(chf.id, groceries.id, -99999, "2026-09-30");
-    spend(chf.id, groceries.id, -99999, "2026-11-01");
-    spend(chf.id, null, -5000);
+    await spend(chf.id, food.id, -10000);
+    await spend(chf.id, groceries.id, -15000);
+    await spend(chf.id, groceries.id, 2000);
+    await spend(chf.id, groceries.id, -99999, "2026-09-30");
+    await spend(chf.id, groceries.id, -99999, "2026-11-01");
+    await spend(chf.id, null, -5000);
 
     const report = budgetReport(user.id, "2026-10");
     expect(report.month).toBe("2026-10");
@@ -172,9 +172,9 @@ describe("budget report", () => {
     const rent = createCategory(user.id, cat("Rent"));
     const salary = createCategory(user.id, cat("Salary", { kind: "income" }));
     createBudget(user.id, budget(fun.id, 5000));
-    spend(chf.id, fun.id, -7000);
-    spend(chf.id, rent.id, -90000);
-    spend(chf.id, salary.id, 500000);
+    await spend(chf.id, fun.id, -7000);
+    await spend(chf.id, rent.id, -90000);
+    await spend(chf.id, salary.id, 500000);
 
     const r = budgetReport(user.id, "2026-10").currencies[0]!;
     expect(r.rows[0]).toMatchObject({ over: true, remaining: -2000 });
@@ -188,8 +188,8 @@ describe("budget report", () => {
     const food = createCategory(user.id, cat("Food"));
     createBudget(user.id, budget(food.id, 10000, "CHF"));
     createBudget(user.id, budget(food.id, 8000, "EUR"));
-    spend(chf.id, food.id, -4000);
-    spend(eur.id, food.id, -9000, "2026-10-06", "EUR");
+    await spend(chf.id, food.id, -4000);
+    await spend(eur.id, food.id, -9000, "2026-10-06", "EUR");
 
     const report = budgetReport(user.id, "2026-10");
     expect(report.currencies.map((c) => c.currency)).toEqual(["CHF", "EUR"]);
@@ -218,13 +218,13 @@ describe("budget report", () => {
   it("only counts the user's own transactions and categories", async () => {
     const { user, chf, spend } = await setup();
     const other = await createTestUser();
-    const otherAccount = seedAccount(other.id);
+    const otherAccount = await seedAccount(other.id);
     const food = createCategory(user.id, cat("Food"));
     const theirFood = createCategory(other.id, cat("Food"));
     createBudget(user.id, budget(food.id, 10000));
     createBudget(other.id, budget(theirFood.id, 99900));
-    spend(chf.id, food.id, -1000);
-    seedImportedTransaction(other.id, otherAccount.id, {
+    await spend(chf.id, food.id, -1000);
+    await seedImportedTransaction(other.id, otherAccount.id, {
       categoryId: theirFood.id,
       amount: minor(-77700),
       bookingDate: "2026-10-05",
@@ -253,14 +253,14 @@ describe("spending by category", () => {
     );
     const home = createCategory(user.id, cat("Home"));
     const salary = createCategory(user.id, cat("Salary", { kind: "income" }));
-    spend(chf.id, groceries.id, -3000);
-    spend(chf.id, food.id, -2000);
-    spend(chf.id, home.id, -6000);
-    spend(chf.id, salary.id, 100000);
-    spend(eur.id, home.id, -700, "2026-10-09", "EUR");
-    spend(chf.id, null, -100);
-    spend(chf.id, null, 100);
-    spend(chf.id, null, -100, "2026-09-01");
+    await spend(chf.id, groceries.id, -3000);
+    await spend(chf.id, food.id, -2000);
+    await spend(chf.id, home.id, -6000);
+    await spend(chf.id, salary.id, 100000);
+    await spend(eur.id, home.id, -700, "2026-10-09", "EUR");
+    await spend(chf.id, null, -100);
+    await spend(chf.id, null, 100);
+    await spend(chf.id, null, -100, "2026-09-01");
 
     const s = spendingByCategory(user.id, "2026-10");
     expect(s.currencies.map((c) => [c.currency, c.total])).toEqual([
@@ -277,8 +277,8 @@ describe("spending by category", () => {
   it("is part of the dashboard", async () => {
     const { user, chf, spend } = await setup();
     const food = createCategory(user.id, cat("Food"));
-    spend(chf.id, food.id, -1200, "2026-10-02");
-    const d = dashboard(user.id, "2026-10-15");
+    await spend(chf.id, food.id, -1200, "2026-10-02");
+    const d = await dashboard(user.id, "2026-10-15");
     expect(d.spending.month).toBe("2026-10");
     expect(d.spending.currencies[0]!.items[0]).toMatchObject({
       name: "Food",

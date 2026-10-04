@@ -33,8 +33,8 @@ const loadAs = (user: User, query = "") =>
 
 async function setup() {
   const user = await createTestUser();
-  const institution = seedInstitution(user.id, "Example Bank");
-  const account = seedAccount(user.id, {
+  const institution = await seedInstitution(user.id, "Example Bank");
+  const account = await seedAccount(user.id, {
     iban: EXAMPLE_IBAN,
     institutionId: institution.id,
   });
@@ -44,8 +44,8 @@ async function setup() {
 describe("/import load", () => {
   it("lists active accounts only, recent imports and the selected account", async () => {
     const { user, account } = await setup();
-    const archived = seedAccount(user.id, { name: "Old", iban: null });
-    archiveAccount(user.id, archived.id);
+    const archived = await seedAccount(user.id, { name: "Old", iban: null });
+    await archiveAccount(user.id, archived.id);
     await confirmImport(
       user.id,
       await uploadFixture(user.id, account.id, "camt053/overlap-a.xml"),
@@ -73,7 +73,7 @@ describe("/import load", () => {
   it("ignores a selected account that is archived, unknown or someone else's", async () => {
     const { user, account } = await setup();
     const other = await createTestUser();
-    const theirs = seedAccount(other.id, { iban: null });
+    const theirs = await seedAccount(other.id, { iban: null });
     for (const id of [theirs.id, "nope"]) {
       const r = await loadAs(user, `?account=${id}`);
       expect(
@@ -120,7 +120,7 @@ describe("/import upload", () => {
     expect((first as { location: string }).location).toMatch(
       /^\/import\/[A-Za-z0-9_-]{32}\/mapping$/,
     );
-    saveCsvProfile(user.id, account.id, "Mine", SIMPLE_CSV_PROFILE);
+    await saveCsvProfile(user.id, account.id, "Mine", SIMPLE_CSV_PROFILE);
     const second = await upload(user, { accountId: account.id, file: csv });
     expect((second as { location: string }).location).toMatch(
       /^\/import\/[A-Za-z0-9_-]{32}$/,
@@ -186,8 +186,8 @@ describe("/import upload", () => {
 
   it("rejects archived accounts", async () => {
     const { user } = await setup();
-    const old = seedAccount(user.id, { name: "Old", iban: null });
-    archiveAccount(user.id, old.id);
+    const old = await seedAccount(user.id, { name: "Old", iban: null });
+    await archiveAccount(user.id, old.id);
     expect(
       await upload(user, {
         accountId: old.id,

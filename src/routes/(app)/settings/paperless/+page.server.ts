@@ -95,7 +95,7 @@ const NOTES = {
     "Private, LAN and localhost addresses are allowed on purpose: Kept and Paperless are self-hosted, and every user of this Kept instance is trusted by whoever runs it.",
 } as const;
 
-export const load: PageServerLoad = ({ locals, url }) => {
+export const load: PageServerLoad = async ({ locals, url }) => {
   const user = requireUser(locals);
   const view = getConnection(user.id);
   const uploads = listUploads(user.id);
@@ -154,7 +154,7 @@ export const load: PageServerLoad = ({ locals, url }) => {
     },
     recentDocuments,
     uploads,
-    accounts: listAccounts(user.id).map((a) => ({
+    accounts: (await listAccounts(user.id)).map((a) => ({
       id: a.id,
       name: a.name,
       archived: a.archived,

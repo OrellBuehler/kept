@@ -17,7 +17,7 @@ useTestStore();
 
 async function setup() {
   const user = await createTestUser();
-  const account = seedAccount(user.id, { iban: EXAMPLE_IBAN });
+  const account = await seedAccount(user.id, { iban: EXAMPLE_IBAN });
   return { user, account };
 }
 
@@ -102,7 +102,7 @@ describe("confirm re-checks the account", () => {
       account.id,
       "camt053/overlap-a.xml",
     );
-    archiveAccount(user.id, account.id);
+    await archiveAccount(user.id, account.id);
     await expect(confirmImport(user.id, id)).rejects.toThrow(/archived/);
     expect(txCount(account.id)).toBe(0);
   });

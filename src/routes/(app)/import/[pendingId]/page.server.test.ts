@@ -76,7 +76,7 @@ const act = (name: "confirm" | "cancel", user: User, pendingId: string) =>
 
 async function setup() {
   const user = await createTestUser();
-  const account = seedAccount(user.id, { iban: EXAMPLE_IBAN });
+  const account = await seedAccount(user.id, { iban: EXAMPLE_IBAN });
   return { user, account };
 }
 
@@ -201,7 +201,7 @@ describe("/import/[pendingId] actions", () => {
 
   it("confirm reports linked transfers in the redirect and the preview marks replacements", async () => {
     const { user, account } = await setup();
-    const savings = seedAccount(user.id, {
+    const savings = await seedAccount(user.id, {
       name: "Savings",
       iban: EXAMPLE_IBAN_OTHER,
       fillFromTransfers: true,
@@ -256,7 +256,7 @@ describe("/import/[pendingId] actions", () => {
 
   it("confirm auto-matches an open bill by its exact reference", async () => {
     const user = await createTestUser();
-    const account = seedAccount(user.id, { iban: IBAN_QR });
+    const account = await seedAccount(user.id, { iban: IBAN_QR });
     const bill = seedBill(user.id, {
       kind: "credit_note",
       amount: 1000 as never,

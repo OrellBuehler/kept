@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { and, eq } from "drizzle-orm";
-import { getDB, institutions } from "$lib/server/db";
+import { first, getDB, institutions } from "$lib/server/db";
 import { LedgerError, notFound } from "./errors";
 import { UnsafeSvgError, sanitizeSvg } from "./svg-sanitize";
 
@@ -93,46 +93,49 @@ export function prepareLogo(bytes: Uint8Array): StoredLogo {
   }
 }
 
-export function setInstitutionLogo(
+export async function setInstitutionLogo(
   userId: string,
   id: string,
   upload: Uint8Array,
-): string {
+): Promise<string> {
   const { bytes, mime } = prepareLogo(upload);
   const version = createHash("sha256").update(bytes).digest("hex").slice(0, 16);
-  const updated = getDB()
+  const updated = await getDB()
     .update(institutions)
     .set({ logo: Buffer.from(bytes), logoMime: mime, logoVersion: version })
     .where(and(eq(institutions.userId, userId), eq(institutions.id, id)))
-    .returning({ id: institutions.id })
-    .all();
+    .returning({ id: institutions.id });
   if (updated.length === 0) throw notFound("Institution");
   return version;
 }
 
-export function removeInstitutionLogo(userId: string, id: string): void {
-  const updated = getDB()
+export async function removeInstitutionLogo(
+  userId: string,
+  id: string,
+): Promise<void> {
+  const updated = await getDB()
     .update(institutions)
     .set({ logo: null, logoMime: null, logoVersion: null })
     .where(and(eq(institutions.userId, userId), eq(institutions.id, id)))
-    .returning({ id: institutions.id })
-    .all();
+    .returning({ id: institutions.id });
   if (updated.length === 0) throw notFound("Institution");
 }
 
-export function readInstitutionLogo(
+export async function readInstitutionLogo(
   userId: string,
   id: string,
-): StoredLogo & { version: string } {
-  const row = getDB()
-    .select({
-      logo: institutions.logo,
-      mime: institutions.logoMime,
-      version: institutions.logoVersion,
-    })
-    .from(institutions)
-    .where(and(eq(institutions.userId, userId), eq(institutions.id, id)))
-    .get();
+): Promise<StoredLogo & { version: string }> {
+  const row = await first(
+    getDB()
+      .select({
+        logo: institutions.logo,
+        mime: institutions.logoMime,
+        version: institutions.logoVersion,
+      })
+      .from(institutions)
+      .where(and(eq(institutions.userId, userId), eq(institutions.id, id)))
+      .limit(1),
+  );
   if (!row) throw notFound("Institution");
   if (!row.logo || !row.mime || !row.version) throw notFound("Logo");
   return {

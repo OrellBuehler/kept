@@ -29,7 +29,7 @@ const undo = (user: User, accountId: string, form: Record<string, string>) =>
 
 async function setup() {
   const user = await createTestUser();
-  const account = seedAccount(user.id, { iban: EXAMPLE_IBAN });
+  const account = await seedAccount(user.id, { iban: EXAMPLE_IBAN });
   const imp = await confirmImport(
     user.id,
     await uploadFixture(user.id, account.id, "camt053/overlap-a.xml"),
@@ -54,12 +54,11 @@ describe("/accounts/[id]/imports", () => {
 
   it("load reports the edits an undo would delete", async () => {
     const { user, account, imp } = await setup();
-    const row = getDB().select().from(transactions).all()[0]!;
-    getDB()
+    const row = (await getDB().select().from(transactions))[0]!;
+    await getDB()
       .update(transactions)
       .set({ note: "kept", taxYear: 2024 })
-      .where(eq(transactions.id, row.id))
-      .run();
+      .where(eq(transactions.id, row.id));
     const r = await loadAs(user, account.id);
     const impacts = (
       r as {
@@ -87,8 +86,8 @@ describe("/accounts/[id]/imports", () => {
         removedTransactions: 5,
       },
     });
-    expect(listImports(user.id, account.id)).toEqual([]);
-    expect(getDB().select().from(transactions).all()).toEqual([]);
+    expect(await listImports(user.id, account.id)).toEqual([]);
+    expect(await getDB().select().from(transactions)).toEqual([]);
   });
 
   it("undo fails with 400 without an import id, 404 for unknown ones", async () => {
@@ -105,14 +104,17 @@ describe("/accounts/[id]/imports", () => {
 
   it("undo is bound to the account in the URL", async () => {
     const { user, imp } = await setup();
-    const otherAccount = seedAccount(user.id, { name: "Other", iban: null });
+    const otherAccount = await seedAccount(user.id, {
+      name: "Other",
+      iban: null,
+    });
     expect(
       await undo(user, otherAccount.id, { importId: imp.importId }),
     ).toEqual({
       type: "error",
       status: 404,
     });
-    expect(getDB().select().from(transactions).all()).toHaveLength(5);
+    expect(await getDB().select().from(transactions)).toHaveLength(5);
   });
 
   it("another user cannot list or undo my imports", async () => {
@@ -126,11 +128,11 @@ describe("/accounts/[id]/imports", () => {
       type: "error",
       status: 404,
     });
-    const theirs = seedAccount(other.id, { iban: null });
+    const theirs = await seedAccount(other.id, { iban: null });
     expect(await undo(other, theirs.id, { importId: imp.importId })).toEqual({
       type: "error",
       status: 404,
     });
-    expect(getDB().select().from(transactions).all()).toHaveLength(5);
+    expect(await getDB().select().from(transactions)).toHaveLength(5);
   });
 });

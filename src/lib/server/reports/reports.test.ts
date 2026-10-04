@@ -244,19 +244,22 @@ describe("loaders and buildReport", () => {
 
   it("loads a statement with opening and closing balances", async () => {
     const u = await createTestUser();
-    const a = seedAccount(u.id, {
+    const a = await seedAccount(u.id, {
       name: "Household",
       iban: EXAMPLE_IBAN,
       openingBalance: m(10000),
       openingDate: "2026-01-01",
     });
-    const tx = (bookingDate: string, amount: number) =>
-      seedImportedTransaction(u.id, a.id, { bookingDate, amount: m(amount) });
-    tx("2026-08-31", -100);
-    tx("2026-09-01", -200);
-    tx("2026-09-30", 500);
-    tx("2026-10-01", -999);
-    const s = loadAccountStatement(
+    const tx = async (bookingDate: string, amount: number) =>
+      await seedImportedTransaction(u.id, a.id, {
+        bookingDate,
+        amount: m(amount),
+      });
+    await tx("2026-08-31", -100);
+    await tx("2026-09-01", -200);
+    await tx("2026-09-30", 500);
+    await tx("2026-10-01", -999);
+    const s = await loadAccountStatement(
       u.id,
       a.id,
       "2026-09-01",
@@ -272,7 +275,7 @@ describe("loaders and buildReport", () => {
 
   it("lists trade cash movements as lines when trades move cash, so balances reconcile", async () => {
     const u = await createTestUser();
-    const a = seedAccount(u.id, {
+    const a = await seedAccount(u.id, {
       type: "investment",
       tradesMoveCash: true,
       openingBalance: m(500000),
@@ -295,12 +298,12 @@ describe("loaders and buildReport", () => {
       side: "buy",
       amount: 5000,
     });
-    seedImportedTransaction(u.id, a.id, {
+    await seedImportedTransaction(u.id, a.id, {
       bookingDate: "2026-09-15",
       amount: m(-250),
       description: "Custody fee",
     });
-    const s = loadAccountStatement(
+    const s = await loadAccountStatement(
       u.id,
       a.id,
       "2026-09-01",
@@ -324,8 +327,8 @@ describe("loaders and buildReport", () => {
   it("lists no trade lines when trades do not move cash, or for another user", async () => {
     const u = await createTestUser();
     const other = await createTestUser();
-    const a = seedAccount(u.id, { type: "investment" });
-    const theirs = seedAccount(other.id, {
+    const a = await seedAccount(u.id, { type: "investment" });
+    const theirs = await seedAccount(other.id, {
       type: "investment",
       tradesMoveCash: true,
     });
@@ -337,32 +340,46 @@ describe("loaders and buildReport", () => {
       amount: 100000,
     });
     expect(
-      loadAccountStatement(u.id, a.id, "2026-09-01", "2026-09-30", TODAY)
-        .transactions,
+      (
+        await loadAccountStatement(
+          u.id,
+          a.id,
+          "2026-09-01",
+          "2026-09-30",
+          TODAY,
+        )
+      ).transactions,
     ).toEqual([]);
-    const mine = seedAccount(u.id, {
+    const mine = await seedAccount(u.id, {
       type: "investment",
       tradesMoveCash: true,
       iban: EXAMPLE_IBAN,
     });
     expect(
-      loadAccountStatement(u.id, mine.id, "2026-09-01", "2026-09-30", TODAY)
-        .transactions,
+      (
+        await loadAccountStatement(
+          u.id,
+          mine.id,
+          "2026-09-01",
+          "2026-09-30",
+          TODAY,
+        )
+      ).transactions,
     ).toEqual([]);
   });
 
   it("uses snapshots for balances", async () => {
     const u = await createTestUser();
-    const a = seedAccount(u.id, { type: "pension" });
-    createSnapshot(u.id, a.id, {
+    const a = await seedAccount(u.id, { type: "pension" });
+    await createSnapshot(u.id, a.id, {
       date: "2026-08-31",
       amount: m(5000),
     } as never);
-    createSnapshot(u.id, a.id, {
+    await createSnapshot(u.id, a.id, {
       date: "2026-09-30",
       amount: m(5600),
     } as never);
-    const s = loadAccountStatement(
+    const s = await loadAccountStatement(
       u.id,
       a.id,
       "2026-09-01",
@@ -376,11 +393,11 @@ describe("loaders and buildReport", () => {
   it("rejects inverted periods and other users' accounts", async () => {
     const u = await createTestUser();
     const other = await createTestUser();
-    const mine = seedAccount(u.id);
-    const theirs = seedAccount(other.id);
-    expect(() =>
+    const mine = await seedAccount(u.id);
+    const theirs = await seedAccount(other.id);
+    await expect(
       loadAccountStatement(u.id, mine.id, "2026-09-30", "2026-09-01", TODAY),
-    ).toThrow(LedgerError);
+    ).rejects.toThrow(LedgerError);
     await expect(
       buildReport(
         u.id,
@@ -393,7 +410,7 @@ describe("loaders and buildReport", () => {
 
   it("validates statement params", async () => {
     const u = await createTestUser();
-    const a = seedAccount(u.id);
+    const a = await seedAccount(u.id);
     const bad = (params: Record<string, string | null>) =>
       expect(
         buildReport(u.id, "statement", params, TODAY),
@@ -406,7 +423,7 @@ describe("loaders and buildReport", () => {
 
   it("builds every kind with file name and title", async () => {
     const u = await createTestUser();
-    const a = seedAccount(u.id, { name: "Household" });
+    const a = await seedAccount(u.id, { name: "Household" });
     seedBill(u.id, { dueDate: "2026-10-01" });
     const statement = await buildReport(
       u.id,
@@ -427,14 +444,14 @@ describe("loaders and buildReport", () => {
   it("bills and net worth reports only contain the user's own data", async () => {
     const u = await createTestUser();
     const other = await createTestUser();
-    seedAccount(other.id, { name: "Foreign Account" });
+    await seedAccount(other.id, { name: "Foreign Account" });
     seedBill(other.id, {
       creditorName: "Foreign Creditor",
       dueDate: "2026-10-01",
     });
     seedBill(u.id, { creditorName: "Own Creditor", dueDate: "2026-10-01" });
     expect(loadBillsReport(u.id, TODAY).bills).toHaveLength(1);
-    expect(loadNetWorthReport(u.id, TODAY).balances).toEqual([]);
+    expect((await loadNetWorthReport(u.id, TODAY)).balances).toEqual([]);
     const bills = await pdfText(
       (await buildReport(u.id, "bills", {}, TODAY)).bytes,
     );
@@ -448,13 +465,13 @@ describe("loaders and buildReport", () => {
 
   it("bills report reflects allocations (paid bills drop out)", async () => {
     const u = await createTestUser();
-    const a = seedAccount(u.id);
+    const a = await seedAccount(u.id);
     const bill = seedBill(u.id, { amount: m(1000), dueDate: "2026-10-01" });
-    const tx = seedImportedTransaction(u.id, a.id, {
+    const tx = await seedImportedTransaction(u.id, a.id, {
       bookingDate: "2026-10-02",
       amount: m(-1000),
     });
-    allocate(u.id, bill.id, tx.id, m(1000), "user");
+    await allocate(u.id, bill.id, tx.id, m(1000), "user");
     expect(billViews(u.id, { today: TODAY })[0]!.status).toBe("paid");
     const text = await pdfText(
       (await buildReport(u.id, "bills", {}, TODAY)).bytes,

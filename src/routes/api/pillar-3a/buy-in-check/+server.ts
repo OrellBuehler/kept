@@ -24,7 +24,7 @@ const querySchema = z.object({
 });
 
 /** Live preview of the buy-in rules for the contribution dialog (read-only). */
-export const GET: RequestHandler = ({ locals, url }) => {
+export const GET: RequestHandler = async ({ locals, url }) => {
   const user = requireUser(locals);
   const parsed = querySchema.safeParse({
     key: url.searchParams.get("key") ?? undefined,
@@ -40,7 +40,7 @@ export const GET: RequestHandler = ({ locals, url }) => {
     return json({ errors: [], warnings: [] });
   }
   return json(
-    checkBuyIn(
+    await checkBuyIn(
       user.id,
       {
         key: parsed.data.key ?? null,

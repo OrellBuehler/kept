@@ -47,7 +47,7 @@ export async function confirmImport(
   }
   const { statement } = preview;
   if (!statement) throw new LedgerError("invalid", "Nothing to import.");
-  if (getAccount(userId, preview.account.id).archived) {
+  if ((await getAccount(userId, preview.account.id)).archived) {
     throw new LedgerError(
       "invalid",
       "This account is archived; unarchive it to import into it.",
@@ -168,17 +168,17 @@ export async function confirmImport(
     for (const row of newRows) {
       const id = idOf.get(row.tx.externalId);
       if (row.mirrorId === null || id === undefined) continue;
-      takeOverMirror(userId, row.mirrorId, id, tx);
+      takeOverMirror(tx, userId, row.mirrorId, id);
       replaced += 1;
     }
     const linked = linkAfterWrite(
+      tx,
       userId,
       accountId,
       insertedRows.map((r) => r.id),
       newRows
         .filter((r) => idOf.has(r.tx.externalId))
         .map((r) => r.tx.bookingDate),
-      tx,
     );
     return {
       importId: imp.id,

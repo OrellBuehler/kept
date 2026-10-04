@@ -2,17 +2,17 @@ import { requireUser } from "$lib/server/auth/guards";
 import { parseForm } from "$lib/server/forms";
 import { getImportImpacts, listImports, undoImport } from "$lib/server/imports";
 import { getAccount } from "$lib/server/ledger/accounts";
-import { ledgerFailure, orNotFound } from "$lib/server/ledger/http";
+import { ledgerFailure, orNotFoundAsync } from "$lib/server/ledger/http";
 import { idFormSchema } from "$lib/server/ledger/schemas";
 import { fail } from "@sveltejs/kit";
 import type { Actions, PageServerLoad } from "./$types";
 
-export const load: PageServerLoad = ({ locals, params }) => {
+export const load: PageServerLoad = async ({ locals, params }) => {
   const user = requireUser(locals);
-  return orNotFound(() => {
-    const imports = listImports(user.id, params.id);
+  return await orNotFoundAsync(async () => {
+    const imports = await listImports(user.id, params.id);
     return {
-      account: getAccount(user.id, params.id),
+      account: await getAccount(user.id, params.id),
       imports,
       impacts: Object.fromEntries(
         getImportImpacts(
@@ -27,7 +27,7 @@ export const load: PageServerLoad = ({ locals, params }) => {
 export const actions: Actions = {
   undo: async ({ locals, params, request }) => {
     const user = requireUser(locals);
-    orNotFound(() => getAccount(user.id, params.id));
+    await orNotFoundAsync(() => getAccount(user.id, params.id));
     const parsed = parseForm(
       idFormSchema("importId"),
       await request.formData(),

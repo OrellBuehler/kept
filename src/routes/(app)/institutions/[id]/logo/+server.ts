@@ -1,11 +1,13 @@
 import { requireUser } from "$lib/server/auth/guards";
-import { orNotFound } from "$lib/server/ledger/http";
+import { orNotFoundAsync } from "$lib/server/ledger/http";
 import { readInstitutionLogo } from "$lib/server/ledger/logos";
 import type { RequestHandler } from "./$types";
 
-export const GET: RequestHandler = ({ locals, params, request }) => {
+export const GET: RequestHandler = async ({ locals, params, request }) => {
   const user = requireUser(locals);
-  const logo = orNotFound(() => readInstitutionLogo(user.id, params.id));
+  const logo = await orNotFoundAsync(() =>
+    readInstitutionLogo(user.id, params.id),
+  );
   const etag = `"${logo.version}"`;
   const headers: Record<string, string> = {
     ETag: etag,

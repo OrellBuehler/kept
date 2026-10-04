@@ -70,9 +70,9 @@ describe("deduction year data migration", () => {
   function setup() {
     return (async () => {
       const user = await createTestUser();
-      const account = seedAccount(user.id);
-      const tx = (over: Partial<typeof transactions.$inferInsert>) =>
-        seedImportedTransaction(user.id, account.id, {
+      const account = await seedAccount(user.id);
+      const tx = async (over: Partial<typeof transactions.$inferInsert>) =>
+        await seedImportedTransaction(user.id, account.id, {
           amount: minor(-5000),
           bookingDate: "2025-01-10",
           ...over,
@@ -89,24 +89,24 @@ describe("deduction year data migration", () => {
     const taxes = cat(user.id, "Taxes");
     setCategoryDeduction(user.id, gifts.id, "donations");
 
-    const donation = tx({ categoryId: gifts.id, taxYear: 2024 });
-    const inherited = tx({ categoryId: church.id, taxYear: 2024 });
-    const taxPaymentUncategorized = tx({
+    const donation = await tx({ categoryId: gifts.id, taxYear: 2024 });
+    const inherited = await tx({ categoryId: church.id, taxYear: 2024 });
+    const taxPaymentUncategorized = await tx({
       amount: minor(-70000),
       taxYear: 2024,
     });
-    const taxPaymentOtherCategory = tx({
+    const taxPaymentOtherCategory = await tx({
       categoryId: taxes.id,
       amount: minor(-70000),
       taxYear: 2024,
     });
-    const reconciled = tx({
+    const reconciled = await tx({
       categoryId: gifts.id,
       amount: minor(-70000),
       taxYear: 2024,
     });
-    const untagged = tx({ categoryId: gifts.id });
-    const refund = tx({
+    const untagged = await tx({ categoryId: gifts.id });
+    const refund = await tx({
       categoryId: gifts.id,
       amount: minor(5000),
       taxYear: 2024,
@@ -146,7 +146,7 @@ describe("deduction year data migration", () => {
     const { user, tx } = await setup();
     const taxes = cat(user.id, "Taxes");
     setCategoryDeduction(user.id, taxes.id, "other");
-    const payment = tx({
+    const payment = await tx({
       categoryId: taxes.id,
       amount: minor(-70000),
       taxYear: 2024,
@@ -174,8 +174,8 @@ describe("deduction year data migration", () => {
       .returning()
       .get();
     setCategoryDeduction(user.id, top.id, "donations");
-    const grandchild = tx({ categoryId: leaf.id, taxYear: 2024 });
-    const child = tx({ categoryId: mid.id, taxYear: 2024 });
+    const grandchild = await tx({ categoryId: leaf.id, taxYear: 2024 });
+    const child = await tx({ categoryId: mid.id, taxYear: 2024 });
 
     run();
 
@@ -188,12 +188,12 @@ describe("deduction year data migration", () => {
     const other = await createTestUser();
     const gifts = cat(user.id, "Gifts");
     setCategoryDeduction(user.id, gifts.id, "donations");
-    const a = tx({ categoryId: gifts.id, taxYear: 2024 });
-    const b = tx({ categoryId: gifts.id, taxYear: 2023 });
-    const otherAccount = seedAccount(other.id);
+    const a = await tx({ categoryId: gifts.id, taxYear: 2024 });
+    const b = await tx({ categoryId: gifts.id, taxYear: 2023 });
+    const otherAccount = await seedAccount(other.id);
     const otherGifts = cat(other.id, "Gifts");
     setCategoryDeduction(other.id, otherGifts.id, "donations");
-    const theirs = seedImportedTransaction(other.id, otherAccount.id, {
+    const theirs = await seedImportedTransaction(other.id, otherAccount.id, {
       categoryId: otherGifts.id,
       taxYear: 2024,
       amount: minor(-5000),
@@ -222,7 +222,7 @@ describe("deduction year data migration", () => {
     const { user, tx } = await setup();
     const gifts = cat(user.id, "Gifts");
     setCategoryDeduction(user.id, gifts.id, "donations");
-    const a = tx({ categoryId: gifts.id, taxYear: 2024 });
+    const a = await tx({ categoryId: gifts.id, taxYear: 2024 });
     run();
     ctx.db
       .update(transactions)

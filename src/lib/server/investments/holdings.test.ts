@@ -42,7 +42,7 @@ const m = minor;
 
 async function setup() {
   const user = await createTestUser();
-  const account = seedAccount(user.id, {
+  const account = await seedAccount(user.id, {
     type: "investment",
     openingBalance: m(50000),
   });
@@ -61,24 +61,28 @@ async function setup() {
 describe("balance with holdings", () => {
   it("adds the holdings value to the cash balance without touching cash", async () => {
     const { user, account } = await setup();
-    expect(currentBalance(user.id, account.id, TODAY)).toBe(50000 + 120000);
-    expect(accountBalanceAt(user.id, account.id, TODAY)).toBe(50000);
-    expect(getAccount(user.id, account.id, TODAY).balance).toBe(170000);
+    expect(await currentBalance(user.id, account.id, TODAY)).toBe(
+      50000 + 120000,
+    );
+    expect(await accountBalanceAt(user.id, account.id, TODAY)).toBe(50000);
+    expect((await getAccount(user.id, account.id, TODAY)).balance).toBe(170000);
   });
 
   it("counts cash transactions and snapshots on top", async () => {
     const { user, account } = await setup();
-    seedImportedTransaction(user.id, account.id, {
+    await seedImportedTransaction(user.id, account.id, {
       bookingDate: "2026-03-01",
       amount: m(-1000),
     });
-    expect(currentBalance(user.id, account.id, TODAY)).toBe(169000);
-    createSnapshot(user.id, account.id, {
+    expect(await currentBalance(user.id, account.id, TODAY)).toBe(169000);
+    await createSnapshot(user.id, account.id, {
       date: "2026-06-01",
       amount: m(7000),
       note: null,
     });
-    expect(currentBalance(user.id, account.id, TODAY)).toBe(7000 + 120000);
+    expect(await currentBalance(user.id, account.id, TODAY)).toBe(
+      7000 + 120000,
+    );
   });
 
   it("ignores trades after the date", async () => {
@@ -88,15 +92,15 @@ describe("balance with holdings", () => {
       qty: "5",
       amount: 60000,
     });
-    expect(currentBalance(user.id, account.id, TODAY)).toBe(170000);
-    expect(currentBalance(user.id, account.id, "2026-12-31")).toBe(
+    expect(await currentBalance(user.id, account.id, TODAY)).toBe(170000);
+    expect(await currentBalance(user.id, account.id, "2026-12-31")).toBe(
       50000 + 15 * 10000,
     );
   });
 
   it("splits cash, holdings and positions in accountValue", async () => {
     const { user, account, security } = await setup();
-    const v = accountValue(user.id, account.id, TODAY);
+    const v = await accountValue(user.id, account.id, TODAY);
     expect(v).toMatchObject({
       cash: 50000,
       holdings: 120000,
@@ -119,8 +123,8 @@ describe("balance with holdings", () => {
 
   it("returns an empty breakdown for an account without trades", async () => {
     const user = await createTestUser();
-    const account = seedAccount(user.id, { openingBalance: m(900) });
-    expect(accountValue(user.id, account.id, TODAY)).toEqual({
+    const account = await seedAccount(user.id, { openingBalance: m(900) });
+    expect(await accountValue(user.id, account.id, TODAY)).toEqual({
       cash: 900,
       holdings: 0,
       portfolios: 0,
@@ -133,7 +137,9 @@ describe("balance with holdings", () => {
   it("lets a manual price win in the account value", async () => {
     const { user, account, security } = await setup();
     seedManualPrice(user.id, security.id, "2026-10-14", "130");
-    expect(accountValue(user.id, account.id, TODAY).holdings).toBe(130000);
+    expect((await accountValue(user.id, account.id, TODAY)).holdings).toBe(
+      130000,
+    );
   });
 
   it("converts foreign securities and flags a missing rate", async () => {
@@ -150,7 +156,7 @@ describe("balance with holdings", () => {
     });
     seedProviderPrice(user.id, usd.id, "2026-10-14", "60");
 
-    const missing = accountValue(user.id, account.id, TODAY);
+    const missing = await accountValue(user.id, account.id, TODAY);
     expect(missing.estimated).toBe(true);
     expect(missing.holdings).toBe(120000 + 9000);
 
@@ -162,14 +168,14 @@ describe("balance with holdings", () => {
         rate: parseFixed("0.8"),
       },
     ]);
-    const priced = accountValue(user.id, account.id, TODAY);
+    const priced = await accountValue(user.id, account.id, TODAY);
     expect(priced.estimated).toBe(false);
     expect(priced.holdings).toBe(120000 + 9600);
   });
 
   it("includes holdings in balance series", async () => {
     const { user, account } = await setup();
-    const series = balanceSeries(
+    const series = await balanceSeries(
       user.id,
       account.id,
       "2026-10-13",
@@ -185,12 +191,15 @@ describe("balance with holdings", () => {
 
   it("includes holdings in the account list and its share", async () => {
     const { user, account } = await setup();
-    const list = listAccounts(user.id, TODAY);
+    const list = await listAccounts(user.id, TODAY);
     expect(list[0]).toMatchObject({ id: account.id, balance: 170000 });
-    const shared = seedAccount(user.id, { name: "Shared", shareBps: 5000 });
+    const shared = await seedAccount(user.id, {
+      name: "Shared",
+      shareBps: 5000,
+    });
     const sec = seedSecurity(user.id, { name: "S" });
     seedTrade(user.id, shared.id, sec.id, { amount: 100000, price: "100" });
-    expect(getAccount(user.id, shared.id, TODAY)).toMatchObject({
+    expect(await getAccount(user.id, shared.id, TODAY)).toMatchObject({
       balance: 100000,
       shareBalance: 50000,
     });
@@ -199,28 +208,36 @@ describe("balance with holdings", () => {
   it("never mixes in another user's holdings, prices or rates", async () => {
     const { user, account } = await setup();
     const other = await createTestUser();
-    const otherAccount = seedAccount(other.id);
-    expect(accountValue(other.id, otherAccount.id, TODAY).positions).toEqual(
-      [],
-    );
-    expect(loadHoldingsInputs(other.id, [account.id], TODAY).size).toBe(0);
-    expect(loadHoldingsInputs(user.id, [account.id], TODAY).size).toBe(1);
+    const otherAccount = await seedAccount(other.id);
     expect(
-      netWorthSeries(other.id, { today: TODAY })[0]!.points.every(
+      (await accountValue(other.id, otherAccount.id, TODAY)).positions,
+    ).toEqual([]);
+    expect((await loadHoldingsInputs(other.id, [account.id], TODAY)).size).toBe(
+      0,
+    );
+    expect((await loadHoldingsInputs(user.id, [account.id], TODAY)).size).toBe(
+      1,
+    );
+    expect(
+      (await netWorthSeries(other.id, { today: TODAY }))[0]!.points.every(
         (p) => p.amount === 0,
       ),
     ).toBe(true);
-    expect(() => accountValue(other.id, account.id, TODAY)).toThrow(
+    await expect(accountValue(other.id, account.id, TODAY)).rejects.toThrow(
       /not found/,
     );
   });
 
   it("batches several accounts", async () => {
     const { user, account } = await setup();
-    const second = seedAccount(user.id, { name: "Second" });
+    const second = await seedAccount(user.id, { name: "Second" });
     const sec = seedSecurity(user.id, { name: "S2" });
     seedTrade(user.id, second.id, sec.id, { amount: 1000 });
-    const inputs = loadHoldingsInputs(user.id, [account.id, second.id], TODAY);
+    const inputs = await loadHoldingsInputs(
+      user.id,
+      [account.id, second.id],
+      TODAY,
+    );
     expect([...inputs.keys()].sort()).toEqual([account.id, second.id].sort());
     expect(inputs.get(second.id)!.trades).toHaveLength(1);
     expect(inputs.get(account.id)!.securities).toHaveLength(1);
@@ -230,7 +247,7 @@ describe("balance with holdings", () => {
 describe("net worth with holdings", () => {
   it("sums holdings per currency and excludes archived accounts", async () => {
     const { user, account } = await setup();
-    const usdAccount = seedAccount(user.id, {
+    const usdAccount = await seedAccount(user.id, {
       name: "Dollar",
       currency: "USD",
       openingBalance: m(1000),
@@ -245,15 +262,15 @@ describe("net worth with holdings", () => {
       price: "300",
       amount: 30000,
     });
-    const archived = seedAccount(user.id, {
+    const archived = await seedAccount(user.id, {
       name: "Gone",
       openingBalance: m(5),
     });
     const archivedSecurity = seedSecurity(user.id, { name: "Gone" });
     seedTrade(user.id, archived.id, archivedSecurity.id, { amount: 99999 });
-    archiveAccount(user.id, archived.id);
+    await archiveAccount(user.id, archived.id);
 
-    const series = netWorthSeries(user.id, {
+    const series = await netWorthSeries(user.id, {
       today: TODAY,
       from: "2026-10-13",
       step: "day",
@@ -270,8 +287,8 @@ describe("net worth with holdings", () => {
 
   it("matches the account balances at the end of the series", async () => {
     const { user } = await setup();
-    const series = netWorthSeries(user.id, { today: TODAY });
-    const total = accountBalances(user.id, TODAY).reduce(
+    const series = await netWorthSeries(user.id, { today: TODAY });
+    const total = (await accountBalances(user.id, TODAY)).reduce(
       (sum, a) => sum + a.balance,
       0,
     );
@@ -280,13 +297,13 @@ describe("net worth with holdings", () => {
 
   it("counts shares of holdings with the share basis", async () => {
     const user = await createTestUser();
-    const account = seedAccount(user.id, { shareBps: 5000 });
+    const account = await seedAccount(user.id, { shareBps: 5000 });
     const sec = seedSecurity(user.id);
     seedTrade(user.id, account.id, sec.id, {
       date: "2026-10-01",
       amount: 100000,
     });
-    const series = netWorthSeries(user.id, {
+    const series = await netWorthSeries(user.id, {
       today: TODAY,
       basis: "share",
       step: "day",
@@ -300,22 +317,24 @@ describe("earliestDataDate", () => {
   it("considers trade dates", async () => {
     const user = await createTestUser();
     expect(earliestDataDate(user.id)).toBeNull();
-    const account = seedAccount(user.id);
+    const account = await seedAccount(user.id);
     const sec = seedSecurity(user.id);
     seedTrade(user.id, account.id, sec.id, { date: "2023-05-05", amount: 1 });
     expect(earliestDataDate(user.id)).toBe("2023-05-05");
-    seedImportedTransaction(user.id, account.id, { bookingDate: "2024-01-01" });
+    await seedImportedTransaction(user.id, account.id, {
+      bookingDate: "2024-01-01",
+    });
     expect(earliestDataDate(user.id)).toBe("2023-05-05");
   });
 
   it("counts trades of archived accounts but not other users' trades", async () => {
     const user = await createTestUser();
     const other = await createTestUser();
-    const archived = seedAccount(user.id);
+    const archived = await seedAccount(user.id);
     const sec = seedSecurity(user.id);
     seedTrade(user.id, archived.id, sec.id, { date: "2020-01-01", amount: 1 });
-    archiveAccount(user.id, archived.id);
-    const otherAccount = seedAccount(other.id);
+    await archiveAccount(user.id, archived.id);
+    const otherAccount = await seedAccount(other.id);
     const otherSec = seedSecurity(other.id);
     seedTrade(other.id, otherAccount.id, otherSec.id, {
       date: "2019-01-01",
@@ -329,10 +348,10 @@ describe("staleness with holdings", () => {
   it("does not flag an old import when a held security was priced manually recently", async () => {
     const { user, account, security } = await setup();
     seedManualPrice(user.id, security.id, "2026-10-14", "121");
-    seedImport(user.id, account.id, {
+    await seedImport(user.id, account.id, {
       createdAt: new Date("2026-06-01T12:00:00"),
     });
-    const view = accountBalances(user.id, TODAY).find(
+    const view = (await accountBalances(user.id, TODAY)).find(
       (a) => a.id === account.id,
     )!;
     expect(view).toMatchObject({ stale: false, staleDays: 1 });
@@ -346,10 +365,10 @@ describe("staleness with holdings", () => {
       price: "100",
       amount: 100,
     });
-    seedImport(user.id, account.id, {
+    await seedImport(user.id, account.id, {
       createdAt: new Date("2026-06-01T12:00:00"),
     });
-    expect(accountBalances(user.id, TODAY)[0]).toMatchObject({
+    expect((await accountBalances(user.id, TODAY))[0]).toMatchObject({
       stale: false,
       staleDays: 5,
     });
@@ -360,10 +379,10 @@ describe("staleness with holdings", () => {
     for (const d of ["2026-10-12", "2026-10-13", "2026-10-14"]) {
       seedProviderPrice(user.id, security.id, d, "120");
     }
-    seedImport(user.id, account.id, {
+    await seedImport(user.id, account.id, {
       createdAt: new Date("2026-04-15T12:00:00"),
     });
-    const view = accountBalances(user.id, TODAY).find(
+    const view = (await accountBalances(user.id, TODAY)).find(
       (a) => a.id === account.id,
     )!;
     expect(view).toMatchObject({ stale: true });
@@ -372,7 +391,7 @@ describe("staleness with holdings", () => {
 
   it("ignores manual prices of a fully sold security", async () => {
     const user = await createTestUser();
-    const account = seedAccount(user.id);
+    const account = await seedAccount(user.id);
     const sec = seedSecurity(user.id);
     seedTrade(user.id, account.id, sec.id, {
       date: "2026-01-01",
@@ -386,10 +405,10 @@ describe("staleness with holdings", () => {
       amount: 500,
     });
     seedManualPrice(user.id, sec.id, "2026-10-14", "10");
-    seedImport(user.id, account.id, {
+    await seedImport(user.id, account.id, {
       createdAt: new Date("2026-06-01T12:00:00"),
     });
-    expect(accountBalances(user.id, TODAY)[0]).toMatchObject({
+    expect((await accountBalances(user.id, TODAY))[0]).toMatchObject({
       stale: true,
       staleDays: 136,
     });
@@ -397,8 +416,8 @@ describe("staleness with holdings", () => {
 
   it("does not count future-dated manual prices or another account's", async () => {
     const user = await createTestUser();
-    const account = seedAccount(user.id);
-    const other = seedAccount(user.id, { name: "Other" });
+    const account = await seedAccount(user.id);
+    const other = await seedAccount(user.id, { name: "Other" });
     const sec = seedSecurity(user.id);
     const otherSec = seedSecurity(user.id, { name: "Other sec" });
     seedTrade(user.id, account.id, sec.id, { date: "2026-01-01", amount: 1 });
@@ -409,7 +428,7 @@ describe("staleness with holdings", () => {
     seedManualPrice(user.id, sec.id, "2026-12-01", "10");
     seedManualPrice(user.id, otherSec.id, "2026-10-14", "10");
     const by = Object.fromEntries(
-      accountBalances(user.id, TODAY).map((a) => [a.name, a]),
+      (await accountBalances(user.id, TODAY)).map((a) => [a.name, a]),
     );
     expect(by.Main!.stale).toBe(true);
     expect(by.Other!.stale).toBe(false);
@@ -417,7 +436,7 @@ describe("staleness with holdings", () => {
 
   it("yields one date per account without multiplying rows by prices", async () => {
     const { user, account, security } = await setup();
-    const second = seedAccount(user.id, { name: "Second" });
+    const second = await seedAccount(user.id, { name: "Second" });
     seedTrade(user.id, second.id, security.id, {
       date: "2026-02-01",
       amount: 1,
@@ -428,7 +447,7 @@ describe("staleness with holdings", () => {
     });
     seedManualPrice(user.id, security.id, "2026-09-01", "1");
     expect(
-      latestHoldingsActivity(user.id, [account.id, second.id], TODAY),
+      await latestHoldingsActivity(user.id, [account.id, second.id], TODAY),
     ).toEqual(
       new Map([
         [account.id, "2026-09-01"],
@@ -437,13 +456,14 @@ describe("staleness with holdings", () => {
     );
     const another = await createTestUser();
     expect(
-      latestHoldingsActivity(another.id, [account.id, second.id], TODAY).size,
+      (await latestHoldingsActivity(another.id, [account.id, second.id], TODAY))
+        .size,
     ).toBe(0);
   });
 
   it("treats a security as held after a split even when sells exceed the raw quantity", async () => {
     const user = await createTestUser();
-    const account = seedAccount(user.id);
+    const account = await seedAccount(user.id);
     const sec = seedSecurity(user.id);
     seedTrade(user.id, account.id, sec.id, {
       date: "2026-01-01",
@@ -465,45 +485,47 @@ describe("staleness with holdings", () => {
     });
     seedManualPrice(user.id, sec.id, "2026-09-01", "1");
     expect(
-      latestHoldingsActivity(user.id, [account.id], TODAY).get(account.id),
+      (await latestHoldingsActivity(user.id, [account.id], TODAY)).get(
+        account.id,
+      ),
     ).toBe("2026-09-01");
   });
 
   it("stays stale when prices and trades are old too", async () => {
     const user = await createTestUser();
-    const account = seedAccount(user.id);
+    const account = await seedAccount(user.id);
     const sec = seedSecurity(user.id);
     seedTrade(user.id, account.id, sec.id, { date: "2026-01-01", amount: 1 });
     seedProviderPrice(user.id, sec.id, "2026-03-01", "10");
-    seedImport(user.id, account.id, {
+    await seedImport(user.id, account.id, {
       createdAt: new Date("2026-06-01T12:00:00"),
     });
-    const view = accountBalances(user.id, TODAY)[0]!;
+    const view = (await accountBalances(user.id, TODAY))[0]!;
     expect(view).toMatchObject({ stale: true, staleDays: 136 });
   });
 
   it("is not affected by manual prices of securities the account does not hold", async () => {
     const user = await createTestUser();
-    const account = seedAccount(user.id);
+    const account = await seedAccount(user.id);
     const held = seedSecurity(user.id, { name: "Held" });
     const unheld = seedSecurity(user.id, { name: "Unheld" });
     seedTrade(user.id, account.id, held.id, { date: "2026-01-01", amount: 1 });
     seedManualPrice(user.id, unheld.id, "2026-10-14", "10");
-    seedImport(user.id, account.id, {
+    await seedImport(user.id, account.id, {
       createdAt: new Date("2026-06-01T12:00:00"),
     });
-    expect(accountBalances(user.id, TODAY)[0]!.stale).toBe(true);
+    expect((await accountBalances(user.id, TODAY))[0]!.stale).toBe(true);
   });
 
   it("gives an account with only a recent trade a staleness and data", async () => {
     const user = await createTestUser();
-    const fresh = seedAccount(user.id, { name: "Fresh" });
-    const old = seedAccount(user.id, { name: "Old" });
+    const fresh = await seedAccount(user.id, { name: "Fresh" });
+    const old = await seedAccount(user.id, { name: "Old" });
     const sec = seedSecurity(user.id, { name: "Sec" });
     seedTrade(user.id, fresh.id, sec.id, { date: "2026-10-14", amount: 1 });
     seedTrade(user.id, old.id, sec.id, { date: "2026-01-01", amount: 1 });
     const by = Object.fromEntries(
-      accountBalances(user.id, TODAY).map((a) => [a.name, a]),
+      (await accountBalances(user.id, TODAY)).map((a) => [a.name, a]),
     );
     expect(by.Fresh).toMatchObject({
       noData: false,

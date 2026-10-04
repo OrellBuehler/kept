@@ -24,11 +24,11 @@ export function listAccountSettings(userId: string): AccountSettings[] {
     .all();
 }
 
-export function saveAccountSettings(
+export async function saveAccountSettings(
   userId: string,
   input: AccountSettingsInput,
-): void {
-  const account = getAccount(userId, input.accountId);
+): Promise<void> {
+  const account = await getAccount(userId, input.accountId);
   let threshold: Minor | null = null;
   const text = input.threshold ?? "";
   if (text !== "") {

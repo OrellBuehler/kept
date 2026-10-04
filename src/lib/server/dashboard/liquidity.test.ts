@@ -302,21 +302,21 @@ describe("liquidity (database)", () => {
   it("sums debits of the current month or year for notice accounts only", async () => {
     const u = await createTestUser();
     const other = await createTestUser();
-    const yearly = seedAccount(u.id, {
+    const yearly = await seedAccount(u.id, {
       type: "savings",
       noticeMonths: 6,
       freeWithdrawal: m(25000),
       freeWithdrawalPeriod: "year",
     });
-    const monthly = seedAccount(u.id, {
+    const monthly = await seedAccount(u.id, {
       name: "Monthly",
       type: "savings",
       noticeMonths: 3,
       freeWithdrawal: m(1000),
       freeWithdrawalPeriod: "month",
     });
-    const plain = seedAccount(u.id, { name: "Plain" });
-    const foreign = seedAccount(other.id, {
+    const plain = await seedAccount(u.id, { name: "Plain" });
+    const foreign = await seedAccount(other.id, {
       type: "savings",
       noticeMonths: 6,
       freeWithdrawal: m(100),
@@ -334,7 +334,7 @@ describe("liquidity (database)", () => {
       [plain.id, "2026-10-03", -999, u.id],
       [foreign.id, "2026-10-03", -42, other.id],
     ] as const) {
-      seedImportedTransaction(owner, account, {
+      await seedImportedTransaction(owner, account, {
         bookingDate,
         amount: m(amount),
       });
@@ -358,13 +358,13 @@ describe("liquidity (database)", () => {
   it("builds the dashboard figures with the used allowance and the preference", async () => {
     const u = await createTestUser();
     const other = await createTestUser();
-    seedAccount(u.id, { name: "Current", openingBalance: m(2000) });
-    seedAccount(u.id, {
+    await seedAccount(u.id, { name: "Current", openingBalance: m(2000) });
+    await seedAccount(u.id, {
       name: "Card",
       type: "credit_card",
       openingBalance: m(-300),
     });
-    const savings = seedAccount(u.id, {
+    const savings = await seedAccount(u.id, {
       name: "Savings",
       type: "savings",
       openingBalance: m(60000),
@@ -372,11 +372,11 @@ describe("liquidity (database)", () => {
       freeWithdrawal: m(25000),
       freeWithdrawalPeriod: "year",
     });
-    seedImportedTransaction(u.id, savings.id, {
+    await seedImportedTransaction(u.id, savings.id, {
       bookingDate: "2026-03-01",
       amount: m(-5000),
     });
-    const inv = seedAccount(u.id, {
+    const inv = await seedAccount(u.id, {
       name: "Broker",
       type: "investment",
       openingBalance: m(400),
@@ -389,14 +389,14 @@ describe("liquidity (database)", () => {
       amount: 100000,
     });
     seedProviderPrice(u.id, sec.id, "2026-10-14", "120");
-    seedAccount(u.id, {
+    await seedAccount(u.id, {
       name: "Old age",
       type: "pension",
       openingBalance: m(900),
     });
-    seedAccount(other.id, { openingBalance: m(999999) });
+    await seedAccount(other.id, { openingBalance: m(999999) });
 
-    const [off] = liquidity(u.id, TODAY);
+    const [off] = await liquidity(u.id, TODAY);
     expect(off!.now).toEqual({
       balance: 2000 - 300 + (25000 - 5000),
       shareBalance: 2000 - 300 + (25000 - 5000),
@@ -413,7 +413,7 @@ describe("liquidity (database)", () => {
     ]);
 
     updatePreferences(u.id, { investmentCashLiquid: true });
-    const d = dashboard(u.id, TODAY);
+    const d = await dashboard(u.id, TODAY);
     expect(d.liquidity[0]!.now.balance).toBe(2000 - 300 + 20000 + 400);
     expect(d.liquidity[0]!.excluded.map((e) => e.reason)).toEqual(["pension"]);
     expect(d.invested).toEqual([
@@ -427,7 +427,7 @@ describe("liquidity (database)", () => {
       }),
     ]);
 
-    const foreign = dashboard(other.id, TODAY);
+    const foreign = await dashboard(other.id, TODAY);
     expect(foreign.liquidity).toEqual([
       expect.objectContaining({
         now: { balance: 999999, shareBalance: 999999 },
@@ -438,10 +438,10 @@ describe("liquidity (database)", () => {
 
   it("does not count archived accounts", async () => {
     const u = await createTestUser();
-    const a = seedAccount(u.id, { openingBalance: m(1000) });
+    const a = await seedAccount(u.id, { openingBalance: m(1000) });
     const { archiveAccount } = await import("$lib/server/ledger");
-    archiveAccount(u.id, a.id);
-    expect(dashboard(u.id, TODAY).liquidity).toEqual([]);
+    await archiveAccount(u.id, a.id);
+    expect((await dashboard(u.id, TODAY)).liquidity).toEqual([]);
   });
 });
 

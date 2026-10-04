@@ -34,9 +34,9 @@ const text = (b: Uint8Array) => new TextDecoder().decode(b);
 const SAFE_SVG =
   '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 10 10"><rect width="10" height="10" fill="#123456"/></svg>';
 
-function code(fn: () => unknown) {
+async function code(fn: () => unknown) {
   try {
-    fn();
+    await fn();
   } catch (e) {
     if (e instanceof LedgerError) return `${e.code}:${e.field}`;
     throw e;
@@ -60,11 +60,17 @@ describe("logo sniffing and validation", () => {
     expect(sniffLogo(enc("<html><body>hi</body></html>"))).toBeNull();
   });
 
-  it("rejects empty, oversized and unknown files", () => {
-    expect(code(() => prepareLogo(new Uint8Array()))).toBe("invalid:logo");
-    expect(code(() => prepareLogo(png(MAX_LOGO_BYTES)))).toBe("invalid:logo");
-    expect(code(() => prepareLogo(enc("just text")))).toBe("invalid:logo");
-    expect(code(() => prepareLogo(png(10)))).toBe("none");
+  it("rejects empty, oversized and unknown files", async () => {
+    expect(await code(() => prepareLogo(new Uint8Array()))).toBe(
+      "invalid:logo",
+    );
+    expect(await code(() => prepareLogo(png(MAX_LOGO_BYTES)))).toBe(
+      "invalid:logo",
+    );
+    expect(await code(() => prepareLogo(enc("just text")))).toBe(
+      "invalid:logo",
+    );
+    expect(await code(() => prepareLogo(png(10)))).toBe("none");
   });
 });
 
@@ -105,25 +111,27 @@ describe("svg sanitizing", () => {
     expect(out).toContain('fill="url(#g)"');
   });
 
-  it("rejects entities, non-svg roots and malformed input", () => {
+  it("rejects entities, non-svg roots and malformed input", async () => {
     const bad = (s: string) => () => sanitizeSvg(s);
     expect(bad('<!DOCTYPE svg [<!ENTITY x "y">]><svg></svg>')).toThrow();
     expect(bad("<html></html>")).toThrow();
     expect(bad("<svg><g></svg>")).toThrow();
-    expect(code(() => prepareLogo(enc("<svg><g></svg>")))).toBe("invalid:logo");
+    expect(await code(() => prepareLogo(enc("<svg><g></svg>")))).toBe(
+      "invalid:logo",
+    );
   });
 
   it("stores the sanitized markup, not the upload", async () => {
     const u = await createTestUser();
-    const i = seedInstitution(u.id, "Inst");
-    setInstitutionLogo(
+    const i = await seedInstitution(u.id, "Inst");
+    await setInstitutionLogo(
       u.id,
       i.id,
       enc(
         `<svg xmlns="http://www.w3.org/2000/svg"><script>x</script><rect width="1" height="1"/></svg>`,
       ),
     );
-    const stored = readInstitutionLogo(u.id, i.id);
+    const stored = await readInstitutionLogo(u.id, i.id);
     expect(stored.mime).toBe("image/svg+xml");
     expect(text(stored.bytes)).not.toContain("script");
   });
@@ -132,15 +140,15 @@ describe("svg sanitizing", () => {
 describe("institution logos", () => {
   it("sets, replaces (new version) and removes a logo", async () => {
     const u = await createTestUser();
-    const i = seedInstitution(u.id, "Inst");
-    expect(getInstitution(u.id, i.id).logoVersion).toBeNull();
-    const v1 = setInstitutionLogo(u.id, i.id, png(1));
-    const v2 = setInstitutionLogo(u.id, i.id, png(2));
+    const i = await seedInstitution(u.id, "Inst");
+    expect((await getInstitution(u.id, i.id)).logoVersion).toBeNull();
+    const v1 = await setInstitutionLogo(u.id, i.id, png(1));
+    const v2 = await setInstitutionLogo(u.id, i.id, png(2));
     expect(v1).not.toBe(v2);
-    expect(getInstitution(u.id, i.id).logoVersion).toBe(v2);
-    removeInstitutionLogo(u.id, i.id);
-    expect(getInstitution(u.id, i.id).logoVersion).toBeNull();
-    expect(code(() => readInstitutionLogo(u.id, i.id))).toBe(
+    expect((await getInstitution(u.id, i.id)).logoVersion).toBe(v2);
+    await removeInstitutionLogo(u.id, i.id);
+    expect((await getInstitution(u.id, i.id)).logoVersion).toBeNull();
+    expect(await code(() => readInstitutionLogo(u.id, i.id))).toBe(
       "not_found:undefined",
     );
   });
@@ -148,18 +156,18 @@ describe("institution logos", () => {
   it("another user cannot read, replace or remove it", async () => {
     const a = await createTestUser();
     const b = await createTestUser();
-    const i = seedInstitution(a.id, "Inst");
-    setInstitutionLogo(a.id, i.id, png(1));
-    expect(code(() => readInstitutionLogo(b.id, i.id))).toBe(
+    const i = await seedInstitution(a.id, "Inst");
+    await setInstitutionLogo(a.id, i.id, png(1));
+    expect(await code(() => readInstitutionLogo(b.id, i.id))).toBe(
       "not_found:undefined",
     );
-    expect(code(() => setInstitutionLogo(b.id, i.id, png(9)))).toBe(
+    expect(await code(() => setInstitutionLogo(b.id, i.id, png(9)))).toBe(
       "not_found:undefined",
     );
-    expect(code(() => removeInstitutionLogo(b.id, i.id))).toBe(
+    expect(await code(() => removeInstitutionLogo(b.id, i.id))).toBe(
       "not_found:undefined",
     );
-    expect(readInstitutionLogo(a.id, i.id).bytes.length).toBe(9);
+    expect((await readInstitutionLogo(a.id, i.id)).bytes.length).toBe(9);
 
     const r = await outcome(() =>
       GET(createTestEvent({ user: b, params: { id: i.id } }) as never),
@@ -169,8 +177,8 @@ describe("institution logos", () => {
 
   it("serves with hardening headers, etag and 304", async () => {
     const u = await createTestUser();
-    const i = seedInstitution(u.id, "Inst");
-    const version = setInstitutionLogo(u.id, i.id, png(3));
+    const i = await seedInstitution(u.id, "Inst");
+    const version = await setInstitutionLogo(u.id, i.id, png(3));
     const r = await outcome(() =>
       GET(createTestEvent({ user: u, params: { id: i.id } }) as never),
     );
@@ -217,7 +225,7 @@ describe("institution logos", () => {
       ),
     );
     const id = (created as { value: { id: string } }).value.id;
-    expect(getInstitution(u.id, id).logoVersion).not.toBeNull();
+    expect((await getInstitution(u.id, id)).logoVersion).not.toBeNull();
 
     await outcome(() =>
       actions.updateInstitution!(
@@ -227,6 +235,6 @@ describe("institution logos", () => {
         }) as never,
       ),
     );
-    expect(getInstitution(u.id, id).logoVersion).toBeNull();
+    expect((await getInstitution(u.id, id)).logoVersion).toBeNull();
   });
 });

@@ -20,8 +20,8 @@ const TODAY = "2026-10-15";
 describe("investmentsOverview", () => {
   it("is empty without trades", async () => {
     const user = await createTestUser();
-    seedAccount(user.id, { type: "investment" });
-    expect(investmentsOverview(user.id, TODAY)).toEqual({
+    await seedAccount(user.id, { type: "investment" });
+    expect(await investmentsOverview(user.id, TODAY)).toEqual({
       totals: [],
       securities: [],
     });
@@ -29,9 +29,9 @@ describe("investmentsOverview", () => {
 
   it("groups a security across accounts and totals per account currency", async () => {
     const user = await createTestUser();
-    const a = seedAccount(user.id, { name: "A", currency: "CHF" });
-    const b = seedAccount(user.id, { name: "B", currency: "CHF" });
-    const c = seedAccount(user.id, { name: "C", currency: "EUR" });
+    const a = await seedAccount(user.id, { name: "A", currency: "CHF" });
+    const b = await seedAccount(user.id, { name: "B", currency: "CHF" });
+    const c = await seedAccount(user.id, { name: "C", currency: "EUR" });
     const etf = seedSecurity(user.id, { name: "Example ETF", currency: "CHF" });
     seedTrade(user.id, a.id, etf.id, {
       qty: "10",
@@ -50,7 +50,7 @@ describe("investmentsOverview", () => {
     seedTrade(user.id, c.id, etf.id, { qty: "2", price: "100", amount: 22000 });
     seedProviderPrice(user.id, etf.id, "2026-10-14", "120");
 
-    const o = investmentsOverview(user.id, TODAY);
+    const o = await investmentsOverview(user.id, TODAY);
     expect(o.securities).toHaveLength(1);
     const g = o.securities[0]!;
     expect(g.quantity).toBe(parseFixed("17"));
@@ -70,15 +70,17 @@ describe("investmentsOverview", () => {
   it("skips archived accounts and other users", async () => {
     const user = await createTestUser();
     const other = await createTestUser();
-    const a = seedAccount(user.id);
+    const a = await seedAccount(user.id);
     const etf = seedSecurity(user.id);
     seedTrade(user.id, a.id, etf.id, { amount: 100000 });
-    const oa = seedAccount(other.id);
+    const oa = await seedAccount(other.id);
     const oetf = seedSecurity(other.id);
     seedTrade(other.id, oa.id, oetf.id, { amount: 5000 });
-    expect(investmentsOverview(user.id, TODAY).securities).toHaveLength(1);
-    archiveAccount(user.id, a.id);
-    expect(investmentsOverview(user.id, TODAY).securities).toEqual([]);
-    expect(investmentsOverview(other.id, TODAY).totals).toHaveLength(1);
+    expect((await investmentsOverview(user.id, TODAY)).securities).toHaveLength(
+      1,
+    );
+    await archiveAccount(user.id, a.id);
+    expect((await investmentsOverview(user.id, TODAY)).securities).toEqual([]);
+    expect((await investmentsOverview(other.id, TODAY)).totals).toHaveLength(1);
   });
 });

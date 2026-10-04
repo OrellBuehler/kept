@@ -21,14 +21,14 @@ import type { Actions, PageServerLoad, RequestEvent } from "./$types";
 
 const budgetFields = ["categoryId", "currency", "amount"] as const;
 
-export const load: PageServerLoad = ({ locals, url }) => {
+export const load: PageServerLoad = async ({ locals, url }) => {
   const user = requireUser(locals);
   const today = localToday();
   const requested = monthSchema.safeParse(url.searchParams.get("month"));
   const month = requested.success ? requested.data : today.slice(0, 7);
   const monthStart = `${month}-01`;
   const categories = listCategories(user.id);
-  const accounts = listAccounts(user.id);
+  const accounts = await listAccounts(user.id);
   const basis = parseShareBasis(url.searchParams.get("basis"), "share");
   return {
     month,

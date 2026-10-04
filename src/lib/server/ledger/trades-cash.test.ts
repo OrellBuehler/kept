@@ -147,8 +147,8 @@ describe("cash moves (pure)", () => {
 
 async function setup(tradesMoveCash = true) {
   const user = await createTestUser();
-  const main = seedAccount(user.id, { name: "Main", iban: EXAMPLE_IBAN });
-  const broker = seedAccount(user.id, {
+  const main = await seedAccount(user.id, { name: "Main", iban: EXAMPLE_IBAN });
+  const broker = await seedAccount(user.id, {
     name: "Broker",
     type: "investment",
     iban: EXAMPLE_IBAN_OTHER,
@@ -156,12 +156,12 @@ async function setup(tradesMoveCash = true) {
     tradesMoveCash,
   });
   // 1000.00 moves from Main to Broker, mirrored onto Broker.
-  const deposit = seedImportedTransaction(user.id, main.id, {
+  const deposit = await seedImportedTransaction(user.id, main.id, {
     bookingDate: "2024-01-02",
     amount: minor(-100000),
     counterpartyIban: EXAMPLE_IBAN_OTHER,
   });
-  linkTransfers(user.id, { transactionIds: [deposit.id] });
+  await linkTransfers(user.id, { transactionIds: [deposit.id] });
   const sec = seedSecurity(user.id);
   // buy 600.00 on 01-10, sell 200.00 on 02-10; 4 units remain, priced at 130.00.
   seedTrade(user.id, broker.id, sec.id, {
@@ -186,7 +186,7 @@ describe("trades move cash", () => {
 
   it("a buy lowers and a sell raises cash, and holdings come on top", async () => {
     const { user, broker } = await setup();
-    const value = accountValue(user.id, broker.id, "2024-12-31");
+    const value = await accountValue(user.id, broker.id, "2024-12-31");
     expect(value).toMatchObject({
       cash: 60000,
       holdings: 52000,
@@ -194,10 +194,14 @@ describe("trades move cash", () => {
     });
     // deposit 1000.00, gain: 4 units at 130.00 = 520.00 vs 400.00 paid
     expect(value.total).toBe(100000 + (52000 - 40000));
-    expect(currentBalance(user.id, broker.id, "2024-12-31")).toBe(112000);
-    expect(accountBalanceAt(user.id, broker.id, "2024-01-31")).toBe(40000);
-    expect(accountBalanceAt(user.id, broker.id, "2024-12-31")).toBe(60000);
-    expect(getAccount(user.id, broker.id, "2024-12-31")).toMatchObject({
+    expect(await currentBalance(user.id, broker.id, "2024-12-31")).toBe(112000);
+    expect(await accountBalanceAt(user.id, broker.id, "2024-01-31")).toBe(
+      40000,
+    );
+    expect(await accountBalanceAt(user.id, broker.id, "2024-12-31")).toBe(
+      60000,
+    );
+    expect(await getAccount(user.id, broker.id, "2024-12-31")).toMatchObject({
       tradesMoveCash: true,
       cashBalance: 60000,
       balance: 112000,
@@ -206,7 +210,7 @@ describe("trades move cash", () => {
 
   it("is off by default: trades leave the cash balance alone", async () => {
     const { user, broker } = await setup(false);
-    expect(accountValue(user.id, broker.id, "2024-12-31")).toMatchObject({
+    expect(await accountValue(user.id, broker.id, "2024-12-31")).toMatchObject({
       cash: 100000,
       holdings: 52000,
       total: 152000,
@@ -215,26 +219,30 @@ describe("trades move cash", () => {
 
   it("only counts trades after the latest snapshot", async () => {
     const { user, broker } = await setup();
-    createSnapshot(user.id, broker.id, {
+    await createSnapshot(user.id, broker.id, {
       date: "2024-01-31",
       amount: minor(45000),
       note: null,
     });
     // buy (01-10) is inside the snapshot, the sell (02-10) comes after it
-    expect(accountValue(user.id, broker.id, "2024-12-31").cash).toBe(65000);
-    expect(accountBalanceAt(user.id, broker.id, "2024-01-31")).toBe(45000);
+    expect((await accountValue(user.id, broker.id, "2024-12-31")).cash).toBe(
+      65000,
+    );
+    expect(await accountBalanceAt(user.id, broker.id, "2024-01-31")).toBe(
+      45000,
+    );
   });
 
   it("is picked up by currentValues, the balance series and net worth", async () => {
     const { user, broker } = await setup();
-    const row = getAccount(user.id, broker.id, "2024-12-31");
+    const row = await getAccount(user.id, broker.id, "2024-12-31");
     expect(
-      currentValues(user.id, [row], "2024-12-31").get(broker.id),
+      (await currentValues(user.id, [row], "2024-12-31")).get(broker.id),
     ).toMatchObject({
       cash: 60000,
       total: 112000,
     });
-    const series = balanceSeries(
+    const series = await balanceSeries(
       user.id,
       broker.id,
       "2024-01-01",
@@ -244,7 +252,7 @@ describe("trades move cash", () => {
     // trades are valued at cost until the first price, so the total stays at the deposit
     expect(series.map((p) => p.amount)).toEqual([100000, 100000]);
 
-    const [net] = netWorthSeries(user.id, {
+    const [net] = await netWorthSeries(user.id, {
       from: "2024-01-31",
       to: "2024-12-31",
       step: "month",
@@ -257,14 +265,14 @@ describe("trades move cash", () => {
 
   it("feeds the dashboard cash balance, liquidity and the forecast", async () => {
     const { user, broker } = await setup();
-    const view = accountBalances(user.id, "2024-12-31").find(
+    const view = (await accountBalances(user.id, "2024-12-31")).find(
       (a) => a.id === broker.id,
     )!;
     expect(view).toMatchObject({ cashBalance: 60000, balance: 112000 });
-    const [chf] = liquidity(user.id, "2024-12-31", undefined, true);
+    const [chf] = await liquidity(user.id, "2024-12-31", undefined, true);
     // Main sent 1000.00 away (-1000.00), Broker's cash is 600.00
     expect(chf!.now.balance).toBe(-100000 + 60000);
-    const projected = forecast(user.id, "2024-12-31", 30).accounts.find(
+    const projected = (await forecast(user.id, "2024-12-31", 30)).accounts.find(
       (a) => a.accountId === broker.id,
     );
     expect(projected?.startBalance).toBe(60000);
@@ -273,14 +281,16 @@ describe("trades move cash", () => {
   it("stays per user", async () => {
     const { user, broker } = await setup();
     const other = await createTestUser();
-    expect(() => accountValue(other.id, broker.id, "2024-12-31")).toThrow(
-      /not found/i,
-    );
-    const mine = seedAccount(other.id, {
+    await expect(
+      accountValue(other.id, broker.id, "2024-12-31"),
+    ).rejects.toThrow(/not found/i);
+    const mine = await seedAccount(other.id, {
       type: "investment",
       tradesMoveCash: true,
     });
-    expect(accountValue(other.id, mine.id, "2024-12-31").cash).toBe(0);
-    expect(accountValue(user.id, broker.id, "2024-12-31").cash).toBe(60000);
+    expect((await accountValue(other.id, mine.id, "2024-12-31")).cash).toBe(0);
+    expect((await accountValue(user.id, broker.id, "2024-12-31")).cash).toBe(
+      60000,
+    );
   });
 });

@@ -55,7 +55,7 @@ describe("parse cache", () => {
   it("a repeated preview does not re-read or re-parse the file", async () => {
     clearParseCache();
     const user = await createTestUser();
-    const account = seedAccount(user.id, { iban: EXAMPLE_IBAN });
+    const account = await seedAccount(user.id, { iban: EXAMPLE_IBAN });
     const id = await uploadFixture(
       user.id,
       account.id,

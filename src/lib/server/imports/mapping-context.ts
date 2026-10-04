@@ -146,8 +146,8 @@ export async function mappingContext(
       "profile",
     );
   }
-  const account = getAccount(userId, meta.accountId);
-  const saved = getCsvProfile(userId, account.id);
+  const account = await getAccount(userId, meta.accountId);
+  const saved = await getCsvProfile(userId, account.id);
 
   const draftObject =
     draftProfile === undefined ? null : plainObject(draftProfile);

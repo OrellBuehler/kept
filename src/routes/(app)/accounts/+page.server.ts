@@ -51,11 +51,11 @@ async function readLogoUpload(form: FormData): Promise<Uint8Array | null> {
   return bytes;
 }
 
-export const load: PageServerLoad = ({ locals }) => {
+export const load: PageServerLoad = async ({ locals }) => {
   const user = requireUser(locals);
   return {
-    institutions: listInstitutions(user.id),
-    accounts: listAccounts(user.id),
+    institutions: await listInstitutions(user.id),
+    accounts: await listAccounts(user.id),
   };
 };
 
@@ -74,8 +74,8 @@ export const actions: Actions = {
     }
     try {
       const logo = await readLogoUpload(form);
-      const created = createInstitution(user.id, parsed.data);
-      if (logo) setInstitutionLogo(user.id, created.id, logo);
+      const created = await createInstitution(user.id, parsed.data);
+      if (logo) await setInstitutionLogo(user.id, created.id, logo);
       return {
         success: true as const,
         action: "createInstitution" as const,
@@ -104,10 +104,10 @@ export const actions: Actions = {
     const { id, ...input } = parsed.data;
     try {
       const logo = await readLogoUpload(form);
-      updateInstitution(user.id, id, input);
-      if (logo) setInstitutionLogo(user.id, id, logo);
+      await updateInstitution(user.id, id, input);
+      if (logo) await setInstitutionLogo(user.id, id, logo);
       else if (form.get("removeLogo") === "1")
-        removeInstitutionLogo(user.id, id);
+        await removeInstitutionLogo(user.id, id);
       return {
         success: true as const,
         action: "updateInstitution" as const,
@@ -131,7 +131,7 @@ export const actions: Actions = {
       });
     }
     try {
-      deleteInstitution(user.id, parsed.data.id);
+      await deleteInstitution(user.id, parsed.data.id);
       return {
         success: true as const,
         action: "deleteInstitution" as const,
@@ -155,7 +155,7 @@ export const actions: Actions = {
       });
     }
     try {
-      const created = createAccount(user.id, parsed.data);
+      const created = await createAccount(user.id, parsed.data);
       return {
         success: true as const,
         action: "createAccount" as const,

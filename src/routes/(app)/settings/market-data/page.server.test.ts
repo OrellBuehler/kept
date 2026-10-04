@@ -75,7 +75,7 @@ describe("settings/market-data", () => {
 
   it("refreshes and returns the summary", async () => {
     const u = await createTestUser();
-    const acc = seedAccount(u.id, { type: "investment" });
+    const acc = await seedAccount(u.id, { type: "investment" });
     const sec = seedSecurity(u.id, { symbol: "AAA.SW" });
     seedTrade(u.id, acc.id, sec.id, { date: "2024-01-15", amount: 100000 });
     seedProviderPrice(u.id, sec.id, "2024-01-20", "100");

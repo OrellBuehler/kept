@@ -156,12 +156,12 @@ describe("settings/categories page", () => {
   it("applies rules to uncategorized transactions of the user only", async () => {
     const a = await createTestUser();
     const b = await createTestUser();
-    const accA = seedAccount(a.id);
-    const accB = seedAccount(b.id);
-    seedImportedTransaction(a.id, accA.id, {
+    const accA = await seedAccount(a.id);
+    const accB = await seedAccount(b.id);
+    await seedImportedTransaction(a.id, accA.id, {
       counterpartyName: "Example Shop",
     });
-    seedImportedTransaction(b.id, accB.id, {
+    await seedImportedTransaction(b.id, accB.id, {
       counterpartyName: "Example Shop",
     });
     const c = createCategory(a.id, { name: "Shopping", ...plain });
@@ -178,7 +178,11 @@ describe("settings/categories page", () => {
       type: "return",
       value: { success: true, scanned: 1, categorized: 1 },
     });
-    expect(listTransactions(a.id, accA.id).items[0]!.categoryId).toBe(c.id);
-    expect(listTransactions(b.id, accB.id).items[0]!.categoryId).toBeNull();
+    expect((await listTransactions(a.id, accA.id)).items[0]!.categoryId).toBe(
+      c.id,
+    );
+    expect(
+      (await listTransactions(b.id, accB.id)).items[0]!.categoryId,
+    ).toBeNull();
   });
 });

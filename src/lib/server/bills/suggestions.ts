@@ -10,7 +10,11 @@ import {
 } from "$lib/server/db";
 import { emitBillChanged } from "$lib/server/events";
 import { LedgerError, notFound } from "$lib/server/ledger/errors";
-import { allocate, loadAllocations, toMatchTransaction } from "./allocations";
+import {
+  allocateInTx,
+  loadAllocations,
+  toMatchTransaction,
+} from "./allocations";
 import { getBill, listBills, toMatchBill } from "./bills";
 import { transactionDisplayColumns, type TransactionDisplay } from "./display";
 import {
@@ -258,10 +262,10 @@ export function runAutoMatching(userId: string): AutoMatchResult {
     };
   }
   let matched = 0;
-  getDB().transaction(() => {
+  getDB().transaction((tx) => {
     for (const s of todo) {
       try {
-        allocate(userId, s.billId, s.transactionId, s.amount, "auto");
+        allocateInTx(tx, userId, s.billId, s.transactionId, s.amount, "auto");
         matched++;
       } catch (err) {
         if (!(err instanceof LedgerError)) throw err;

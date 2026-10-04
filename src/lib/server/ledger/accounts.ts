@@ -7,16 +7,19 @@ import {
   getDB,
   imports,
   institutions,
+  isUniqueViolation,
   portfolios,
   trades,
   transactions,
+  type DB,
 } from "$lib/server/db";
 import { assertReferenceFits } from "$lib/server/pillar3a/portfolios";
 import {
-  linkTransfers,
-  countMirrors,
+  countMirrorsInTx,
+  linkTransfersInTx,
   removeMirrors,
   revalidateLinks,
+  type Tx,
 } from "$lib/server/transfers";
 import { currentValues, type CurrentValue } from "./balances";
 import { LedgerError, notFound } from "./errors";
@@ -69,8 +72,8 @@ export interface AccountView {
   lastImportAt: number | null;
 }
 
-function baseRows(userId: string, accountId?: string) {
-  return getDB()
+async function baseRows(userId: string, accountId?: string) {
+  return await getDB()
     .select({
       id: accounts.id,
       name: accounts.name,
@@ -103,8 +106,7 @@ function baseRows(userId: string, accountId?: string) {
         accountId ? eq(accounts.id, accountId) : undefined,
       ),
     )
-    .orderBy(asc(accounts.sortOrder), asc(accounts.name), asc(accounts.id))
-    .all();
+    .orderBy(asc(accounts.sortOrder), asc(accounts.name), asc(accounts.id));
 }
 
 function holdingsOf(held: CurrentValue["holdings"]): AccountView["holdings"] {
@@ -113,48 +115,48 @@ function holdingsOf(held: CurrentValue["holdings"]): AccountView["holdings"] {
     : null;
 }
 
-function toViews(
+async function toViews(
   userId: string,
   accountId?: string,
   today?: string,
-): AccountView[] {
+): Promise<AccountView[]> {
   const db = getDB();
   const lastBooking = new Map(
-    db
-      .select({
-        id: transactions.accountId,
-        d: sql<string>`max(${transactions.bookingDate})`,
-      })
-      .from(transactions)
-      .where(
-        and(
-          eq(transactions.userId, userId),
-          accountId ? eq(transactions.accountId, accountId) : undefined,
-        ),
-      )
-      .groupBy(transactions.accountId)
-      .all()
-      .map((r) => [r.id, r.d]),
+    (
+      await db
+        .select({
+          id: transactions.accountId,
+          d: sql<string>`max(${transactions.bookingDate})`,
+        })
+        .from(transactions)
+        .where(
+          and(
+            eq(transactions.userId, userId),
+            accountId ? eq(transactions.accountId, accountId) : undefined,
+          ),
+        )
+        .groupBy(transactions.accountId)
+    ).map((r) => [r.id, r.d]),
   );
   const lastImport = new Map(
-    db
-      .select({
-        id: imports.accountId,
-        t: sql<number>`max(${imports.createdAt})`,
-      })
-      .from(imports)
-      .where(
-        and(
-          eq(imports.userId, userId),
-          accountId ? eq(imports.accountId, accountId) : undefined,
-        ),
-      )
-      .groupBy(imports.accountId)
-      .all()
-      .map((r) => [r.id, r.t]),
+    (
+      await db
+        .select({
+          id: imports.accountId,
+          t: sql<number>`max(${imports.createdAt})`,
+        })
+        .from(imports)
+        .where(
+          and(
+            eq(imports.userId, userId),
+            accountId ? eq(imports.accountId, accountId) : undefined,
+          ),
+        )
+        .groupBy(imports.accountId)
+    ).map((r) => [r.id, r.t]),
   );
-  const rows = baseRows(userId, accountId);
-  const values = currentValues(userId, rows, today);
+  const rows = await baseRows(userId, accountId);
+  const values = await currentValues(userId, rows, today);
   return rows.map((r) => ({
     id: r.id,
     name: r.name,
@@ -191,41 +193,61 @@ function toViews(
   }));
 }
 
-export function listAccounts(userId: string, today?: string): AccountView[] {
-  return toViews(userId, undefined, today);
+export async function listAccounts(
+  userId: string,
+  today?: string,
+): Promise<AccountView[]> {
+  return await toViews(userId, undefined, today);
 }
 
-export function getAccount(
+export async function getAccount(
   userId: string,
   id: string,
   today?: string,
-): AccountView {
-  const found = toViews(userId, id, today)[0];
+): Promise<AccountView> {
+  const found = (await toViews(userId, id, today))[0];
   if (!found) throw notFound("Account");
   return found;
 }
 
-function assertInstitutionOwned(userId: string, institutionId: string | null) {
+type Reader = Pick<DB, "select">;
+
+/** Sync: runs inside the transaction of createAccount / updateAccount. */
+function assertInstitutionOwned(
+  tx: Reader,
+  userId: string,
+  institutionId: string | null,
+) {
   if (institutionId === null) return;
-  const found = getDB()
+  const found = tx
     .select({ id: institutions.id })
     .from(institutions)
     .where(
       and(eq(institutions.userId, userId), eq(institutions.id, institutionId)),
     )
+    .limit(1)
     .get();
   if (!found) {
     throw new LedgerError("invalid", "Unknown institution.", "institutionId");
   }
 }
 
+const ibanTaken = () =>
+  new LedgerError(
+    "conflict",
+    "Another account already uses this IBAN.",
+    "iban",
+  );
+
+/** Sync: runs inside the transaction of createAccount / updateAccount. */
 function assertIbanFree(
+  tx: Reader,
   userId: string,
   iban: string | null,
   exceptId?: string,
 ) {
   if (iban === null) return;
-  const clash = getDB()
+  const clash = tx
     .select({ id: accounts.id })
     .from(accounts)
     .where(
@@ -235,63 +257,86 @@ function assertIbanFree(
         exceptId ? ne(accounts.id, exceptId) : undefined,
       ),
     )
+    .limit(1)
     .get();
-  if (clash) {
-    throw new LedgerError(
-      "conflict",
-      "Another account already uses this IBAN.",
-      "iban",
-    );
-  }
+  if (clash) throw ibanTaken();
 }
 
-export function createAccount(
+/**
+ * The in-transaction IBAN check is the friendly path; the unique index on
+ * (user, iban) is the backstop when two writes race, and maps to the same error.
+ */
+function mapIbanViolation(err: unknown, iban: string | null): never {
+  if (iban !== null && isUniqueViolation(err)) throw ibanTaken();
+  throw err;
+}
+
+export async function createAccount(
   userId: string,
   input: AccountInput,
-): AccountView {
-  assertInstitutionOwned(userId, input.institutionId);
-  assertIbanFree(userId, input.iban);
-  const db = getDB();
-  const sortOrder =
-    input.sortOrder ??
-    (db
-      .select({ m: sql<number | null>`max(${accounts.sortOrder})` })
-      .from(accounts)
-      .where(eq(accounts.userId, userId))
-      .get()?.m ?? -1) + 1;
-  const row = db.transaction((tx) => {
-    const created = tx
-      .insert(accounts)
-      .values({
-        ...input,
-        sortOrder,
-        userId,
-        fillFromTransfers:
-          input.fillFromTransfers === true && input.type !== "pillar_3a",
-        tradesMoveCash: input.tradesMoveCash && input.type === "investment",
-      })
-      .returning({ id: accounts.id })
-      .get();
-    // Transfers other accounts already show to this IBAN become mirrors here.
-    if (input.fillFromTransfers === true && input.type !== "pillar_3a") {
-      linkTransfers(userId, { targetAccountId: created.id }, tx);
-    }
-    return created;
-  });
-  return getAccount(userId, row.id);
+): Promise<AccountView> {
+  let id: string;
+  try {
+    id = getDB().transaction((tx) => {
+      assertInstitutionOwned(tx, userId, input.institutionId);
+      assertIbanFree(tx, userId, input.iban);
+      const sortOrder =
+        input.sortOrder ??
+        (tx
+          .select({ m: sql<number | null>`max(${accounts.sortOrder})` })
+          .from(accounts)
+          .where(eq(accounts.userId, userId))
+          .get()?.m ?? -1) + 1;
+      const created = tx
+        .insert(accounts)
+        .values({
+          ...input,
+          sortOrder,
+          userId,
+          fillFromTransfers:
+            input.fillFromTransfers === true && input.type !== "pillar_3a",
+          tradesMoveCash: input.tradesMoveCash && input.type === "investment",
+        })
+        .returning({ id: accounts.id })
+        .get();
+      // Transfers other accounts already show to this IBAN become mirrors here.
+      if (input.fillFromTransfers === true && input.type !== "pillar_3a") {
+        linkTransfersInTx(tx, userId, { targetAccountId: created.id });
+      }
+      return created.id;
+    });
+  } catch (err) {
+    mapIbanViolation(err, input.iban);
+  }
+  return await getAccount(userId, id);
 }
 
-export function updateAccount(
+/** Sync: the body of updateAccount's transaction, so the checks and the writes are one unit. */
+function updateAccountInTx(
+  tx: Tx,
   userId: string,
   id: string,
   input: AccountInput & { confirmRemoveMirrors?: boolean },
-): AccountView {
-  const current = getAccount(userId, id);
-  assertInstitutionOwned(userId, input.institutionId);
-  assertIbanFree(userId, input.iban, id);
+): void {
+  const current = tx
+    .select({
+      name: accounts.name,
+      iban: accounts.iban,
+      currency: accounts.currency,
+      depositIban: accounts.depositIban,
+      openingBalance: accounts.openingBalance,
+      fillFromTransfers: accounts.fillFromTransfers,
+      sortOrder: accounts.sortOrder,
+    })
+    .from(accounts)
+    .where(and(eq(accounts.userId, userId), eq(accounts.id, id)))
+    .limit(1)
+    .get();
+  if (!current) throw notFound("Account");
+  assertInstitutionOwned(tx, userId, input.institutionId);
+  assertIbanFree(tx, userId, input.iban, id);
 
-  const db = getDB();
-  const portfolioRows = db
+  const portfolioRows = tx
     .select({ reference: portfolios.depositReference })
     .from(portfolios)
     .where(and(eq(portfolios.userId, userId), eq(portfolios.accountId, id)))
@@ -322,20 +367,23 @@ export function updateAccount(
 
   if (input.currency !== current.currency) {
     const used =
-      db
+      tx
         .select({ id: transactions.id })
         .from(transactions)
         .where(eq(transactions.accountId, id))
+        .limit(1)
         .get() ??
-      db
+      tx
         .select({ id: balanceSnapshots.id })
         .from(balanceSnapshots)
         .where(eq(balanceSnapshots.accountId, id))
+        .limit(1)
         .get() ??
-      db
+      tx
         .select({ id: trades.id })
         .from(trades)
         .where(eq(trades.accountId, id))
+        .limit(1)
         .get() ??
       (portfolioRows.length > 0 ? true : undefined) ??
       // The same non-zero opening balance would silently turn into another currency.
@@ -354,10 +402,11 @@ export function updateAccount(
 
   const { sortOrder, confirmRemoveMirrors, ...rest } = input;
   const hasTrades =
-    db
+    tx
       .select({ id: trades.id })
       .from(trades)
       .where(eq(trades.accountId, id))
+      .limit(1)
       .get() !== undefined;
   const fillFromTransfers =
     (rest.fillFromTransfers ?? current.fillFromTransfers) &&
@@ -367,7 +416,7 @@ export function updateAccount(
     current.fillFromTransfers &&
     rest.fillFromTransfers === false &&
     !confirmRemoveMirrors &&
-    countMirrors(userId, id) > 0
+    countMirrorsInTx(tx, userId, id) > 0
   ) {
     throw new LedgerError(
       "invalid",
@@ -378,74 +427,82 @@ export function updateAccount(
   const tradesMoveCash =
     rest.tradesMoveCash && (rest.type === "investment" || hasTrades);
   const ibanChanged = rest.iban !== current.iban;
-  db.transaction((tx) => {
-    tx.update(accounts)
-      .set({
-        ...rest,
-        fillFromTransfers,
-        tradesMoveCash,
-        sortOrder: sortOrder ?? current.sortOrder,
-      })
-      .where(and(eq(accounts.userId, userId), eq(accounts.id, id)))
-      .run();
-    if (current.fillFromTransfers && !fillFromTransfers) {
-      removeMirrors(userId, id, tx);
-    }
-    if (ibanChanged || rest.name !== current.name) {
-      // Mirrors created from this account's rows name it as their counterparty.
-      tx.update(transactions)
-        .set({ counterpartyName: rest.name, counterpartyIban: rest.iban })
-        .where(
-          and(
-            eq(transactions.userId, userId),
-            eq(transactions.source, "mirror"),
-            inArray(
-              transactions.mirrorOfId,
-              tx
-                .select({ id: transactions.id })
-                .from(transactions)
-                .where(eq(transactions.accountId, id)),
-            ),
+  tx.update(accounts)
+    .set({
+      ...rest,
+      fillFromTransfers,
+      tradesMoveCash,
+      sortOrder: sortOrder ?? current.sortOrder,
+    })
+    .where(and(eq(accounts.userId, userId), eq(accounts.id, id)))
+    .run();
+  if (current.fillFromTransfers && !fillFromTransfers) {
+    removeMirrors(tx, userId, id);
+  }
+  if (ibanChanged || rest.name !== current.name) {
+    // Mirrors created from this account's rows name it as their counterparty.
+    tx.update(transactions)
+      .set({ counterpartyName: rest.name, counterpartyIban: rest.iban })
+      .where(
+        and(
+          eq(transactions.userId, userId),
+          eq(transactions.source, "mirror"),
+          inArray(
+            transactions.mirrorOfId,
+            tx
+              .select({ id: transactions.id })
+              .from(transactions)
+              .where(eq(transactions.accountId, id)),
           ),
-        )
-        .run();
-    }
-    // Links that depended on the old IBAN go before the new one links anything.
-    if (ibanChanged) revalidateLinks(userId, id, tx);
-    if (
-      (fillFromTransfers && !current.fillFromTransfers) ||
-      (ibanChanged && rest.iban !== null)
-    ) {
-      linkTransfers(userId, { targetAccountId: id }, tx);
-    }
-  });
-  return getAccount(userId, id);
+        ),
+      )
+      .run();
+  }
+  // Links that depended on the old IBAN go before the new one links anything.
+  if (ibanChanged) revalidateLinks(tx, userId, id);
+  if (
+    (fillFromTransfers && !current.fillFromTransfers) ||
+    (ibanChanged && rest.iban !== null)
+  ) {
+    linkTransfersInTx(tx, userId, { targetAccountId: id });
+  }
 }
 
-export function setAccountArchived(
+export async function updateAccount(
+  userId: string,
+  id: string,
+  input: AccountInput & { confirmRemoveMirrors?: boolean },
+): Promise<AccountView> {
+  try {
+    getDB().transaction((tx) => updateAccountInTx(tx, userId, id, input));
+  } catch (err) {
+    mapIbanViolation(err, input.iban);
+  }
+  return await getAccount(userId, id);
+}
+
+export async function setAccountArchived(
   userId: string,
   id: string,
   archived: boolean,
-): AccountView {
-  getAccount(userId, id);
-  getDB()
+): Promise<AccountView> {
+  await getAccount(userId, id);
+  await getDB()
     .update(accounts)
     .set({ archived, archivedAt: archived ? new Date() : null })
-    .where(and(eq(accounts.userId, userId), eq(accounts.id, id)))
-    .run();
-  return getAccount(userId, id);
+    .where(and(eq(accounts.userId, userId), eq(accounts.id, id)));
+  return await getAccount(userId, id);
 }
 
-export const archiveAccount = (userId: string, id: string) =>
-  setAccountArchived(userId, id, true);
-export const unarchiveAccount = (userId: string, id: string) =>
-  setAccountArchived(userId, id, false);
+export const archiveAccount = async (userId: string, id: string) =>
+  await setAccountArchived(userId, id, true);
+export const unarchiveAccount = async (userId: string, id: string) =>
+  await setAccountArchived(userId, id, false);
 
 /** Hard delete; transactions, imports, snapshots and the CSV profile cascade. */
-export function deleteAccount(userId: string, id: string): void {
-  getAccount(userId, id);
-  getDB()
+export async function deleteAccount(userId: string, id: string): Promise<void> {
+  await getAccount(userId, id);
+  await getDB()
     .delete(accounts)
-    .where(and(eq(accounts.userId, userId), eq(accounts.id, id)))
-    .run();
+    .where(and(eq(accounts.userId, userId), eq(accounts.id, id)));
 }

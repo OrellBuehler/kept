@@ -27,7 +27,7 @@ const save = (user: User, pendingId: string, form: Record<string, string>) =>
 
 async function setup() {
   const user = await createTestUser();
-  const account = seedAccount(user.id, { iban: EXAMPLE_IBAN });
+  const account = await seedAccount(user.id, { iban: EXAMPLE_IBAN });
   return { user, account };
 }
 
@@ -77,7 +77,7 @@ describe("/import/[pendingId]/mapping", () => {
       status: 303,
       location: `/import/${id}`,
     });
-    expect(getCsvProfile(user.id, account.id)?.name).toBe("My mapping");
+    expect((await getCsvProfile(user.id, account.id))?.name).toBe("My mapping");
   });
 
   it("save fails with 400 for invalid JSON, invalid profile and blank name", async () => {
@@ -109,7 +109,7 @@ describe("/import/[pendingId]/mapping", () => {
       status: 400,
       data: { errors: { name: [expect.any(String)] } },
     });
-    expect(getCsvProfile(user.id, account.id)).toBeNull();
+    expect(await getCsvProfile(user.id, account.id)).toBeNull();
   });
 
   it("save reports a missing profile field under errors.profile", async () => {
@@ -133,6 +133,6 @@ describe("/import/[pendingId]/mapping", () => {
         profile: JSON.stringify(SIMPLE_CSV_PROFILE),
       }),
     ).toEqual({ type: "error", status: 404 });
-    expect(getCsvProfile(user.id, account.id)).toBeNull();
+    expect(await getCsvProfile(user.id, account.id)).toBeNull();
   });
 });

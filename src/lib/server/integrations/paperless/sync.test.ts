@@ -184,8 +184,8 @@ describe("syncConnection", () => {
   });
 
   it("auto-matches an imported bill against a payment that is already booked", async () => {
-    const account = seedAccount(user.id);
-    seedImportedTransaction(user.id, account.id, {
+    const account = await seedAccount(user.id);
+    await seedImportedTransaction(user.id, account.id, {
       amount: minor(-194975),
       bookingDate: "2026-09-10",
       reference: QRR,

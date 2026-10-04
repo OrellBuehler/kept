@@ -81,13 +81,13 @@ export interface Pillar3aOverview {
   ageBenefitDrawn: boolean;
 }
 
-export function pillar3aOverview(
+export async function pillar3aOverview(
   userId: string,
   today: string,
-): Pillar3aOverview {
+): Promise<Pillar3aOverview> {
   const db = getDB();
-  const views = listContributions(userId);
-  const settings = listYearSettings(userId);
+  const views = await listContributions(userId);
+  const settings = await listYearSettings(userId);
   const facts = contributionFacts(views);
   const gaps = gapsFor({ ...facts, settings, today });
   const gapOf = new Map(gaps.map((g) => [g.year, g]));
@@ -130,7 +130,7 @@ export function pillar3aOverview(
   }
 
   const latest = new Map<string, { date: string; amount: Minor }>();
-  for (const v of db
+  for (const v of await db
     .select({
       portfolioId: portfolioValues.portfolioId,
       date: portfolioValues.date,
@@ -139,8 +139,7 @@ export function pillar3aOverview(
     .from(portfolioValues)
     .where(
       and(eq(portfolioValues.userId, userId), lte(portfolioValues.date, today)),
-    )
-    .all()) {
+    )) {
     const current = latest.get(v.portfolioId);
     if (!current || v.date > current.date) {
       latest.set(v.portfolioId, { date: v.date, amount: v.amount });
@@ -154,29 +153,29 @@ export function pillar3aOverview(
     );
   }
 
-  const rows = db
-    .select({
-      id: portfolios.id,
-      accountId: portfolios.accountId,
-      accountName: accounts.name,
-      archived: accounts.archived,
-      name: portfolios.name,
-      strategy: portfolios.strategy,
-      depositReference: portfolios.depositReference,
-      closedOn: portfolios.closedOn,
-      closeReason: portfolios.closeReason,
-      sortOrder: portfolios.sortOrder,
-    })
-    .from(portfolios)
-    .innerJoin(accounts, eq(accounts.id, portfolios.accountId))
-    .where(eq(portfolios.userId, userId))
-    .all()
-    .sort(
-      (a, b) =>
-        Number(a.closedOn !== null) - Number(b.closedOn !== null) ||
-        a.sortOrder - b.sortOrder ||
-        a.name.localeCompare(b.name),
-    );
+  const rows = (
+    await db
+      .select({
+        id: portfolios.id,
+        accountId: portfolios.accountId,
+        accountName: accounts.name,
+        archived: accounts.archived,
+        name: portfolios.name,
+        strategy: portfolios.strategy,
+        depositReference: portfolios.depositReference,
+        closedOn: portfolios.closedOn,
+        closeReason: portfolios.closeReason,
+        sortOrder: portfolios.sortOrder,
+      })
+      .from(portfolios)
+      .innerJoin(accounts, eq(accounts.id, portfolios.accountId))
+      .where(eq(portfolios.userId, userId))
+  ).sort(
+    (a, b) =>
+      Number(a.closedOn !== null) - Number(b.closedOn !== null) ||
+      a.sortOrder - b.sortOrder ||
+      a.name.localeCompare(b.name),
+  );
 
   let value = 0;
   let contributedOpen = 0;
@@ -204,7 +203,7 @@ export function pillar3aOverview(
     };
   });
 
-  const accountsValue = listAccounts(userId, today)
+  const accountsValue = (await listAccounts(userId, today))
     .filter((a) => a.type === "pillar_3a" && !a.archived)
     .reduce((s, a) => s + a.balance, 0);
 
@@ -219,6 +218,6 @@ export function pillar3aOverview(
       gain: minor(value - contributedOpen),
       accountsValue: minor(accountsValue),
     },
-    ageBenefitDrawn: ageBenefitDrawn(userId),
+    ageBenefitDrawn: await ageBenefitDrawn(userId),
   };
 }

@@ -624,7 +624,7 @@ describe("settings/paperless", () => {
 
     it("uploads the same report only once", async () => {
       await connect();
-      seedAccount(user.id);
+      await seedAccount(user.id);
       const first = value(
         await act("uploadReport", user, { kind: "net-worth" }),
       );
@@ -641,7 +641,7 @@ describe("settings/paperless", () => {
 
     it("never uses another user's account or connection", async () => {
       await connect();
-      const mine = seedAccount(user.id);
+      const mine = await seedAccount(user.id);
       const other = await createTestUser();
       expect(
         (await loaded(user)).accounts.map((a: { id: string }) => a.id),

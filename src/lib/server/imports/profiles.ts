@@ -22,11 +22,11 @@ export function profileIssues(err: ZodError): string[] {
 }
 
 /** The account's saved mapping profile, or null when there is none (or it no longer validates). */
-export function getCsvProfile(
+export async function getCsvProfile(
   userId: string,
   accountId: string,
-): SavedCsvProfile | null {
-  getAccount(userId, accountId);
+): Promise<SavedCsvProfile | null> {
+  await getAccount(userId, accountId);
   const row = getDB()
     .select()
     .from(csvProfiles)
@@ -68,13 +68,13 @@ export function parseProfileSafe(
   }
 }
 
-export function saveCsvProfile(
+export async function saveCsvProfile(
   userId: string,
   accountId: string,
   name: string,
   profileJson: unknown,
-): SavedCsvProfile {
-  getAccount(userId, accountId);
+): Promise<SavedCsvProfile> {
+  await getAccount(userId, accountId);
   const trimmed = name.trim();
   if (trimmed === "" || trimmed.length > 80) {
     throw new LedgerError(

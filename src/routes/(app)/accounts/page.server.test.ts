@@ -21,10 +21,10 @@ describe("accounts page", () => {
   it("load returns institutions and accounts of the current user only", async () => {
     const a = await createTestUser();
     const b = await createTestUser();
-    const inst = seedInstitution(a.id, "Inst A");
-    seedAccount(a.id, { institutionId: inst.id, iban: LEDGER_IBAN_A });
-    seedInstitution(b.id, "Inst B");
-    seedAccount(b.id, { name: "Bs account" });
+    const inst = await seedInstitution(a.id, "Inst A");
+    await seedAccount(a.id, { institutionId: inst.id, iban: LEDGER_IBAN_A });
+    await seedInstitution(b.id, "Inst B");
+    await seedAccount(b.id, { name: "Bs account" });
 
     const r = await outcome(() => load(createTestEvent({ user: a }) as never));
     expect(r.type).toBe("return");
@@ -75,7 +75,7 @@ describe("accounts page", () => {
       fillFromTransfers: "on",
     });
     const fill = Object.fromEntries(
-      listAccounts(u.id).map((a) => [a.name, a.fillFromTransfers]),
+      (await listAccounts(u.id)).map((a) => [a.name, a.fillFromTransfers]),
     );
     expect(fill).toEqual({ Plain: false, "Marker only": false, Filled: true });
   });
@@ -91,7 +91,7 @@ describe("accounts page", () => {
       type: "return",
       value: { success: true, action: "createInstitution" },
     });
-    const [inst] = listInstitutions(u.id);
+    const [inst] = await listInstitutions(u.id);
     expect(inst).toMatchObject({
       name: "Bank",
       bic: "AAAACHZZ",
@@ -101,13 +101,13 @@ describe("accounts page", () => {
     expect(
       await run("updateInstitution", u, { id: inst!.id, name: "Bank 2" }),
     ).toMatchObject({ type: "return", value: { success: true } });
-    expect(listInstitutions(u.id)[0]!.name).toBe("Bank 2");
+    expect((await listInstitutions(u.id))[0]!.name).toBe("Bank 2");
 
     expect(await run("deleteInstitution", u, { id: inst!.id })).toMatchObject({
       type: "return",
       value: { success: true },
     });
-    expect(listInstitutions(u.id)).toEqual([]);
+    expect(await listInstitutions(u.id)).toEqual([]);
   });
 
   it("returns field errors and echoes values", async () => {
@@ -129,8 +129,8 @@ describe("accounts page", () => {
 
   it("reports duplicate names and deletion of a used institution", async () => {
     const u = await createTestUser();
-    const inst = seedInstitution(u.id, "Dup");
-    seedAccount(u.id, { institutionId: inst.id });
+    const inst = await seedInstitution(u.id, "Dup");
+    await seedAccount(u.id, { institutionId: inst.id });
     expect(await run("createInstitution", u, { name: "Dup" })).toMatchObject({
       type: "fail",
       status: 400,
@@ -149,7 +149,7 @@ describe("accounts page", () => {
 
   it("creates an account", async () => {
     const u = await createTestUser();
-    const inst = seedInstitution(u.id);
+    const inst = await seedInstitution(u.id);
     const r = await run("createAccount", u, {
       institutionId: inst.id,
       name: "Savings",
@@ -163,7 +163,7 @@ describe("accounts page", () => {
       type: "return",
       value: { success: true, action: "createAccount" },
     });
-    expect(listAccounts(u.id)[0]).toMatchObject({
+    expect((await listAccounts(u.id))[0]).toMatchObject({
       name: "Savings",
       currency: "CHF",
       iban: LEDGER_IBAN_A,
@@ -185,7 +185,7 @@ describe("accounts page", () => {
       status: 400,
       data: { errors: { iban: ["Enter a valid IBAN."] } },
     });
-    seedAccount(u.id, { iban: LEDGER_IBAN_A });
+    await seedAccount(u.id, { iban: LEDGER_IBAN_A });
     const dup = await run("createAccount", u, {
       name: "y",
       type: "current",
@@ -202,7 +202,7 @@ describe("accounts page", () => {
     it("user B cannot modify or delete user A's institutions", async () => {
       const a = await createTestUser();
       const b = await createTestUser();
-      const inst = seedInstitution(a.id, "Mine");
+      const inst = await seedInstitution(a.id, "Mine");
 
       expect(
         await run("updateInstitution", b, { id: inst.id, name: "Hijacked" }),
@@ -211,13 +211,13 @@ describe("accounts page", () => {
         type: "error",
         status: 404,
       });
-      expect(listInstitutions(a.id)[0]!.name).toBe("Mine");
+      expect((await listInstitutions(a.id))[0]!.name).toBe("Mine");
     });
 
     it("user B cannot attach an account to user A's institution", async () => {
       const a = await createTestUser();
       const b = await createTestUser();
-      const inst = seedInstitution(a.id);
+      const inst = await seedInstitution(a.id);
       const r = await run("createAccount", b, {
         institutionId: inst.id,
         name: "x",
@@ -228,14 +228,14 @@ describe("accounts page", () => {
         type: "fail",
         data: { errors: { institutionId: ["Unknown institution."] } },
       });
-      expect(listAccounts(b.id)).toEqual([]);
+      expect(await listAccounts(b.id)).toEqual([]);
     });
 
     it("load never includes another user's data", async () => {
       const a = await createTestUser();
       const b = await createTestUser();
-      seedInstitution(a.id);
-      seedAccount(a.id);
+      await seedInstitution(a.id);
+      await seedAccount(a.id);
       const r = await outcome(() =>
         load(createTestEvent({ user: b }) as never),
       );

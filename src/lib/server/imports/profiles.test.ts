@@ -22,25 +22,25 @@ useTestStore();
 
 async function setup() {
   const user = await createTestUser();
-  const account = seedAccount(user.id, { iban: EXAMPLE_IBAN });
+  const account = await seedAccount(user.id, { iban: EXAMPLE_IBAN });
   return { user, account };
 }
 
 describe("csv profiles", () => {
   it("has none until saved, then upserts one per account", async () => {
     const { user, account } = await setup();
-    expect(getCsvProfile(user.id, account.id)).toBeNull();
-    saveCsvProfile(user.id, account.id, "First", SIMPLE_CSV_PROFILE);
-    expect(getCsvProfile(user.id, account.id)).toMatchObject({
+    expect(await getCsvProfile(user.id, account.id)).toBeNull();
+    await saveCsvProfile(user.id, account.id, "First", SIMPLE_CSV_PROFILE);
+    expect(await getCsvProfile(user.id, account.id)).toMatchObject({
       name: "First",
       profile: { amountMode: "single", dateFormat: "YYYY-MM-DD" },
     });
-    saveCsvProfile(user.id, account.id, "Second", {
+    await saveCsvProfile(user.id, account.id, "Second", {
       ...SIMPLE_CSV_PROFILE,
       dateFormat: "DD.MM.YYYY",
     });
     expect(getDB().select().from(csvProfiles).all()).toHaveLength(1);
-    expect(getCsvProfile(user.id, account.id)).toMatchObject({
+    expect(await getCsvProfile(user.id, account.id)).toMatchObject({
       name: "Second",
       profile: { dateFormat: "DD.MM.YYYY" },
     });
@@ -48,31 +48,33 @@ describe("csv profiles", () => {
 
   it("validates the profile and the name", async () => {
     const { user, account } = await setup();
-    expect(() =>
+    await expect(
       saveCsvProfile(user.id, account.id, "x", { amountMode: "single" }),
-    ).toThrow(/columns/);
-    expect(() =>
+    ).rejects.toThrow(/columns/);
+    await expect(
       saveCsvProfile(user.id, account.id, "  ", SIMPLE_CSV_PROFILE),
-    ).toThrow(/Name/);
-    expect(getCsvProfile(user.id, account.id)).toBeNull();
+    ).rejects.toThrow(/Name/);
+    expect(await getCsvProfile(user.id, account.id)).toBeNull();
   });
 
   it("is scoped to the user", async () => {
     const { user, account } = await setup();
     const other = await createTestUser();
-    saveCsvProfile(user.id, account.id, "Mine", SIMPLE_CSV_PROFILE);
-    expect(() => getCsvProfile(other.id, account.id)).toThrow(/not found/);
-    expect(() =>
+    await saveCsvProfile(user.id, account.id, "Mine", SIMPLE_CSV_PROFILE);
+    await expect(getCsvProfile(other.id, account.id)).rejects.toThrow(
+      /not found/,
+    );
+    await expect(
       saveCsvProfile(other.id, account.id, "Theirs", SIMPLE_CSV_PROFILE),
-    ).toThrow(/not found/);
-    expect(getCsvProfile(user.id, account.id)?.name).toBe("Mine");
+    ).rejects.toThrow(/not found/);
+    expect((await getCsvProfile(user.id, account.id))?.name).toBe("Mine");
   });
 
   it("treats a stored profile that no longer validates as missing", async () => {
     const { user, account } = await setup();
-    saveCsvProfile(user.id, account.id, "Mine", SIMPLE_CSV_PROFILE);
+    await saveCsvProfile(user.id, account.id, "Mine", SIMPLE_CSV_PROFILE);
     getDB().update(csvProfiles).set({ profile: '{"amountMode":"nope"}' }).run();
-    expect(getCsvProfile(user.id, account.id)).toBeNull();
+    expect(await getCsvProfile(user.id, account.id)).toBeNull();
   });
 });
 
@@ -180,7 +182,7 @@ describe("mappingContext", () => {
 
   it("uses the saved profile when no draft is given", async () => {
     const { user, account } = await setup();
-    saveCsvProfile(user.id, account.id, "Mine", SIMPLE_CSV_PROFILE);
+    await saveCsvProfile(user.id, account.id, "Mine", SIMPLE_CSV_PROFILE);
     const id = await uploadFixture(user.id, account.id, "csv/overlap-a.csv");
     const ctx = await mappingContext(user.id, id);
     expect(ctx).toMatchObject({ saved: true, savedName: "Mine" });
@@ -239,7 +241,7 @@ describe("startUpload", () => {
       (await startUpload(user.id, account.id, file("a.xml", camt)))
         .needsMapping,
     ).toBe(false);
-    saveCsvProfile(user.id, account.id, "Mine", SIMPLE_CSV_PROFILE);
+    await saveCsvProfile(user.id, account.id, "Mine", SIMPLE_CSV_PROFILE);
     expect(
       (await startUpload(user.id, account.id, file("a.csv", csv))).needsMapping,
     ).toBe(false);
@@ -252,8 +254,8 @@ describe("startUpload", () => {
     await expect(startUpload(other.id, account.id, f)).rejects.toThrow(
       /not found/,
     );
-    const archived = seedAccount(user.id, { name: "Old", iban: null });
-    archiveAccount(user.id, archived.id);
+    const archived = await seedAccount(user.id, { name: "Old", iban: null });
+    await archiveAccount(user.id, archived.id);
     await expect(startUpload(user.id, archived.id, f)).rejects.toThrow(
       /archived/,
     );

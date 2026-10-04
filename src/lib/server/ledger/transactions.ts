@@ -1,7 +1,7 @@
 import { and, count, desc, eq, gte, lte, or, sql } from "drizzle-orm";
 import type { RowSource } from "$lib/ledger-types";
 import type { Minor } from "$lib/money";
-import { accounts, getDB, transactions } from "$lib/server/db";
+import { accounts, first, getDB, transactions, type DB } from "$lib/server/db";
 import {
   mirrorRefs,
   transferRefs,
@@ -11,7 +11,7 @@ import {
 import { linkAfterWrite } from "$lib/server/transfers/link";
 import { unlink } from "$lib/server/transfers/manual";
 import {
-  findReplacements,
+  findReplacementsInTx,
   takeOverMirror,
 } from "$lib/server/transfers/replace";
 import { resyncSource } from "$lib/server/transfers/sync";
@@ -89,12 +89,15 @@ type Row = Omit<TransactionView, "mirrorOf" | "transfer"> & {
   mirrorOfId: string | null;
 };
 
-function decorate(userId: string, rows: readonly Row[]): TransactionView[] {
-  const transfer = transferRefs(
+async function decorate(
+  userId: string,
+  rows: readonly Row[],
+): Promise<TransactionView[]> {
+  const transfer = await transferRefs(
     userId,
     rows.map((r) => r.id),
   );
-  const mirrors = mirrorRefs(
+  const mirrors = await mirrorRefs(
     userId,
     rows.filter((r) => r.source === "mirror"),
   );
@@ -105,12 +108,31 @@ function decorate(userId: string, rows: readonly Row[]): TransactionView[] {
   }));
 }
 
-function ownedAccount(userId: string, accountId: string) {
-  const account = getDB()
+function ownedAccountQuery(
+  conn: Pick<DB, "select">,
+  userId: string,
+  accountId: string,
+) {
+  return conn
     .select({ currency: accounts.currency, openingDate: accounts.openingDate })
     .from(accounts)
     .where(and(eq(accounts.userId, userId), eq(accounts.id, accountId)))
-    .get();
+    .limit(1);
+}
+
+async function ownedAccount(userId: string, accountId: string) {
+  const account = await first(ownedAccountQuery(getDB(), userId, accountId));
+  if (!account) throw notFound("Account");
+  return account;
+}
+
+/** Sync twin of ownedAccount, for the body of a transaction. */
+function ownedAccountInTx(
+  tx: Pick<DB, "select">,
+  userId: string,
+  accountId: string,
+) {
+  const account = ownedAccountQuery(tx, userId, accountId).get();
   if (!account) throw notFound("Account");
   return account;
 }
@@ -133,12 +155,12 @@ function escapeLike(value: string): string {
 }
 
 /** Newest first. Text search is case-insensitive (ASCII) over description, counterparty and note. */
-export function listTransactions(
+export async function listTransactions(
   userId: string,
   accountId: string,
   opts: { filters?: TransactionFilters; page?: number; pageSize?: number } = {},
-): TransactionPage {
-  ownedAccount(userId, accountId);
+): Promise<TransactionPage> {
+  await ownedAccount(userId, accountId);
   const f = opts.filters ?? {};
   const pageSize = Math.max(1, Math.floor(opts.pageSize ?? 50));
   const requested = Math.max(1, Math.floor(opts.page ?? 1));
@@ -165,13 +187,14 @@ export function listTransactions(
   );
 
   const db = getDB();
-  const total = db.select({ n: count() }).from(transactions).where(where).get()!
-    .n;
+  const total = (await first(
+    db.select({ n: count() }).from(transactions).where(where).limit(1),
+  ))!.n;
   const pageCount = Math.max(1, Math.ceil(total / pageSize));
   const page = Math.min(requested, pageCount);
-  const items = decorate(
+  const items = await decorate(
     userId,
-    db
+    await db
       .select(columns)
       .from(transactions)
       .where(where)
@@ -181,30 +204,54 @@ export function listTransactions(
         desc(transactions.id),
       )
       .limit(pageSize)
-      .offset((page - 1) * pageSize)
-      .all(),
+      .offset((page - 1) * pageSize),
   );
   return { items, total, page, pageSize, pageCount };
 }
 
-export function getTransaction(userId: string, id: string): TransactionView {
-  const row = getDB()
+function ownedTransactionQuery(
+  conn: Pick<DB, "select">,
+  userId: string,
+  id: string,
+) {
+  return conn
     .select(columns)
     .from(transactions)
     .where(and(eq(transactions.userId, userId), eq(transactions.id, id)))
-    .get();
-  if (!row) throw notFound("Transaction");
-  return decorate(userId, [row])[0]!;
+    .limit(1);
 }
 
-export function createManualTransaction(
+export async function getTransaction(
+  userId: string,
+  id: string,
+): Promise<TransactionView> {
+  const row = await first(ownedTransactionQuery(getDB(), userId, id));
+  if (!row) throw notFound("Transaction");
+  return (await decorate(userId, [row]))[0]!;
+}
+
+/**
+ * Sync twin of getTransaction for the body of a transaction. It returns the
+ * plain row, without the transfer and mirror references `getTransaction` adds.
+ */
+export function getTransactionRowInTx(
+  tx: Pick<DB, "select">,
+  userId: string,
+  id: string,
+): Row {
+  const row = ownedTransactionQuery(tx, userId, id).get();
+  if (!row) throw notFound("Transaction");
+  return row;
+}
+
+export async function createManualTransaction(
   userId: string,
   accountId: string,
   input: TransactionInput,
-): TransactionView {
-  const { currency, openingDate } = ownedAccount(userId, accountId);
-  assertNotBeforeOpening({ openingDate }, input.bookingDate);
-  const row = getDB().transaction((tx) => {
+): Promise<TransactionView> {
+  const id = getDB().transaction((tx) => {
+    const { currency, openingDate } = ownedAccountInTx(tx, userId, accountId);
+    assertNotBeforeOpening({ openingDate }, input.bookingDate);
     const created = tx
       .insert(transactions)
       .values({
@@ -219,68 +266,67 @@ export function createManualTransaction(
       .returning({ id: transactions.id })
       .get();
     // Like an imported row, a manual one takes over the mirror it stands for.
-    const mirrorId = findReplacements(
-      userId,
-      accountId,
-      [
-        {
-          key: created.id,
-          bookingDate: input.bookingDate,
-          amount: input.amount,
-          counterpartyIban: input.counterpartyIban,
-          reference: input.reference,
-          description: input.description,
-        },
-      ],
-      tx,
-    ).get(created.id);
+    const mirrorId = findReplacementsInTx(tx, userId, accountId, [
+      {
+        key: created.id,
+        bookingDate: input.bookingDate,
+        amount: input.amount,
+        counterpartyIban: input.counterpartyIban,
+        reference: input.reference,
+        description: input.description,
+      },
+    ]).get(created.id);
     if (mirrorId !== undefined)
-      takeOverMirror(userId, mirrorId, created.id, tx);
-    linkAfterWrite(userId, accountId, [created.id], [input.bookingDate], tx);
-    return created;
+      takeOverMirror(tx, userId, mirrorId, created.id);
+    linkAfterWrite(tx, userId, accountId, [created.id], [input.bookingDate]);
+    return created.id;
   });
-  return getTransaction(userId, row.id);
+  return await getTransaction(userId, id);
 }
 
 /** Manual rows take all fields; imported rows and mirrors only accept a note. */
-export function updateTransaction(
+export async function updateTransaction(
   userId: string,
   id: string,
   input: TransactionInput | TransactionNoteInput,
-): TransactionView {
-  const current = getTransaction(userId, id);
+): Promise<TransactionView> {
+  const current = await getTransaction(userId, id);
   const where = and(eq(transactions.userId, userId), eq(transactions.id, id));
   if (current.source !== "manual") {
-    getDB().update(transactions).set({ note: input.note }).where(where).run();
+    await getDB().update(transactions).set({ note: input.note }).where(where);
   } else {
     if (!("bookingDate" in input)) {
       throw new LedgerError("invalid", "Missing transaction fields.");
     }
-    assertNotBeforeOpening(
-      ownedAccount(userId, current.accountId),
-      input.bookingDate,
-    );
     getDB().transaction((tx) => {
+      // Read again inside the transaction: the previous IBAN decides which links survive.
+      const previous = getTransactionRowInTx(tx, userId, id);
+      assertNotBeforeOpening(
+        ownedAccountInTx(tx, userId, previous.accountId),
+        input.bookingDate,
+      );
       tx.update(transactions).set(input).where(where).run();
       // A mirror follows its source's amount, dates and text.
-      resyncSource(userId, id, current.counterpartyIban, tx);
+      resyncSource(tx, userId, id, previous.counterpartyIban);
     });
   }
-  return getTransaction(userId, id);
+  return await getTransaction(userId, id);
 }
 
-export function deleteTransaction(userId: string, id: string): void {
-  const current = getTransaction(userId, id);
+export async function deleteTransaction(
+  userId: string,
+  id: string,
+): Promise<void> {
+  const current = await getTransaction(userId, id);
   if (current.source === "mirror") {
     // Deleting a mirror means "this is not a transfer": the unlink remembers it.
     // One that lost its transfer has nothing to remember and just goes.
     if (current.transfer) {
-      unlink(userId, current.transfer.id);
+      await unlink(userId, current.transfer.id);
     } else {
-      getDB()
+      await getDB()
         .delete(transactions)
-        .where(and(eq(transactions.userId, userId), eq(transactions.id, id)))
-        .run();
+        .where(and(eq(transactions.userId, userId), eq(transactions.id, id)));
     }
     return;
   }
@@ -290,8 +336,7 @@ export function deleteTransaction(userId: string, id: string): void {
       "Imported transactions cannot be deleted. Delete the import instead.",
     );
   }
-  getDB()
+  await getDB()
     .delete(transactions)
-    .where(and(eq(transactions.userId, userId), eq(transactions.id, id)))
-    .run();
+    .where(and(eq(transactions.userId, userId), eq(transactions.id, id)));
 }

@@ -39,12 +39,12 @@ const credit = (month: string) => `${THIS_YEAR}-${month}`;
 
 async function setup() {
   const user = await createTestUser();
-  const threeA = seedPillar3aAccount(user.id);
-  const portfolio = seedPortfolio(user.id, threeA.id, {
+  const threeA = await seedPillar3aAccount(user.id);
+  const portfolio = await seedPortfolio(user.id, threeA.id, {
     name: "P1",
     depositReference: REF,
   });
-  const current = seedAccount(user.id, { name: "Current" });
+  const current = await seedAccount(user.id, { name: "Current" });
   return { user, threeA, portfolio, current };
 }
 
@@ -100,7 +100,7 @@ describe("pillar 3a page", () => {
         earnedIncome: "100000.00",
       }),
     ).toMatchObject({ type: "return", value: { success: true } });
-    expect(listYearSettings(user.id)).toEqual([
+    expect(await listYearSettings(user.id)).toEqual([
       { year: THIS_YEAR, deduction: "large", earnedIncome: 10_000_000 },
     ]);
     await run("setYear", user, {
@@ -108,7 +108,7 @@ describe("pillar 3a page", () => {
       deduction: "small",
       earnedIncome: "5000",
     });
-    expect(listYearSettings(user.id)[0]).toMatchObject({
+    expect((await listYearSettings(user.id))[0]).toMatchObject({
       deduction: "small",
       earnedIncome: null,
     });
@@ -131,7 +131,7 @@ describe("pillar 3a page", () => {
       type: "return",
       value: { success: true, action: "addContribution", warnings: [] },
     });
-    const [c] = listContributions(user.id);
+    const [c] = await listContributions(user.id);
     expect(c).toMatchObject({
       source: "manual",
       amount: 100_000,
@@ -149,7 +149,7 @@ describe("pillar 3a page", () => {
         }),
       ),
     ).toMatchObject({ type: "return", value: { success: true } });
-    expect(listContributions(user.id)[0]).toMatchObject({
+    expect((await listContributions(user.id))[0]).toMatchObject({
       amount: 200_000,
       note: "x",
     });
@@ -157,7 +157,7 @@ describe("pillar 3a page", () => {
     expect(
       await run("deleteContribution", user, { contributionId: c!.id! }),
     ).toMatchObject({ type: "return", value: { success: true } });
-    expect(listContributions(user.id)).toEqual([]);
+    expect(await listContributions(user.id)).toEqual([]);
   });
 
   it("validates a contribution and echoes the values", async () => {
@@ -176,18 +176,18 @@ describe("pillar 3a page", () => {
         values: { amount: "-5", date: "nope" },
       },
     });
-    expect(listContributions(user.id)).toEqual([]);
+    expect(await listContributions(user.id)).toEqual([]);
   });
 
   it("marks a detected payment as a buy-in, once per gap year", async () => {
     const { user, current } = await setup();
-    const tx1 = seedImportedTransaction(user.id, current.id, {
+    const tx1 = await seedImportedTransaction(user.id, current.id, {
       reference: REF,
       amount: minor(-100_000),
       bookingDate: credit("02-01"),
       currency: "CHF",
     });
-    const tx2 = seedImportedTransaction(user.id, current.id, {
+    const tx2 = await seedImportedTransaction(user.id, current.id, {
       reference: REF,
       amount: minor(-100_000),
       bookingDate: credit("02-02"),
@@ -211,10 +211,12 @@ describe("pillar 3a page", () => {
       value: { success: true, action: "updateContribution" },
     });
     expect(
-      listContributions(user.id).find((c) => c.transactionId === tx1.id),
+      (await listContributions(user.id)).find(
+        (c) => c.transactionId === tx1.id,
+      ),
     ).toMatchObject({ kind: "buy_in", gapYears: [2025], source: "detected" });
     expect(
-      pillar3aOverview(user.id, localToday()).years.find(
+      (await pillar3aOverview(user.id, localToday())).years.find(
         (y) => y.year === 2025,
       ),
     ).toMatchObject({ closedBy: expect.any(String) });
@@ -222,7 +224,9 @@ describe("pillar 3a page", () => {
     const second = await run("updateContribution", user, buyIn(tx2.id));
     expect(second).toMatchObject({ type: "fail", status: 400 });
     expect(
-      listContributions(user.id).find((c) => c.transactionId === tx2.id),
+      (await listContributions(user.id)).find(
+        (c) => c.transactionId === tx2.id,
+      ),
     ).toMatchObject({ kind: "ordinary", gapYears: [] });
 
     // Resetting the annotation releases the gap year again.
@@ -230,7 +234,9 @@ describe("pillar 3a page", () => {
       await run("deleteContribution", user, { transactionId: tx1.id }),
     ).toMatchObject({ type: "return", value: { success: true } });
     expect(
-      listContributions(user.id).find((c) => c.transactionId === tx1.id),
+      (await listContributions(user.id)).find(
+        (c) => c.transactionId === tx1.id,
+      ),
     ).toMatchObject({ kind: "ordinary", gapYears: [] });
   });
 
@@ -249,15 +255,15 @@ describe("pillar 3a page", () => {
     it("refuses A's portfolio, contributions and payments for B", async () => {
       const { user: a, current, portfolio } = await setup();
       await run("addContribution", a, manual(portfolio.id));
-      const [c] = listContributions(a.id);
-      const tx = seedImportedTransaction(a.id, current.id, {
+      const [c] = await listContributions(a.id);
+      const tx = await seedImportedTransaction(a.id, current.id, {
         reference: REF,
         amount: minor(-100_000),
         bookingDate: credit("02-01"),
         currency: "CHF",
       });
       const b = await createTestUser();
-      seedPillar3aAccount(b.id);
+      await seedPillar3aAccount(b.id);
 
       const attempts: [keyof typeof actions, Record<string, string>][] = [
         ["addContribution", manual(portfolio.id)],
@@ -284,21 +290,23 @@ describe("pillar 3a page", () => {
           status: 404,
         });
       }
-      const still = listContributions(a.id);
+      const still = await listContributions(a.id);
       expect(still.filter((x) => x.source === "manual")).toHaveLength(1);
       expect(still.find((x) => x.id === c!.id)).toMatchObject({
         amount: 100_000,
       });
-      expect(listContributions(b.id)).toEqual([]);
+      expect(await listContributions(b.id)).toEqual([]);
     });
 
     it("keeps year settings per user", async () => {
       const { user: a } = await setup();
       const b = await createTestUser();
       await run("setYear", a, { year: "2026", deduction: "none" });
-      expect(listYearSettings(b.id)).toEqual([]);
+      expect(await listYearSettings(b.id)).toEqual([]);
       await run("setYear", b, { year: "2026", deduction: "large" });
-      expect(listYearSettings(a.id)).toMatchObject([{ deduction: "none" }]);
+      expect(await listYearSettings(a.id)).toMatchObject([
+        { deduction: "none" },
+      ]);
     });
   });
 });

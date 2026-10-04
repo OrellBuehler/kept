@@ -62,7 +62,7 @@ export const actions: Actions = {
       });
     }
     try {
-      saveCsvProfile(user.id, meta.accountId, parsed.data.name, profile);
+      await saveCsvProfile(user.id, meta.accountId, parsed.data.name, profile);
     } catch (err) {
       return ledgerFailure("save", err, values);
     }

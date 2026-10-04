@@ -13,7 +13,7 @@ export async function startUpload(
   accountId: string,
   file: File,
 ): Promise<{ meta: PendingMeta; needsMapping: boolean }> {
-  const account = getAccount(userId, accountId);
+  const account = await getAccount(userId, accountId);
   if (account.archived) {
     throw new LedgerError(
       "invalid",
@@ -34,6 +34,7 @@ export async function startUpload(
     bytes: new Uint8Array(await file.arrayBuffer()),
   });
   const needsMapping =
-    meta.format !== "camt053" && getCsvProfile(userId, account.id) === null;
+    meta.format !== "camt053" &&
+    (await getCsvProfile(userId, account.id)) === null;
   return { meta, needsMapping };
 }

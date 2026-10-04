@@ -76,8 +76,8 @@ describe("new bill page", () => {
 
   it("a bill created for an already booked payment is Paid on the next detail load", async () => {
     const u = await createTestUser();
-    const account = seedAccount(u.id);
-    seedImportedTransaction(u.id, account.id, {
+    const account = await seedAccount(u.id);
+    await seedImportedTransaction(u.id, account.id, {
       amount: minor(-10000),
       bookingDate: "2026-09-10",
       reference: QRR,
@@ -109,9 +109,9 @@ describe("new bill page", () => {
 
   it("loads an empty form with the user's accounts", async () => {
     const u = await createTestUser();
-    const acc = seedAccount(u.id, { name: "Checking" });
+    const acc = await seedAccount(u.id, { name: "Checking" });
     const other = await createTestUser();
-    seedAccount(other.id, { name: "Not mine" });
+    await seedAccount(other.id, { name: "Not mine" });
     expect(await loadAs(u)).toEqual({
       type: "return",
       value: {
@@ -271,7 +271,7 @@ describe("new bill page", () => {
       type: "error",
       status: 404,
     });
-    const foreign = seedAccount(a.id);
+    const foreign = await seedAccount(a.id);
     expect(await create({ expectedAccountId: foreign.id })).toMatchObject({
       type: "fail",
       data: { errors: { expectedAccountId: [expect.any(String)] } },

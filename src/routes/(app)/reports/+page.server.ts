@@ -3,10 +3,10 @@ import { requireUser } from "$lib/server/auth/guards";
 import { listAccounts, localToday } from "$lib/server/ledger";
 import type { PageServerLoad } from "./$types";
 
-export const load: PageServerLoad = ({ locals }) => {
+export const load: PageServerLoad = async ({ locals }) => {
   const user = requireUser(locals);
   const today = localToday();
-  const accounts = listAccounts(user.id, today);
+  const accounts = await listAccounts(user.id, today);
   return {
     today,
     hasShared: accounts.some((a) => !a.archived && a.shareBps < FULL_SHARE_BPS),

@@ -6,14 +6,14 @@ import type { PortfoliosInput } from "./valuation";
  * Portfolio values of several accounts with one query. Accounts without
  * values dated <= `to` are absent from the result.
  */
-export function loadPortfolioInputs(
+export async function loadPortfolioInputs(
   userId: string,
   accountIds: readonly string[],
   to: string,
-): Map<string, PortfoliosInput> {
+): Promise<Map<string, PortfoliosInput>> {
   const result = new Map<string, PortfoliosInput>();
   if (accountIds.length === 0) return result;
-  const rows = getDB()
+  const rows = await getDB()
     .select({
       accountId: portfolios.accountId,
       portfolioId: portfolios.id,
@@ -30,8 +30,7 @@ export function loadPortfolioInputs(
         inArray(portfolios.accountId, [...accountIds]),
         lte(portfolioValues.date, to),
       ),
-    )
-    .all();
+    );
   const byAccount = new Map<
     string,
     Map<
@@ -59,14 +58,14 @@ export function loadPortfolioInputs(
 }
 
 /** Per account with portfolio values: the newest value date up to `today`. One query. */
-export function latestPortfolioValueDates(
+export async function latestPortfolioValueDates(
   userId: string,
   accountIds: readonly string[],
   today: string,
-): Map<string, string> {
+): Promise<Map<string, string>> {
   const out = new Map<string, string>();
   if (accountIds.length === 0) return out;
-  for (const r of getDB()
+  for (const r of await getDB()
     .select({ accountId: portfolios.accountId, d: max(portfolioValues.date) })
     .from(portfolioValues)
     .innerJoin(portfolios, eq(portfolios.id, portfolioValues.portfolioId))
@@ -78,8 +77,7 @@ export function latestPortfolioValueDates(
         lte(portfolioValues.date, today),
       ),
     )
-    .groupBy(portfolios.accountId)
-    .all()) {
+    .groupBy(portfolios.accountId)) {
     if (r.d !== null) out.set(r.accountId, r.d);
   }
   return out;

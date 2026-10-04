@@ -133,7 +133,7 @@ interface Classified {
 
 const UNCATEGORIZED = "Uncategorized";
 
-function loadOwn(userId: string) {
+async function loadOwn(userId: string) {
   const own = getDB()
     .select({
       id: accounts.id,
@@ -146,7 +146,7 @@ function loadOwn(userId: string) {
   const active = new Map(
     own.filter((a) => !a.archived).map((a) => [a.id, a.currency]),
   );
-  return { active, exclusion: loadTransferExclusion(userId) };
+  return { active, exclusion: await loadTransferExclusion(userId) };
 }
 
 function loadRows(userId: string, from: string, to: string): Row[] {
@@ -174,8 +174,8 @@ function loadRows(userId: string, from: string, to: string): Row[] {
 }
 
 /** Years with at least one transaction on a non-archived account, newest first. */
-export function reviewYears(userId: string): number[] {
-  const { active } = loadOwn(userId);
+export async function reviewYears(userId: string): Promise<number[]> {
+  const { active } = await loadOwn(userId);
   const years = new Set<number>();
   for (const r of loadRows(userId, "0000-01-01", "9999-12-31")) {
     if (active.has(r.accountId)) years.add(Number(r.bookingDate.slice(0, 4)));
@@ -204,14 +204,14 @@ export function defaultReviewYear(today: string, years: number[]): number {
  * Subcategories roll up into their parent. A year that is still running
  * covers January up to `today`.
  */
-export function yearReview(
+export async function yearReview(
   userId: string,
   { year, today }: { year: number; today: string },
-): YearReview {
+): Promise<YearReview> {
   const from = `${year}-01-01`;
   const yearEnd = `${year}-12-31`;
   const to = today < yearEnd ? today : yearEnd;
-  const { active, exclusion } = loadOwn(userId);
+  const { active, exclusion } = await loadOwn(userId);
   const cats = new Map<string, Cat>(
     getDB()
       .select({
@@ -277,7 +277,7 @@ export function yearReview(
     return out;
   };
 
-  const series = netWorthSeries(userId, {
+  const series = await netWorthSeries(userId, {
     from: `${year - 1}-12-31`,
     to,
     step: "month",

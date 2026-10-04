@@ -44,13 +44,13 @@ function yearOf(params: { year: string }): number {
   return year;
 }
 
-export const load: PageServerLoad = ({ locals, params }) => {
+export const load: PageServerLoad = async ({ locals, params }) => {
   const user = requireUser(locals);
   const reconciliation = reconcileYear(user.id, yearOf(params));
   if (!reconciliation) error(404, "Tax year not found.");
   const taxYear = reconciliation.year.year;
-  const deductions = deductionSummary(user.id, taxYear);
-  const overview = pillar3aOverview(user.id, localToday());
+  const deductions = await deductionSummary(user.id, taxYear);
+  const overview = await pillar3aOverview(user.id, localToday());
   const deductible =
     deductions.totals.find(
       (t) => t.type === "pillar_3a" && t.currency === PILLAR_3A_CURRENCY,
@@ -160,7 +160,7 @@ export const actions: Actions = {
       return fail(400, { action: "tag", errors: parsed.errors, values });
     }
     try {
-      setTransactionTaxYear(user.id, parsed.data.transactionId, year);
+      await setTransactionTaxYear(user.id, parsed.data.transactionId, year);
       return { success: true as const, action: "tag" as const };
     } catch (err) {
       return ledgerFailure("tag", err, values);
@@ -176,7 +176,7 @@ export const actions: Actions = {
       return fail(400, { action: "untag", errors: parsed.errors, values });
     }
     try {
-      setTransactionTaxYear(user.id, parsed.data.transactionId, null);
+      await setTransactionTaxYear(user.id, parsed.data.transactionId, null);
       return { success: true as const, action: "untag" as const };
     } catch (err) {
       return ledgerFailure("untag", err, values);
@@ -220,7 +220,11 @@ export const actions: Actions = {
       });
     }
     try {
-      setTransactionDeductionExcluded(user.id, parsed.data.transactionId, true);
+      await setTransactionDeductionExcluded(
+        user.id,
+        parsed.data.transactionId,
+        true,
+      );
       return { success: true as const, action: "excludeDeduction" as const };
     } catch (err) {
       return ledgerFailure("excludeDeduction", err, values);
@@ -240,7 +244,7 @@ export const actions: Actions = {
       });
     }
     try {
-      setTransactionDeductionExcluded(
+      await setTransactionDeductionExcluded(
         user.id,
         parsed.data.transactionId,
         false,

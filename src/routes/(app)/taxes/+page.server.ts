@@ -11,14 +11,14 @@ import { getPreferences } from "$lib/server/preferences";
 import { listTaxYears, upsertTaxYear } from "$lib/server/tax/tax";
 import type { Actions, PageServerLoad } from "./$types";
 
-export const load: PageServerLoad = ({ locals }) => {
+export const load: PageServerLoad = async ({ locals }) => {
   const user = requireUser(locals);
   const today = localToday();
   return {
     years: listTaxYears(user.id),
     defaultYear: Number(today.slice(0, 4)) - 1,
     defaultCurrency:
-      listAccounts(user.id, today).find((a) => !a.archived)?.currency ??
+      (await listAccounts(user.id, today)).find((a) => !a.archived)?.currency ??
       getPreferences(user.id).defaultCurrency,
   };
 };
