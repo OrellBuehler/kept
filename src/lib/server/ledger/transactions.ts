@@ -177,7 +177,8 @@ export function listTransactions(
       .where(where)
       .orderBy(
         desc(transactions.bookingDate),
-        desc(sql`"transactions"."rowid"`),
+        desc(transactions.seq),
+        desc(transactions.id),
       )
       .limit(pageSize)
       .offset((page - 1) * pageSize)

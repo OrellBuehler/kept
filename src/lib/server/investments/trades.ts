@@ -82,7 +82,12 @@ export function listTrades(userId: string, accountId: string): TradeView[] {
     .from(trades)
     .innerJoin(securities, eq(securities.id, trades.securityId))
     .where(and(eq(trades.userId, userId), eq(trades.accountId, accountId)))
-    .orderBy(desc(trades.date), desc(trades.createdAt), desc(trades.id))
+    .orderBy(
+      desc(trades.date),
+      desc(trades.createdAt),
+      desc(trades.seq),
+      desc(trades.id),
+    )
     .all();
 }
 

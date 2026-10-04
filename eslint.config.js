@@ -5,6 +5,35 @@ import globals from "globals";
 import ts from "typescript-eslint";
 import svelteConfig from "./svelte.config.js";
 
+/**
+ * Temporary ban on the synchronous bun-sqlite terminals `.all()`, `.get()` and
+ * `.run()` in files that have already been converted to `await`/`first()`.
+ * Each of phases 2.2-2.6 (one domain per PR) appends the globs of the files it
+ * converted, source and tests alike, e.g. "src/lib/server/auth/**". It keeps a
+ * converted file from regressing until the driver swap (2.7) makes the
+ * compiler reject these calls and this list and rule are deleted.
+ */
+const CONVERTED_TO_ASYNC = [];
+
+const syncTerminalBan = CONVERTED_TO_ASYNC.length
+  ? [
+      {
+        files: CONVERTED_TO_ASYNC,
+        rules: {
+          "no-restricted-syntax": [
+            "error",
+            {
+              selector:
+                "CallExpression[arguments.length=0] > MemberExpression.callee[property.name=/^(all|get|run)$/]",
+              message:
+                "Await the query (or use first()) instead of .all()/.get()/.run().",
+            },
+          ],
+        },
+      },
+    ]
+  : [];
+
 export default ts.config(
   {
     ignores: [
@@ -35,14 +64,44 @@ export default ts.config(
     },
   },
   {
+    files: ["src/**/*.ts"],
+    languageOptions: {
+      parserOptions: {
+        projectService: true,
+        tsconfigRootDir: import.meta.dirname,
+      },
+    },
+  },
+  {
     files: ["**/*.svelte", "**/*.svelte.ts", "**/*.svelte.js"],
     languageOptions: {
       parserOptions: {
         projectService: true,
+        tsconfigRootDir: import.meta.dirname,
         extraFileExtensions: [".svelte"],
         parser: ts.parser,
         svelteConfig,
       },
     },
   },
+  {
+    // A forgotten await on a drizzle query builder silently drops the query,
+    // so these rules are errors. They need type information, so they run on
+    // TypeScript files only. `bun run lint` also lints the .ts files in a
+    // separate eslint process from everything else: mixed in one process,
+    // typescript-eslint rebuilds the checker whenever it alternates between
+    // .ts and .svelte files, which turns a ~75s run into ~9 minutes.
+    files: ["src/**/*.ts"],
+    rules: {
+      // drizzle's query builders implement PromiseLike without extending
+      // Promise, so they are only recognised with checkThenables.
+      "@typescript-eslint/no-floating-promises": [
+        "error",
+        { checkThenables: true },
+      ],
+      "@typescript-eslint/no-misused-promises": "error",
+      "@typescript-eslint/await-thenable": "error",
+    },
+  },
+  ...syncTerminalBan,
 );

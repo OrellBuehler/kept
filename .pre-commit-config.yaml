@@ -23,11 +23,19 @@ repos:
         language: system
         types_or: [javascript, ts, svelte, css, json, yaml, markdown, html]
 
-      - id: eslint
-        name: eslint
+      # Two passes, as in `bun run lint`: mixing .ts and .svelte in one process rebuilds the
+      # type checker on every switch and is many times slower.
+      - id: eslint-ts
+        name: eslint (ts)
         entry: bunx eslint --fix --no-warn-ignored
         language: system
-        types_or: [javascript, ts, svelte]
+        types_or: [javascript, ts]
+
+      - id: eslint-svelte
+        name: eslint (svelte)
+        entry: bunx eslint --fix --no-warn-ignored
+        language: system
+        types_or: [svelte]
 
       - id: svelte-check
         name: svelte-check

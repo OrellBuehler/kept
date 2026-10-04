@@ -1,4 +1,4 @@
-import { and, asc, between, eq, isNotNull, isNull, ne, sql } from "drizzle-orm";
+import { and, asc, between, eq, isNotNull, isNull, ne } from "drizzle-orm";
 import { minor, type Minor } from "$lib/money";
 import {
   billAllocations,
@@ -265,7 +265,11 @@ function creditLines(userId: string, yearId: string | null): CreditLine[] {
     .select()
     .from(taxCredits)
     .where(and(eq(taxCredits.userId, userId), eq(taxCredits.taxYearId, yearId)))
-    .orderBy(asc(taxCredits.bookingDate), asc(sql`"tax_credits"."rowid"`))
+    .orderBy(
+      asc(taxCredits.bookingDate),
+      asc(taxCredits.seq),
+      asc(taxCredits.id),
+    )
     .all()
     .map(toCredit);
 }

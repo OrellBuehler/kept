@@ -33,6 +33,13 @@ export function setDB(next: DB | null): void {
   db = next;
 }
 
+/** The first row of a query, or undefined. Select call sites should add `.limit(1)`. */
+export async function first<T>(
+  query: PromiseLike<T[]>,
+): Promise<T | undefined> {
+  return (await query)[0];
+}
+
 export function runMigrations(): void {
   migrateDatabase(getDB());
 }
