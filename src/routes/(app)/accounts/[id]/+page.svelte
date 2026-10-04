@@ -17,6 +17,7 @@
   import NoticeBadge from "$lib/components/NoticeBadge.svelte";
   import { FULL_SHARE_BPS, shareOf } from "$lib/money";
   import { submitHandler } from "$lib/form-submit";
+  import { outcomeFromParams, transferSummary } from "$lib/transfer-ui";
   import ArchiveIcon from "@lucide/svelte/icons/archive";
   import ArchiveRestoreIcon from "@lucide/svelte/icons/archive-restore";
   import ChevronLeftIcon from "@lucide/svelte/icons/chevron-left";
@@ -26,7 +27,9 @@
   import PencilIcon from "@lucide/svelte/icons/pencil";
   import Trash2Icon from "@lucide/svelte/icons/trash-2";
   import UploadIcon from "@lucide/svelte/icons/upload";
+  import FillSuggestionBanner from "./FillSuggestionBanner.svelte";
   import HoldingsCard from "./HoldingsCard.svelte";
+  import NeedsAmountCard from "./NeedsAmountCard.svelte";
   import PortfoliosCard from "./PortfoliosCard.svelte";
   import SnapshotsCard from "./SnapshotsCard.svelte";
   import TransactionForm from "./TransactionForm.svelte";
@@ -55,6 +58,7 @@
   let selectedId = $state<string | null>(null);
   let deleteTxOpen = $state(false);
   let deletingTxId = $state("");
+  let deletingMirror = $state(false);
   let archiveForm = $state<HTMLFormElement | null>(null);
   let archiving = $state(false);
 
@@ -66,7 +70,11 @@
     // The import flow redirects here with ?imported=<id>; show it once, then
     // drop the param so a reload does not repeat the toast.
     if (page.url.searchParams.has("imported")) {
-      toast.success("Import complete");
+      const summary = transferSummary(outcomeFromParams(page.url.searchParams));
+      toast.success(
+        "Import complete",
+        summary ? { description: summary } : undefined,
+      );
       // The client router is not ready during the initial navigation.
       setTimeout(() => {
         replaceState(
@@ -268,6 +276,14 @@
     </div>
   </div>
 
+  {#if data.transfers.fillSuggestion && !account.fillFromTransfers}
+    <FillSuggestionBanner count={data.transfers.fillSuggestion.count} />
+  {/if}
+
+  {#if data.transfers.needsAmount.length > 0}
+    <NeedsAmountCard items={data.transfers.needsAmount} />
+  {/if}
+
   <TransactionsCard
     accountId={account.id}
     currency={account.currency}
@@ -353,6 +369,7 @@
   currency={account.currency}
   onDelete={(tx) => {
     deletingTxId = tx.id;
+    deletingMirror = tx.source === "mirror";
     sheetOpen = false;
     deleteTxOpen = true;
   }}
@@ -360,11 +377,14 @@
 
 <ConfirmActionDialog
   bind:open={deleteTxOpen}
-  title="Delete this transaction?"
-  description="This manual transaction will be removed and the balance recalculated."
+  title={deletingMirror ? "Remove this mirror?" : "Delete this transaction?"}
+  description={deletingMirror
+    ? "Kept stops mirroring this transfer and removes the transaction, so the balance is recalculated. It is not created again."
+    : "This manual transaction will be removed and the balance recalculated."}
   action="?/deleteTransaction"
   fields={{ transactionId: deletingTxId }}
-  successMessage="Transaction deleted"
+  confirmLabel={deletingMirror ? "Remove mirror" : "Delete"}
+  successMessage={deletingMirror ? "Mirror removed" : "Transaction deleted"}
 />
 
 <AccountFormDialog
@@ -373,6 +393,9 @@
   institutions={data.institutions}
   {account}
   {currencyLocked}
+  mirrorCount={data.transfers.mirrorCount}
+  hasPortfolios={data.portfolios.length > 0}
+  hasTrades={data.trades.length > 0}
 />
 
 <ConfirmActionDialog

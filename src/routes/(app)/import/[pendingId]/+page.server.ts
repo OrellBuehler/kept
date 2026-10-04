@@ -15,7 +15,7 @@ const PAGE_SIZE = 100;
 
 const querySchema = z.object({
   page: z.coerce.number().int().min(1).catch(1),
-  filter: z.enum(["all", "new", "duplicate"]).catch("all"),
+  filter: z.enum(["all", "new", "replaces_mirror", "duplicate"]).catch("all"),
 });
 
 export const load: PageServerLoad = ({ locals, params, url }) => {
@@ -28,9 +28,9 @@ export const load: PageServerLoad = ({ locals, params, url }) => {
   const filtered = preview.rows.filter(
     (r) =>
       query.filter === "all" ||
-      (query.filter === "new"
-        ? r.status === "new" || r.status === "replaces_mirror"
-        : r.status !== "new" && r.status !== "replaces_mirror"),
+      (query.filter === "duplicate"
+        ? r.status === "duplicate" || r.status === "duplicate_in_file"
+        : r.status === query.filter),
   );
   const pageCount = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
   const page = Math.min(query.page, pageCount);

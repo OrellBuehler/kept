@@ -17,6 +17,7 @@
   import FilterIcon from "@lucide/svelte/icons/filter";
   import PlusIcon from "@lucide/svelte/icons/plus";
   import UploadIcon from "@lucide/svelte/icons/upload";
+  import TriangleAlertIcon from "@lucide/svelte/icons/triangle-alert";
   import StickyNoteIcon from "@lucide/svelte/icons/sticky-note";
   import type { PageData } from "./$types";
   import { usePreferences } from "$lib/preferences.svelte";
@@ -62,7 +63,8 @@
 
   function pageHref(n: number) {
     const params = new SvelteURLSearchParams(page.url.searchParams);
-    params.delete("imported");
+    for (const key of ["imported", "linked", "mirrored", "needsAmount"])
+      params.delete(key);
     if (n <= 1) params.delete("page");
     else params.set("page", String(n));
     const qs = params.toString();
@@ -78,6 +80,9 @@
   function sourceLabel(tx: Tx) {
     return tx.source === "manual" ? "manual" : "imported";
   }
+  function accountHref(id: string) {
+    return resolve("/(app)/accounts/[id]", { id });
+  }
   function activate(e: KeyboardEvent, tx: Tx) {
     if (e.key === "Enter" || e.key === " ") {
       e.preventDefault();
@@ -85,6 +90,59 @@
     }
   }
 </script>
+
+{#snippet sourceBadge(tx: Tx)}
+  {#if tx.source === "mirror" && tx.mirrorOf}
+    <Badge
+      variant="outline"
+      href={accountHref(tx.mirrorOf.accountId)}
+      title="Created from a transfer in {tx.mirrorOf.accountName}"
+      onclick={(e: MouseEvent) => e.stopPropagation()}
+    >
+      <ArrowLeftRightIcon aria-hidden="true" />
+      mirrored
+      <span class="sr-only">from {tx.mirrorOf.accountName}</span>
+    </Badge>
+  {:else}
+    <Badge variant={tx.source === "manual" ? "secondary" : "outline"}>
+      {sourceLabel(tx)}
+    </Badge>
+  {/if}
+  {#if tx.mirrorOf?.noBankCounterpart}
+    <Badge
+      variant="outline"
+      class="border-amber-500/50 text-amber-700 dark:text-amber-400"
+      title="The imported statement covers this date, but none of its rows matches this mirrored transaction."
+    >
+      <TriangleAlertIcon aria-hidden="true" />
+      no bank counterpart
+    </Badge>
+  {/if}
+{/snippet}
+
+{#snippet transferLink(tx: Tx)}
+  {#if tx.transfer}
+    <a
+      href={accountHref(tx.transfer.peerAccountId)}
+      class="text-muted-foreground hover:text-foreground focus-visible:ring-ring/50 inline-flex max-w-full items-center gap-1 rounded-sm text-xs underline-offset-2 outline-none hover:underline focus-visible:ring-[3px]"
+      onclick={(e) => e.stopPropagation()}
+    >
+      <ArrowLeftRightIcon class="size-3 shrink-0" aria-hidden="true" />
+      <span class="truncate">
+        {tx.transfer.direction === "out" ? "To" : "From"}
+        {tx.transfer.peerAccountName}
+      </span>
+    </a>
+    {#if tx.transfer.status === "needs_amount"}
+      <Badge
+        variant="outline"
+        class="border-amber-500/50 text-amber-700 dark:text-amber-400"
+      >
+        needs amount
+      </Badge>
+    {/if}
+  {/if}
+{/snippet}
 
 <Card.Root>
   <Card.Header>
@@ -200,7 +258,7 @@
               <Table.Head class="w-32">Date</Table.Head>
               <Table.Head>Description</Table.Head>
               <Table.Head class="w-48">Category</Table.Head>
-              <Table.Head class="w-24">Source</Table.Head>
+              <Table.Head class="w-36">Source</Table.Head>
               <Table.Head class="w-40 text-end">Amount</Table.Head>
             </Table.Row>
           </Table.Header>
@@ -242,6 +300,11 @@
                       {tx.reference}
                     </div>
                   {/if}
+                  {#if tx.transfer}
+                    <div class="mt-0.5 flex flex-wrap items-center gap-1.5">
+                      {@render transferLink(tx)}
+                    </div>
+                  {/if}
                 </Table.Cell>
                 <Table.Cell class="align-top">
                   <CategorySelect
@@ -251,11 +314,9 @@
                   />
                 </Table.Cell>
                 <Table.Cell class="align-top">
-                  <Badge
-                    variant={tx.source === "manual" ? "secondary" : "outline"}
-                  >
-                    {sourceLabel(tx)}
-                  </Badge>
+                  <div class="flex flex-col items-start gap-1">
+                    {@render sourceBadge(tx)}
+                  </div>
                 </Table.Cell>
                 <Table.Cell class="text-end align-top">
                   <Amount value={tx.amount} {currency} flow />
@@ -333,15 +394,14 @@
                   {#if tx.reference}
                     <span class="truncate font-mono">{tx.reference}</span>
                   {/if}
-                  <Badge
-                    variant={tx.source === "manual" ? "secondary" : "outline"}
-                  >
-                    {sourceLabel(tx)}
-                  </Badge>
                 </span>
               </span>
             </button>
-            <div class="px-3 pb-3">
+            <div class="grid gap-2 px-3 pb-3">
+              <div class="flex flex-wrap items-center gap-1.5">
+                {@render sourceBadge(tx)}
+                {@render transferLink(tx)}
+              </div>
               <CategorySelect
                 transactionId={tx.id}
                 categoryId={tx.categoryId}

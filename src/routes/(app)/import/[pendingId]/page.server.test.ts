@@ -226,8 +226,13 @@ describe("/import/[pendingId] actions", () => {
     const preview = data(await loadAs(user, incoming));
     expect(preview.rows.map((row) => row.status)).toEqual(["replaces_mirror"]);
     expect(preview.counts.new).toBe(1);
+    expect(preview.counts.replacesMirror).toBe(1);
     const newOnly = data(await loadAs(user, incoming, "?filter=new"));
-    expect(newOnly.filteredTotal).toBe(1);
+    expect(newOnly.filteredTotal).toBe(0);
+    const replacing = data(
+      await loadAs(user, incoming, "?filter=replaces_mirror"),
+    );
+    expect(replacing.filteredTotal).toBe(1);
     const dupes = data(await loadAs(user, incoming, "?filter=duplicate"));
     expect(dupes.filteredTotal).toBe(0);
     const done = await act("confirm", user, incoming);
