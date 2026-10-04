@@ -134,6 +134,13 @@
       "when": 1791115509862,
       "tag": "0018_typical_warhawk",
       "breakpoints": true
+    },
+    {
+      "idx": 19,
+      "version": "6",
+      "when": 1791125664847,
+      "tag": "0019_material_shooting_star",
+      "breakpoints": true
     }
   ]
 }

@@ -513,6 +513,8 @@ export const transactions = sqliteTable(
     }),
     /** Counts as a payment to the tax office for this tax year. */
     taxYear: integer("tax_year"),
+    /** Tax year this transaction is deducted in, when not its booking year. Not a tax payment. */
+    deductionYear: integer("deduction_year"),
     /** Left out of the tax deductions summary. */
     deductionExcluded: integer("deduction_excluded", { mode: "boolean" })
       .notNull()

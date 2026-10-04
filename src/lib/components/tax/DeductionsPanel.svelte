@@ -45,8 +45,8 @@
       <Card.Title>Deductions {summary.year}</Card.Title>
       <Card.Description>
         Spending in your mapped categories, per deduction type and currency.
-        Refunds reduce the total. A transaction counts for its tax year when it
-        has one, otherwise for the year of its booking date.
+        Refunds reduce the total. A transaction counts for its deduction year
+        when it has one, otherwise for the year of its booking date.
       </Card.Description>
       <Card.Action>
         <Button
@@ -93,7 +93,7 @@
                     {#if line.label}· {line.label}{/if}
                     {#if line.explicitYear}
                       <span class="text-muted-foreground text-xs">
-                        · tax year set
+                        · deduction year set
                       </span>
                     {/if}
                   </span>

@@ -56,7 +56,7 @@ export interface DeductionLine {
   /** Null for pillar 3a lines (they are not category-based). */
   categoryId: string | null;
   excluded: boolean;
-  /** The year comes from the transaction's tax-year marking, not its booking date. */
+  /** The year comes from the transaction's deduction-year tag, not its booking date. */
   explicitYear: boolean;
 }
 
@@ -181,7 +181,7 @@ export function setTransactionDeductionExcluded(
 /**
  * Deductions for one tax year: the user's mapped categories (subcategories
  * inherit their parent's mapping unless they have their own) summed per type
- * and currency. A transaction counts for its tax-year marking when it has
+ * and currency. A transaction counts for its deduction year when it has
  * one, otherwise for the year of its booking date. Spending adds, refunds
  * reduce; no currency conversion.
  *
@@ -247,7 +247,7 @@ export function deductionSummary(
         amount: transactions.amount,
         currency: transactions.currency,
         categoryId: transactions.categoryId,
-        taxYear: transactions.taxYear,
+        deductionYear: transactions.deductionYear,
         excluded: transactions.deductionExcluded,
       })
       .from(transactions)
@@ -256,9 +256,9 @@ export function deductionSummary(
           eq(transactions.userId, userId),
           sql`${transactions.categoryId} is not null`,
           or(
-            eq(transactions.taxYear, year),
+            eq(transactions.deductionYear, year),
             and(
-              isNull(transactions.taxYear),
+              isNull(transactions.deductionYear),
               sql`${transactions.bookingDate} >= ${from}`,
               sql`${transactions.bookingDate} <= ${to}`,
             ),
@@ -283,7 +283,7 @@ export function deductionSummary(
         currency: r.currency,
         categoryId: r.categoryId!,
         excluded: r.excluded,
-        explicitYear: r.taxYear !== null,
+        explicitYear: r.deductionYear !== null,
       });
     }
   }
@@ -339,4 +339,21 @@ export function deductionSummary(
       order(a.type) - order(b.type) || a.currency.localeCompare(b.currency),
   );
   return { year, totals, excluded };
+}
+
+/** Deducts a transaction in `year` instead of its booking year, or clears the override with null. */
+export function setTransactionDeductionYear(
+  userId: string,
+  transactionId: string,
+  year: number | null,
+): void {
+  const updated = getDB()
+    .update(transactions)
+    .set({ deductionYear: year })
+    .where(
+      and(eq(transactions.userId, userId), eq(transactions.id, transactionId)),
+    )
+    .returning({ id: transactions.id })
+    .all();
+  if (updated.length === 0) throw notFound("Transaction");
 }

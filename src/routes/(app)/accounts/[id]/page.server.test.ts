@@ -561,6 +561,7 @@ describe("account detail page", () => {
         "secret description",
       );
       expect(getTransaction(a.id, tx.id).taxYear).toBeNull();
+      expect(getTransaction(a.id, tx.id).deductionYear).toBeNull();
       expect(getTransaction(a.id, imported.id).note).toBeNull();
       expect(listSnapshots(a.id, acc.id)).toHaveLength(1);
       expect(listTrades(a.id, acc.id)).toHaveLength(1);
@@ -576,6 +577,7 @@ describe("account detail page", () => {
         ["updateTransaction", { transactionId: imported.id, note: "x" }],
         ["deleteTransaction", { transactionId: tx.id }],
         ["setTaxYear", { transactionId: tx.id, taxYear: "2025" }],
+        ["setDeductionYear", { transactionId: tx.id, deductionYear: "2025" }],
         ["deleteSnapshot", { snapshotId: snap.id }],
         ["addTrade", tradeForm(sec.id)],
         ["updateTrade", { tradeId: trade.id, ...tradeForm(sec.id) }],
@@ -628,6 +630,40 @@ describe("account detail page", () => {
     ).toMatchObject({ type: "fail", status: 400 });
     await run("setTaxYear", u, acc.id, { transactionId: tx.id, taxYear: "" });
     expect(getTransaction(u.id, tx.id).taxYear).toBeNull();
+  });
+
+  it("sets and clears the deduction year without touching the tax payment tag", async () => {
+    const u = await createTestUser();
+    const acc = seedAccount(u.id);
+    const tx = manualTx(u.id, acc.id);
+    await run("setTaxYear", u, acc.id, {
+      transactionId: tx.id,
+      taxYear: "2025",
+    });
+    expect(
+      await run("setDeductionYear", u, acc.id, {
+        transactionId: tx.id,
+        deductionYear: "2024",
+      }),
+    ).toMatchObject({ type: "return" });
+    expect(getTransaction(u.id, tx.id)).toMatchObject({
+      taxYear: 2025,
+      deductionYear: 2024,
+    });
+    expect(
+      await run("setDeductionYear", u, acc.id, {
+        transactionId: tx.id,
+        deductionYear: "x",
+      }),
+    ).toMatchObject({ type: "fail", status: 400 });
+    await run("setDeductionYear", u, acc.id, {
+      transactionId: tx.id,
+      deductionYear: "",
+    });
+    expect(getTransaction(u.id, tx.id)).toMatchObject({
+      taxYear: 2025,
+      deductionYear: null,
+    });
   });
 
   describe("portfolios", () => {

@@ -63,7 +63,8 @@ import {
   type PortfolioValueView,
 } from "$lib/server/pillar3a";
 import { getPreferences } from "$lib/server/preferences";
-import { taxTagSchema } from "$lib/server/tax/schemas";
+import { deductionYearTagSchema, taxTagSchema } from "$lib/server/tax/schemas";
+import { setTransactionDeductionYear } from "$lib/server/tax/deductions";
 import { setTransactionTaxYear } from "$lib/server/tax/tax";
 import type { Actions, PageServerLoad } from "./$types";
 
@@ -304,6 +305,39 @@ export const actions: Actions = {
       return { success: true as const, action: "setTaxYear" as const };
     } catch (err) {
       return ledgerFailure("setTaxYear", err, values);
+    }
+  },
+
+  setDeductionYear: async ({ locals, params, request }) => {
+    const user = requireUser(locals);
+    const account = orNotFound(() => getAccount(user.id, params.id));
+    const form = await request.formData();
+    const values = safeValues(form, ["transactionId", "deductionYear"]);
+    const parsed = parseForm(deductionYearTagSchema, form);
+    if (!parsed.ok) {
+      return fail(400, {
+        action: "setDeductionYear",
+        errors: parsed.errors,
+        values,
+      });
+    }
+    const existing = ownedTransaction(
+      user.id,
+      account.id,
+      parsed.data.transactionId,
+    );
+    try {
+      setTransactionDeductionYear(
+        user.id,
+        existing.id,
+        parsed.data.deductionYear,
+      );
+      return {
+        success: true as const,
+        action: "setDeductionYear" as const,
+      };
+    } catch (err) {
+      return ledgerFailure("setDeductionYear", err, values);
     }
   },
 
