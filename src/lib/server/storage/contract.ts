@@ -120,6 +120,17 @@ export function blobStoreContract(
         }
       }));
 
+    it("sorts by UTF-8 bytes, not UTF-16 code units", () =>
+      withStore(async (s) => {
+        // U+FFFD is one code unit above the surrogates of U+1F600 in UTF-16, below it in UTF-8.
+        const bmp = "n/\uFFFD";
+        const astral = "n/\u{1F600}";
+        await s.put(astral, bytes("x"));
+        await s.put(bmp, bytes("x"));
+        await s.put("n/a", bytes("x"));
+        expect(await keys(s, "n/")).toEqual(["n/a", bmp, astral]);
+      }));
+
     it("does not list a deleted key", () =>
       withStore(async (s) => {
         await s.put("a/1", bytes("x"));

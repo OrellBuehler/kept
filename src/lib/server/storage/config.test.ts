@@ -58,9 +58,135 @@ describe("readStorageConfig", () => {
     );
   });
 
-  it("recognises s3 but does not support it yet", () => {
-    expect(() => readStorageConfig({ KEPT_STORAGE: "s3" })).toThrow(
-      "not supported yet",
+  it("ignores malformed S3 variables unless KEPT_STORAGE is s3", () => {
+    const stale = {
+      KEPT_S3_ENDPOINT: "not a url",
+      KEPT_S3_PREFIX: "../x",
+      KEPT_S3_VIRTUAL_HOSTED_STYLE: "maybe",
+      KEPT_S3_REGION: "  ",
+    };
+    expect(
+      readStorageConfig({ ...stale, KEPT_STORAGE_DIR: "/srv/blobs" }),
+    ).toEqual({ kind: "fs", dir: "/srv/blobs" });
+    expect(
+      readStorageConfig({
+        ...stale,
+        KEPT_STORAGE: "fs",
+        KEPT_STORAGE_DIR: "/srv/blobs",
+      }).kind,
+    ).toBe("fs");
+    expect(() => readStorageConfig({ ...stale, KEPT_STORAGE: "s3" })).toThrow(
+      /KEPT_S3_ENDPOINT/,
     );
+  });
+
+  describe("s3", () => {
+    const base = {
+      KEPT_STORAGE: "s3",
+      KEPT_S3_BUCKET: "kept",
+      KEPT_S3_ACCESS_KEY_ID: "AKIDEXAMPLE0000",
+      KEPT_S3_SECRET_ACCESS_KEY: "SECRETEXAMPLE0000",
+    };
+
+    it("reads the minimal configuration with defaults", () => {
+      expect(readStorageConfig(base)).toEqual({
+        kind: "s3",
+        bucket: "kept",
+        endpoint: undefined,
+        region: "us-east-1",
+        accessKeyId: "AKIDEXAMPLE0000",
+        secretAccessKey: "SECRETEXAMPLE0000",
+        prefix: "",
+        virtualHostedStyle: false,
+      });
+    });
+
+    it("does not need a database path or a storage directory", () => {
+      expect(
+        readStorageConfig({ ...base, DATABASE_PATH: ":memory:" }).kind,
+      ).toBe("s3");
+    });
+
+    it("reads every option and normalises endpoint and prefix", () => {
+      expect(
+        readStorageConfig({
+          ...base,
+          KEPT_S3_ENDPOINT: "http://minio:9000/",
+          KEPT_S3_REGION: "eu-central-1",
+          KEPT_S3_PREFIX: " kept/prod/ ",
+          KEPT_S3_VIRTUAL_HOSTED_STYLE: "true",
+        }),
+      ).toMatchObject({
+        endpoint: "http://minio:9000",
+        region: "eu-central-1",
+        prefix: "kept/prod",
+        virtualHostedStyle: true,
+      });
+    });
+
+    it("treats empty values as unset", () => {
+      expect(
+        readStorageConfig({
+          ...base,
+          KEPT_S3_ENDPOINT: "",
+          KEPT_S3_REGION: "",
+          KEPT_S3_PREFIX: "",
+          KEPT_S3_VIRTUAL_HOSTED_STYLE: "",
+        }),
+      ).toMatchObject({ region: "us-east-1", prefix: "" });
+    });
+
+    it("names every missing required variable", () => {
+      expect(() => readStorageConfig({ KEPT_STORAGE: "s3" })).toThrow(
+        /KEPT_S3_BUCKET.*KEPT_S3_ACCESS_KEY_ID.*KEPT_S3_SECRET_ACCESS_KEY/,
+      );
+    });
+
+    it("ignores the ambient AWS and S3 variables", () => {
+      expect(() =>
+        readStorageConfig({
+          KEPT_STORAGE: "s3",
+          KEPT_S3_BUCKET: "kept",
+          AWS_ACCESS_KEY_ID: "x",
+          AWS_SECRET_ACCESS_KEY: "y",
+          S3_ACCESS_KEY_ID: "x",
+          S3_SECRET_ACCESS_KEY: "y",
+        }),
+      ).toThrow(/KEPT_S3_ACCESS_KEY_ID/);
+    });
+
+    it.each([
+      ["KEPT_S3_ENDPOINT", "minio:9000"],
+      ["KEPT_S3_ENDPOINT", "ftp://minio"],
+      ["KEPT_S3_ENDPOINT", "http://user:hunter2@minio:9000"],
+      ["KEPT_S3_ENDPOINT", "http://minio:9000/?x=1"],
+      ["KEPT_S3_VIRTUAL_HOSTED_STYLE", "yes"],
+      ["KEPT_S3_PREFIX", "/abs"],
+      ["KEPT_S3_PREFIX", "a/../b"],
+      ["KEPT_S3_PREFIX", "a//b"],
+      ["KEPT_S3_PREFIX", "a\\b"],
+    ])("rejects %s=%s", (name, value) => {
+      expect(() => readStorageConfig({ ...base, [name]: value })).toThrow(
+        new RegExp(`Invalid storage configuration \\(${name}`),
+      );
+    });
+
+    it("never echoes the secret or other values in an error", () => {
+      const secret = "very-secret-value-4711";
+      let message = "";
+      try {
+        readStorageConfig({
+          ...base,
+          KEPT_S3_SECRET_ACCESS_KEY: secret,
+          KEPT_S3_ENDPOINT: `http://user:${secret}@minio:9000`,
+          KEPT_S3_VIRTUAL_HOSTED_STYLE: secret,
+        });
+      } catch (err) {
+        message = (err as Error).message;
+      }
+      expect(message).toMatch(/KEPT_S3_ENDPOINT/);
+      expect(message).not.toContain(secret);
+      expect(message).not.toContain("AKIDEXAMPLE0000");
+    });
   });
 });

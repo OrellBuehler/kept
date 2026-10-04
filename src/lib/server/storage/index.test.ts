@@ -5,6 +5,8 @@ import { afterEach, describe, expect, it } from "vitest";
 import {
   FsBlobStore,
   MemoryBlobStore,
+  S3BlobStore,
+  createStore,
   getStore,
   setStore,
   sweepStaleStorageTemp,
@@ -26,6 +28,26 @@ describe("getStore", () => {
   });
 });
 
+describe("createStore", () => {
+  it("builds the store the configuration asks for", () => {
+    expect(createStore({ kind: "fs", dir: "/tmp/kept-x" })).toBeInstanceOf(
+      FsBlobStore,
+    );
+    expect(
+      createStore({
+        kind: "s3",
+        bucket: "b",
+        endpoint: "http://s3.invalid:9000",
+        region: "us-east-1",
+        accessKeyId: "a",
+        secretAccessKey: "s",
+        prefix: "",
+        virtualHostedStyle: false,
+      }),
+    ).toBeInstanceOf(S3BlobStore);
+  });
+});
+
 describe("sweepStaleStorageTemp", () => {
   afterEach(() => setStore(null));
 
@@ -39,6 +61,18 @@ describe("sweepStaleStorageTemp", () => {
       setStore(new FsBlobStore(dir));
       expect(await sweepStaleStorageTemp()).toBe(1);
       setStore(new MemoryBlobStore());
+      expect(await sweepStaleStorageTemp()).toBe(0);
+      setStore(
+        createStore({
+          kind: "s3",
+          bucket: "b",
+          region: "us-east-1",
+          accessKeyId: "a",
+          secretAccessKey: "s",
+          prefix: "",
+          virtualHostedStyle: false,
+        }),
+      );
       expect(await sweepStaleStorageTemp()).toBe(0);
     } finally {
       rmSync(dir, { recursive: true, force: true });

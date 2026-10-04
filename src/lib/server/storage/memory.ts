@@ -1,6 +1,7 @@
 import {
   assertKey,
   assertPrefix,
+  compareKeys,
   type BlobInfo,
   type BlobStore,
 } from "./blob-store";
@@ -42,7 +43,7 @@ export class MemoryBlobStore implements BlobStore {
   async *list(prefix: string): AsyncIterable<BlobInfo> {
     assertPrefix(prefix);
     const keys = [...this.entries.keys()].filter((k) => k.startsWith(prefix));
-    for (const key of keys.sort()) {
+    for (const key of keys.sort(compareKeys)) {
       const e = this.entries.get(key);
       if (e) yield { key, size: e.bytes.byteLength, modifiedAt: e.modifiedAt };
     }
