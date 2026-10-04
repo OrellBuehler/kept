@@ -2,6 +2,7 @@ import { strToU8, zipSync } from "fflate";
 import { describe, expect, it } from "vitest";
 import {
   collapseWhitespace,
+  decodeXmlEntities,
   scanFile,
   scanText,
   termRegex,
@@ -47,6 +48,40 @@ describe("whitespace", () => {
   });
 });
 
+describe("normalization", () => {
+  it("matches across unicode normalization forms", () => {
+    expect(scan("Zu\u0308rich", "Z\u00fcrich")).toEqual([1]);
+    expect(scan("Z\u00fcrich", "Zu\u0308rich")).toEqual([1]);
+  });
+
+  it("ignores zero-width characters in text and terms", () => {
+    expect(scan("Foo\u200B AG", "Foo AG")).toEqual([1]);
+    expect(scan("Fo\u2060o\uFEFF AG", "Foo AG")).toEqual([1]);
+    expect(scan("Foo AG", "Fo\u200Do AG")).toEqual([1]);
+  });
+
+  it("decodes numeric and named entities in markup", () => {
+    const patterns = [termRegex("Foo & Bar AG"), termRegex("Zürich")];
+    const warn = () => {};
+    const zip = zipSync({
+      "a.xml": strToU8("<t>Foo &amp; Bar AG</t>\n<t>Z&#252;rich</t>"),
+      "b.xml": strToU8("<t>Z&#xFC;rich</t>"),
+      "c.xml": strToU8("<t>Foo &#38; Bar&#x20;AG</t>"),
+    });
+    const found = scanFile("s.zip", zip, patterns, warn).map((f) => f.location);
+    expect(found).toContain("s.zip!a.xml:1");
+    expect(found).toContain("s.zip!a.xml:2");
+    expect(found).toContain("s.zip!b.xml:1");
+    expect(found).toContain("s.zip!c.xml:1");
+  });
+
+  it("leaves invalid entities untouched", () => {
+    expect(decodeXmlEntities("&#99999999; &bogus; &amp;")).toBe(
+      "&#99999999; &bogus; &",
+    );
+  });
+});
+
 describe("scanFile", () => {
   const patterns = [termRegex("Foo AG")];
   const warnings: string[] = [];
@@ -86,5 +121,42 @@ describe("scanFile", () => {
     const corrupt = new Uint8Array([0x50, 0x4b, 0x03, 0x04, 1, 2, 3]);
     expect(scanFile("bad.zip", corrupt, patterns, warn)).toEqual([]);
     expect(warnings.some((w) => w.includes("bad.zip"))).toBe(true);
+  });
+
+  describe("zip limits", () => {
+    const limits = { maxEntryBytes: 1000, maxTotalBytes: 2500, maxEntries: 5 };
+    const zeros = (n: number) => new Uint8Array(n);
+
+    it("reports an oversize entry as a problem naming the file", () => {
+      const zip = zipSync({ "big.xml": zeros(1_000_000) });
+      expect(zip.length).toBeLessThan(5000);
+      const found = scanFile("bomb.zip", zip, patterns, warn, limits);
+      expect(found).toHaveLength(1);
+      expect(found[0].location).toBe("bomb.zip!big.xml");
+      expect(found[0].problem).toContain("exceeds");
+    });
+
+    it("enforces the total budget across nested archives", () => {
+      const inner = zipSync({ "a.txt": zeros(900), "b.txt": zeros(900) });
+      const outer = zipSync({ "i1.zip": inner, "i2.zip": inner });
+      const found = scanFile("o.zip", outer, patterns, warn, limits);
+      expect(found.some((f) => f.problem?.includes("total"))).toBe(true);
+    });
+
+    it("enforces the entry count across levels", () => {
+      const inner = zipSync({
+        "a.txt": zeros(1),
+        "b.txt": zeros(1),
+        "c.txt": zeros(1),
+      });
+      const outer = zipSync({ "i1.zip": inner, "i2.zip": inner });
+      const found = scanFile("o.zip", outer, patterns, warn, limits);
+      expect(found.some((f) => f.problem?.includes("entry count"))).toBe(true);
+    });
+
+    it("does not report archives within limits", () => {
+      const zip = zipSync({ "a.txt": strToU8("fine") });
+      expect(scanFile("ok.zip", zip, patterns, warn, limits)).toEqual([]);
+    });
   });
 });
