@@ -1,4 +1,4 @@
-import { and, eq, inArray, lte, max, sql } from "drizzle-orm";
+import { and, eq, inArray, lte, max } from "drizzle-orm";
 import {
   accounts,
   fxRates,
@@ -7,12 +7,13 @@ import {
   securityPrices,
   trades,
 } from "$lib/server/db";
-import type {
-  HoldingFxRate,
-  HoldingPrice,
-  HoldingSecurity,
-  HoldingTrade,
-  HoldingsInput,
+import {
+  heldQuantity,
+  type HoldingFxRate,
+  type HoldingPrice,
+  type HoldingSecurity,
+  type HoldingTrade,
+  type HoldingsInput,
 } from "./valuation";
 
 /**
@@ -160,12 +161,13 @@ export function latestHoldingsActivity(
       out.set(accountId, date);
     }
   };
-  const positions = db
+  const rows = db
     .select({
       accountId: trades.accountId,
       securityId: trades.securityId,
-      last: max(trades.date),
-      held: sql<number>`sum(case when ${trades.side} = 'buy' then ${trades.quantity} else -${trades.quantity} end)`,
+      date: trades.date,
+      side: trades.side,
+      quantity: trades.quantity,
     })
     .from(trades)
     .where(
@@ -175,8 +177,20 @@ export function latestHoldingsActivity(
         lte(trades.date, today),
       ),
     )
-    .groupBy(trades.accountId, trades.securityId)
     .all();
+  const grouped = new Map<string, typeof rows>();
+  for (const r of rows) {
+    const key = `${r.accountId}\u0000${r.securityId}`;
+    const list = grouped.get(key) ?? [];
+    list.push(r);
+    grouped.set(key, list);
+  }
+  const positions = [...grouped.values()].map((list) => ({
+    accountId: list[0]!.accountId,
+    securityId: list[0]!.securityId,
+    last: list.reduce((m, r) => (r.date > m ? r.date : m), ""),
+    held: heldQuantity(list),
+  }));
   for (const p of positions) note(p.accountId, p.last);
 
   const heldIds = [

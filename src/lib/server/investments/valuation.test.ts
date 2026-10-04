@@ -2,7 +2,9 @@ import { describe, expect, it } from "vitest";
 import { minor } from "$lib/money";
 import { parseFixed } from "$lib/quantity";
 import {
+  firstEmptySplit,
   firstOversell,
+  heldQuantity,
   holdingsValueAt,
   makeHoldingsValueAt,
   type HoldingsInput,
@@ -412,6 +414,194 @@ describe("firstOversell", () => {
       firstOversell([
         t("2024-01-01", "sell", "1"),
         t("2024-01-01", "buy", "1"),
+      ]),
+    ).toBeNull();
+  });
+});
+
+describe("stock splits", () => {
+  const split = (date: string, ratio: string, over = {}): HoldingTrade =>
+    trade({
+      date,
+      side: "split",
+      quantity: f(ratio),
+      price: f("0"),
+      amount: 0,
+      ...over,
+    });
+  const buy10 = trade({ date: "2024-01-01", amount: 100000 });
+
+  it("multiplies the quantity on the split date and keeps the cost basis", () => {
+    const at = makeHoldingsValueAt(
+      input({ trades: [buy10, split("2024-06-01", "2")] }),
+    );
+    expect(at("2024-05-31").positions[0]).toMatchObject({
+      quantity: f("10"),
+      cost: 100000,
+      price: f("100"),
+    });
+    expect(at("2024-06-01").positions[0]).toMatchObject({
+      quantity: f("20"),
+      cost: 100000,
+      price: f("50"),
+      priceSource: "trade",
+      value: 100000,
+      gain: 0,
+    });
+  });
+
+  it("does not use a pre-split market price after the split", () => {
+    const at = makeHoldingsValueAt(
+      input({
+        trades: [buy10, split("2024-06-01", "2")],
+        prices: [
+          { securityId: "s1", date: "2024-05-20", price: f("130") },
+          { securityId: "s1", date: "2024-06-10", price: f("70") },
+        ],
+      }),
+    );
+    expect(at("2024-05-25").positions[0]).toMatchObject({
+      price: f("130"),
+      value: 130000,
+    });
+    // the 130 quote predates the split: fall back to the adjusted trade price
+    expect(at("2024-06-05").positions[0]).toMatchObject({
+      price: f("50"),
+      priceSource: "trade",
+    });
+    expect(at("2024-06-10").positions[0]).toMatchObject({
+      price: f("70"),
+      value: 140000,
+    });
+  });
+
+  it("handles a 1:10 reverse split", () => {
+    const at = makeHoldingsValueAt(
+      input({
+        trades: [
+          trade({
+            date: "2024-01-01",
+            quantity: f("100"),
+            price: f("10"),
+            amount: 100000,
+          }),
+          split("2024-06-01", "0.1"),
+        ],
+      }),
+    );
+    expect(at("2024-06-01").positions[0]).toMatchObject({
+      quantity: f("10"),
+      price: f("100"),
+      cost: 100000,
+      value: 100000,
+    });
+  });
+
+  it("sells after a split remove cost in proportion", () => {
+    const at = makeHoldingsValueAt(
+      input({
+        trades: [
+          buy10,
+          split("2024-06-01", "2"),
+          trade({
+            date: "2024-07-01",
+            side: "sell",
+            quantity: f("5"),
+            price: f("60"),
+            amount: 30000,
+          }),
+        ],
+      }),
+    );
+    expect(at("2024-07-01").positions[0]).toMatchObject({
+      quantity: f("15"),
+      cost: 75000,
+      price: f("60"),
+    });
+  });
+
+  it("applies a split before the buys and sells of the same date", () => {
+    const at = makeHoldingsValueAt(
+      input({
+        trades: [
+          buy10,
+          trade({
+            date: "2024-06-01",
+            side: "sell",
+            quantity: f("15"),
+            price: f("50"),
+            amount: 75000,
+          }),
+          split("2024-06-01", "2"),
+        ],
+      }),
+    );
+    expect(at("2024-06-01").positions[0]!.quantity).toBe(f("5"));
+  });
+
+  it("ignores a split while nothing is held", () => {
+    const at = makeHoldingsValueAt(
+      input({ trades: [split("2023-12-01", "2"), buy10] }),
+    );
+    expect(at("2024-01-01").positions[0]!.quantity).toBe(f("10"));
+  });
+
+  it("works per security", () => {
+    const at = makeHoldingsValueAt(
+      input({
+        securities: [etf, { ...etf, id: "s3", name: "Gamma" }],
+        trades: [
+          buy10,
+          trade({ securityId: "s3", date: "2024-01-01", amount: 1 }),
+          split("2024-06-01", "2"),
+        ],
+      }),
+    );
+    const quantities = Object.fromEntries(
+      at("2024-06-01").positions.map((p) => [p.securityId, p.quantity]),
+    );
+    expect(quantities).toEqual({ s1: f("20"), s3: f("10") });
+  });
+});
+
+describe("splits in the sequence checks", () => {
+  const t = (date: string, side: "buy" | "sell" | "split", q: string) => ({
+    date,
+    side,
+    quantity: f(q),
+  });
+
+  it("lets a sell use the split quantity and flags an oversell after it", () => {
+    const base = [t("2024-01-01", "buy", "10"), t("2024-02-01", "split", "2")];
+    expect(firstOversell([...base, t("2024-03-01", "sell", "20")])).toBeNull();
+    expect(
+      firstOversell([...base, t("2024-03-01", "sell", "20.00000001")]),
+    ).toBe("2024-03-01");
+  });
+
+  it("a reverse split shrinks what can be sold", () => {
+    const seq = [
+      t("2024-01-01", "buy", "100"),
+      t("2024-02-01", "split", "0.1"),
+      t("2024-03-01", "sell", "11"),
+    ];
+    expect(firstOversell(seq)).toBe("2024-03-01");
+    expect(heldQuantity(seq)).toBe(f("-1"));
+  });
+
+  it("flags a split with no shares", () => {
+    expect(firstEmptySplit([t("2024-01-01", "split", "2")])).toBe("2024-01-01");
+    expect(
+      firstEmptySplit([
+        t("2024-01-01", "buy", "1"),
+        t("2024-01-02", "sell", "1"),
+        t("2024-01-03", "split", "2"),
+      ]),
+    ).toBe("2024-01-03");
+    expect(
+      firstEmptySplit([
+        t("2024-01-01", "buy", "1"),
+        t("2024-01-02", "split", "2"),
       ]),
     ).toBeNull();
   });

@@ -1,7 +1,7 @@
 import { z } from "zod";
-import { SECURITY_KINDS, TRADE_SIDES } from "$lib/investment-types";
+import { SECURITY_KINDS } from "$lib/investment-types";
 import { minor } from "$lib/money";
-import { parseFixed } from "$lib/quantity";
+import { fixed, parseFixed } from "$lib/quantity";
 import {
   amountField,
   currencySchema,
@@ -106,12 +106,19 @@ export type SecurityInput = z.output<typeof securityInputSchema>;
 
 // --- trades ---------------------------------------------------------------
 
-/** `fees` and `amount` are in the account's currency; `price` in the security's. */
+/**
+ * `fees` and `amount` are in the account's currency; `price` in the security's.
+ * A split carries only its ratio (in `quantity`): price, fees and amount are 0.
+ */
 export function tradeInputSchema(accountCurrency: string) {
-  return z.object({
+  const common = {
     securityId: idSchema,
     date: dateSchema,
-    side: z.enum(TRADE_SIDES, "Choose buy or sell."),
+    note: optionalText(1000, "Note"),
+  };
+  const cash = z.object({
+    ...common,
+    side: z.enum(["buy", "sell"]),
     quantity: positiveFixedField("Quantity"),
     price: positiveFixedField("Price"),
     fees: z
@@ -135,8 +142,21 @@ export function tradeInputSchema(accountCurrency: string) {
       (v) => v > 0,
       "Amount must be greater than zero.",
     ),
-    note: optionalText(1000, "Note"),
   });
+  const split = z.object({
+    ...common,
+    side: z.literal("split"),
+    quantity: positiveFixedField("Split ratio"),
+  });
+  return z
+    .discriminatedUnion("side", [cash, split], {
+      error: "Choose buy, sell or split.",
+    })
+    .transform((v) =>
+      v.side === "split"
+        ? { ...v, price: fixed(0), fees: minor(0), amount: minor(0) }
+        : v,
+    );
 }
 export type TradeInput = z.output<ReturnType<typeof tradeInputSchema>>;
 

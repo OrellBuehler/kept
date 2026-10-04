@@ -262,6 +262,41 @@ describe("trade form", () => {
     if (!r.ok) expect(Object.keys(r.errors)).toContain(field);
   });
 
+  it("parses a split with only a ratio", () => {
+    const parsed = parseForm(
+      schema,
+      form({
+        securityId: "s",
+        date: "2024-05-01",
+        side: "split",
+        quantity: "0.1",
+      }),
+    );
+    expect(parsed).toMatchObject({
+      ok: true,
+      data: {
+        side: "split",
+        quantity: parseFixed("0.1"),
+        price: 0,
+        fees: 0,
+        amount: 0,
+      },
+    });
+    // price and amount sent along are ignored
+    expect(
+      parseForm(schema, form({ ...valid, side: "split", quantity: "2" })),
+    ).toMatchObject({ ok: true, data: { price: 0, amount: 0 } });
+    expect(
+      parseForm(schema, form({ ...valid, side: "split", quantity: "0" })).ok,
+    ).toBe(false);
+  });
+
+  it("rejects an unknown side", () => {
+    const r = parseForm(schema, form({ ...valid, side: "gift" }));
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.errors.side?.[0]).toMatch(/buy, sell or split/);
+  });
+
   it("uses the account currency's exponent", () => {
     expect(
       parseForm(tradeInputSchema("JPY"), form({ ...valid, amount: "255" })),
@@ -359,6 +394,112 @@ describe("trades", () => {
       qty: "10",
       amount: 1000,
       date: "2024-02-01",
+    });
+  });
+
+  describe("splits", () => {
+    const splitOf = (
+      userId: string,
+      accountId: string,
+      securityId: string,
+      date: string,
+      ratio: string,
+    ) =>
+      seedTrade(userId, accountId, securityId, {
+        date,
+        side: "split",
+        qty: ratio,
+        price: "0",
+        amount: 0,
+      });
+
+    it("records a split and lets a later sell use the split quantity", async () => {
+      const { user, account, security } = await setup();
+      seedTrade(user.id, account.id, security.id, { amount: 1000 });
+      const s = splitOf(user.id, account.id, security.id, "2024-02-01", "2");
+      expect(s).toMatchObject({
+        side: "split",
+        quantity: parseFixed("2"),
+        price: 0,
+        amount: 0,
+      });
+      seedTrade(user.id, account.id, security.id, {
+        date: "2024-03-01",
+        side: "sell",
+        qty: "20",
+        amount: 2000,
+      });
+      conflict(
+        () =>
+          seedTrade(user.id, account.id, security.id, {
+            date: "2024-04-01",
+            side: "sell",
+            qty: "0.00000001",
+            amount: 1,
+          }),
+        /negative holding/,
+      );
+    });
+
+    it("rejects a sell that was only valid before a reverse split", async () => {
+      const { user, account, security } = await setup();
+      seedTrade(user.id, account.id, security.id, { amount: 1000 });
+      seedTrade(user.id, account.id, security.id, {
+        date: "2024-03-01",
+        side: "sell",
+        qty: "5",
+        amount: 500,
+      });
+      conflict(
+        () => splitOf(user.id, account.id, security.id, "2024-02-01", "0.1"),
+        /negative holding/,
+      );
+      expect(listTrades(user.id, account.id)).toHaveLength(2);
+    });
+
+    it("rejects a split without shares and deleting the buy under a split", async () => {
+      const { user, account, security } = await setup();
+      conflict(
+        () => splitOf(user.id, account.id, security.id, "2024-01-01", "2"),
+        /no shares to split/,
+      );
+      const buy = seedTrade(user.id, account.id, security.id, { amount: 1000 });
+      splitOf(user.id, account.id, security.id, "2024-02-01", "2");
+      conflict(() => deleteTrade(user.id, buy.id), /no shares to split/);
+    });
+
+    it("rejects deleting a split that later sells depend on", async () => {
+      const { user, account, security } = await setup();
+      seedTrade(user.id, account.id, security.id, { amount: 1000 });
+      const s = splitOf(user.id, account.id, security.id, "2024-02-01", "2");
+      seedTrade(user.id, account.id, security.id, {
+        date: "2024-03-01",
+        side: "sell",
+        qty: "15",
+        amount: 1500,
+      });
+      conflict(() => deleteTrade(user.id, s.id), /negative holding/);
+    });
+
+    it("rejects a ratio that overflows the quantity", async () => {
+      const { user, account, security } = await setup();
+      seedTrade(user.id, account.id, security.id, {
+        qty: "50000000",
+        amount: 1000,
+      });
+      expect(() =>
+        splitOf(user.id, account.id, security.id, "2024-02-01", "100"),
+      ).toThrow(/too large/);
+    });
+
+    it("never touches another user's trades", async () => {
+      const a = await setup();
+      const b = await setup();
+      seedTrade(a.user.id, a.account.id, a.security.id, { amount: 1000 });
+      expect(() =>
+        splitOf(b.user.id, a.account.id, a.security.id, "2024-02-01", "2"),
+      ).toThrow(LedgerError);
+      expect(listTrades(a.user.id, a.account.id)).toHaveLength(1);
     });
   });
 

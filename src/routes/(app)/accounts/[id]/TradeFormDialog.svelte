@@ -63,6 +63,7 @@
     });
   });
 
+  const isSplit = $derived(side === "split");
   const security = $derived(securities.find((s) => s.id === securityId));
   const sameCurrency = $derived(security?.currency === currency);
 
@@ -101,9 +102,14 @@
     <Dialog.Header>
       <Dialog.Title>{editing ? "Edit trade" : "Add trade"}</Dialog.Title>
       <Dialog.Description>
-        A trade changes the holdings, not the cash. Kept does not create a cash
-        transaction for it: import your statements or add the cash movement by
-        hand.
+        {#if isSplit}
+          A split changes the number of shares you hold, not what you paid. The
+          cost basis stays the same and the cost per share is divided.
+        {:else}
+          A trade changes the holdings, not the cash. Kept does not create a
+          cash transaction for it: import your statements or add the cash
+          movement by hand.
+        {/if}
       </Dialog.Description>
     </Dialog.Header>
     {#if securities.length === 0}
@@ -200,10 +206,12 @@
 
         <div class="grid gap-4 sm:grid-cols-2">
           <FormField
-            label="Quantity"
+            label={isSplit ? "Split ratio" : "Quantity"}
             for="{uid}-quantity"
             errors={errors.quantity}
-            hint="Units, up to 8 decimals."
+            hint={isSplit
+              ? "New shares per old share: 2 for a 2:1 split, 0.1 for a 1:10 reverse split. Applies from this date."
+              : "Units, up to 8 decimals."}
           >
             <Input
               id="{uid}-quantity"
@@ -217,65 +225,69 @@
               aria-invalid={!!errors.quantity}
             />
           </FormField>
-          <FormField
-            label="Price per unit{security ? ` (${security.currency})` : ''}"
-            for="{uid}-price"
-            errors={errors.price}
-            hint="In the security's currency."
-          >
-            <Input
-              id="{uid}-price"
-              name="price"
-              inputmode="decimal"
-              autocomplete="off"
-              required
-              class="text-end tabular-nums"
-              placeholder="0.00"
-              bind:value={price}
-              aria-invalid={!!errors.price}
-            />
-          </FormField>
+          {#if !isSplit}
+            <FormField
+              label="Price per unit{security ? ` (${security.currency})` : ''}"
+              for="{uid}-price"
+              errors={errors.price}
+              hint="In the security's currency."
+            >
+              <Input
+                id="{uid}-price"
+                name="price"
+                inputmode="decimal"
+                autocomplete="off"
+                required
+                class="text-end tabular-nums"
+                placeholder="0.00"
+                bind:value={price}
+                aria-invalid={!!errors.price}
+              />
+            </FormField>
+          {/if}
         </div>
 
-        <div class="grid gap-4 sm:grid-cols-2">
-          <FormField
-            label="Fees ({currency}, optional)"
-            for="{uid}-fees"
-            errors={errors.fees}
-          >
-            <Input
-              id="{uid}-fees"
-              name="fees"
-              inputmode="decimal"
-              autocomplete="off"
-              class="text-end tabular-nums"
-              placeholder="0.00"
-              bind:value={fees}
-              aria-invalid={!!errors.fees}
-            />
-          </FormField>
-          <FormField
-            label="Amount ({currency})"
-            for="{uid}-amount"
-            errors={errors.amount}
-            hint={sameCurrency
-              ? "Cash paid or received including fees. Filled in from quantity, price and fees until you change it."
-              : "Cash paid or received including fees, in your account's currency, as on your statement."}
-          >
-            <Input
-              id="{uid}-amount"
-              name="amount"
-              inputmode="decimal"
-              autocomplete="off"
-              required
-              class="text-end tabular-nums"
-              placeholder="0.00"
-              bind:value={amount}
-              oninput={() => (amountTouched = true)}
-              aria-invalid={!!errors.amount}
-            />
-          </FormField>
-        </div>
+        {#if !isSplit}
+          <div class="grid gap-4 sm:grid-cols-2">
+            <FormField
+              label="Fees ({currency}, optional)"
+              for="{uid}-fees"
+              errors={errors.fees}
+            >
+              <Input
+                id="{uid}-fees"
+                name="fees"
+                inputmode="decimal"
+                autocomplete="off"
+                class="text-end tabular-nums"
+                placeholder="0.00"
+                bind:value={fees}
+                aria-invalid={!!errors.fees}
+              />
+            </FormField>
+            <FormField
+              label="Amount ({currency})"
+              for="{uid}-amount"
+              errors={errors.amount}
+              hint={sameCurrency
+                ? "Cash paid or received including fees. Filled in from quantity, price and fees until you change it."
+                : "Cash paid or received including fees, in your account's currency, as on your statement."}
+            >
+              <Input
+                id="{uid}-amount"
+                name="amount"
+                inputmode="decimal"
+                autocomplete="off"
+                required
+                class="text-end tabular-nums"
+                placeholder="0.00"
+                bind:value={amount}
+                oninput={() => (amountTouched = true)}
+                aria-invalid={!!errors.amount}
+              />
+            </FormField>
+          </div>
+        {/if}
 
         <FormField
           label="Note (optional)"

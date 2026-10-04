@@ -5,7 +5,7 @@ import type { Fixed8 } from "$lib/quantity";
 import { accounts, getDB, securities, trades } from "$lib/server/db";
 import { LedgerError, notFound } from "$lib/server/ledger/errors";
 import type { TradeInput } from "./schemas";
-import { firstOversell } from "./valuation";
+import { firstEmptySplit, firstOversell } from "./valuation";
 
 export interface TradeView {
   id: string;
@@ -111,12 +111,32 @@ function assertSequence(userId: string, change: SequenceChange) {
     .filter((t) => t.id !== change.excludeId);
   const sequence: { date: string; side: TradeSide; quantity: number }[] = rows;
   if (change.add) sequence.push(change.add);
-  const date = firstOversell(sequence);
+  const field = change.add ? "quantity" : undefined;
+  let date: string | null;
+  let emptySplit: string | null;
+  try {
+    date = firstOversell(sequence);
+    emptySplit = firstEmptySplit(sequence);
+  } catch (err) {
+    if (!(err instanceof RangeError)) throw err;
+    throw new LedgerError(
+      "invalid",
+      "The resulting quantity is too large.",
+      field,
+    );
+  }
   if (date !== null) {
     throw new LedgerError(
       "conflict",
       `This would leave a negative holding on ${date}.`,
-      change.add ? "quantity" : undefined,
+      field,
+    );
+  }
+  if (emptySplit !== null) {
+    throw new LedgerError(
+      "conflict",
+      `There are no shares to split on ${emptySplit}.`,
+      field,
     );
   }
 }

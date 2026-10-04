@@ -1,8 +1,10 @@
 import type { PriceSource, TradeSide } from "$lib/investment-types";
 import { minor, type Minor } from "$lib/money";
 import {
+  divideFixed,
   fixed,
   invertFixed,
+  multiplyFixed,
   proportionOf,
   valueOf,
   type Fixed8,
@@ -12,8 +14,14 @@ import {
  * Holdings model
  * --------------
  * - Pure: no database access. `load.ts` fills `HoldingsInput` from the database.
- * - Trades on the same date apply buys before sells. A trade dated D counts
- *   in the holdings of D (end-of-day, like transactions).
+ * - Trades on the same date apply splits first, then buys, then sells. A
+ *   trade dated D counts in the holdings of D (end-of-day, like transactions);
+ *   a split dated D is the ex-date, so that day's buys and sells are already
+ *   in post-split shares.
+ * - A split (`quantity` is the ratio of new to old shares) multiplies the held
+ *   quantity, keeps the total cost basis (so the average cost per share is
+ *   divided) and adjusts the trade-price fallback by the same ratio. Recorded
+ *   prices dated before the split stay as they are.
  * - Cost basis uses the average-cost method: a sell removes basis in
  *   proportion to the quantity sold. A buy adds its `amount` (cash paid
  *   including fees, in the account currency).
@@ -39,7 +47,7 @@ export interface HoldingTrade {
   quantity: Fixed8;
   /** Per unit, in the security's currency. */
   price: Fixed8;
-  /** Account currency, positive. */
+  /** Account currency, positive; 0 for a split. */
   amount: number;
 }
 
@@ -140,13 +148,14 @@ function dedupe<T extends { date: string; source?: string }>(
   return [...best.values()].sort(byDate);
 }
 
+const SIDE_ORDER: Record<TradeSide, number> = { split: 0, buy: 1, sell: 2 };
+
 function compareTrades(
   a: { date: string; side: TradeSide },
   b: { date: string; side: TradeSide },
 ): number {
   if (a.date !== b.date) return a.date < b.date ? -1 : 1;
-  if (a.side === b.side) return 0;
-  return a.side === "buy" ? -1 : 1;
+  return SIDE_ORDER[a.side] - SIDE_ORDER[b.side];
 }
 
 interface Step {
@@ -161,7 +170,17 @@ function timeline(trades: readonly HoldingTrade[]): Step[] {
   const steps: Step[] = [];
   let quantity = 0;
   let cost = 0;
+  let tradePrice = fixed(0);
   for (const t of sorted) {
+    if (t.side === "split") {
+      if (quantity > 0) {
+        quantity = multiplyFixed(fixed(quantity), t.quantity);
+        tradePrice = divideFixed(tradePrice, t.quantity);
+      }
+      steps.push({ date: t.date, quantity, cost, tradePrice });
+      continue;
+    }
+    tradePrice = t.price;
     if (t.side === "buy") {
       quantity += t.quantity;
       cost += t.amount;
@@ -172,7 +191,7 @@ function timeline(trades: readonly HoldingTrade[]): Step[] {
       cost -= proportionOf(minor(cost), t.quantity, fixed(quantity));
       quantity -= t.quantity;
     }
-    steps.push({ date: t.date, quantity, cost, tradePrice: t.price });
+    steps.push({ date: t.date, quantity, cost, tradePrice });
   }
   return steps;
 }
@@ -299,18 +318,53 @@ export function holdingsValueAt(
   return makeHoldingsValueAt(input)(date);
 }
 
+/** Quantity held after each trade in order (splits first, buys before sells on a date). */
+function* runningHeld<
+  T extends { date: string; side: TradeSide; quantity: number },
+>(
+  trades: readonly T[],
+): Generator<{ trade: T; before: number; after: number }> {
+  let held = 0;
+  for (const trade of [...trades].sort(compareTrades)) {
+    const before = held;
+    if (trade.side === "split") {
+      held = multiplyFixed(fixed(held), fixed(trade.quantity));
+    } else {
+      held += trade.side === "buy" ? trade.quantity : -trade.quantity;
+    }
+    yield { trade, before, after: held };
+  }
+}
+
 /**
  * First date on which the running quantity of a security's trades goes
- * negative, or null. Buys apply before sells on the same date.
+ * negative, or null. Splits apply first and buys before sells on the same
+ * date. Throws a RangeError when a split makes the quantity unrepresentable.
  */
 export function firstOversell(
   trades: readonly { date: string; side: TradeSide; quantity: number }[],
 ): string | null {
-  const sorted = [...trades].sort(compareTrades);
-  let held = 0;
-  for (const t of sorted) {
-    held += t.side === "buy" ? t.quantity : -t.quantity;
-    if (held < 0) return t.date;
+  for (const { trade, after } of runningHeld(trades)) {
+    if (after < 0) return trade.date;
   }
   return null;
+}
+
+/** First date of a split that finds no shares to split, or null. */
+export function firstEmptySplit(
+  trades: readonly { date: string; side: TradeSide; quantity: number }[],
+): string | null {
+  for (const { trade, before } of runningHeld(trades)) {
+    if (trade.side === "split" && before <= 0) return trade.date;
+  }
+  return null;
+}
+
+/** Quantity held after all of a security's trades. */
+export function heldQuantity(
+  trades: readonly { date: string; side: TradeSide; quantity: number }[],
+): number {
+  let held = 0;
+  for (const step of runningHeld(trades)) held = step.after;
+  return held;
 }

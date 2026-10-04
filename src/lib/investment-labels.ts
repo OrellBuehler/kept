@@ -15,6 +15,7 @@ export const SECURITY_KIND_LABELS: Record<SecurityKind, string> = {
 export const TRADE_SIDE_LABELS: Record<TradeSide, string> = {
   buy: "Buy",
   sell: "Sell",
+  split: "Split",
 };
 
 /** Where a position's price comes from; "trade" is the fallback to the last trade price. */

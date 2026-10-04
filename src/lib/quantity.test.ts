@@ -1,7 +1,9 @@
 import { describe, expect, it } from "vitest";
 import { minor } from "./money";
 import {
+  divideFixed,
   fixed,
+  multiplyFixed,
   fixedFromProviderNumber,
   fixedToInput,
   formatFixed,
@@ -185,5 +187,35 @@ describe("proportionOf", () => {
     expect(() => proportionOf(minor(1), parseFixed("1"), fixed(0))).toThrow(
       RangeError,
     );
+  });
+});
+
+describe("multiplyFixed and divideFixed", () => {
+  it("scales a quantity by a ratio exactly", () => {
+    expect(multiplyFixed(parseFixed("10"), parseFixed("2"))).toBe(
+      parseFixed("20"),
+    );
+    expect(multiplyFixed(parseFixed("100"), parseFixed("0.1"))).toBe(
+      parseFixed("10"),
+    );
+    expect(divideFixed(parseFixed("100"), parseFixed("2"))).toBe(
+      parseFixed("50"),
+    );
+    expect(divideFixed(parseFixed("50"), parseFixed("0.1"))).toBe(
+      parseFixed("500"),
+    );
+  });
+
+  it("rounds half away from zero", () => {
+    expect(multiplyFixed(fixed(5), parseFixed("0.5"))).toBe(3);
+    expect(multiplyFixed(fixed(-5), parseFixed("0.5"))).toBe(-3);
+    expect(divideFixed(fixed(1), parseFixed("3"))).toBe(0);
+  });
+
+  it("throws for a zero divisor or an unsafe result", () => {
+    expect(() => divideFixed(fixed(1), fixed(0))).toThrow(RangeError);
+    expect(() =>
+      multiplyFixed(parseFixed("80000000"), parseFixed("1000")),
+    ).toThrow(RangeError);
   });
 });

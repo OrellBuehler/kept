@@ -147,3 +147,24 @@ export function proportionOf(
   const negative = (amount < 0 !== part < 0) !== whole < 0;
   return minor(negative && rounded !== 0 ? -rounded : rounded);
 }
+
+function fixedFromBigInt(value: bigint, negative: boolean): Fixed8 {
+  const n = Number(value);
+  if (!Number.isSafeInteger(n)) {
+    throw new RangeError("Quantity is too large");
+  }
+  return fixed(negative && n !== 0 ? -n : n);
+}
+
+/** `a * b` of two Fixed8 numbers, rounded half away from zero. Throws RangeError when too large. */
+export function multiplyFixed(a: Fixed8, b: Fixed8): Fixed8 {
+  const rounded = divRound(BigInt(Math.abs(a)) * BigInt(Math.abs(b)), SCALE);
+  return fixedFromBigInt(rounded, a < 0 !== b < 0);
+}
+
+/** `a / b` of two Fixed8 numbers, rounded half away from zero. Throws for a zero divisor. */
+export function divideFixed(a: Fixed8, b: Fixed8): Fixed8 {
+  if (b === 0) throw new RangeError("Cannot divide by zero");
+  const rounded = divRound(BigInt(Math.abs(a)) * SCALE, BigInt(Math.abs(b)));
+  return fixedFromBigInt(rounded, a < 0 !== b < 0);
+}
