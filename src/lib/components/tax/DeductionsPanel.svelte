@@ -86,7 +86,7 @@
               />
             </div>
             <ul class="grid gap-1">
-              {#each group.lines as line (line.transactionId)}
+              {#each group.lines as line (line.key)}
                 <li class="flex items-center justify-between gap-2 text-sm">
                   <span class="min-w-0 truncate">
                     {prefs.date(line.date)}
@@ -99,26 +99,28 @@
                   </span>
                   <span class="flex items-center gap-1">
                     <Amount value={line.amount} currency={line.currency} />
-                    <form
-                      method="POST"
-                      action="?/excludeDeduction"
-                      use:enhance={action}
-                    >
-                      <input
-                        type="hidden"
-                        name="transactionId"
-                        value={line.transactionId}
-                      />
-                      <Button
-                        type="submit"
-                        variant="ghost"
-                        size="icon"
-                        class="size-7"
-                        aria-label="Exclude this transaction from the deductions"
+                    {#if line.transactionId}
+                      <form
+                        method="POST"
+                        action="?/excludeDeduction"
+                        use:enhance={action}
                       >
-                        <XIcon />
-                      </Button>
-                    </form>
+                        <input
+                          type="hidden"
+                          name="transactionId"
+                          value={line.transactionId}
+                        />
+                        <Button
+                          type="submit"
+                          variant="ghost"
+                          size="icon"
+                          class="size-7"
+                          aria-label="Exclude this transaction from the deductions"
+                        >
+                          <XIcon />
+                        </Button>
+                      </form>
+                    {/if}
                   </span>
                 </li>
               {/each}
@@ -131,7 +133,7 @@
         <section class="grid gap-2">
           <h3 class="text-muted-foreground text-sm font-medium">Excluded</h3>
           <ul class="grid gap-1">
-            {#each summary.excluded as line (line.transactionId)}
+            {#each summary.excluded as line (line.key)}
               <li
                 class="text-muted-foreground flex items-center justify-between gap-2 text-sm"
               >

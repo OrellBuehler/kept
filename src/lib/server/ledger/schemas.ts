@@ -9,6 +9,7 @@ import {
   type Minor,
 } from "$lib/money";
 import { isValidIban, normalizeIban } from "$lib/iban";
+import { PILLAR_3A_CURRENCY } from "$lib/pillar-3a";
 
 /** Blank or missing form fields become null; everything else goes through `schema`. */
 export function optionalOf<S extends z.ZodType>(schema: S) {
@@ -48,7 +49,7 @@ export const currencySchema = z
   .transform((v) => v.toUpperCase())
   .pipe(z.string().regex(/^[A-Z]{3}$/, "Enter a 3-letter currency code."));
 
-const ibanSchema = z
+export const ibanSchema = z
   .string()
   .transform(normalizeIban)
   .refine(isValidIban, "Enter a valid IBAN.");
@@ -149,6 +150,10 @@ export const accountInputSchema = z
     /** "My share" as a percentage; blank means 100. */
     share: z.string().optional(),
     sharedWith: optionalText(80, "Shared with"),
+    /** Pillar 3a only: the provider's contract number. */
+    contractNumber: optionalText(60, "Contract number"),
+    /** Pillar 3a only: the IBAN (usually a QR-IBAN) to pay into. */
+    depositIban: optionalIban,
     sortOrder: optionalOf(
       z
         .string()
@@ -175,7 +180,17 @@ export const accountInputSchema = z
     }
     let shareBps = FULL_SHARE_BPS;
     const { share, ...rest } = v;
-    const rawShare = share?.trim() ?? "";
+    const pillar3a = v.type === "pillar_3a";
+    if (pillar3a && v.currency !== PILLAR_3A_CURRENCY) {
+      ctx.issues.push({
+        code: "custom",
+        message: "A pillar 3a account must be in CHF.",
+        input: v.currency,
+        path: ["currency"],
+      });
+      return z.NEVER;
+    }
+    const rawShare = pillar3a ? "" : (share?.trim() ?? "");
     if (rawShare !== "") {
       try {
         shareBps = parseSharePercent(rawShare);
@@ -192,7 +207,14 @@ export const accountInputSchema = z
         return z.NEVER;
       }
     }
-    return { ...rest, openingBalance, shareBps };
+    return {
+      ...rest,
+      contractNumber: pillar3a ? rest.contractNumber : null,
+      depositIban: pillar3a ? rest.depositIban : null,
+      sharedWith: pillar3a ? null : rest.sharedWith,
+      openingBalance,
+      shareBps,
+    };
   });
 export type AccountInput = z.output<typeof accountInputSchema>;
 

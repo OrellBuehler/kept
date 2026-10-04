@@ -26,6 +26,7 @@
   import Trash2Icon from "@lucide/svelte/icons/trash-2";
   import UploadIcon from "@lucide/svelte/icons/upload";
   import HoldingsCard from "./HoldingsCard.svelte";
+  import PortfoliosCard from "./PortfoliosCard.svelte";
   import SnapshotsCard from "./SnapshotsCard.svelte";
   import TransactionForm from "./TransactionForm.svelte";
   import TransactionSheet from "./TransactionSheet.svelte";
@@ -41,7 +42,8 @@
   const currencyLocked = $derived(
     account.lastBookingDate !== null ||
       data.snapshots.length > 0 ||
-      data.trades.length > 0,
+      data.trades.length > 0 ||
+      data.portfolios.some((p) => p.latestValue !== null),
   );
 
   let editOpen = $state(false);
@@ -163,15 +165,26 @@
                   currency={account.currency}
                 />
               </span>
-              <span aria-hidden="true">·</span>
-              <span>
-                Holdings <Amount
-                  value={data.value.holdings}
-                  currency={account.currency}
-                />
-              </span>
+              {#if data.hasHoldings}
+                <span aria-hidden="true">·</span>
+                <span>
+                  Holdings <Amount
+                    value={data.value.holdings}
+                    currency={account.currency}
+                  />
+                </span>
+              {/if}
+              {#if data.showPortfolios}
+                <span aria-hidden="true">·</span>
+                <span>
+                  Portfolios <Amount
+                    value={data.value.portfolios}
+                    currency={account.currency}
+                  />
+                </span>
+              {/if}
             </div>
-            {#if data.value.estimated}
+            {#if data.hasHoldings && data.value.estimated}
               <div class="text-muted-foreground text-xs">
                 estimated: no exchange rate for some holdings
               </div>
@@ -262,7 +275,7 @@
     onAdd={() => (addTxOpen = true)}
   />
 
-  {#if data.value}
+  {#if data.value && data.hasHoldings}
     <HoldingsCard
       positions={data.value.positions}
       trades={data.trades}
@@ -272,10 +285,21 @@
     />
   {/if}
 
+  {#if data.showPortfolios}
+    <PortfoliosCard
+      portfolios={data.portfolios}
+      values={data.portfolioValues}
+      currency={account.currency}
+      depositIban={account.depositIban}
+      contractNumber={account.contractNumber}
+    />
+  {/if}
+
   <SnapshotsCard
     snapshots={data.snapshots}
     currency={account.currency}
-    holdings={data.value !== null}
+    holdings={data.hasHoldings}
+    portfolios={data.showPortfolios}
   />
 </div>
 
@@ -346,7 +370,7 @@
 <ConfirmActionDialog
   bind:open={deleteAccountOpen}
   title="Delete {account.name}?"
-  description="All transactions and balance snapshots of this account are deleted permanently, including imported ones. This cannot be undone. Archive the account instead to hide it and keep its history."
+  description="All transactions, balance snapshots and portfolios of this account are deleted permanently, including imported ones. This cannot be undone. Archive the account instead to hide it and keep its history."
   action="?/deleteAccount"
   confirmText={account.name}
   confirmLabel="Delete account"

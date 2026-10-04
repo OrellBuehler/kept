@@ -4,12 +4,16 @@ import {
   accounts,
   balanceSnapshots,
   getDB,
+  portfolios,
+  portfolioValues,
   trades,
   transactions,
 } from "$lib/server/db";
 import { loadHoldingsInputs } from "$lib/server/investments/load";
 import type { HoldingsInput } from "$lib/server/investments/valuation";
 import { makeBalanceAt } from "$lib/server/ledger/balances";
+import { loadPortfolioInputs } from "$lib/server/pillar3a/load";
+import type { PortfoliosInput } from "$lib/server/pillar3a/valuation";
 import { addMonths, stepDates, type NetWorthStep } from "./dates";
 
 export interface NetWorthPoint {
@@ -42,13 +46,14 @@ interface Collected {
   transactions: { bookingDate: string; amount: number }[];
   snapshots: { date: string; amount: number; source: string }[];
   holdings?: HoldingsInput;
+  portfolios?: PortfoliosInput;
 }
 
 /**
  * Sum of the balances of all non-archived accounts at each point, per
  * currency (no FX). Each account uses the same semantics as `balanceAt`
- * (snapshots + transactions + holdings, see ledger/balances.ts); holdings are
- * already converted into the account currency. A handful of queries in total.
+ * (snapshots + transactions + holdings + portfolios, see ledger/balances.ts);
+ * holdings are already converted into the account currency. A handful of queries in total.
  * Currencies are sorted alphabetically; every series has the same dates.
  * With basis "share" each account's balance is scaled by its ownership share
  * (rounded per account and date, see `shareOf`) before summing.
@@ -110,6 +115,15 @@ export function netWorthSeries(
     collected.get(accountId)!.holdings = input;
   }
 
+  const portfolioInputs = loadPortfolioInputs(
+    userId,
+    [...collected.keys()],
+    to,
+  );
+  for (const [accountId, input] of portfolioInputs) {
+    collected.get(accountId)!.portfolios = input;
+  }
+
   const sums = new Map<string, number[]>();
   for (const a of collected.values()) {
     const at = makeBalanceAt(a);
@@ -156,6 +170,15 @@ export function earliestDataDate(userId: string): string | null {
       .from(trades)
       .innerJoin(accounts, eq(accounts.id, trades.accountId))
       .where(and(eq(trades.userId, userId), eq(accounts.archived, false)))
+      .get()?.d,
+    db
+      .select({ d: min(portfolioValues.date) })
+      .from(portfolioValues)
+      .innerJoin(portfolios, eq(portfolios.id, portfolioValues.portfolioId))
+      .innerJoin(accounts, eq(accounts.id, portfolios.accountId))
+      .where(
+        and(eq(portfolioValues.userId, userId), eq(accounts.archived, false)),
+      )
       .get()?.d,
     db
       .select({ d: min(accounts.openingDate) })

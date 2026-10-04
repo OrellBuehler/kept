@@ -15,6 +15,8 @@ export function seedAccount(userId: string, over: Partial<AccountInput> = {}) {
     type: "current",
     currency: "CHF",
     iban: null,
+    contractNumber: null,
+    depositIban: null,
     openingBalance: minor(0),
     openingDate: null,
     shareBps: 10000,

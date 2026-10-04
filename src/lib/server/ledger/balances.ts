@@ -12,6 +12,11 @@ import {
   type HoldingsInput,
   type Position,
 } from "$lib/server/investments/valuation";
+import { loadPortfolioInputs } from "$lib/server/pillar3a/load";
+import {
+  makePortfoliosValueAt,
+  type PortfoliosInput,
+} from "$lib/server/pillar3a/valuation";
 import { LedgerError, notFound } from "./errors";
 
 /**
@@ -30,6 +35,9 @@ import { LedgerError, notFound } from "./errors";
  *   come on top: the balance of an account with `holdings` is the cash balance
  *   above plus the value of its holdings on D, already converted into the
  *   account's currency. Trades never change the cash balance.
+ * - Pillar 3a portfolios (values entered by hand, see pillar3a/valuation.ts)
+ *   come on top as well: per portfolio the latest value dated <= D, and 0 from
+ *   the portfolio's closing date on.
  * - Amounts are in the account's currency; securities in other currencies are
  *   converted inside the holdings valuation, nowhere else.
  */
@@ -40,6 +48,7 @@ export interface BalanceInput {
   snapshots: readonly { date: string; amount: number; source?: string }[];
   transactions: readonly { bookingDate: string; amount: number }[];
   holdings?: HoldingsInput;
+  portfolios?: PortfoliosInput;
 }
 
 export type BalanceAt = (date: string) => Minor;
@@ -113,14 +122,26 @@ export function makeBalanceAt(input: BalanceInput): BalanceAt {
     );
   };
 
-  if (!input.holdings) return cash;
-  const holdings = makeHoldingsValueAt(input.holdings);
-  return (date) => minor(cash(date) + holdings(date).value);
+  if (!input.holdings && !input.portfolios) return cash;
+  const holdings = input.holdings ? makeHoldingsValueAt(input.holdings) : null;
+  const portfolios = input.portfolios
+    ? makePortfoliosValueAt(input.portfolios)
+    : null;
+  return (date) =>
+    minor(
+      cash(date) +
+        (holdings ? holdings(date).value : 0) +
+        (portfolios ? portfolios(date) : 0),
+    );
 }
 
-/** Balance without the value of holdings. */
+/** Balance without the value of holdings and portfolios. */
 export function cashBalanceAt(input: BalanceInput, date: string): Minor {
-  return makeBalanceAt({ ...input, holdings: undefined })(date);
+  return makeBalanceAt({
+    ...input,
+    holdings: undefined,
+    portfolios: undefined,
+  })(date);
 }
 
 export function balanceAt(input: BalanceInput, date: string): Minor {
@@ -208,7 +229,7 @@ function loadInput(
   userId: string,
   accountId: string,
   upTo: string | null,
-  withHoldings: boolean,
+  withValues: boolean,
 ): BalanceInput {
   const db = getDB();
   const account = db
@@ -233,8 +254,13 @@ function loadInput(
     txWhere.push(lte(transactions.bookingDate, upTo));
     snapWhere.push(lte(balanceSnapshots.date, upTo));
   }
-  const holdings = withHoldings
+  const holdings = withValues
     ? loadHoldingsInputs(userId, [accountId], upTo ?? "9999-12-31").get(
+        accountId,
+      )
+    : undefined;
+  const portfolios = withValues
+    ? loadPortfolioInputs(userId, [accountId], upTo ?? "9999-12-31").get(
         accountId,
       )
     : undefined;
@@ -242,6 +268,7 @@ function loadInput(
     openingBalance: account.openingBalance,
     openingDate: account.openingDate,
     holdings,
+    portfolios,
     transactions: db
       .select({
         bookingDate: transactions.bookingDate,
@@ -280,7 +307,7 @@ export function localToday(now = new Date()): string {
 }
 
 /**
- * Balance (cash plus holdings) as of `today` (YYYY-MM-DD, default local
+ * Balance (cash plus holdings and portfolios) as of `today` (YYYY-MM-DD, default local
  * today): future-dated transactions, snapshots and trades do not count.
  */
 export function currentBalance(
@@ -294,13 +321,15 @@ export function currentBalance(
 export interface AccountValue {
   cash: Minor;
   holdings: Minor;
+  /** Pillar 3a portfolios, valued by hand. */
+  portfolios: Minor;
   total: Minor;
   positions: Position[];
   /** At least one position is valued at cost because an FX rate is missing. */
   estimated: boolean;
 }
 
-/** Cash and holdings of an account as of `today`; `total` is their sum. */
+/** Cash, holdings and portfolios of an account as of `today`; `total` is their sum. */
 export function accountValue(
   userId: string,
   accountId: string,
@@ -312,16 +341,20 @@ export function accountValue(
     ? makeHoldingsValueAt(input.holdings)(today)
     : null;
   const holdings = held?.value ?? minor(0);
+  const portfolios = input.portfolios
+    ? makePortfoliosValueAt(input.portfolios)(today)
+    : minor(0);
   return {
     cash,
     holdings,
-    total: minor(cash + holdings),
+    portfolios,
+    total: minor(cash + holdings + portfolios),
     positions: held?.positions ?? [],
     estimated: held?.estimated ?? false,
   };
 }
 
-/** Current balances (cash plus holdings) of several accounts with a handful of queries in total. */
+/** Current balances (cash plus holdings and portfolios) of several accounts with a handful of queries in total. */
 export function currentBalances(
   userId: string,
   accountRows: readonly {
@@ -394,6 +427,11 @@ export function currentBalanceParts(
     accountRows.map((a) => a.id),
     today,
   );
+  const portfolios = loadPortfolioInputs(
+    userId,
+    accountRows.map((a) => a.id),
+    today,
+  );
   return new Map(
     accountRows.map((a) => {
       const input: BalanceInput = {
@@ -402,6 +440,7 @@ export function currentBalanceParts(
         transactions: txByAccount.get(a.id) ?? [],
         snapshots: snapByAccount.get(a.id) ?? [],
         holdings: holdings.get(a.id),
+        portfolios: portfolios.get(a.id),
       };
       return [
         a.id,

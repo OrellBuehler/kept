@@ -523,7 +523,67 @@
         </Card.Content>
       </Card.Root>
     </Tabs.Content>
-    <Tabs.Content value="deductions" class="pt-4">
+    <Tabs.Content value="deductions" class="grid gap-6 pt-4">
+      {#if data.pillar3a}
+        {@const p3a = data.pillar3a}
+        <Card.Root>
+          <Card.Header>
+            <Card.Title>Pillar 3a {year.year}</Card.Title>
+            <Card.Description>
+              Contributions credited in {year.year}. Included in the deductions
+              below.
+            </Card.Description>
+            <Card.Action>
+              <Button
+                variant="outline"
+                size="sm"
+                href={resolve("/(app)/pillar-3a")}
+              >
+                Open Pillar 3a
+              </Button>
+            </Card.Action>
+          </Card.Header>
+          <Card.Content>
+            <dl class="grid grid-cols-2 gap-4 text-sm lg:grid-cols-4">
+              <div>
+                <dt class="text-muted-foreground text-xs">
+                  Limit{p3a.limitUnconfirmed ? " (estimate)" : ""}
+                </dt>
+                <dd class="text-lg font-semibold">
+                  {#if p3a.limit !== null}
+                    <Amount value={p3a.limit} currency="CHF" />
+                  {:else}
+                    <span class="text-muted-foreground">n/a</span>
+                  {/if}
+                </dd>
+              </div>
+              <div>
+                <dt class="text-muted-foreground text-xs">Ordinary</dt>
+                <dd class="text-lg font-semibold">
+                  <Amount value={p3a.ordinary} currency="CHF" />
+                </dd>
+              </div>
+              <div>
+                <dt class="text-muted-foreground text-xs">Buy-in</dt>
+                <dd class="text-lg font-semibold">
+                  <Amount value={p3a.buyIn} currency="CHF" />
+                </dd>
+              </div>
+              <div>
+                <dt class="text-muted-foreground text-xs">Deductible</dt>
+                <dd class="text-lg font-semibold">
+                  <Amount value={p3a.deductible} currency="CHF" />
+                </dd>
+                {#if p3a.excluded !== 0}
+                  <dd class="text-muted-foreground text-xs">
+                    <Amount value={p3a.excluded} currency="CHF" /> excluded
+                  </dd>
+                {/if}
+              </div>
+            </dl>
+          </Card.Content>
+        </Card.Root>
+      {/if}
       <DeductionsPanel
         summary={data.deductions}
         mappings={data.deductionMappings}

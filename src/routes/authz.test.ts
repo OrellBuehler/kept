@@ -179,6 +179,30 @@ const matrix: Record<string, Entry> = {
       "actions.updateTrade": (m, e) => m.actions.updateTrade(e),
       "actions.deleteTrade": (m, e) => m.actions.deleteTrade(e),
       "actions.setCategory": (m, e) => m.actions.setCategory(e),
+      "actions.addPortfolio": (m, e) => m.actions.addPortfolio(e),
+      "actions.updatePortfolio": (m, e) => m.actions.updatePortfolio(e),
+      "actions.closePortfolio": (m, e) => m.actions.closePortfolio(e),
+      "actions.reopenPortfolio": (m, e) => m.actions.reopenPortfolio(e),
+      "actions.deletePortfolio": (m, e) => m.actions.deletePortfolio(e),
+      "actions.setPortfolioValues": (m, e) => m.actions.setPortfolioValues(e),
+      "actions.deletePortfolioValue": (m, e) =>
+        m.actions.deletePortfolioValue(e),
+    },
+  },
+  "/src/routes/(app)/pillar-3a/+page.server.ts": {
+    access: "user",
+    handlers: {
+      load: (m, e) => m.load(e),
+      "actions.setYear": (m, e) => m.actions.setYear(e),
+      "actions.addContribution": (m, e) => m.actions.addContribution(e),
+      "actions.updateContribution": (m, e) => m.actions.updateContribution(e),
+      "actions.deleteContribution": (m, e) => m.actions.deleteContribution(e),
+    },
+  },
+  "/src/routes/api/pillar-3a/buy-in-check/+server.ts": {
+    access: "user",
+    handlers: {
+      GET: (m, e) => (m as never as { GET: (e: never) => unknown }).GET(e),
     },
   },
   "/src/routes/(app)/investments/+page.server.ts": {

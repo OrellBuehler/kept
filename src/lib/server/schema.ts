@@ -25,6 +25,11 @@ import {
   SECURITY_KINDS,
   TRADE_SIDES,
 } from "$lib/investment-types";
+import {
+  PILLAR_3A_CONTRIBUTION_KINDS,
+  PILLAR_3A_DEDUCTIONS,
+  PORTFOLIO_CLOSE_REASONS,
+} from "$lib/pillar-3a-types";
 import { AMOUNT_SIGNS, CATEGORY_KINDS } from "$lib/category-types";
 import { DEDUCTION_TYPES } from "$lib/tax-deductions";
 import { CHANNEL_KINDS } from "$lib/notification-types";
@@ -41,6 +46,16 @@ export type {
   SecurityKind,
   TradeSide,
 } from "$lib/investment-types";
+export {
+  PILLAR_3A_CONTRIBUTION_KINDS,
+  PILLAR_3A_DEDUCTIONS,
+  PORTFOLIO_CLOSE_REASONS,
+};
+export type {
+  Pillar3aContributionKind,
+  Pillar3aDeduction,
+  PortfolioCloseReason,
+} from "$lib/pillar-3a-types";
 export {
   ALLOCATION_ORIGINS,
   BILL_KINDS,
@@ -254,6 +269,10 @@ export const accounts = sqliteTable(
     shareBps: integer("share_bps").notNull().default(10000),
     /** Free-text note on who the account is shared with. */
     sharedWith: text("shared_with"),
+    /** Provider contract number of a pillar 3a account (free text). */
+    contractNumber: text("contract_number"),
+    /** IBAN to pay into when the account itself has none (a pillar 3a QR-IBAN); not unique, providers share it. */
+    depositIban: text("deposit_iban"),
     ...timestamps,
   },
   (t) => [
@@ -1083,4 +1102,126 @@ export const marketDataSettings = sqliteTable(
     ...timestamps,
   },
   (t) => [uniqueIndex("market_data_settings_user_id_uq").on(t.userId)],
+);
+
+export const portfolios = sqliteTable(
+  "portfolios",
+  {
+    id: id(),
+    userId: userId(),
+    accountId: text("account_id")
+      .notNull()
+      .references(() => accounts.id, { onDelete: "cascade" }),
+    name: text("name").notNull(),
+    /** The provider's portfolio or relationship number. */
+    number: text("number"),
+    /** Free text such as the investment strategy. */
+    strategy: text("strategy"),
+    /** Normalized QRR or SCOR that payments into this portfolio carry; unique per user. */
+    depositReference: text("deposit_reference"),
+    openedOn: text("opened_on"),
+    closedOn: text("closed_on"),
+    closeReason: text("close_reason", { enum: PORTFOLIO_CLOSE_REASONS }),
+    sortOrder: integer("sort_order").notNull().default(0),
+    ...timestamps,
+  },
+  (t) => [
+    index("portfolios_user_id_idx").on(t.userId),
+    index("portfolios_account_id_idx").on(t.accountId),
+    uniqueIndex("portfolios_user_reference_uq").on(
+      t.userId,
+      t.depositReference,
+    ),
+  ],
+);
+
+export const portfolioValues = sqliteTable(
+  "portfolio_values",
+  {
+    id: id(),
+    userId: userId(),
+    portfolioId: text("portfolio_id")
+      .notNull()
+      .references(() => portfolios.id, { onDelete: "cascade" }),
+    date: text("date").notNull(),
+    /** Account currency; entered by hand. */
+    amount: minor("amount").notNull(),
+    note: text("note"),
+    ...timestamps,
+  },
+  (t) => [
+    uniqueIndex("portfolio_values_portfolio_date_uq").on(t.portfolioId, t.date),
+    index("portfolio_values_user_id_idx").on(t.userId),
+  ],
+);
+
+export const pillar3aContributions = sqliteTable(
+  "pillar_3a_contributions",
+  {
+    id: id(),
+    userId: userId(),
+    portfolioId: text("portfolio_id")
+      .notNull()
+      .references(() => portfolios.id, { onDelete: "cascade" }),
+    /**
+     * Set: annotates a payment detected by its reference; kind and date
+     * override the defaults, the amount always comes from the transaction.
+     * Null: a manually entered contribution.
+     */
+    transactionId: text("transaction_id").references(() => transactions.id, {
+      onDelete: "cascade",
+    }),
+    /** The credit date; its year is the tax year. */
+    date: text("date").notNull(),
+    /** CHF, positive. Ignored for annotations (the transaction wins). */
+    amount: minor("amount").notNull(),
+    kind: text("kind", { enum: PILLAR_3A_CONTRIBUTION_KINDS })
+      .notNull()
+      .default("ordinary"),
+    note: text("note"),
+    ...timestamps,
+  },
+  (t) => [
+    index("pillar_3a_contributions_user_id_idx").on(t.userId),
+    index("pillar_3a_contributions_portfolio_id_idx").on(t.portfolioId),
+    uniqueIndex("pillar_3a_contributions_transaction_uq").on(t.transactionId),
+  ],
+);
+
+export const pillar3aBuyInYears = sqliteTable(
+  "pillar_3a_buy_in_years",
+  {
+    id: id(),
+    userId: userId(),
+    contributionId: text("contribution_id")
+      .notNull()
+      .references(() => pillar3aContributions.id, { onDelete: "cascade" }),
+    /** The gap year this buy-in closes; each year can be closed only once. */
+    year: integer("year").notNull(),
+    ...timestamps,
+  },
+  (t) => [
+    uniqueIndex("pillar_3a_buy_in_years_user_year_uq").on(t.userId, t.year),
+    index("pillar_3a_buy_in_years_user_id_idx").on(t.userId),
+    index("pillar_3a_buy_in_years_contribution_id_idx").on(t.contributionId),
+  ],
+);
+
+export const pillar3aYears = sqliteTable(
+  "pillar_3a_years",
+  {
+    id: id(),
+    userId: userId(),
+    year: integer("year").notNull(),
+    deduction: text("deduction", { enum: PILLAR_3A_DEDUCTIONS })
+      .notNull()
+      .default("small"),
+    /** Net earned income (CHF) for the large deduction. */
+    earnedIncome: minor("earned_income"),
+    ...timestamps,
+  },
+  (t) => [
+    uniqueIndex("pillar_3a_years_user_year_uq").on(t.userId, t.year),
+    index("pillar_3a_years_user_id_idx").on(t.userId),
+  ],
 );

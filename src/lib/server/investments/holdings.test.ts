@@ -123,6 +123,7 @@ describe("balance with holdings", () => {
     expect(accountValue(user.id, account.id, TODAY)).toEqual({
       cash: 900,
       holdings: 0,
+      portfolios: 0,
       total: 900,
       positions: [],
       estimated: false,

@@ -4,6 +4,7 @@ export type NavHref =
   | "/"
   | "/accounts"
   | "/investments"
+  | "/pillar-3a"
   | "/import"
   | "/bills"
   | "/budgets"

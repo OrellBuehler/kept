@@ -11,6 +11,10 @@ import {
 import { accounts, categories, getDB, transactions } from "$lib/server/db";
 import { monthBounds } from "$lib/server/dashboard/dates";
 import { netWorthSeries } from "$lib/server/dashboard/net-worth";
+import {
+  isContributionPayment,
+  portfolioDepositReferences,
+} from "$lib/server/pillar3a/transfers";
 
 export const TOP_COUNTERPARTIES = 8;
 export const TOP_TRANSACTIONS = 5;
@@ -113,6 +117,8 @@ interface Row {
   accountId: string;
   bookingDate: string;
   amount: number;
+  currency: string;
+  reference: string | null;
   counterpartyName: string | null;
   counterpartyIban: string | null;
   categoryId: string | null;
@@ -136,6 +142,7 @@ function loadOwn(userId: string) {
     .select({
       id: accounts.id,
       iban: accounts.iban,
+      depositIban: accounts.depositIban,
       archived: accounts.archived,
       currency: accounts.currency,
     })
@@ -146,8 +153,15 @@ function loadOwn(userId: string) {
     own.filter((a) => !a.archived).map((a) => [a.id, a.currency]),
   );
   const ibanOwner = new Map<string, string>();
-  for (const a of own) if (a.iban) ibanOwner.set(normalizeIban(a.iban), a.id);
-  return { active, ibanOwner };
+  for (const a of own) {
+    if (a.iban) ibanOwner.set(normalizeIban(a.iban), a.id);
+    if (a.depositIban) ibanOwner.set(normalizeIban(a.depositIban), a.id);
+  }
+  return {
+    active,
+    ibanOwner,
+    depositReferences: portfolioDepositReferences(userId),
+  };
 }
 
 function loadRows(userId: string, from: string, to: string): Row[] {
@@ -157,6 +171,8 @@ function loadRows(userId: string, from: string, to: string): Row[] {
       accountId: transactions.accountId,
       bookingDate: transactions.bookingDate,
       amount: transactions.amount,
+      currency: transactions.currency,
+      reference: transactions.reference,
       counterpartyName: transactions.counterpartyName,
       counterpartyIban: transactions.counterpartyIban,
       categoryId: transactions.categoryId,
@@ -194,8 +210,10 @@ export function defaultReviewYear(today: string, years: number[]): number {
  *
  * Only non-archived accounts count. Transfers between the user's own
  * accounts are left out: a transaction whose counterparty IBAN equals the IBAN
- * of another account of the user is a transfer; those without a counterparty
- * IBAN cannot be recognised. A transaction counts as income when it is
+ * (or pillar 3a deposit IBAN) of another account of the user is a transfer, and
+ * so is an outgoing payment carrying a pillar 3a portfolio's deposit
+ * reference; those without a counterparty IBAN or reference cannot be
+ * recognised. A transaction counts as income when it is
  * positive and as an expense when it is negative, except that its category
  * decides the side: a refund on an expense category reduces that expense.
  * Subcategories roll up into their parent. A year that is still running
@@ -208,7 +226,7 @@ export function yearReview(
   const from = `${year}-01-01`;
   const yearEnd = `${year}-12-31`;
   const to = today < yearEnd ? today : yearEnd;
-  const { active, ibanOwner } = loadOwn(userId);
+  const { active, ibanOwner, depositReferences } = loadOwn(userId);
   const cats = new Map<string, Cat>(
     getDB()
       .select({
@@ -234,6 +252,10 @@ export function yearReview(
         if (countExcluded) excludedTransfers += 1;
         return null;
       }
+    }
+    if (isContributionPayment(depositReferences, row)) {
+      if (countExcluded) excludedTransfers += 1;
+      return null;
     }
     const own = row.categoryId ? (cats.get(row.categoryId) ?? null) : null;
     const top =
