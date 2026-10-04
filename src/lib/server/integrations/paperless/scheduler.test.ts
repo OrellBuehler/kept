@@ -12,7 +12,7 @@ import { listBills } from "$lib/server/bills/bills";
 import { clearEventListeners } from "$lib/server/events";
 import { createTestUser, type TestUser } from "$lib/testing/auth";
 import { useTestDB } from "$lib/testing/db";
-import { useTestDocuments } from "$lib/testing/documents";
+import { useTestStore } from "$lib/testing/store";
 import { setEnabled } from "./connection";
 import { startFakePaperless } from "./fake-server";
 import { unregisterPaperless, registerPaperless } from "./index";
@@ -33,7 +33,7 @@ beforeAll(async () => {
 
 describe("scheduler", () => {
   useTestDB();
-  useTestDocuments();
+  useTestStore();
   let user: TestUser;
 
   beforeEach(async () => {

@@ -5,7 +5,7 @@ import { storeDocument } from "$lib/server/bills/documents";
 import { createTestUser } from "$lib/testing/auth";
 import { billForm } from "$lib/testing/bills";
 import { useTestDB } from "$lib/testing/db";
-import { useTestDocuments } from "$lib/testing/documents";
+import { useTestStore } from "$lib/testing/store";
 import { createTestEvent, outcome } from "$lib/testing/event";
 import { buildBillPdf } from "$lib/testing/fixtures/bills/pdf";
 import {
@@ -62,7 +62,7 @@ const loadAs = (user: User, query = "") =>
 
 describe("new bill page", () => {
   useTestDB();
-  useTestDocuments();
+  useTestStore();
 
   it("a failing auto-match never fails the save", async () => {
     const u = await createTestUser();
@@ -251,7 +251,12 @@ describe("new bill page", () => {
   it("cannot use another user's document or account", async () => {
     const a = await createTestUser();
     const b = await createTestUser();
-    const doc = storeDocument(a.id, await qrPdf(), "a.pdf", "application/pdf");
+    const doc = await storeDocument(
+      a.id,
+      await qrPdf(),
+      "a.pdf",
+      "application/pdf",
+    );
     expect(await loadAs(b, `?document=${doc.id}`)).toEqual({
       type: "error",
       status: 404,

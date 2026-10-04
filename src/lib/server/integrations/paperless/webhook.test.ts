@@ -11,7 +11,7 @@ import {
 import { listBills } from "$lib/server/bills/bills";
 import { createTestUser, type TestUser } from "$lib/testing/auth";
 import { useTestDB } from "$lib/testing/db";
-import { useTestDocuments } from "$lib/testing/documents";
+import { useTestStore } from "$lib/testing/store";
 import { getConnectionRow, setEnabled } from "./connection";
 import { startFakePaperless } from "./fake-server";
 import { billPdf, seedConnection } from "./testing";
@@ -58,7 +58,7 @@ describe("webhookBodySchema", () => {
 
 describe("handleWebhook", () => {
   useTestDB();
-  useTestDocuments();
+  useTestStore();
   let user: TestUser;
   let token: string;
   let secret: string;

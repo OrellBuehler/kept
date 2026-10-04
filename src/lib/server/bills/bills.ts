@@ -264,27 +264,27 @@ function documentReferenced(userId: string, documentId: string): boolean {
 }
 
 /** Deletes an uploaded document that no bill references any more. */
-export function deleteDocumentIfUnused(
+export async function deleteDocumentIfUnused(
   userId: string,
   documentId: string | null,
-) {
+): Promise<void> {
   if (documentId === null || documentReferenced(userId, documentId)) return;
   const row = getDB()
     .select({ source: documents.source })
     .from(documents)
     .where(and(eq(documents.userId, userId), eq(documents.id, documentId)))
     .get();
-  if (row?.source === "upload") deleteDocument(userId, documentId);
+  if (row?.source === "upload") await deleteDocument(userId, documentId);
 }
 
 /** Deletes the bill, its allocations (cascade) and its uploaded document when nothing else uses it. */
-export function deleteBill(userId: string, id: string): void {
+export async function deleteBill(userId: string, id: string): Promise<void> {
   const current = getBill(userId, id);
   getDB()
     .delete(bills)
     .where(and(eq(bills.userId, userId), eq(bills.id, id)))
     .run();
-  deleteDocumentIfUnused(userId, current.documentId);
+  await deleteDocumentIfUnused(userId, current.documentId);
 }
 
 export function setBillCancelled(
@@ -308,11 +308,11 @@ export const uncancelBill = (userId: string, id: string) =>
   setBillCancelled(userId, id, false);
 
 /** Attaches a stored document; an uploaded document replaced by this one is removed if unused. */
-export function attachDocument(
+export async function attachDocument(
   userId: string,
   billId: string,
   documentId: string,
-): BillView {
+): Promise<BillView> {
   const current = getBill(userId, billId);
   assertOwnedDocument(userId, documentId);
   getDB()
@@ -321,7 +321,7 @@ export function attachDocument(
     .where(and(eq(bills.userId, userId), eq(bills.id, billId)))
     .run();
   if (current.documentId !== null && current.documentId !== documentId) {
-    deleteDocumentIfUnused(userId, current.documentId);
+    await deleteDocumentIfUnused(userId, current.documentId);
   }
   return getBill(userId, billId);
 }
@@ -345,10 +345,10 @@ export const DOCUMENT_SWEEP_AGE_MS = 24 * 60 * 60 * 1000;
  * Removes the user's uploaded documents that no bill references and that are
  * older than a day (abandoned uploads). Returns how many were removed.
  */
-export function sweepUnreferencedDocuments(
+export async function sweepUnreferencedDocuments(
   userId: string,
   now: number = Date.now(),
-): number {
+): Promise<number> {
   const cutoff = new Date(now - DOCUMENT_SWEEP_AGE_MS);
   const stale = getDB()
     .select({ id: documents.id })
@@ -367,6 +367,6 @@ export function sweepUnreferencedDocuments(
       ),
     )
     .all();
-  for (const d of stale) deleteDocument(userId, d.id);
+  for (const d of stale) await deleteDocument(userId, d.id);
   return stale.length;
 }

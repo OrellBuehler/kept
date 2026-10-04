@@ -52,14 +52,16 @@ export const actions: Actions = {
       if (!(err instanceof PdfExtractError)) throw err;
       return uploadFailure("upload", pdfErrorMessage(err.code));
     }
-    sweepUnreferencedDocuments(user.id);
+    await sweepUnreferencedDocuments(user.id);
     let documentId: string;
     try {
-      documentId = storeDocument(
-        user.id,
-        upload.bytes,
-        upload.fileName,
-        upload.mimeType,
+      documentId = (
+        await storeDocument(
+          user.id,
+          upload.bytes,
+          upload.fileName,
+          upload.mimeType,
+        )
       ).id;
     } catch (err) {
       return ledgerFailure("upload", err);

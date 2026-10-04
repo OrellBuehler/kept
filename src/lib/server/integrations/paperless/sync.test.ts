@@ -24,7 +24,7 @@ import {
 } from "$lib/server/db";
 import { createTestUser, type TestUser } from "$lib/testing/auth";
 import { useTestDB } from "$lib/testing/db";
-import { useTestDocuments } from "$lib/testing/documents";
+import { useTestStore } from "$lib/testing/store";
 import { EXAMPLE_IBAN } from "$lib/testing/fixtures/bill-identifiers";
 import { clearEventListeners } from "$lib/server/events";
 import {
@@ -67,7 +67,7 @@ beforeAll(async () => {
 
 describe("syncConnection", () => {
   useTestDB();
-  useTestDocuments();
+  useTestStore();
   let user: TestUser;
 
   beforeEach(async () => {
@@ -676,7 +676,7 @@ describe("syncConnection", () => {
       modified: "2026-09-01T10:00:00+00:00",
     });
     await syncConnection(user.id);
-    deleteBill(user.id, listBills(user.id)[0]!.id);
+    await deleteBill(user.id, listBills(user.id)[0]!.id);
     expect(linkOf(93)).toMatchObject({ billId: null, status: "imported" });
 
     fake.docs.get(93)!.modified = "2026-09-04T10:00:00+00:00";
@@ -706,7 +706,7 @@ describe("syncConnection", () => {
   it("does not bring back a deleted bill after reconnecting", async () => {
     fake.addDoc({ id: 96, original: pdfEnergy });
     await syncConnection(user.id);
-    deleteBill(user.id, listBills(user.id)[0]!.id);
+    await deleteBill(user.id, listBills(user.id)[0]!.id);
 
     deleteConnection(user.id);
     seedConnection(user.id, fake);
@@ -720,7 +720,7 @@ describe("syncConnection", () => {
   it("does not bring back a deleted bill after moving to another address and back", async () => {
     fake.addDoc({ id: 97, original: pdfEnergy });
     await syncConnection(user.id);
-    deleteBill(user.id, listBills(user.id)[0]!.id);
+    await deleteBill(user.id, listBills(user.id)[0]!.id);
 
     const input = { token: null, allowInsecureTls: false };
     saveConnection(user.id, { ...input, baseUrl: `${fake.origin}/other` });
