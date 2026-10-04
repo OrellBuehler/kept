@@ -1,5 +1,6 @@
 import { createRequire } from "node:module";
 import { readFile } from "node:fs/promises";
+import path from "node:path";
 import { QrBillParseError, parseQrBillPayload, type QrBill } from "./qr-bill";
 import { extractFromText, type BillFields } from "./text-extract";
 
@@ -43,34 +44,41 @@ export class PdfExtractError extends Error {
   }
 }
 
-type PdfModule = typeof import("unpdf");
+type PdfModule = typeof import("pdfjs-dist/legacy/build/pdf.mjs");
 type ZxingReader = typeof import("zxing-wasm/reader");
-type PdfDocument = Awaited<ReturnType<PdfModule["getDocumentProxy"]>>;
-type CanvasFactoryClass = Awaited<
-  ReturnType<PdfModule["createIsomorphicCanvasFactory"]>
->;
+type CanvasModule = typeof import("@napi-rs/canvas");
+type PdfDocument = Awaited<ReturnType<PdfModule["getDocument"]>["promise"]>;
 
 interface Engine {
   pdf: PdfModule;
   zxing: ZxingReader;
-  CanvasFactory: CanvasFactoryClass;
+  canvas: CanvasModule;
+  /** pdf.js data directories (decoders, fonts, CMaps), read from disk on demand. */
+  dataDirs: {
+    wasmUrl: string;
+    standardFontDataUrl: string;
+    cMapUrl: string;
+    iccUrl: string;
+  };
 }
 
 let enginePromise: Promise<Engine> | null = null;
 
 /**
  * Loads pdf.js, the canvas binding and the zxing WASM module on first use.
- * The WASM binary is read from node_modules and handed to zxing directly: its
- * default would fetch it from a public CDN at runtime.
+ * WASM binaries are read from node_modules: zxing's default would fetch its
+ * binary from a public CDN, and pdf.js needs its JBIG2/CCITT and JPEG 2000
+ * decoders to render scanned pages.
  */
 function loadEngine(): Promise<Engine> {
   enginePromise ??= (async () => {
-    const pdf = await import("unpdf");
+    const require = createRequire(import.meta.url);
+    const pdf = await import("pdfjs-dist/legacy/build/pdf.mjs");
     const zxing = await import("zxing-wasm/reader");
-    const wasmPath = createRequire(import.meta.url).resolve(
-      "zxing-wasm/reader/zxing_reader.wasm",
+    const canvas = await import("@napi-rs/canvas");
+    const wasmBinary = await readFile(
+      require.resolve("zxing-wasm/reader/zxing_reader.wasm"),
     );
-    const wasmBinary = await readFile(wasmPath);
     await zxing.prepareZXingModule({
       overrides: {
         wasmBinary: wasmBinary.buffer.slice(
@@ -80,10 +88,15 @@ function loadEngine(): Promise<Engine> {
       },
       fireImmediately: true,
     });
-    const CanvasFactory = await pdf.createIsomorphicCanvasFactory(
-      () => import("@napi-rs/canvas"),
-    );
-    return { pdf, zxing, CanvasFactory };
+    const pdfjsDir = path.dirname(require.resolve("pdfjs-dist/package.json"));
+    const dir = (name: string) => path.join(pdfjsDir, name) + path.sep;
+    const dataDirs = {
+      wasmUrl: dir("wasm"),
+      standardFontDataUrl: dir("standard_fonts"),
+      cMapUrl: dir("cmaps"),
+      iccUrl: dir("iccs"),
+    };
+    return { pdf, zxing, canvas, dataDirs };
   })().catch((error) => {
     enginePromise = null;
     throw error;
@@ -102,9 +115,11 @@ async function openDocument(
 ): Promise<PdfDocument> {
   try {
     // pdf.js takes ownership of the buffer, so hand it a copy.
-    return await engine.pdf.getDocumentProxy(bytes.slice(), {
-      CanvasFactory: engine.CanvasFactory,
-    } as never);
+    return await engine.pdf.getDocument({
+      data: bytes.slice(),
+      ...engine.dataDirs,
+      cMapPacked: true,
+    }).promise;
   } catch (error) {
     const name = error instanceof Error ? error.name : "";
     if (name === "PasswordException") {
@@ -151,24 +166,18 @@ async function decodeSpcFromPage(
         Math.sqrt(pass.maxPixels / (base.width * base.height)),
       );
       const viewport = page.getViewport({ scale });
-      const factory = new engine.CanvasFactory();
-      const target = factory.create(
+      const canvas = engine.canvas.createCanvas(
         Math.ceil(viewport.width),
         Math.ceil(viewport.height),
       );
       try {
-        if (!target.context) throw new Error("Canvas context is unavailable");
+        const context = canvas.getContext("2d");
         await page.render({
-          canvas: target.canvas,
-          canvasContext: target.context,
+          canvas: canvas as never,
+          canvasContext: context as never,
           viewport,
-        } as never).promise;
-        const image = target.context.getImageData(
-          0,
-          0,
-          target.canvas.width,
-          target.canvas.height,
-        );
+        }).promise;
+        const image = context.getImageData(0, 0, canvas.width, canvas.height);
         const imageData = {
           data: image.data,
           width: image.width,
@@ -188,13 +197,36 @@ async function decodeSpcFromPage(
           .filter((t) => t.startsWith("SPC"));
         if (texts.length > 0) return texts;
       } finally {
-        factory.destroy(target);
+        // Releases the pixel buffer now instead of at the next GC.
+        canvas.width = 0;
+        canvas.height = 0;
       }
     }
     return [];
   } finally {
     page.cleanup();
   }
+}
+
+/** Page texts joined by newlines; a text item that ends a line gets a newline. */
+async function readText(doc: PdfDocument): Promise<string> {
+  const pages: string[] = [];
+  for (let p = 1; p <= doc.numPages; p++) {
+    const page = await doc.getPage(p);
+    try {
+      const content = await page.getTextContent();
+      pages.push(
+        content.items
+          .map((item) =>
+            "str" in item ? item.str + (item.hasEOL ? "\n" : "") : "",
+          )
+          .join(""),
+      );
+    } finally {
+      page.cleanup();
+    }
+  }
+  return pages.join("\n");
 }
 
 function emptyFields(): BillFields {
@@ -291,6 +323,7 @@ async function extractUnlocked(
       try {
         payloads = await decodeSpcFromPage(engine, doc, pageNumber, deadline);
       } catch (error) {
+        if (error instanceof PdfExtractError) throw error;
         warnings.push(
           `Page ${pageNumber} could not be rendered for QR detection`,
         );
@@ -317,10 +350,7 @@ async function extractUnlocked(
     checkBudget(deadline);
     let text = "";
     try {
-      const extracted = await engine.pdf.extractText(doc, {
-        mergePages: false,
-      });
-      text = extracted.text.join("\n").slice(0, MAX_TEXT_CHARS);
+      text = (await readText(doc)).slice(0, MAX_TEXT_CHARS);
     } catch (error) {
       warnings.push("The text of the PDF could not be read");
       console.warn(

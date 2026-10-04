@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { extractText, getDocumentProxy } from "unpdf";
+import { pdfText } from "$lib/testing/pdf";
 import { minor } from "$lib/money";
 import { createTestUser } from "$lib/testing/auth";
 import { useTestDB } from "$lib/testing/db";
@@ -10,12 +10,6 @@ import { money } from "./pdf";
 const TODAY = "2026-10-15";
 const m = minor;
 const norm = (s: string) => s.replace(/\s+/g, " ");
-
-async function textOf(bytes: Uint8Array): Promise<string> {
-  const pdf = await getDocumentProxy(new Uint8Array(bytes));
-  const { text } = await extractText(pdf, { mergePages: true });
-  return text.replace(/\s+/g, " ");
-}
 
 async function setup() {
   const user = await createTestUser();
@@ -61,7 +55,7 @@ describe("net worth report variants", () => {
     const built = await buildReport(u.id, "net-worth", {}, TODAY);
     expect(built.fileName).toBe("kept-net-worth-2026-10-15.pdf");
     expect(built.title).toBe("Net worth 2026-10-15");
-    const text = await textOf(built.bytes);
+    const text = await pdfText(built.bytes);
     expect(text).toContain(norm(money(m(149000), "CHF")));
     expect(text).not.toContain("my share");
     expect(text).not.toContain("50%");
@@ -80,7 +74,7 @@ describe("net worth report variants", () => {
       netWorthReportTitle(loadNetWorthReport(u.id, TODAY, "share")),
     );
     expect(built.title).toContain("my share");
-    const text = await textOf(built.bytes);
+    const text = await pdfText(built.bytes);
     expect(text).toContain("my share");
     expect(text).toContain("50%");
     expect(text).toContain(norm(money(m(124500), "CHF")));

@@ -7,10 +7,10 @@ export default defineConfig({
   // Native/WASM-backed PDF stack must be loaded from node_modules at runtime,
   // not bundled (the zxing WASM binary is resolved relative to the package).
   ssr: {
-    external: ["unpdf", "zxing-wasm", "@napi-rs/canvas", "pdfmake"],
+    external: ["pdfjs-dist", "zxing-wasm", "@napi-rs/canvas", "pdfmake"],
   },
   optimizeDeps: {
-    exclude: ["unpdf", "zxing-wasm", "@napi-rs/canvas", "pdfmake"],
+    exclude: ["pdfjs-dist", "zxing-wasm", "@napi-rs/canvas", "pdfmake"],
   },
   build: {
     rollupOptions: {

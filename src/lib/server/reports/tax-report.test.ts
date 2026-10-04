@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { extractText, getDocumentProxy } from "unpdf";
+import { pdfText } from "$lib/testing/pdf";
 import { minor } from "$lib/money";
 import { LedgerError } from "$lib/server/ledger/errors";
 import {
@@ -17,12 +17,6 @@ import { seedAccount, seedImportedTransaction } from "$lib/testing/ledger";
 import { buildReport } from "./index";
 
 const TODAY = "2026-10-15";
-
-async function textOf(bytes: Uint8Array): Promise<string> {
-  const pdf = await getDocumentProxy(new Uint8Array(bytes));
-  const { text } = await extractText(pdf, { mergePages: true });
-  return text.replace(/\s+/g, " ");
-}
 
 describe("tax report", () => {
   useTestDB();
@@ -56,7 +50,7 @@ describe("tax report", () => {
     const built = await buildReport(user.id, "tax", { year: "2025" }, TODAY);
     expect(built.fileName).toBe("kept-tax-2025-2026-10-15.pdf");
     expect(built.title).toBe("Tax 2025 reconciliation");
-    const text = await textOf(built.bytes);
+    const text = await pdfText(built.bytes);
     expect(text).toContain("Example Tax Office");
     expect(text).toContain("Not counted by tax office");
     expect(text).toContain("Not in your payments");
