@@ -308,7 +308,7 @@ describe("earliestDataDate", () => {
     expect(earliestDataDate(user.id)).toBe("2023-05-05");
   });
 
-  it("ignores trades of archived accounts and other users", async () => {
+  it("counts trades of archived accounts but not other users' trades", async () => {
     const user = await createTestUser();
     const other = await createTestUser();
     const archived = seedAccount(user.id);
@@ -321,7 +321,7 @@ describe("earliestDataDate", () => {
       date: "2019-01-01",
       amount: 1,
     });
-    expect(earliestDataDate(user.id)).toBeNull();
+    expect(earliestDataDate(user.id)).toBe("2020-01-01");
   });
 });
 

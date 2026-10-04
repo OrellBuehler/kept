@@ -239,6 +239,46 @@ describe("netWorthSeries", () => {
     seedImportedTransaction(u.id, a.id, { bookingDate: "2025-03-15" });
     expect(earliestDataDate(u.id)).toBe("2025-03-15");
   });
+
+  it("starts the range at an archived account that holds the earliest data", async () => {
+    const u = await createTestUser();
+    const kept = seedAccount(u.id, { openingDate: "2026-02-01" });
+    const old = seedAccount(u.id, { openingDate: "2025-06-01" });
+    seedImportedTransaction(u.id, kept.id, { bookingDate: "2026-03-01" });
+    seedImportedTransaction(u.id, old.id, { bookingDate: "2025-07-10" });
+    const { archiveAccount } = await import("$lib/server/ledger");
+    archiveAccount(u.id, old.id);
+    expect(earliestDataDate(u.id)).toBe("2025-06-01");
+  });
+
+  it("finds the earliest date when every account is archived", async () => {
+    const u = await createTestUser();
+    const a = seedAccount(u.id, { openingDate: "2025-06-01" });
+    seedImportedTransaction(u.id, a.id, { bookingDate: "2025-04-10" });
+    const { archiveAccount } = await import("$lib/server/ledger");
+    archiveAccount(u.id, a.id);
+    expect(earliestDataDate(u.id)).toBe("2025-04-10");
+  });
+
+  it("ignores an archived account without an archive timestamp", async () => {
+    const u = await createTestUser();
+    const a = seedAccount(u.id, { openingDate: "2025-06-01" });
+    const { archiveAccount } = await import("$lib/server/ledger");
+    archiveAccount(u.id, a.id);
+    getDB()
+      .update(accounts)
+      .set({ archivedAt: null })
+      .where(eq(accounts.id, a.id))
+      .run();
+    expect(earliestDataDate(u.id)).toBeNull();
+  });
+
+  it("does not see another user's earliest data", async () => {
+    const u = await createTestUser();
+    const other = await createTestUser();
+    seedAccount(other.id, { openingDate: "2020-01-01" });
+    expect(earliestDataDate(u.id)).toBeNull();
+  });
 });
 
 describe("accountBalances", () => {

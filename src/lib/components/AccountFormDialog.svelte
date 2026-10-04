@@ -415,7 +415,8 @@
           </div>
           <p class="text-muted-foreground -mt-2 text-xs">
             Amount you can withdraw per month/year without notice or fees. The
-            rest is available once the notice period has passed.
+            rest is available once the notice period has passed. Counted from
+            withdrawals this calendar month/year.
           </p>
         </div>
       {/if}

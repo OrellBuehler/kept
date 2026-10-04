@@ -167,33 +167,45 @@ export function computeLiquidity(
     }
   }
 
-  return [...buckets.keys()].sort().map((currency) => {
+  return [...buckets.keys()].sort().flatMap((currency) => {
     const b = buckets.get(currency)!;
-    return {
-      currency,
-      now: { balance: minor(b.now), shareBalance: minor(b.shareNow) },
-      ladder: [...b.ladder.keys()]
-        .sort((x, y) => x - y)
-        .map((months) => {
-          const step = b.ladder.get(months)!;
-          return {
-            months,
-            availableFrom: addMonths(options.today, months),
-            balance: minor(step.balance),
-            shareBalance: minor(step.share),
-            accounts: step.accounts,
-          };
-        }),
-      excluded: [...b.excluded.entries()]
-        .filter(([, e]) => e.balance !== 0 || e.share !== 0)
-        .map(([reason, e]) => ({
-          reason,
-          balance: minor(e.balance),
-          shareBalance: minor(e.share),
-          accountCount: e.n,
-        }))
-        .sort((x, y) => x.reason.localeCompare(y.reason)),
-    };
+    const excluded = [...b.excluded.entries()]
+      .filter(([, e]) => e.balance !== 0 || e.share !== 0)
+      .map(([reason, e]) => ({
+        reason,
+        balance: minor(e.balance),
+        shareBalance: minor(e.share),
+        accountCount: e.n,
+      }))
+      .sort((x, y) => x.reason.localeCompare(y.reason));
+    // Nothing to show: no spendable money, no ladder, nothing to footnote.
+    if (
+      b.now === 0 &&
+      b.shareNow === 0 &&
+      b.ladder.size === 0 &&
+      excluded.length === 0
+    ) {
+      return [];
+    }
+    return [
+      {
+        currency,
+        now: { balance: minor(b.now), shareBalance: minor(b.shareNow) },
+        ladder: [...b.ladder.keys()]
+          .sort((x, y) => x - y)
+          .map((months) => {
+            const step = b.ladder.get(months)!;
+            return {
+              months,
+              availableFrom: addMonths(options.today, months),
+              balance: minor(step.balance),
+              shareBalance: minor(step.share),
+              accounts: step.accounts,
+            };
+          }),
+        excluded,
+      },
+    ];
   });
 }
 
@@ -216,6 +228,8 @@ export function withdrawnThisPeriod(
   if (notice.length === 0) return used;
   const yearStart = `${today.slice(0, 4)}-01-01`;
   const monthStart = `${today.slice(0, 7)}-01`;
+  // Only debits count, and only within the current calendar month or year (not
+  // a rolling window), matching how banks usually reset free withdrawals.
   const debit = sql`case when ${transactions.amount} < 0 then -${transactions.amount} else 0 end`;
   const rows = getDB()
     .select({

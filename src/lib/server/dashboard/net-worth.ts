@@ -1,4 +1,4 @@
-import { and, eq, lte, min } from "drizzle-orm";
+import { and, eq, isNotNull, lte, min, or } from "drizzle-orm";
 import { minor, shareOf, type Minor, type ShareBasis } from "$lib/money";
 import {
   accounts,
@@ -160,43 +160,46 @@ export function netWorthSeries(
   }));
 }
 
-/** Earliest date with any data on a non-archived account, or null without data. */
+/**
+ * Earliest date with any data on an account the series includes (not archived,
+ * or archived with a known `archivedAt`), or null without data.
+ */
 export function earliestDataDate(userId: string): string | null {
   const db = getDB();
+  const counted = or(
+    eq(accounts.archived, false),
+    isNotNull(accounts.archivedAt),
+  );
   const candidates = [
     db
       .select({ d: min(transactions.bookingDate) })
       .from(transactions)
       .innerJoin(accounts, eq(accounts.id, transactions.accountId))
-      .where(and(eq(transactions.userId, userId), eq(accounts.archived, false)))
+      .where(and(eq(transactions.userId, userId), counted))
       .get()?.d,
     db
       .select({ d: min(balanceSnapshots.date) })
       .from(balanceSnapshots)
       .innerJoin(accounts, eq(accounts.id, balanceSnapshots.accountId))
-      .where(
-        and(eq(balanceSnapshots.userId, userId), eq(accounts.archived, false)),
-      )
+      .where(and(eq(balanceSnapshots.userId, userId), counted))
       .get()?.d,
     db
       .select({ d: min(trades.date) })
       .from(trades)
       .innerJoin(accounts, eq(accounts.id, trades.accountId))
-      .where(and(eq(trades.userId, userId), eq(accounts.archived, false)))
+      .where(and(eq(trades.userId, userId), counted))
       .get()?.d,
     db
       .select({ d: min(portfolioValues.date) })
       .from(portfolioValues)
       .innerJoin(portfolios, eq(portfolios.id, portfolioValues.portfolioId))
       .innerJoin(accounts, eq(accounts.id, portfolios.accountId))
-      .where(
-        and(eq(portfolioValues.userId, userId), eq(accounts.archived, false)),
-      )
+      .where(and(eq(portfolioValues.userId, userId), counted))
       .get()?.d,
     db
       .select({ d: min(accounts.openingDate) })
       .from(accounts)
-      .where(and(eq(accounts.userId, userId), eq(accounts.archived, false)))
+      .where(and(eq(accounts.userId, userId), counted))
       .get()?.d,
   ].filter((d): d is string => typeof d === "string");
   return candidates.length ? candidates.sort()[0]! : null;

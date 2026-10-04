@@ -56,6 +56,24 @@ describe("computeLiquidity", () => {
     expect(compute([])).toEqual([]);
   });
 
+  it("skips a currency whose accounts all net to nothing", () => {
+    expect(
+      compute([
+        acct({ currency: "EUR", type: "pillar_3a", balance: m(0) }),
+        acct({ currency: "EUR", balance: m(0), cashBalance: m(0) }),
+      ]),
+    ).toEqual([]);
+  });
+
+  it("keeps a currency that only has excluded totals", () => {
+    const r = compute([
+      acct({ currency: "EUR", type: "pillar_3a", balance: m(700) }),
+    ]);
+    expect(r).toHaveLength(1);
+    expect(r[0]!.now).toEqual({ balance: 0, shareBalance: 0 });
+    expect(r[0]!.excluded.map((e) => e.reason)).toEqual(["pension"]);
+  });
+
   it("counts plain accounts as available now", () => {
     const r = compute([
       acct({ balance: m(1000), cashBalance: m(1000) }),

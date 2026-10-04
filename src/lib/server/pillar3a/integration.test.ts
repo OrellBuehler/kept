@@ -213,7 +213,7 @@ describe("net worth with portfolios", () => {
     ]);
     expect(earliestDataDate(user.id)).toBe("2025-03-01");
     archiveAccount(user.id, acc.id);
-    expect(earliestDataDate(user.id)).toBeNull();
+    expect(earliestDataDate(user.id)).toBe("2025-03-01");
     const points = netWorthSeries(user.id, { today: TODAY })[0]!.points;
     expect(points.at(-1)!.amount).toBe(0);
   });
