@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { extractText, getDocumentProxy } from "unpdf";
+import { pdfText } from "$lib/testing/pdf";
 import { minor } from "$lib/money";
 import { daysBetween } from "$lib/server/bills/status";
 import { allocate } from "$lib/server/bills/allocations";
@@ -24,12 +24,6 @@ import {
 
 const TODAY = "2026-10-15";
 const m = minor;
-
-async function textOf(bytes: Uint8Array): Promise<string> {
-  const pdf = await getDocumentProxy(new Uint8Array(bytes));
-  const { text } = await extractText(pdf, { mergePages: true });
-  return text.replace(/\s+/g, " ");
-}
 
 const statementInput = (): AccountStatementInput => ({
   account: {
@@ -64,7 +58,7 @@ describe("report builders", () => {
     const bytes = await accountStatementReport(statementInput());
     expect(new TextDecoder().decode(bytes.slice(0, 5))).toBe("%PDF-");
     expect(bytes.byteLength).toBeGreaterThan(2000);
-    const text = await textOf(bytes);
+    const text = await pdfText(bytes);
     for (const s of [
       "Household",
       "CH93 •••• •••• •••• 2957",
@@ -85,9 +79,9 @@ describe("report builders", () => {
   it("notes a balance adjustment only when the figures do not reconcile", async () => {
     // opening 100000 - 2500 + 1000 = 98500 reconciles
     expect(
-      await textOf(await accountStatementReport(statementInput())),
+      await pdfText(await accountStatementReport(statementInput())),
     ).not.toContain("Adjusted by balance snapshot");
-    const text = await textOf(
+    const text = await pdfText(
       await accountStatementReport({
         ...statementInput(),
         closingBalance: m(99000),
@@ -112,7 +106,7 @@ describe("report builders", () => {
       ...statementInput(),
       transactions: [],
     });
-    expect(await textOf(empty)).toContain("No transactions in this period.");
+    expect(await pdfText(empty)).toContain("No transactions in this period.");
 
     const many = await accountStatementReport({
       ...statementInput(),
@@ -123,7 +117,7 @@ describe("report builders", () => {
         amount: m(-(i + 1)),
       })),
     });
-    const text = await textOf(many);
+    const text = await pdfText(many);
     expect(text).toMatch(/Page 1 of [2-9]/);
     expect(text).toContain("Payee 199");
   });
@@ -177,7 +171,7 @@ describe("report builders", () => {
       allocationCount: 0,
     }));
     const bytes = await billsReport({ bills: userless, asOf: TODAY });
-    const text = await textOf(bytes);
+    const text = await pdfText(bytes);
     for (const s of [
       "Overdue (2)",
       "Due within 14 days (1)",
@@ -190,7 +184,7 @@ describe("report builders", () => {
     }
     expect(text).not.toContain("Awaiting refund");
     expect(
-      await textOf(await billsReport({ bills: [], asOf: TODAY })),
+      await pdfText(await billsReport({ bills: [], asOf: TODAY })),
     ).toContain("No open bills.");
   });
 
@@ -229,7 +223,7 @@ describe("report builders", () => {
         },
       ],
     });
-    const text = await textOf(bytes);
+    const text = await pdfText(bytes);
     for (const s of [
       "Net worth",
       "Accounts in CHF",
@@ -342,10 +336,10 @@ describe("loaders and buildReport", () => {
     expect(statement.title).toContain("Household");
     const bills = await buildReport(u.id, "bills", {}, TODAY);
     expect(bills.fileName).toBe("kept-bills-2026-10-15.pdf");
-    expect(await textOf(bills.bytes)).toContain("Overdue (1)");
+    expect(await pdfText(bills.bytes)).toContain("Overdue (1)");
     const nw = await buildReport(u.id, "net-worth", {}, TODAY);
     expect(nw.fileName).toBe("kept-net-worth-2026-10-15.pdf");
-    expect(await textOf(nw.bytes)).toContain("Household");
+    expect(await pdfText(nw.bytes)).toContain("Household");
   });
 
   it("bills and net worth reports only contain the user's own data", async () => {
@@ -359,12 +353,12 @@ describe("loaders and buildReport", () => {
     seedBill(u.id, { creditorName: "Own Creditor", dueDate: "2026-10-01" });
     expect(loadBillsReport(u.id, TODAY).bills).toHaveLength(1);
     expect(loadNetWorthReport(u.id, TODAY).balances).toEqual([]);
-    const bills = await textOf(
+    const bills = await pdfText(
       (await buildReport(u.id, "bills", {}, TODAY)).bytes,
     );
     expect(bills).toContain("Own Creditor");
     expect(bills).not.toContain("Foreign Creditor");
-    const nw = await textOf(
+    const nw = await pdfText(
       (await buildReport(u.id, "net-worth", {}, TODAY)).bytes,
     );
     expect(nw).not.toContain("Foreign Account");
@@ -380,7 +374,7 @@ describe("loaders and buildReport", () => {
     });
     allocate(u.id, bill.id, tx.id, m(1000), "user");
     expect(billViews(u.id, { today: TODAY })[0]!.status).toBe("paid");
-    const text = await textOf(
+    const text = await pdfText(
       (await buildReport(u.id, "bills", {}, TODAY)).bytes,
     );
     expect(text).toContain("No open bills.");

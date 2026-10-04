@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { extractText, getDocumentProxy } from "unpdf";
+import { pdfText } from "$lib/testing/pdf";
 import { minor } from "$lib/money";
 import { createCategory } from "$lib/server/categories/categories";
 import { LedgerError } from "$lib/server/ledger/errors";
@@ -189,9 +189,7 @@ describe("deduction summary", () => {
       "2026-10-15",
     );
     expect(built.fileName).toBe("kept-tax-deductions-2025-2026-10-15.pdf");
-    const pdf = await getDocumentProxy(new Uint8Array(built.bytes));
-    const { text } = await extractText(pdf, { mergePages: true });
-    expect(text).toContain("Donations");
+    expect(await pdfText(new Uint8Array(built.bytes))).toContain("Donations");
 
     const err = await buildReport(user.id, "tax-deductions", {}).catch(
       (e) => e,

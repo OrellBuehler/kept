@@ -1,3 +1,4 @@
+import { readFile } from "node:fs/promises";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import {
   BAD_QRR_CHECK,
@@ -142,6 +143,19 @@ describe("extractBillFromPdf with a QR code", () => {
     expect(result.fields.amount).toBe(1250);
   });
 
+  it("reads a QR code from a scanned page stored as a CCITT fax image", async () => {
+    const pdf = await readFile(
+      new URL(
+        "../../testing/fixtures/bills/scanned-qr-bill.pdf",
+        import.meta.url,
+      ),
+    );
+    const result = await extractBillFromPdf(new Uint8Array(pdf));
+    expect(result.warnings).toEqual([]);
+    expect(result.source).toBe("qr");
+    expect(result.fields.creditorIban).toBe(QR_IBAN);
+  });
+
   it("ignores QR codes that are not Swiss QR-bills", async () => {
     const pdf = await buildBillPdf({ qrPayload: "https://example.com/pay" });
     expect((await extractBillFromPdf(pdf)).source).toBe("none");
@@ -219,6 +233,25 @@ describe("extractBillFromPdf errors", () => {
     await extractBillFromPdf(pdf);
     expect(pdf).toEqual(copy);
     expect((await extractBillFromPdf(pdf)).source).toBe("qr");
+  });
+
+  it("stops at the first page once the time budget is exhausted", async () => {
+    const pdf = await buildBillPdf({
+      fillerPages: 3,
+      qrPayload: buildPayload(),
+    });
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    try {
+      expect(await codeOf(extractBillFromPdf(pdf, { budgetMs: -1 }))).toBe(
+        "unreadable",
+      );
+      expect(warn).not.toHaveBeenCalledWith(
+        "pdf page render failed",
+        expect.anything(),
+      );
+    } finally {
+      warn.mockRestore();
+    }
   });
 
   it("stops when the time budget is exhausted", async () => {
