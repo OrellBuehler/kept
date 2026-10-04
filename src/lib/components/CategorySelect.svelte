@@ -3,6 +3,7 @@
   import { toast } from "svelte-sonner";
   import * as NativeSelect from "$lib/components/ui/native-select";
   import { categoryLabel, type CategoryOption } from "$lib/category-types";
+  import { failureMessage } from "$lib/form-submit";
   import { cn } from "$lib/utils";
 
   let {
@@ -19,6 +20,8 @@
 
   let form = $state<HTMLFormElement>();
   let pending = $state(false);
+  // Follows the saved value; the select writes the unsaved choice here until the save settles.
+  let selected = $derived(categoryId ?? "");
 </script>
 
 <form
@@ -33,7 +36,14 @@
       if (result.type === "success") {
         await update({ reset: false });
       } else {
-        toast.error("Could not change the category. Please try again.");
+        // Put the saved category back; the select would otherwise keep showing the failed choice.
+        selected = categoryId ?? "";
+        toast.error(
+          failureMessage(
+            result,
+            "Could not change the category. Please try again.",
+          ),
+        );
         await update({ reset: false, invalidateAll: true });
       }
     };
@@ -44,7 +54,7 @@
     name="categoryId"
     aria-label="Category"
     class="h-8 w-full text-xs"
-    value={categoryId ?? ""}
+    bind:value={selected}
     disabled={pending}
     onclick={(e) => e.stopPropagation()}
     onchange={() => form?.requestSubmit()}

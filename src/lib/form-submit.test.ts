@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { foldErrors } from "./form-submit";
+import { failureMessage, foldErrors } from "./form-submit";
 
 describe("foldErrors", () => {
   it("returns errors unchanged without knownFields", () => {
@@ -37,5 +37,24 @@ describe("foldErrors", () => {
 
   it("returns an empty object for no errors", () => {
     expect(foldErrors({}, ["name"])).toEqual({});
+  });
+});
+
+describe("failureMessage", () => {
+  it("uses the first error of a failed action", () => {
+    expect(
+      failureMessage({
+        type: "failure",
+        data: { errors: { categoryId: ["Pick a category."], form: ["x"] } },
+      }),
+    ).toBe("Pick a category.");
+  });
+
+  it("falls back for errors, redirects and empty failures", () => {
+    expect(failureMessage({ type: "error" }, "Try again.")).toBe("Try again.");
+    expect(
+      failureMessage({ type: "failure", data: { errors: {} } }, "Fb"),
+    ).toBe("Fb");
+    expect(failureMessage({ type: "failure" })).toMatch(/went wrong/);
   });
 });

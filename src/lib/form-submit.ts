@@ -40,6 +40,19 @@ interface Options {
 
 const GENERIC = "Something went wrong. Please try again.";
 
+/** The first message a failed action returned, or `fallback`. */
+export function failureMessage(
+  result: { type: string; data?: Record<string, unknown> },
+  fallback = GENERIC,
+): string {
+  if (result.type === "failure") {
+    const errors = result.data?.errors as Errors | undefined;
+    const first = errors ? Object.values(errors).flat()[0] : undefined;
+    if (first) return first;
+  }
+  return fallback;
+}
+
 /**
  * `use:enhance` callback wiring pending state, field errors and toasts.
  * Inputs are never reset; dialogs re-mount their content when reopened.
