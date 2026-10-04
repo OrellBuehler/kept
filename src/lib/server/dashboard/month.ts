@@ -2,6 +2,10 @@ import { and, eq, gte, lte } from "drizzle-orm";
 import { normalizeIban } from "$lib/iban";
 import { minor, shareOf, type Minor, type ShareBasis } from "$lib/money";
 import { accounts, getDB, transactions } from "$lib/server/db";
+import {
+  isContributionPayment,
+  portfolioDepositReferences,
+} from "$lib/server/pillar3a/transfers";
 import { monthBounds, previousMonth } from "./dates";
 
 export interface CurrencyMonthTotals {
@@ -26,8 +30,10 @@ export interface MonthSummary {
  * currency, plus the previous month for comparison.
  *
  * Transfers between the user's own accounts are excluded. Heuristic: a
- * transaction whose counterparty IBAN equals the IBAN of another account of
- * the same user (archived ones included) is a transfer. Transfers whose
+ * transaction whose counterparty IBAN equals the IBAN (or, for pillar 3a, the
+ * deposit IBAN) of another account of the same user (archived ones included)
+ * is a transfer, and so is an outgoing payment carrying the deposit reference
+ * of one of the user's pillar 3a portfolios. Transfers whose
  * counterparty carries no IBAN cannot be recognised and count as income or
  * expense. With basis "share" every transaction is scaled by the ownership
  * share of its account (rounded per transaction, see `shareOf`); the transfer
@@ -44,6 +50,7 @@ export function monthSummary(
     .select({
       id: accounts.id,
       iban: accounts.iban,
+      depositIban: accounts.depositIban,
       archived: accounts.archived,
       currency: accounts.currency,
       shareBps: accounts.shareBps,
@@ -56,13 +63,19 @@ export function monthSummary(
   );
   const shareBpsOf = new Map(own.map((a) => [a.id, a.shareBps]));
   const ibanOwner = new Map<string, string>();
-  for (const a of own) if (a.iban) ibanOwner.set(normalizeIban(a.iban), a.id);
+  for (const a of own) {
+    if (a.iban) ibanOwner.set(normalizeIban(a.iban), a.id);
+    if (a.depositIban) ibanOwner.set(normalizeIban(a.depositIban), a.id);
+  }
+  const depositReferences = portfolioDepositReferences(userId);
 
   const rows = db
     .select({
       accountId: transactions.accountId,
       bookingDate: transactions.bookingDate,
       amount: transactions.amount,
+      currency: transactions.currency,
+      reference: transactions.reference,
       counterpartyIban: transactions.counterpartyIban,
     })
     .from(transactions)
@@ -93,6 +106,7 @@ export function monthSummary(
       const owner = ibanOwner.get(normalizeIban(t.counterpartyIban));
       if (owner !== undefined && owner !== t.accountId) continue;
     }
+    if (isContributionPayment(depositReferences, t)) continue;
     currencies.add(currency);
     const b = bucket(t.bookingDate.slice(0, 7), currency);
     const amount =

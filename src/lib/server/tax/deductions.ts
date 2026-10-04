@@ -1,4 +1,4 @@
-import { and, asc, eq, isNull, or, sql } from "drizzle-orm";
+import { and, asc, eq, inArray, isNull, or, sql } from "drizzle-orm";
 import { z } from "zod";
 import { minor, type Minor } from "$lib/money";
 import { DEDUCTION_TYPES, type DeductionType } from "$lib/tax-deductions";
@@ -9,6 +9,8 @@ import {
   transactions,
 } from "$lib/server/db";
 import { LedgerError, notFound } from "$lib/server/ledger/errors";
+import { PILLAR_3A_CURRENCY } from "$lib/pillar-3a";
+import { listContributions } from "$lib/server/pillar3a/contributions";
 import { idSchema } from "$lib/server/ledger/schemas";
 
 export const deductionTypeSchema = z.enum(DEDUCTION_TYPES);
@@ -34,7 +36,13 @@ export interface DeductionMappingView {
 }
 
 export interface DeductionLine {
-  transactionId: string;
+  /** Unique within a summary: `tx:<id>` for a transaction, `c:<id>` for a manual 3a contribution. */
+  key: string;
+  /** Null for a manual pillar 3a contribution, which has no transaction. */
+  transactionId: string | null;
+  /** Where the line comes from. */
+  source: "category" | "pillar_3a";
+  /** The account of the transaction; for a manual 3a contribution the pillar 3a account. */
   accountId: string;
   date: string;
   /** Counterparty, for display only. */
@@ -42,7 +50,8 @@ export interface DeductionLine {
   /** Deductible amount: positive for money spent, negative for a refund. */
   amount: Minor;
   currency: string;
-  categoryId: string;
+  /** Null for pillar 3a lines (they are not category-based). */
+  categoryId: string | null;
   excluded: boolean;
   /** The year comes from the transaction's tax-year marking, not its booking date. */
   explicitYear: boolean;
@@ -172,6 +181,11 @@ export function setTransactionDeductionExcluded(
  * and currency. A transaction counts for its tax-year marking when it has
  * one, otherwise for the year of its booking date. Spending adds, refunds
  * reduce; no currency conversion.
+ *
+ * The `pillar_3a` type additionally contains the year's pillar 3a
+ * contributions (detected payments and manual entries, ordinary and buy-in),
+ * counted for the year of their credit date. A payment that already appears
+ * as a category-mapped line is not counted twice.
  */
 export function deductionSummary(
   userId: string,
@@ -181,83 +195,137 @@ export function deductionSummary(
     throw new LedgerError("invalid", "Enter a valid year.", "year");
   }
   const own = ownMappings(userId);
-  if (own.size === 0) return { year, totals: [], excluded: [] };
-
-  const parents = new Map(
-    getDB()
-      .select({ id: categories.id, parentId: categories.parentId })
-      .from(categories)
-      .where(eq(categories.userId, userId))
-      .all()
-      .map((c) => [c.id, c.parentId]),
-  );
-  const typeOf = (categoryId: string): DeductionType | null => {
-    const mine = own.get(categoryId);
-    if (mine) return mine;
-    const parent = parents.get(categoryId);
-    return parent ? (own.get(parent) ?? null) : null;
-  };
-
-  const from = `${String(year).padStart(4, "0")}-01-01`;
-  const to = `${String(year).padStart(4, "0")}-12-31`;
-  const rows = getDB()
-    .select({
-      id: transactions.id,
-      accountId: transactions.accountId,
-      bookingDate: transactions.bookingDate,
-      counterpartyName: transactions.counterpartyName,
-      amount: transactions.amount,
-      currency: transactions.currency,
-      categoryId: transactions.categoryId,
-      taxYear: transactions.taxYear,
-      excluded: transactions.deductionExcluded,
-    })
-    .from(transactions)
-    .where(
-      and(
-        eq(transactions.userId, userId),
-        sql`${transactions.categoryId} is not null`,
-        or(
-          eq(transactions.taxYear, year),
-          and(
-            isNull(transactions.taxYear),
-            sql`${transactions.bookingDate} >= ${from}`,
-            sql`${transactions.bookingDate} <= ${to}`,
-          ),
-        ),
-      ),
-    )
-    .orderBy(asc(transactions.bookingDate), asc(sql`"transactions"."rowid"`))
-    .all();
-
   const groups = new Map<string, DeductionTotal>();
   const excluded: DeductionSummary["excluded"] = [];
-  for (const r of rows) {
-    const type = typeOf(r.categoryId!);
-    if (!type) continue;
-    const line: DeductionLine = {
-      transactionId: r.id,
-      accountId: r.accountId,
-      date: r.bookingDate,
-      label: r.counterpartyName,
-      amount: minor(-r.amount),
-      currency: r.currency,
-      categoryId: r.categoryId!,
-      excluded: r.excluded,
-      explicitYear: r.taxYear !== null,
-    };
-    if (r.excluded) {
+  const seenTransactions = new Set<string>();
+  const add = (type: DeductionType, line: DeductionLine) => {
+    if (line.excluded) {
       excluded.push({ ...line, type });
-      continue;
+      return;
     }
-    const key = `${type}|${r.currency}`;
+    const key = `${type}|${line.currency}`;
     let group = groups.get(key);
     if (!group) {
-      group = { type, currency: r.currency, total: minor(0), lines: [] };
+      group = { type, currency: line.currency, total: minor(0), lines: [] };
       groups.set(key, group);
     }
     group.total = minor(group.total + line.amount);
     group.lines.push(line);
+  };
+
+  if (own.size > 0) {
+    const parents = new Map(
+      getDB()
+        .select({ id: categories.id, parentId: categories.parentId })
+        .from(categories)
+        .where(eq(categories.userId, userId))
+        .all()
+        .map((c) => [c.id, c.parentId]),
+    );
+    const typeOf = (categoryId: string): DeductionType | null => {
+      const mine = own.get(categoryId);
+      if (mine) return mine;
+      const parent = parents.get(categoryId);
+      return parent ? (own.get(parent) ?? null) : null;
+    };
+
+    const from = `${String(year).padStart(4, "0")}-01-01`;
+    const to = `${String(year).padStart(4, "0")}-12-31`;
+    const rows = getDB()
+      .select({
+        id: transactions.id,
+        accountId: transactions.accountId,
+        bookingDate: transactions.bookingDate,
+        counterpartyName: transactions.counterpartyName,
+        amount: transactions.amount,
+        currency: transactions.currency,
+        categoryId: transactions.categoryId,
+        taxYear: transactions.taxYear,
+        excluded: transactions.deductionExcluded,
+      })
+      .from(transactions)
+      .where(
+        and(
+          eq(transactions.userId, userId),
+          sql`${transactions.categoryId} is not null`,
+          or(
+            eq(transactions.taxYear, year),
+            and(
+              isNull(transactions.taxYear),
+              sql`${transactions.bookingDate} >= ${from}`,
+              sql`${transactions.bookingDate} <= ${to}`,
+            ),
+          ),
+        ),
+      )
+      .orderBy(asc(transactions.bookingDate), asc(sql`"transactions"."rowid"`))
+      .all();
+
+    for (const r of rows) {
+      const type = typeOf(r.categoryId!);
+      if (!type) continue;
+      seenTransactions.add(r.id);
+      add(type, {
+        key: `tx:${r.id}`,
+        transactionId: r.id,
+        source: "category",
+        accountId: r.accountId,
+        date: r.bookingDate,
+        label: r.counterpartyName,
+        amount: minor(-r.amount),
+        currency: r.currency,
+        categoryId: r.categoryId!,
+        excluded: r.excluded,
+        explicitYear: r.taxYear !== null,
+      });
+    }
+  }
+
+  const contributions = listContributions(userId, { year }).filter(
+    (c) => c.transactionId === null || !seenTransactions.has(c.transactionId),
+  );
+  if (contributions.length > 0) {
+    const flagged = new Set(
+      getDB()
+        .select({ id: transactions.id })
+        .from(transactions)
+        .where(
+          and(
+            eq(transactions.userId, userId),
+            eq(transactions.deductionExcluded, true),
+            inArray(
+              transactions.id,
+              contributions.flatMap((c) =>
+                c.transactionId === null ? [] : [c.transactionId],
+              ),
+            ),
+          ),
+        )
+        .all()
+        .map((r) => r.id),
+    );
+    for (const c of contributions) {
+      add("pillar_3a", {
+        key: c.key,
+        transactionId: c.transactionId,
+        source: "pillar_3a",
+        accountId: c.paidFromAccountId ?? c.accountId,
+        date: c.date,
+        label: c.portfolioName,
+        amount: c.amount,
+        currency: PILLAR_3A_CURRENCY,
+        categoryId: null,
+        excluded: c.transactionId !== null && flagged.has(c.transactionId),
+        explicitYear: false,
+      });
+    }
+    for (const g of groups.values()) {
+      if (g.type === "pillar_3a") {
+        g.lines.sort((a, b) =>
+          a.date < b.date ? -1 : a.date > b.date ? 1 : 0,
+        );
+      }
+    }
   }
 
   const order = (t: DeductionType) => DEDUCTION_TYPES.indexOf(t);

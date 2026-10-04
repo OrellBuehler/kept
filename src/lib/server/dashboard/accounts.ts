@@ -3,6 +3,7 @@ import type { AccountType } from "$lib/ledger-types";
 import { minor, type Minor } from "$lib/money";
 import { balanceSnapshots, getDB } from "$lib/server/db";
 import { latestHoldingsActivity } from "$lib/server/investments/load";
+import { latestPortfolioValueDates } from "$lib/server/pillar3a/load";
 import { listAccounts, type InstitutionRef } from "$lib/server/ledger/accounts";
 import { localToday } from "$lib/server/ledger/balances";
 import { daysBetween } from "./dates";
@@ -18,9 +19,11 @@ export interface AccountBalanceView {
   type: AccountType;
   currency: string;
   iban: string | null;
+  contractNumber: string | null;
+  depositIban: string | null;
   institution: InstitutionRef | null;
   balance: Minor;
-  /** `balance` without the value of holdings. */
+  /** `balance` without the value of holdings and portfolios. */
   cashBalance: Minor;
   shareBps: number;
   sharedWith: string | null;
@@ -30,14 +33,16 @@ export interface AccountBalanceView {
   /** Instant (ms since epoch) of the latest import, or null if never imported. */
   lastImportAt: number | null;
   lastSnapshotDate: string | null;
+  /** Pillar 3a: the date of the newest manually entered portfolio value. */
+  lastPortfolioValueDate: string | null;
   stale: boolean;
   /** No import, snapshot or transaction yet: there is nothing to be stale. */
   noData: boolean;
   /**
    * Age in days of the data the stale flag is based on: the last import, or,
-   * for accounts that were never imported, the last snapshot. Recent holdings
-   * activity (a trade or a manual price of a held security; fetched prices do
-   * not count) takes over when it
+   * for accounts that were never imported, the last snapshot or portfolio
+   * value (whichever is newer). Recent holdings activity (a trade or a manual
+   * price of a held security; fetched prices do not count) takes over when it
    * clears staleness or when there is neither. Null when the account has none
    * of these.
    */
@@ -80,8 +85,20 @@ export function accountBalances(
     accountRows.map((a) => a.id),
     today,
   );
+  const portfolioValueDates = latestPortfolioValueDates(
+    userId,
+    accountRows.map((a) => a.id),
+    today,
+  );
   return accountRows.map((a) => {
     const lastSnapshotDate = lastSnapshot.get(a.id) ?? null;
+    const lastPortfolioValueDate = portfolioValueDates.get(a.id) ?? null;
+    // A manually entered portfolio value is as good as a manual snapshot.
+    const lastBalanceDate =
+      lastPortfolioValueDate !== null &&
+      (lastSnapshotDate === null || lastPortfolioValueDate > lastSnapshotDate)
+        ? lastPortfolioValueDate
+        : lastSnapshotDate;
     let staleDays: number | null = null;
     let stale = false;
     if (a.lastImportAt !== null) {
@@ -90,8 +107,8 @@ export function accountBalances(
         daysBetween(localToday(new Date(a.lastImportAt)), today),
       );
       stale = staleDays > IMPORT_STALE_DAYS;
-    } else if (lastSnapshotDate !== null) {
-      staleDays = Math.max(0, daysBetween(lastSnapshotDate, today));
+    } else if (lastBalanceDate !== null) {
+      staleDays = Math.max(0, daysBetween(lastBalanceDate, today));
       stale = staleDays > SNAPSHOT_STALE_DAYS;
     }
     const activity = holdingsActivity.get(a.id) ?? null;
@@ -111,6 +128,8 @@ export function accountBalances(
       type: a.type,
       currency: a.currency,
       iban: a.iban,
+      contractNumber: a.contractNumber,
+      depositIban: a.depositIban,
       institution: a.institution,
       balance: a.balance,
       cashBalance: a.cashBalance,
@@ -120,10 +139,12 @@ export function accountBalances(
       lastBookingDate: a.lastBookingDate,
       lastImportAt: a.lastImportAt,
       lastSnapshotDate,
+      lastPortfolioValueDate,
       stale,
       noData:
         a.lastImportAt === null &&
         lastSnapshotDate === null &&
+        lastPortfolioValueDate === null &&
         a.lastBookingDate === null &&
         activity === null,
       staleDays,
