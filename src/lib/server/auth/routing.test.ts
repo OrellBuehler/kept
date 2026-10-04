@@ -33,7 +33,14 @@ describe("safeRedirectTo", () => {
 
 describe("path classification", () => {
   it("knows the public paths", () => {
-    for (const p of ["/login", "/setup", "/api/health", "/api/public/hook"]) {
+    for (const p of [
+      "/login",
+      "/login/verify",
+      "/setup",
+      "/api/health",
+      "/api/public/hook",
+      "/api/auth/passkey/login/options",
+    ]) {
       expect(isPublicPath(p), p).toBe(true);
     }
     for (const p of [
@@ -41,6 +48,7 @@ describe("path classification", () => {
       "/api",
       "/api/publicity",
       "/login/x",
+      "/api/auth/passkey/register/options",
       "/admin/users",
     ]) {
       expect(isPublicPath(p), p).toBe(false);

@@ -67,9 +67,122 @@ export const sessions = sqliteTable(
       .notNull()
       .references(() => users.id, { onDelete: "cascade" }),
     expiresAt: integer("expires_at", { mode: "timestamp_ms" }).notNull(),
+    /** Last step-up authentication (password [+ code]); gates sensitive changes such as passkeys. */
+    reauthAt: integer("reauth_at", { mode: "timestamp_ms" }),
     ...timestamps,
   },
   (t) => [index("sessions_user_id_idx").on(t.userId)],
+);
+
+export const totpCredentials = sqliteTable("totp_credentials", {
+  userId: text("user_id")
+    .primaryKey()
+    .references(() => users.id, { onDelete: "cascade" }),
+  /** AES-GCM encrypted base32 secret (see crypto.ts). */
+  secret: text("secret").notNull(),
+  /** Null until the user confirmed a code; unconfirmed rows do not protect the login. */
+  confirmedAt: integer("confirmed_at", { mode: "timestamp_ms" }),
+  /** Highest accepted time step; codes at or below it are rejected (replay protection). */
+  lastStep: integer("last_step").notNull().default(0),
+  ...timestamps,
+});
+
+export const recoveryCodes = sqliteTable(
+  "recovery_codes",
+  {
+    id: text("id")
+      .primaryKey()
+      .$defaultFn(() => crypto.randomUUID()),
+    userId: text("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    codeHash: text("code_hash").notNull(),
+    usedAt: integer("used_at", { mode: "timestamp_ms" }),
+    ...timestamps,
+  },
+  (t) => [
+    index("recovery_codes_user_id_idx").on(t.userId),
+    uniqueIndex("recovery_codes_hash_uq").on(t.userId, t.codeHash),
+  ],
+);
+
+export const passkeys = sqliteTable(
+  "passkeys",
+  {
+    id: text("id")
+      .primaryKey()
+      .$defaultFn(() => crypto.randomUUID()),
+    userId: text("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    name: text("name").notNull(),
+    credentialId: text("credential_id").notNull().unique(),
+    /** base64url COSE public key. */
+    publicKey: text("public_key").notNull(),
+    counter: integer("counter").notNull().default(0),
+    /** JSON array of AuthenticatorTransport values. */
+    transports: text("transports"),
+    deviceType: text("device_type").notNull(),
+    backedUp: integer("backed_up", { mode: "boolean" }).notNull(),
+    lastUsedAt: integer("last_used_at", { mode: "timestamp_ms" }),
+    ...timestamps,
+  },
+  (t) => [index("passkeys_user_id_idx").on(t.userId)],
+);
+
+export const AUTH_CHALLENGE_KINDS = [
+  "login",
+  "passkey_register",
+  "passkey_login",
+  "passkey_stepup",
+] as const;
+export type AuthChallengeKind = (typeof AUTH_CHALLENGE_KINDS)[number];
+
+/**
+ * Short-lived server state of a half-finished authentication: the pending
+ * second-factor login ("login", keyed by the hash of a cookie token) and
+ * WebAuthn challenges. Never grants access on its own.
+ */
+export const authChallenges = sqliteTable(
+  "auth_challenges",
+  {
+    id: text("id").primaryKey(),
+    userId: text("user_id").references(() => users.id, {
+      onDelete: "cascade",
+    }),
+    kind: text("kind", { enum: AUTH_CHALLENGE_KINDS }).notNull(),
+    challenge: text("challenge"),
+    attempts: integer("attempts").notNull().default(0),
+    expiresAt: integer("expires_at", { mode: "timestamp_ms" }).notNull(),
+    ...timestamps,
+  },
+  (t) => [index("auth_challenges_user_id_idx").on(t.userId)],
+);
+
+export const AUTH_EVENT_TYPES = [
+  "totp_enabled",
+  "totp_disabled",
+  "recovery_codes_regenerated",
+  "recovery_code_used",
+  "passkey_added",
+  "passkey_removed",
+  "two_factor_reset",
+] as const;
+export type AuthEventType = (typeof AUTH_EVENT_TYPES)[number];
+
+/** Audit trail of security-relevant changes. Never stores secrets, codes or credentials. */
+export const authEvents = sqliteTable(
+  "auth_events",
+  {
+    id: text("id")
+      .primaryKey()
+      .$defaultFn(() => crypto.randomUUID()),
+    userId: text("user_id").notNull(),
+    actorId: text("actor_id").notNull(),
+    type: text("type", { enum: AUTH_EVENT_TYPES }).notNull(),
+    ...timestamps,
+  },
+  (t) => [index("auth_events_user_id_idx").on(t.userId)],
 );
 
 const id = () =>
