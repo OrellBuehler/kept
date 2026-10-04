@@ -8,6 +8,7 @@ import { billView } from "$lib/server/bills/status";
 import { seedBill } from "$lib/testing/bills";
 import {
   EXAMPLE_IBAN,
+  EXAMPLE_IBAN_OTHER,
   EXAMPLE_QRR,
 } from "$lib/testing/fixtures/bill-identifiers";
 import { IBAN_QR } from "$lib/testing/fixtures/camt053/examples";
@@ -44,7 +45,12 @@ interface Data {
   pageSize: number;
   filter: string;
   filteredTotal: number;
-  counts: { new: number; duplicate: number; total: number };
+  counts: {
+    new: number;
+    replacesMirror: number;
+    duplicate: number;
+    total: number;
+  };
   canConfirm: boolean;
   needsMapping: boolean;
   errors: string[];
@@ -178,6 +184,56 @@ describe("/import/[pendingId] actions", () => {
     );
     expect(getDB().select().from(transactions).all()).toHaveLength(5);
     expect(() => getPendingMeta(user.id, id)).toThrow();
+  });
+
+  it("confirm reports linked transfers in the redirect and the preview marks replacements", async () => {
+    const { user, account } = await setup();
+    const savings = seedAccount(user.id, {
+      name: "Savings",
+      iban: EXAMPLE_IBAN_OTHER,
+      fillFromTransfers: true,
+    });
+    const entry = {
+      date: "2024-03-10",
+      amount: "10.00",
+      ref: "T1",
+    } as const;
+    const out = uploadBytes(
+      user.id,
+      account.id,
+      buildCamt({
+        iban: EXAMPLE_IBAN,
+        entries: [
+          { ...entry, sign: "DBIT", counterpartyIban: EXAMPLE_IBAN_OTHER },
+        ],
+      }),
+    );
+    const r = await act("confirm", user, out);
+    expect((r as { location: string }).location).toMatch(
+      new RegExp(
+        `^/accounts/${account.id}\\?imported=[0-9a-f-]{36}&mirrored=1$`,
+      ),
+    );
+
+    const incoming = uploadBytes(
+      user.id,
+      savings.id,
+      buildCamt({
+        iban: EXAMPLE_IBAN_OTHER,
+        entries: [{ ...entry, sign: "CRDT", counterpartyIban: EXAMPLE_IBAN }],
+      }),
+    );
+    const preview = data(await loadAs(user, incoming));
+    expect(preview.rows.map((row) => row.status)).toEqual(["replaces_mirror"]);
+    expect(preview.counts.new).toBe(1);
+    const newOnly = data(await loadAs(user, incoming, "?filter=new"));
+    expect(newOnly.filteredTotal).toBe(1);
+    const dupes = data(await loadAs(user, incoming, "?filter=duplicate"));
+    expect(dupes.filteredTotal).toBe(0);
+    const done = await act("confirm", user, incoming);
+    expect((done as { location: string }).location).toMatch(
+      new RegExp(`^/accounts/${savings.id}\\?imported=[0-9a-f-]{36}&linked=1$`),
+    );
   });
 
   it("confirm auto-matches an open bill by its exact reference", async () => {

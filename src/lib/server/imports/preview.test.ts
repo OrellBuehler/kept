@@ -216,7 +216,12 @@ describe("buildPreview: camt.053", () => {
       uploadFixture(user.id, account.id, "camt053/empty-statement.xml"),
     );
     expect(p.errors).toEqual([]);
-    expect(p.counts).toEqual({ new: 0, duplicate: 0, total: 0 });
+    expect(p.counts).toEqual({
+      new: 0,
+      replacesMirror: 0,
+      duplicate: 0,
+      total: 0,
+    });
     expect(p.statement?.closingBalance?.amount).toBe(minor(7500));
     expect(p.warnings).toContain("The file contains no transactions.");
   });
@@ -265,6 +270,7 @@ describe("buildPreview: camt.053", () => {
     expect(p.rows[0]!.status).toBe("duplicate");
     expect(p.counts).toEqual({
       new: first.rows.length - 1,
+      replacesMirror: 0,
       duplicate: 1,
       total: first.rows.length,
     });
@@ -285,7 +291,12 @@ describe("buildPreview: camt.053", () => {
       user.id,
       uploadFixture(user.id, account.id, "camt053/overlap-ntryref-a.xml"),
     );
-    expect(p.counts).toEqual({ new: 0, duplicate: 5, total: 5 });
+    expect(p.counts).toEqual({
+      new: 0,
+      replacesMirror: 0,
+      duplicate: 5,
+      total: 5,
+    });
     expect(p.rows.every((r) => r.matchedBy === "legacy_id")).toBe(true);
   });
 
@@ -336,7 +347,12 @@ describe("buildPreview: csv and xlsx", () => {
     );
     expect(p.errors).toEqual([]);
     expect(p.format).toBe("csv");
-    expect(p.counts).toEqual({ new: 5, duplicate: 0, total: 5 });
+    expect(p.counts).toEqual({
+      new: 5,
+      replacesMirror: 0,
+      duplicate: 0,
+      total: 5,
+    });
   });
 
   it("falls back to the account's saved profile", async () => {
@@ -416,7 +432,12 @@ describe("buildPreview: csv and xlsx", () => {
       uploadFixture(user.id, account.id, "csv/overlap-b.csv"),
       { profile },
     );
-    expect(p.counts).toEqual({ new: 1, duplicate: 4, total: 5 });
+    expect(p.counts).toEqual({
+      new: 1,
+      replacesMirror: 0,
+      duplicate: 4,
+      total: 5,
+    });
     expect(p.rows.filter((r) => r.status === "new")).toHaveLength(1);
     expect(p.warnings).toEqual([]);
   });
@@ -434,7 +455,12 @@ describe("buildPreview: continuity and repeats", () => {
       uploadFixture(user.id, account.id, "camt053/overlap-b.xml"),
     );
     expect(p.errors).toEqual([]);
-    expect(p.counts).toEqual({ new: 2, duplicate: 3, total: 5 });
+    expect(p.counts).toEqual({
+      new: 2,
+      replacesMirror: 0,
+      duplicate: 3,
+      total: 5,
+    });
     expect(p.warnings).toEqual([]);
   });
 
@@ -585,7 +611,12 @@ describe("buildPreview: continuity and repeats", () => {
     );
     expect(same.alreadyImportedAt).toBeGreaterThan(0);
     expect(same.errors).toEqual([]);
-    expect(same.counts).toEqual({ new: 0, duplicate: 5, total: 5 });
+    expect(same.counts).toEqual({
+      new: 0,
+      replacesMirror: 0,
+      duplicate: 5,
+      total: 5,
+    });
     const other = buildPreview(
       user.id,
       uploadFixture(user.id, account.id, "camt053/overlap-b.xml"),

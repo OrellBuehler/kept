@@ -8,7 +8,9 @@ import {
   type MirrorRef,
   type TransferRef,
 } from "$lib/server/transfers/view";
+import { linkAfterWrite } from "$lib/server/transfers/link";
 import { unlink } from "$lib/server/transfers/manual";
+import { resyncSource } from "$lib/server/transfers/sync";
 import { LedgerError, notFound } from "./errors";
 import type {
   TransactionFilters,
@@ -197,19 +199,23 @@ export function createManualTransaction(
 ): TransactionView {
   const { currency, openingDate } = ownedAccount(userId, accountId);
   assertNotBeforeOpening({ openingDate }, input.bookingDate);
-  const row = getDB()
-    .insert(transactions)
-    .values({
-      ...input,
-      userId,
-      accountId,
-      currency,
-      source: "manual",
-      externalId: `manual:${crypto.randomUUID()}`,
-      reversal: false,
-    })
-    .returning({ id: transactions.id })
-    .get();
+  const row = getDB().transaction((tx) => {
+    const created = tx
+      .insert(transactions)
+      .values({
+        ...input,
+        userId,
+        accountId,
+        currency,
+        source: "manual",
+        externalId: `manual:${crypto.randomUUID()}`,
+        reversal: false,
+      })
+      .returning({ id: transactions.id })
+      .get();
+    linkAfterWrite(userId, accountId, [created.id], [input.bookingDate], tx);
+    return created;
+  });
   return getTransaction(userId, row.id);
 }
 
@@ -231,7 +237,11 @@ export function updateTransaction(
       ownedAccount(userId, current.accountId),
       input.bookingDate,
     );
-    getDB().update(transactions).set(input).where(where).run();
+    getDB().transaction((tx) => {
+      tx.update(transactions).set(input).where(where).run();
+      // A mirror follows its source's amount, dates and text.
+      resyncSource(userId, id, current.counterpartyIban, tx);
+    });
   }
   return getTransaction(userId, id);
 }

@@ -3,7 +3,7 @@ import { normalizeIban } from "$lib/iban";
 import { minor } from "$lib/money";
 import { transactions, transfers } from "$lib/server/db";
 import {
-  linkTransfers,
+  linkAfterWrite,
   loadPlanAccounts,
   type Conn,
   type LinkResult,
@@ -108,5 +108,11 @@ export function resyncSource(
       .where(eq(transactions.id, mirror.id))
       .run();
   }
-  return linkTransfers(userId, { transactionIds: [transactionId] }, conn);
+  return linkAfterWrite(
+    userId,
+    source.accountId,
+    [transactionId],
+    [source.bookingDate],
+    conn,
+  );
 }

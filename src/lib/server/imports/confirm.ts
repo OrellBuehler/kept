@@ -4,6 +4,8 @@ import type { CsvMappingProfile } from "$lib/server/importers/mapping";
 import { categorize, loadRules } from "$lib/server/categories/rules";
 import { getAccount } from "$lib/server/ledger/accounts";
 import { LedgerError } from "$lib/server/ledger/errors";
+import { linkAfterWrite } from "$lib/server/transfers/link";
+import { takeOverMirror } from "$lib/server/transfers/replace";
 import { deletePending, getPendingMeta } from "./pending";
 import { balanceWarningText, buildPreview } from "./preview";
 import { describeError } from "$lib/server/errors";
@@ -13,6 +15,17 @@ export interface ConfirmResult {
   accountId: string;
   newCount: number;
   duplicateCount: number;
+  /** Transfers between the user's own accounts that this import linked. */
+  transfers: {
+    /** Both sides existed: two real rows linked. */
+    paired: number;
+    /** A counter-transaction was created on another account. */
+    mirrored: number;
+    /** New rows that took over a mirrored transaction. */
+    replaced: number;
+    /** FX transfers waiting for the received amount. */
+    needsAmount: number;
+  };
 }
 
 const INSERT_CHUNK = 100;
@@ -43,7 +56,9 @@ export function confirmImport(
 
   const sha = getPendingMeta(userId, pendingId).sha256;
   const accountId = preview.account.id;
-  const newRows = preview.rows.filter((r) => r.status === "new");
+  const newRows = preview.rows.filter(
+    (r) => r.status === "new" || r.status === "replaces_mirror",
+  );
   const rules = loadRules(userId);
 
   const result = getDB().transaction((tx) => {
@@ -71,38 +86,44 @@ export function confirmImport(
       .returning({ id: imports.id })
       .get();
 
-    let inserted = 0;
+    const insertedRows: { id: string; externalId: string }[] = [];
     for (let i = 0; i < newRows.length; i += INSERT_CHUNK) {
-      inserted += tx
-        .insert(transactions)
-        .values(
-          newRows.slice(i, i + INSERT_CHUNK).map(({ tx: t }) => ({
-            userId,
-            accountId,
-            importId: imp.id,
-            source: "import" as const,
-            externalId: t.externalId,
-            bookingDate: t.bookingDate,
-            valueDate: t.valueDate,
-            amount: t.amount,
-            currency: t.currency,
-            originalAmount: t.originalAmount,
-            originalCurrency: t.originalCurrency,
-            counterpartyName: t.counterpartyName,
-            counterpartyIban: t.counterpartyIban,
-            description: t.description,
-            reference: t.reference,
-            referenceType: t.referenceType,
-            reversal: t.reversal,
-            categoryId: categorize(rules, t),
-          })),
-        )
-        .onConflictDoNothing({
-          target: [transactions.accountId, transactions.externalId],
-        })
-        .returning({ id: transactions.id })
-        .all().length;
+      insertedRows.push(
+        ...tx
+          .insert(transactions)
+          .values(
+            newRows.slice(i, i + INSERT_CHUNK).map(({ tx: t }) => ({
+              userId,
+              accountId,
+              importId: imp.id,
+              source: "import" as const,
+              externalId: t.externalId,
+              bookingDate: t.bookingDate,
+              valueDate: t.valueDate,
+              amount: t.amount,
+              currency: t.currency,
+              originalAmount: t.originalAmount,
+              originalCurrency: t.originalCurrency,
+              counterpartyName: t.counterpartyName,
+              counterpartyIban: t.counterpartyIban,
+              description: t.description,
+              reference: t.reference,
+              referenceType: t.referenceType,
+              reversal: t.reversal,
+              categoryId: categorize(rules, t),
+            })),
+          )
+          .onConflictDoNothing({
+            target: [transactions.accountId, transactions.externalId],
+          })
+          .returning({
+            id: transactions.id,
+            externalId: transactions.externalId,
+          })
+          .all(),
+      );
     }
+    const inserted = insertedRows.length;
     const duplicateCount = preview.counts.total - inserted;
     if (inserted !== newRows.length) {
       tx.update(imports)
@@ -138,7 +159,32 @@ export function confirmImport(
         })
         .run();
     }
-    return { importId: imp.id, accountId, newCount: inserted, duplicateCount };
+
+    // Real rows take over the mirrors they match, then everything new is linked.
+    const idOf = new Map(insertedRows.map((r) => [r.externalId, r.id]));
+    let replaced = 0;
+    for (const row of newRows) {
+      const id = idOf.get(row.tx.externalId);
+      if (row.mirrorId === null || id === undefined) continue;
+      takeOverMirror(userId, row.mirrorId, id, tx);
+      replaced += 1;
+    }
+    const linked = linkAfterWrite(
+      userId,
+      accountId,
+      insertedRows.map((r) => r.id),
+      newRows
+        .filter((r) => idOf.has(r.tx.externalId))
+        .map((r) => r.tx.bookingDate),
+      tx,
+    );
+    return {
+      importId: imp.id,
+      accountId,
+      newCount: inserted,
+      duplicateCount,
+      transfers: { ...linked, replaced },
+    };
   });
 
   try {

@@ -28,7 +28,9 @@ export const load: PageServerLoad = ({ locals, params, url }) => {
   const filtered = preview.rows.filter(
     (r) =>
       query.filter === "all" ||
-      (query.filter === "new" ? r.status === "new" : r.status !== "new"),
+      (query.filter === "new"
+        ? r.status === "new" || r.status === "replaces_mirror"
+        : r.status !== "new" && r.status !== "replaces_mirror"),
   );
   const pageCount = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
   const page = Math.min(query.page, pageCount);
@@ -51,7 +53,13 @@ export const actions: Actions = {
     let target: string;
     try {
       const done = confirmImport(user.id, params.pendingId);
-      target = `/accounts/${done.accountId}?imported=${done.importId}`;
+      const { paired, replaced, mirrored, needsAmount } = done.transfers;
+      const linked = paired + replaced;
+      const query = new URLSearchParams({ imported: done.importId });
+      if (linked > 0) query.set("linked", String(linked));
+      if (mirrored > 0) query.set("mirrored", String(mirrored));
+      if (needsAmount > 0) query.set("needsAmount", String(needsAmount));
+      target = `/accounts/${done.accountId}?${query}`;
     } catch (err) {
       return ledgerFailure("confirm", err);
     }

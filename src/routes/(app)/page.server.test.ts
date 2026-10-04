@@ -7,6 +7,11 @@ import { seedBill } from "$lib/testing/bills";
 import { useTestDB } from "$lib/testing/db";
 import { createTestEvent, outcome } from "$lib/testing/event";
 import { seedAccount, seedImportedTransaction } from "$lib/testing/ledger";
+import {
+  EXAMPLE_IBAN,
+  EXAMPLE_IBAN_OTHER,
+} from "$lib/testing/fixtures/bill-identifiers";
+import { linkTransfers } from "$lib/server/transfers/link";
 import { load as loadLayout } from "./+layout.server";
 import { load } from "./+page.server";
 
@@ -14,6 +19,7 @@ type User = Awaited<ReturnType<typeof createTestUser>>;
 interface PageData {
   today: string;
   dashboard: Dashboard;
+  needsAmount: { sourceAccountName: string; targetAccountName: string }[];
 }
 const loadAs = async (user: User, url?: string) => {
   const r = await outcome(() => load(createTestEvent({ user, url }) as never));
@@ -70,6 +76,30 @@ describe("dashboard page", () => {
     expect(chf.ladder).toHaveLength(1);
     expect(chf.ladder[0]).toMatchObject({ months: 6, balance: 40000 });
     expect(dashboard.invested).toEqual([]);
+  });
+
+  it("lists foreign-currency transfers that wait for an amount, for the current user only", async () => {
+    const u = await createTestUser();
+    const other = await createTestUser();
+    const a = seedAccount(u.id, { name: "Main", iban: EXAMPLE_IBAN });
+    seedAccount(u.id, {
+      name: "Euro",
+      currency: "EUR",
+      iban: EXAMPLE_IBAN_OTHER,
+      fillFromTransfers: true,
+    });
+    seedImportedTransaction(u.id, a.id, {
+      amount: minor(-100),
+      counterpartyIban: EXAMPLE_IBAN_OTHER,
+    });
+    linkTransfers(u.id, {});
+    expect((await loadAs(u)).needsAmount).toEqual([
+      expect.objectContaining({
+        sourceAccountName: "Main",
+        targetAccountName: "Euro",
+      }),
+    ]);
+    expect((await loadAs(other)).needsAmount).toEqual([]);
   });
 
   it("honours the range parameter and falls back to 12m", async () => {

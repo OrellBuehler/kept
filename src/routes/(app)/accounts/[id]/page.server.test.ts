@@ -30,6 +30,13 @@ import {
   seedPortfolio,
 } from "$lib/testing/pillar3a";
 import { updatePreferences } from "$lib/server/preferences";
+import {
+  EXAMPLE_IBAN,
+  EXAMPLE_IBAN_OTHER,
+} from "$lib/testing/fixtures/bill-identifiers";
+import { getDB, transactions as transactionsTable } from "$lib/server/db";
+import { eq } from "drizzle-orm";
+import { linkTransfers, listNeedsAmount } from "$lib/server/transfers";
 import { actions, load } from "./+page.server";
 
 type LoadData = Exclude<Awaited<ReturnType<typeof load>>, void>;
@@ -225,6 +232,7 @@ describe("account detail page", () => {
       "snapshots",
       "trades",
       "transactions",
+      "transfers",
       "value",
     ]);
     expect(v.account.id).toBe(acc.id);
@@ -913,5 +921,383 @@ describe("account detail page", () => {
       expect(listValues(a.id, p.id)).toHaveLength(1);
       expect(listPortfolios(b.id, bAcc.id)).toEqual([]);
     });
+  });
+});
+
+describe("account page: transfer linking", () => {
+  useTestDB();
+
+  async function setup(fill = true) {
+    const u = await createTestUser();
+    const a = seedAccount(u.id, { name: "Main", iban: EXAMPLE_IBAN });
+    const b = seedAccount(u.id, {
+      name: "Savings",
+      type: "savings",
+      iban: EXAMPLE_IBAN_OTHER,
+      fillFromTransfers: fill,
+    });
+    const out = seedImportedTransaction(u.id, a.id, {
+      bookingDate: "2024-03-10",
+      amount: minor(-10000),
+      counterpartyIban: EXAMPLE_IBAN_OTHER,
+    });
+    return { u, a, b, out };
+  }
+  const rowsOf = (accountId: string) =>
+    getDB()
+      .select()
+      .from(transactionsTable)
+      .where(eq(transactionsTable.accountId, accountId))
+      .all();
+  const accountForm = (over: Record<string, string> = {}) => ({
+    name: "Savings",
+    type: "savings",
+    currency: "CHF",
+    iban: EXAMPLE_IBAN_OTHER,
+    ...over,
+  });
+
+  it("toggles fill from transfers through the account form, backfilling and clearing", async () => {
+    const { u, b } = await setup(false);
+    expect(
+      await run(
+        "updateAccount",
+        u,
+        b.id,
+        accountForm({ fillFromTransfers: "on" }),
+      ),
+    ).toMatchObject({ type: "return", value: { success: true } });
+    expect(getAccount(u.id, b.id).fillFromTransfers).toBe(true);
+    expect(rowsOf(b.id)).toHaveLength(1);
+
+    await run("updateAccount", u, b.id, accountForm());
+    expect(getAccount(u.id, b.id).fillFromTransfers).toBe(false);
+    expect(rowsOf(b.id)).toEqual([]);
+  });
+
+  it("stores trades move cash for investment accounts only", async () => {
+    const u = await createTestUser();
+    const inv = seedAccount(u.id, { type: "investment" });
+    const cur = seedAccount(u.id, { name: "Cur" });
+    await run("updateAccount", u, inv.id, {
+      name: "Broker",
+      type: "investment",
+      currency: "CHF",
+      tradesMoveCash: "on",
+    });
+    await run("updateAccount", u, cur.id, {
+      name: "Cur",
+      type: "current",
+      currency: "CHF",
+      tradesMoveCash: "on",
+    });
+    expect(getAccount(u.id, inv.id).tradesMoveCash).toBe(true);
+    expect(getAccount(u.id, cur.id).tradesMoveCash).toBe(false);
+  });
+
+  it("enables the toggle with a backfill and reports what it linked", async () => {
+    const { u, b } = await setup(false);
+    const before = ((await loadAs(u, b.id)) as { value: LoadData }).value;
+    expect(before.transfers).toEqual({
+      mirrorCount: 0,
+      fillSuggestion: { count: 1 },
+      needsAmount: [],
+    });
+    expect(await run("enableFillFromTransfers", u, b.id)).toMatchObject({
+      type: "return",
+      value: {
+        success: true,
+        action: "enableFillFromTransfers",
+        paired: 0,
+        mirrored: 1,
+        needsAmount: 0,
+      },
+    });
+    const after = ((await loadAs(u, b.id)) as { value: LoadData }).value;
+    expect(after.account.fillFromTransfers).toBe(true);
+    expect(after.transfers).toMatchObject({
+      mirrorCount: 1,
+      fillSuggestion: null,
+    });
+    const mirror = after.transactions.items[0]!;
+    expect(mirror).toMatchObject({
+      source: "mirror",
+      amount: 10000,
+      mirrorOf: { accountName: "Main" },
+      transfer: { status: "linked", peerAccountName: "Main" },
+    });
+  });
+
+  it("refuses to enable filling on a pillar 3a account", async () => {
+    const u = await createTestUser();
+    const p3a = seedPillar3aAccount(u.id, { iban: EXAMPLE_IBAN });
+    expect(await run("enableFillFromTransfers", u, p3a.id)).toMatchObject({
+      type: "fail",
+      status: 400,
+    });
+  });
+
+  it("unlinks a transfer from either account's row and remembers it", async () => {
+    const { u, a, b, out } = await setup();
+    linkTransfers(u.id, {});
+    const mirror = rowsOf(b.id)[0]!;
+    expect(
+      await run("unlinkTransfer", u, b.id, { transactionId: mirror.id }),
+    ).toMatchObject({
+      type: "return",
+      value: { success: true, action: "unlinkTransfer" },
+    });
+    expect(rowsOf(b.id)).toEqual([]);
+    linkTransfers(u.id, {});
+    expect(rowsOf(b.id)).toEqual([]);
+    // nothing left to unlink
+    expect(
+      await run("unlinkTransfer", u, a.id, { transactionId: out.id }),
+    ).toEqual({
+      type: "error",
+      status: 404,
+    });
+    expect(await run("unlinkTransfer", u, a.id, {})).toMatchObject({
+      type: "fail",
+      status: 400,
+    });
+  });
+
+  it("links two rows by hand, with candidates for the picker", async () => {
+    const { u, a, b } = await setup(false);
+    const out = seedImportedTransaction(u.id, a.id, {
+      bookingDate: "2024-04-02",
+      amount: minor(-7000),
+    });
+    const into = seedImportedTransaction(u.id, b.id, {
+      bookingDate: "2024-04-03",
+      amount: minor(7000),
+    });
+    const found = await run("transferCandidates", u, a.id, {
+      transactionId: out.id,
+    });
+    expect(found).toMatchObject({
+      type: "return",
+      value: {
+        success: true,
+        action: "transferCandidates",
+        transactionId: out.id,
+        candidates: [
+          {
+            id: into.id,
+            accountId: b.id,
+            accountName: "Savings",
+            exact: true,
+            days: 1,
+          },
+        ],
+      },
+    });
+
+    expect(
+      await run("linkTransfer", u, a.id, {
+        transactionId: out.id,
+        peerId: into.id,
+      }),
+    ).toMatchObject({
+      type: "return",
+      value: { success: true, action: "linkTransfer" },
+    });
+    const view = (
+      (await loadAs(u, a.id)) as { value: LoadData }
+    ).value.transactions.items.find((t: { id: string }) => t.id === out.id)!;
+    expect(view.transfer).toMatchObject({
+      method: "manual",
+      direction: "out",
+      peerTransactionId: into.id,
+    });
+    // from the credit side, and a second link is refused
+    expect(
+      await run("linkTransfer", u, b.id, {
+        transactionId: into.id,
+        peerId: out.id,
+      }),
+    ).toMatchObject({ type: "fail", status: 400 });
+    expect(
+      await run("linkTransfer", u, b.id, { transactionId: into.id }),
+    ).toMatchObject({ type: "fail", status: 400 });
+  });
+
+  it("resolves a transfer that needs an amount, on the receiving account's page only", async () => {
+    const u = await createTestUser();
+    const a = seedAccount(u.id, { name: "Main", iban: EXAMPLE_IBAN });
+    const eur = seedAccount(u.id, {
+      name: "Euro",
+      currency: "EUR",
+      iban: EXAMPLE_IBAN_OTHER,
+      fillFromTransfers: true,
+    });
+    seedImportedTransaction(u.id, a.id, {
+      bookingDate: "2024-03-10",
+      amount: minor(-10000),
+      counterpartyIban: EXAMPLE_IBAN_OTHER,
+    });
+    linkTransfers(u.id, {});
+    const [pending] = listNeedsAmount(u.id);
+    const data = ((await loadAs(u, eur.id)) as { value: LoadData }).value;
+    expect(data.transfers.needsAmount).toHaveLength(1);
+    expect(
+      ((await loadAs(u, a.id)) as { value: LoadData }).value.transfers
+        .needsAmount,
+    ).toEqual([]);
+
+    expect(
+      await run("resolveNeedsAmount", u, a.id, {
+        transferId: pending!.transferId,
+        amount: "93.00",
+      }),
+    ).toEqual({ type: "error", status: 404 });
+    expect(
+      await run("resolveNeedsAmount", u, eur.id, {
+        transferId: pending!.transferId,
+        amount: "abc",
+      }),
+    ).toMatchObject({
+      type: "fail",
+      status: 400,
+      data: { errors: { amount: [expect.any(String)] } },
+    });
+    expect(
+      await run("resolveNeedsAmount", u, eur.id, {
+        transferId: pending!.transferId,
+        amount: "0",
+      }),
+    ).toMatchObject({ type: "fail", status: 400 });
+    expect(
+      await run("resolveNeedsAmount", u, eur.id, {
+        transferId: pending!.transferId,
+        amount: "93.00",
+      }),
+    ).toMatchObject({
+      type: "return",
+      value: { success: true, action: "resolveNeedsAmount" },
+    });
+    expect(rowsOf(eur.id)[0]).toMatchObject({ amount: 9300, currency: "EUR" });
+    expect(listNeedsAmount(u.id)).toEqual([]);
+  });
+
+  it("keeps mirrors in step with a manual source row", async () => {
+    const { u, a, b } = await setup();
+    const added = await run("addTransaction", u, a.id, {
+      bookingDate: "2024-05-01",
+      amount: "-20.00",
+      counterpartyIban: EXAMPLE_IBAN_OTHER,
+      description: "Top up",
+    });
+    const id = (added as { value: { id: string } }).value.id;
+    const mirror = rowsOf(b.id).find((r) => r.mirrorOfId === id)!;
+    expect(mirror).toMatchObject({ amount: 2000, description: "Top up" });
+
+    await run("updateTransaction", u, a.id, {
+      transactionId: id,
+      bookingDate: "2024-05-02",
+      amount: "-25.50",
+      counterpartyIban: EXAMPLE_IBAN_OTHER,
+      description: "Top up more",
+    });
+    expect(rowsOf(b.id).find((r) => r.id === mirror.id)).toMatchObject({
+      amount: 2550,
+      bookingDate: "2024-05-02",
+      description: "Top up more",
+    });
+
+    // dropping the counterparty removes the mirror
+    await run("updateTransaction", u, a.id, {
+      transactionId: id,
+      bookingDate: "2024-05-02",
+      amount: "-25.50",
+      description: "Top up more",
+    });
+    expect(rowsOf(b.id).some((r) => r.mirrorOfId === id)).toBe(false);
+
+    await run("deleteTransaction", u, a.id, { transactionId: id });
+    expect(rowsOf(a.id).some((r) => r.id === id)).toBe(false);
+  });
+
+  it("only lets mirrors change their note", async () => {
+    const { u, b } = await setup();
+    linkTransfers(u.id, {});
+    const mirror = rowsOf(b.id)[0]!;
+    expect(
+      await run("updateTransaction", u, b.id, {
+        transactionId: mirror.id,
+        note: "checked",
+        amount: "1",
+        bookingDate: "2024-03-11",
+      }),
+    ).toMatchObject({ type: "return", value: { success: true } });
+    expect(rowsOf(b.id)[0]).toMatchObject({
+      note: "checked",
+      amount: 10000,
+      bookingDate: "2024-03-10",
+    });
+  });
+
+  it("answers 404 for every transfer action on another user's rows or accounts", async () => {
+    const { u, a, b, out } = await setup();
+    linkTransfers(u.id, {});
+    const mirror = rowsOf(b.id)[0]!;
+    const intruder = await createTestUser();
+    const own = seedAccount(intruder.id, { name: "Own" });
+    const mine = seedImportedTransaction(intruder.id, own.id, {
+      amount: minor(10000),
+    });
+    const notFound = { type: "error", status: 404 };
+
+    // foreign account page
+    for (const name of [
+      "unlinkTransfer",
+      "linkTransfer",
+      "transferCandidates",
+    ] as const) {
+      expect(
+        await run(name, intruder, a.id, {
+          transactionId: out.id,
+          peerId: mine.id,
+        }),
+      ).toEqual(notFound);
+    }
+    expect(await run("enableFillFromTransfers", intruder, b.id)).toEqual(
+      notFound,
+    );
+    expect(
+      await run("resolveNeedsAmount", intruder, b.id, {
+        transferId: "x",
+        amount: "1",
+      }),
+    ).toEqual(notFound);
+
+    // own account page, foreign ids
+    expect(
+      await run("unlinkTransfer", intruder, own.id, {
+        transactionId: mirror.id,
+      }),
+    ).toEqual(notFound);
+    expect(
+      await run("transferCandidates", intruder, own.id, {
+        transactionId: out.id,
+      }),
+    ).toEqual(notFound);
+    expect(
+      await run("linkTransfer", intruder, own.id, {
+        transactionId: mine.id,
+        peerId: out.id,
+      }),
+    ).toEqual(notFound);
+    expect(
+      await run("linkTransfer", intruder, own.id, {
+        transactionId: mine.id,
+        peerId: mirror.id,
+      }),
+    ).toEqual(notFound);
+    expect(await loadAs(intruder, b.id)).toEqual(notFound);
+
+    expect(rowsOf(b.id)).toHaveLength(1);
+    expect(listNeedsAmount(intruder.id)).toEqual([]);
   });
 });

@@ -16,7 +16,10 @@ import { getDB, inboxFiles, transactions } from "$lib/server/db";
 import { saveCsvProfile } from "$lib/server/imports";
 import { createTestUser } from "$lib/testing/auth";
 import { useTestDB } from "$lib/testing/db";
-import { EXAMPLE_IBAN } from "$lib/testing/fixtures/bill-identifiers";
+import {
+  EXAMPLE_IBAN,
+  EXAMPLE_IBAN_OTHER,
+} from "$lib/testing/fixtures/bill-identifiers";
 import { IBAN_DE } from "$lib/testing/fixtures/values";
 import { buildCamt } from "$lib/testing/fixtures/camt053/build";
 import { fixture } from "$lib/testing/fixtures";
@@ -112,6 +115,41 @@ describe("scanInbox", () => {
       accountName: "Main",
       newCount: 5,
     });
+  });
+
+  it("mirrors transfers from an inbox import onto an account filled from transfers", async () => {
+    const { user, account } = await setup();
+    const savings = seedAccount(user.id, {
+      name: "Savings",
+      iban: EXAMPLE_IBAN_OTHER,
+      fillFromTransfers: true,
+    });
+    drop(
+      "alice",
+      "transfer.xml",
+      buildCamt({
+        iban: EXAMPLE_IBAN,
+        entries: [
+          {
+            date: "2024-07-01",
+            amount: "10.00",
+            sign: "DBIT",
+            ref: "T1",
+            counterpartyIban: EXAMPLE_IBAN_OTHER,
+          },
+        ],
+      }),
+    );
+    expect(await scan()).toMatchObject({ imported: 1 });
+    expect(count(account.id)).toBe(1);
+    const mirrors = getDB()
+      .select()
+      .from(transactions)
+      .where(eq(transactions.accountId, savings.id))
+      .all();
+    expect(mirrors).toEqual([
+      expect.objectContaining({ source: "mirror", amount: 1000 }),
+    ]);
   });
 
   it("fails a camt file with an unknown IBAN and writes a reason file", async () => {

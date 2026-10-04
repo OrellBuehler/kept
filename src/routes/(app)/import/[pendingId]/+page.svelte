@@ -75,6 +75,7 @@
 
   const statusLabel = {
     new: "New",
+    replaces_mirror: "Replaces mirrored transaction",
     duplicate: "Duplicate",
     duplicate_in_file: "Duplicate in file",
   } as const;
@@ -84,7 +85,7 @@
   status: keyof typeof statusLabel,
   matchedBy: "id" | "legacy_id" | null,
 )}
-  {#if status === "new"}
+  {#if status === "new" || status === "replaces_mirror"}
     <Badge
       variant="outline"
       class="border-emerald-500/50 text-emerald-700 dark:text-emerald-400"

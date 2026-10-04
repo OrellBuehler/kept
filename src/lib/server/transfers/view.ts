@@ -21,7 +21,7 @@ export interface MirrorRef {
   transactionId: string;
   accountId: string;
   accountName: string;
-  /** The account has an imported statement covering this date, but no real row replaced the mirror. */
+  /** An imported statement of the account covers this date (its period, or its balance dates), but no real row replaced the mirror. */
   noBankCounterpart: boolean;
 }
 
@@ -134,7 +134,7 @@ export function mirrorRefs(
         and(
           eq(transactions.userId, userId),
           inArray(transactions.id, ids),
-          sql`exists (select 1 from imports where imports.account_id = ${transactions.accountId} and imports.statement_from is not null and imports.statement_to is not null and imports.statement_from <= ${transactions.bookingDate} and imports.statement_to >= ${transactions.bookingDate})`,
+          sql`exists (select 1 from imports where imports.account_id = ${transactions.accountId} and coalesce(min(imports.statement_from, imports.opening_balance_date), imports.statement_from, imports.opening_balance_date) <= ${transactions.bookingDate} and coalesce(max(imports.statement_to, imports.closing_balance_date), imports.statement_to, imports.closing_balance_date) >= ${transactions.bookingDate})`,
         ),
       )
       .all()) {

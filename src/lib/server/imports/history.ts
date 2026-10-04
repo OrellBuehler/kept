@@ -4,6 +4,7 @@ import type { Minor } from "$lib/money";
 import { accounts, balanceSnapshots, getDB, imports } from "$lib/server/db";
 import { getAccount } from "$lib/server/ledger/accounts";
 import { notFound } from "$lib/server/ledger/errors";
+import { linkTransfers } from "$lib/server/transfers/link";
 
 export interface ImportView {
   id: string;
@@ -93,7 +94,9 @@ export function listRecentImports(userId: string, limit = 10): ImportView[] {
  * import's closing snapshot disappears, it is restored from the latest
  * remaining import of the account with the same closing date, so balance
  * anchors survive. Bill allocations that reference the removed transactions
- * will cascade as well once bills exist.
+ * will cascade as well once bills exist. Mirrors created from the removed
+ * rows go with them; mirrors that the removed rows had replaced come back
+ * when the account is filled from transfers.
  * `accountId`, when given, must be the import's account.
  */
 export function undoImport(
@@ -158,6 +161,8 @@ export function undoImport(
         }
       }
     }
+    // Real rows that had replaced mirrors are gone: the transfers they stood for are mirrored again.
+    linkTransfers(userId, { targetAccountId: found.accountId }, tx);
     return { accountId: found.accountId, removedTransactions: found.n };
   });
 }

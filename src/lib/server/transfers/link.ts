@@ -316,3 +316,29 @@ export function linkTransfers(
   }
   return result;
 }
+
+/**
+ * After rows were written to `accountId`: looks at them as sources, and at
+ * rows on other accounts that name this account's IBAN near their dates, so
+ * a late counterpart pairs with what is already there.
+ */
+export function linkAfterWrite(
+  userId: string,
+  accountId: string,
+  transactionIds: readonly string[],
+  dates: readonly string[],
+  conn: Conn,
+): LinkResult {
+  if (transactionIds.length === 0) return { ...NONE };
+  const sorted = [...dates].sort();
+  return linkTransfers(
+    userId,
+    {
+      transactionIds,
+      targetAccountId: accountId,
+      from: shiftDate(sorted[0]!, -LINK_WINDOW_DAYS),
+      to: shiftDate(sorted[sorted.length - 1]!, LINK_WINDOW_DAYS),
+    },
+    conn,
+  );
+}
