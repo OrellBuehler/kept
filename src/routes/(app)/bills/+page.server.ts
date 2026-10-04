@@ -6,6 +6,11 @@ import {
   confirmFormSchema,
   dismissFormSchema,
 } from "$lib/server/bills/schemas";
+import {
+  filterBills,
+  paginateBills,
+  parseBillListQuery,
+} from "$lib/server/bills/list";
 import { billViews, countBills, groupBills } from "$lib/server/bills/status";
 import {
   dismissSuggestion,
@@ -16,7 +21,7 @@ import { parseForm, safeValues } from "$lib/server/forms";
 import { ledgerFailure } from "$lib/server/ledger/http";
 import type { Actions, PageServerLoad } from "./$types";
 
-export const load: PageServerLoad = ({ locals }) => {
+export const load: PageServerLoad = ({ locals, url }) => {
   const user = requireUser(locals);
   const today = todayLocal();
   let autoMatched = 0;
@@ -37,16 +42,22 @@ export const load: PageServerLoad = ({ locals }) => {
     matchingFailed = true;
   }
   const views = billViews(user.id, { today });
-  const { cancelled, ...groups } = groupBills(views, { today });
+  const all = groupBills(views, { today });
+  const query = parseBillListQuery(url.searchParams);
   return {
     today,
-    groups,
-    cancelled,
+    groups: {
+      overdue: all.overdue,
+      dueSoon: all.dueSoon,
+      awaitingRefund: all.awaitingRefund,
+    },
     suggestions,
     suggestionsTruncated,
     matchingFailed,
-    counts: countBills(views, { ...groups, cancelled }),
+    counts: countBills(views, all),
     autoMatched,
+    query,
+    list: paginateBills(filterBills(views, query), query.page),
   };
 };
 

@@ -1,4 +1,5 @@
 <script lang="ts">
+  import InstitutionLogo from "$lib/components/InstitutionLogo.svelte";
   import { resolve } from "$app/paths";
   import { cn } from "$lib/utils";
   import * as Card from "$lib/components/ui/card";
@@ -215,6 +216,36 @@
         {/each}
       </Card.Content>
     </Card.Root>
+
+    {#if data.forecastAlerts.length > 0}
+      <Card.Root class="border-destructive/50 lg:col-span-2">
+        <Card.Header>
+          <Card.Title class="text-destructive flex items-center gap-2">
+            <TriangleAlertIcon class="size-4" aria-hidden="true" />
+            Balance forecast
+          </Card.Title>
+          <Card.Description>
+            Expected to go below zero within 30 days.
+          </Card.Description>
+          <Card.Action>
+            <Button variant="outline" size="sm" href={resolve("/forecast")}>
+              View forecast
+            </Button>
+          </Card.Action>
+        </Card.Header>
+        <Card.Content>
+          <ul class="space-y-1.5 text-sm">
+            {#each data.forecastAlerts as alert (alert.accountId)}
+              <li>
+                <span class="font-medium">{alert.name}</span>
+                on {prefs.date(alert.date)}, to
+                <Amount value={alert.balance} currency={alert.currency} />
+              </li>
+            {/each}
+          </ul>
+        </Card.Content>
+      </Card.Root>
+    {/if}
 
     <Card.Root>
       <Card.Header>
@@ -543,6 +574,7 @@
                     class="text-muted-foreground mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs"
                   >
                     {#if a.institution}
+                      <InstitutionLogo institution={a.institution} size="sm" />
                       <span class="truncate">{a.institution.name}</span>
                     {/if}
                     <AccountTypeBadge type={a.type} />

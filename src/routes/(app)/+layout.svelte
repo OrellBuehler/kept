@@ -10,7 +10,9 @@
   import LandmarkIcon from "@lucide/svelte/icons/landmark";
   import UploadIcon from "@lucide/svelte/icons/upload";
   import PiggyBankIcon from "@lucide/svelte/icons/piggy-bank";
+  import RepeatIcon from "@lucide/svelte/icons/repeat";
   import ReceiptIcon from "@lucide/svelte/icons/receipt";
+  import TrendingUpIcon from "@lucide/svelte/icons/trending-up";
   import ScaleIcon from "@lucide/svelte/icons/scale";
   import FileTextIcon from "@lucide/svelte/icons/file-text";
   import SettingsIcon from "@lucide/svelte/icons/settings";
@@ -20,6 +22,7 @@
   import LogOutIcon from "@lucide/svelte/icons/log-out";
   import SunIcon from "@lucide/svelte/icons/sun";
   import MoonIcon from "@lucide/svelte/icons/moon";
+  import CalendarRangeIcon from "@lucide/svelte/icons/calendar-range";
   import MonitorIcon from "@lucide/svelte/icons/monitor";
   import EyeIcon from "@lucide/svelte/icons/eye";
   import EyeOffIcon from "@lucide/svelte/icons/eye-off";
@@ -76,7 +79,10 @@
       badge: data.overdueBills,
     },
     { href: "/budgets", label: "Budgets", icon: PiggyBankIcon },
+    { href: "/forecast", label: "Forecast", icon: TrendingUpIcon },
+    { href: "/recurring", label: "Recurring", icon: RepeatIcon },
     { href: "/taxes", label: "Taxes", icon: ScaleIcon },
+    { href: "/review", label: "Year in review", icon: CalendarRangeIcon },
     { href: "/reports", label: "Reports", icon: FileTextIcon },
     { href: "/settings/account", label: "Settings", icon: SettingsIcon },
     ...(data.user.role === "admin"

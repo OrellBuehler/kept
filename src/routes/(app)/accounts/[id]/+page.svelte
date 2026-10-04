@@ -1,4 +1,5 @@
 <script lang="ts">
+  import InstitutionLogo from "$lib/components/InstitutionLogo.svelte";
   import { enhance } from "$app/forms";
   import { afterNavigate, replaceState } from "$app/navigation";
   import { resolve } from "$app/paths";
@@ -112,11 +113,7 @@
         >
           {#if account.institution}
             <span class="flex items-center gap-1.5">
-              <span
-                class="bg-muted-foreground/40 size-2.5 rounded-full"
-                style:background-color={account.institution.color}
-                aria-hidden="true"
-              ></span>
+              <InstitutionLogo institution={account.institution} size="sm" />
               {account.institution.name}
             </span>
           {/if}

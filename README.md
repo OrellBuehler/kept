@@ -1,5 +1,7 @@
 <p align="center"><img src="static/brand/kept-lockup.svg" alt="Kept" height="64"></p>
 
+<p align="center"><a href="https://orellbuehler.github.io/kept/"><strong>Product page →</strong></a></p>
+
 Self-hosted personal finance. Import your accounts, match bills to payments and keep a balance
 history — on your own server, in a single SQLite file.
 
@@ -27,6 +29,9 @@ history — on your own server, in a single SQLite file.
 - **PDF reports**: account statement, open bills, net worth, tax reconciliation.
 - **Paperless-ngx (optional)**: pull bills from a tag or saved view, write amount, due date,
   reference and status back to custom fields, and file reports into Paperless.
+- **Notifications**: per user, choose triggers (bill due within N days, bill overdue, monthly
+  budget reaching X%, account not imported for N days) and channels (ntfy, signed webhook, email).
+  Checked hourly; each event is sent once. Set up under Settings → Notifications.
 - Local users with an admin who creates the others; every user only sees their own data.
 
 eBill invoices can't be received directly by a self-hosted app. Download the invoice PDF in your
@@ -44,19 +49,55 @@ docker run -d --name kept -p 3000:3000 -v kept-data:/data \
 Open the app and create the first user at `/setup` — it becomes the administrator. Until that
 happens, anyone who can reach the server can claim it, so do this right after starting it.
 
-| Variable                      | Purpose                                                                                                                                                |
-| ----------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `KEPT_SECRET_KEY`             | Required. 32 random bytes, base64 (`openssl rand -base64 32`). Encrypts stored integration tokens; keep it with your backups — changing it locks them. |
-| `ORIGIN`                      | The public URL. Required behind a reverse proxy, otherwise form posts are rejected.                                                                    |
-| `ADDRESS_HEADER`, `XFF_DEPTH` | Client address behind a proxy (e.g. `X-Forwarded-For`, `1`) so login rate limiting works per client.                                                   |
-| `KEPT_COOKIE_SECURE=false`    | Only when serving over plain HTTP on a trusted network.                                                                                                |
-| `DATABASE_PATH`               | Defaults to `/data/kept.db` in the image. Uploaded bills and pending imports live next to it.                                                          |
-| `KEPT_BACKUP_DIR`             | Optional. Writes a daily database backup into this directory (e.g. `/data/backups`).                                                                   |
-| `KEPT_BACKUP_KEEP`            | How many scheduled backups to keep; older ones are deleted. Defaults to `7`.                                                                           |
+| Variable                               | Purpose                                                                                                                                                                                                                                                                                                     |
+| -------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `KEPT_SECRET_KEY`                      | Required. 32 random bytes, base64 (`openssl rand -base64 32`). Encrypts stored integration tokens; keep it with your backups — changing it locks them.                                                                                                                                                      |
+| `ORIGIN`                               | The public URL. Required behind a reverse proxy, otherwise form posts are rejected.                                                                                                                                                                                                                         |
+| `ADDRESS_HEADER`, `XFF_DEPTH`          | Client address behind a proxy (e.g. `X-Forwarded-For`, `1`) so login rate limiting works per client.                                                                                                                                                                                                        |
+| `KEPT_COOKIE_SECURE=false`             | Only when serving over plain HTTP on a trusted network.                                                                                                                                                                                                                                                     |
+| `DATABASE_PATH`                        | Defaults to `/data/kept.db` in the image. Uploaded bills and pending imports live next to it.                                                                                                                                                                                                               |
+| `KEPT_BACKUP_DIR`                      | Optional. Writes a daily database backup into this directory (e.g. `/data/backups`).                                                                                                                                                                                                                        |
+| `KEPT_BACKUP_KEEP`                     | How many scheduled backups to keep; older ones are deleted. Defaults to `7`.                                                                                                                                                                                                                                |
+| `KEPT_INBOX_DIR`                       | Optional. Enables the watch-folder import, e.g. `/data/inbox` (see below).                                                                                                                                                                                                                                  |
+| `KEPT_INBOX_INTERVAL`                  | Seconds between inbox scans (5 to 86400). Defaults to `60`.                                                                                                                                                                                                                                                 |
+| `KEPT_SMTP_HOST`                       | Optional. SMTP server for the email notification channel; the channel is only offered when this and `KEPT_SMTP_FROM` are set.                                                                                                                                                                               |
+| `KEPT_SMTP_FROM`                       | Sender address for notification emails, e.g. `Kept <kept@example.org>`.                                                                                                                                                                                                                                     |
+| `KEPT_SMTP_PORT`                       | Defaults to `587` (STARTTLS when offered).                                                                                                                                                                                                                                                                  |
+| `KEPT_SMTP_SECURE`                     | `true` for implicit TLS, `false` otherwise. Defaults to `true` on port 465, else `false`.                                                                                                                                                                                                                   |
+| `KEPT_NOTIFY_BLOCK_PRIVATE`            | Optional. `true` makes ntfy and webhook destinations that resolve to loopback, private (RFC1918), unique-local, link-local or unspecified addresses fail, at save and send time. Off by default so a LAN ntfy works; turn it on for multi-user instances where users should not reach the internal network. |
+| `KEPT_SMTP_USER`, `KEPT_SMTP_PASSWORD` | Optional SMTP login.                                                                                                                                                                                                                                                                                        |
+
+### Watch-folder import
+
+Set `KEPT_INBOX_DIR` and Kept scans it on start and every `KEPT_INBOX_INTERVAL` seconds. Every
+user has a folder named after their username (created on the first scan). The process needs
+write access to the directory.
+
+```
+<inbox>/<username>/statement.xml        camt.053: account found by the statement IBAN
+<inbox>/<username>/<account>/export.csv CSV or Excel: account named by the folder
+<inbox>/<username>/processed/           imported (or already known) files
+<inbox>/<username>/review/              files waiting for you on the Import page
+<inbox>/<username>/failed/              rejected files, each with a `.reason.txt`
+```
+
+- The folder `<account>` is the account's name (case-insensitive) or its IBAN. CSV and Excel
+  files also need the column mapping saved for that account (map one file by hand once); without
+  it the file waits in `review/`. A camt.053 file placed in an account folder is imported into
+  that account, and the usual IBAN check still applies.
+- Files go through the same preview and confirm path as uploads: duplicates are skipped, and the
+  import shows up in history and can be undone. A file is imported automatically only when the
+  account is unambiguous and the preview has no warnings (for example a balance gap). Otherwise
+  it waits in `review/`; open the Import page and press **Review** to continue as a normal upload.
+- A file is never processed twice: files are identified by SHA-256. A repeat is moved to
+  `processed/`. A file from `failed/` is retried when you drop it in again.
+- Files modified in the last 10 seconds, hidden files and other extensions (`.part`, `.pdf`) are
+  left alone. Supported: `.xml`, `.csv`, `.txt`, `.xlsx`, up to 20 MB.
+- The Import page shows the last scan and recent auto-imports, reviews and failures.
 
 ### Backup and restore
 
-The database holds everything except uploaded bill PDFs, which live next to it in
+The database holds everything (including institution logos) except uploaded bill PDFs, which live next to it in
 `/data/documents`. Back up the whole `/data` volume, and keep `KEPT_SECRET_KEY` with it.
 
 - **Download:** the administrator can download a consistent copy of the database under
