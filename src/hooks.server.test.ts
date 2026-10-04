@@ -89,4 +89,26 @@ describe("handle", () => {
       SESSION_COOKIE,
     );
   });
+
+  it("adds security headers to resolved, redirect and 401 responses", async () => {
+    await createTestUser();
+    for (const p of ["/login", "/", "/api/things"]) {
+      const { res } = await run(p);
+      expect(res.headers.get("x-content-type-options"), p).toBe("nosniff");
+      expect(res.headers.get("referrer-policy"), p).toBe("same-origin");
+      expect(res.headers.get("content-security-policy"), p).toContain(
+        "frame-ancestors 'none'",
+      );
+      expect(res.headers.has("strict-transport-security"), p).toBe(false);
+    }
+  });
+
+  it("adds HSTS when the request is https", async () => {
+    const event = createTestEvent({ url: "https://kept.test/login" });
+    const res = await handle({
+      event: event as never,
+      resolve: (async () => new Response("ok")) as never,
+    });
+    expect(res.headers.get("strict-transport-security")).toMatch(/max-age=/);
+  });
 });
