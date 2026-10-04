@@ -1,5 +1,6 @@
 import { refreshPrices, listMarketDataUserIds } from "$lib/server/investments";
 import { localToday } from "$lib/server/ledger/balances";
+import { errorCode } from "$lib/server/errors";
 
 export const REFRESH_INTERVAL_MS = 6 * 60 * 60 * 1000;
 const JITTER_MS = 60_000;
@@ -7,13 +8,6 @@ const FIRST_RUN_DELAY_MS = 5 * 60_000;
 
 const sleep = (ms: number) =>
   new Promise<void>((resolve) => setTimeout(resolve, ms));
-
-function errorCode(err: unknown): string {
-  if (err && typeof err === "object" && "code" in err) {
-    return String((err as { code: unknown }).code);
-  }
-  return err instanceof Error ? err.name : "unknown";
-}
 
 /**
  * One pass over every user who opted in. Request failures are stored on the

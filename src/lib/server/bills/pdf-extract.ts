@@ -3,6 +3,7 @@ import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { QrBillParseError, parseQrBillPayload, type QrBill } from "./qr-bill";
 import { extractFromText, type BillFields } from "./text-extract";
+import { describeError } from "$lib/server/errors";
 
 export { extractFromText } from "./text-extract";
 export type { BillFields, TextExtraction } from "./text-extract";
@@ -121,7 +122,7 @@ async function openDocument(
       cMapPacked: true,
     }).promise;
   } catch (error) {
-    const name = error instanceof Error ? error.name : "";
+    const name = describeError(error);
     if (name === "PasswordException") {
       throw new PdfExtractError("encrypted", "The PDF is password protected", {
         cause: error,
@@ -327,10 +328,7 @@ async function extractUnlocked(
         warnings.push(
           `Page ${pageNumber} could not be rendered for QR detection`,
         );
-        console.warn(
-          "pdf page render failed",
-          error instanceof Error ? error.name : "unknown",
-        );
+        console.warn("pdf page render failed", describeError(error));
         continue;
       }
       for (const payload of payloads) {
@@ -353,10 +351,7 @@ async function extractUnlocked(
       text = (await readText(doc)).slice(0, MAX_TEXT_CHARS);
     } catch (error) {
       warnings.push("The text of the PDF could not be read");
-      console.warn(
-        "pdf text extraction failed",
-        error instanceof Error ? error.name : "unknown",
-      );
+      console.warn("pdf text extraction failed", describeError(error));
     }
     const fromText = extractFromText(text);
 

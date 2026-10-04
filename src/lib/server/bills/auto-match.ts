@@ -1,4 +1,5 @@
 import { runAutoMatching, type AutoMatchResult } from "./suggestions";
+import { describeError } from "$lib/server/errors";
 
 /**
  * Runs automatic matching for a save path (bill saved, import confirmed) where a
@@ -8,10 +9,7 @@ export function autoMatchQuietly(userId: string): AutoMatchResult | null {
   try {
     return runAutoMatching(userId);
   } catch (err) {
-    console.warn(
-      "auto-matching failed",
-      err instanceof Error ? err.name : "unknown",
-    );
+    console.warn("auto-matching failed", describeError(err));
     return null;
   }
 }

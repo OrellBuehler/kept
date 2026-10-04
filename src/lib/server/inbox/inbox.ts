@@ -34,6 +34,7 @@ import {
 } from "$lib/server/imports";
 import { listAccounts, type AccountView } from "$lib/server/ledger/accounts";
 import { LedgerError } from "$lib/server/ledger/errors";
+import { describeError } from "$lib/server/errors";
 
 export const DEFAULT_INTERVAL_SECONDS = 60;
 export const DEFAULT_SETTLE_MS = 10_000;
@@ -382,7 +383,7 @@ async function processFile(ctx: ScanContext, c: Candidate): Promise<Outcome> {
     }
     console.error(
       "inbox: unexpected error while importing a file: %s",
-      err instanceof Error ? err.name : "error",
+      describeError(err),
     );
     return fail(
       ctx,
@@ -486,14 +487,14 @@ export async function scanInbox(
         } catch (err) {
           console.error(
             "inbox: could not handle a file: %s",
-            err instanceof Error ? err.name : "error",
+            describeError(err),
           );
         }
       }
     } catch (err) {
       console.error(
         "inbox: could not scan a user folder: %s",
-        err instanceof Error ? err.name : "error",
+        describeError(err),
       );
     }
   }
@@ -613,10 +614,7 @@ export function startInboxScheduler(
     try {
       setLastScan(await scanInbox(config, options));
     } catch (err) {
-      console.error(
-        "inbox scan failed: %s",
-        err instanceof Error ? err.name : "error",
-      );
+      console.error("inbox scan failed: %s", describeError(err));
     } finally {
       running = false;
     }

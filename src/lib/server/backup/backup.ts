@@ -13,6 +13,7 @@ import { join } from "node:path";
 import { Readable } from "node:stream";
 import { z } from "zod";
 import type { DB } from "$lib/server/db";
+import { describeError } from "$lib/server/errors";
 
 const FILE_PATTERN = /^kept-backup-(\d{8}-\d{6})\.db$/;
 
@@ -182,10 +183,7 @@ export function startBackupScheduler(
     try {
       if (isBackupDue(config.dir)) runScheduledBackup(getDb(), config);
     } catch (err) {
-      console.error(
-        "scheduled backup failed",
-        err instanceof Error ? err.message : "unknown error",
-      );
+      console.error("scheduled backup failed", describeError(err));
     } finally {
       running = false;
     }

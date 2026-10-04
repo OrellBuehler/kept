@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { errorCode as safeErrorCode } from "$lib/server/errors";
 
 export const PAPERLESS_ERROR_CODES = [
   "invalid_url",
@@ -85,10 +86,7 @@ export function describeError(err: unknown): string {
 /** Short machine-readable code for storage and logs. */
 export function errorCode(err: unknown): string {
   if (err instanceof PaperlessError) return err.code;
-  if (err && typeof err === "object" && "code" in err) {
-    return String((err as { code: unknown }).code);
-  }
-  return err instanceof Error ? err.name : "unknown";
+  return safeErrorCode(err);
 }
 
 /**

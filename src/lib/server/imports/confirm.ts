@@ -6,6 +6,7 @@ import { getAccount } from "$lib/server/ledger/accounts";
 import { LedgerError } from "$lib/server/ledger/errors";
 import { deletePending, getPendingMeta } from "./pending";
 import { balanceWarningText, buildPreview } from "./preview";
+import { describeError } from "$lib/server/errors";
 
 export interface ConfirmResult {
   importId: string;
@@ -147,7 +148,7 @@ export function confirmImport(
     console.error(
       "could not delete pending import %s: %s",
       pendingId,
-      err instanceof Error ? err.name : "error",
+      describeError(err),
     );
   }
   return result;

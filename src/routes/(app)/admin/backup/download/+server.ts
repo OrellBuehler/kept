@@ -3,6 +3,7 @@ import { requireAdmin } from "$lib/server/auth/guards";
 import { createBackupDownload } from "$lib/server/backup/backup";
 import { getDB } from "$lib/server/db";
 import type { RequestHandler } from "./$types";
+import { describeError } from "$lib/server/errors";
 
 export const GET: RequestHandler = ({ locals }) => {
   requireAdmin(locals);
@@ -10,10 +11,7 @@ export const GET: RequestHandler = ({ locals }) => {
   try {
     download = createBackupDownload(getDB());
   } catch (err) {
-    console.error(
-      "backup download failed",
-      err instanceof Error ? err.message : "unknown error",
-    );
+    console.error("backup download failed", describeError(err));
     error(500, "The backup could not be created. Check the server log.");
   }
   return new Response(download.stream, {
