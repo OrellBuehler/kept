@@ -189,12 +189,17 @@ export function createTrade(
     securityId: input.securityId,
     add: input,
   });
-  const row = getDB()
-    .insert(trades)
-    .values({ ...input, userId, accountId })
-    .returning({ id: trades.id })
-    .get();
-  if (input.side === "split") discardProviderPrices(userId, [input.securityId]);
+  const row = getDB().transaction(() => {
+    const inserted = getDB()
+      .insert(trades)
+      .values({ ...input, userId, accountId })
+      .returning({ id: trades.id })
+      .get();
+    if (input.side === "split") {
+      discardProviderPrices(userId, [input.securityId]);
+    }
+    return inserted;
+  });
   return getTrade(userId, row.id);
 }
 
@@ -224,15 +229,19 @@ export function updateTrade(
       add: input,
     });
   }
-  getDB()
-    .update(trades)
-    .set({ splitNew: null, splitOld: null, ...input })
-    .where(and(eq(trades.userId, userId), eq(trades.id, id)))
-    .run();
-  if (current.side === "split") {
-    discardProviderPrices(userId, [current.securityId]);
-  }
-  if (input.side === "split") discardProviderPrices(userId, [input.securityId]);
+  getDB().transaction(() => {
+    getDB()
+      .update(trades)
+      .set({ splitNew: null, splitOld: null, ...input })
+      .where(and(eq(trades.userId, userId), eq(trades.id, id)))
+      .run();
+    if (current.side === "split") {
+      discardProviderPrices(userId, [current.securityId]);
+    }
+    if (input.side === "split") {
+      discardProviderPrices(userId, [input.securityId]);
+    }
+  });
   return getTrade(userId, id);
 }
 
@@ -243,11 +252,13 @@ export function deleteTrade(userId: string, id: string): void {
     securityId: current.securityId,
     excludeId: id,
   });
-  getDB()
-    .delete(trades)
-    .where(and(eq(trades.userId, userId), eq(trades.id, id)))
-    .run();
-  if (current.side === "split") {
-    discardProviderPrices(userId, [current.securityId]);
-  }
+  getDB().transaction(() => {
+    getDB()
+      .delete(trades)
+      .where(and(eq(trades.userId, userId), eq(trades.id, id)))
+      .run();
+    if (current.side === "split") {
+      discardProviderPrices(userId, [current.securityId]);
+    }
+  });
 }

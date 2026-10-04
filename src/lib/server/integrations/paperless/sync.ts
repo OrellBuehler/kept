@@ -211,7 +211,7 @@ async function sync(
   if (!row.billSource) throw new SourceError("no_source");
   const base = await sourceQuery(client, row.billSource);
 
-  const state: RunState = { networkStreak: 0 };
+  const state: RunState = { networkStreak: [] };
   if (options.documentIds) {
     const ids = [...new Set(options.documentIds)];
     const visible: number[] = [];
@@ -489,8 +489,8 @@ const DOCUMENT_REASONS: Partial<
 };
 
 interface RunState {
-  /** Downloads in a row that failed to connect or timed out. */
-  networkStreak: number;
+  /** Documents whose downloads failed in a row to connect or timed out. */
+  networkStreak: PaperlessDoc["id"][];
 }
 
 const GAVE_UP_MESSAGE =
@@ -545,7 +545,7 @@ async function handle(
   let outcome: Outcome;
   try {
     outcome = await processDocument(userId, row, client, doc);
-    if (outcome !== "unchanged") state.networkStreak = 0;
+    if (outcome !== "unchanged") state.networkStreak = [];
     clearAttempts(row, doc.id);
   } catch (err) {
     // Only problems with the connection itself stop the run; a document Paperless
@@ -553,10 +553,15 @@ async function handle(
     // request already succeeded, so a single download that times out or fails to
     // connect belongs to its document; only a streak of them means the connection is down.
     if (err instanceof PaperlessError && err.code === "network") {
-      state.networkStreak++;
-      if (state.networkStreak >= NETWORK_STREAK_LIMIT) throw err;
+      state.networkStreak.push(doc.id);
+      if (state.networkStreak.length >= NETWORK_STREAK_LIMIT) {
+        // The connection is down, so the earlier documents in the streak were
+        // not at fault: their attempts must not count toward the cap.
+        for (const id of state.networkStreak) clearAttempts(row, id);
+        throw err;
+      }
     } else {
-      state.networkStreak = 0;
+      state.networkStreak = [];
       if (err instanceof PaperlessError && RUN_LEVEL_ERRORS.has(err.code)) {
         throw err;
       }

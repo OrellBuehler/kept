@@ -453,6 +453,7 @@ describe("syncConnection", () => {
     expect(r.error).toBe("network");
     expect(r.pending).toBeLessThan(4);
     expect(getConnectionRow(user.id)!.lastSyncModified).toBeNull();
+    expect(getDB().select().from(paperlessPending).all()).toHaveLength(0);
   });
 
   it("gives up on a document that keeps failing after the attempt cap and releases the watermark", async () => {
