@@ -1,14 +1,20 @@
 <script lang="ts">
   import PageHeader from "$lib/components/app/page-header.svelte";
-  import { resolve } from "$app/paths";
+  import { enhance } from "$app/forms";
   import DownloadIcon from "@lucide/svelte/icons/download";
   import * as Card from "$lib/components/ui/card/index.js";
   import * as Table from "$lib/components/ui/table/index.js";
   import { Button } from "$lib/components/ui/button/index.js";
+  import { Spinner } from "$lib/components/ui/spinner/index.js";
+  import FormAlert from "$lib/components/app/form-alert.svelte";
+  import AdminConfirmFields from "$lib/components/app/admin-confirm-fields.svelte";
+  import { formError } from "$lib/form-errors";
   import LocalTime from "$lib/components/app/local-time.svelte";
   import type { PageProps } from "./$types";
 
-  let { data }: PageProps = $props();
+  let { data, form }: PageProps = $props();
+
+  let downloading = $state(false);
 
   const formatSize = (bytes: number) =>
     bytes < 1024 * 1024
@@ -34,14 +40,36 @@
       </Card.Description>
     </Card.Header>
     <Card.Content>
-      <Button
-        href={resolve("/admin/backup/download")}
-        data-sveltekit-reload
-        download
+      <form
+        method="POST"
+        action="?/download"
+        class="flex max-w-sm flex-col gap-3"
+        use:enhance={() => {
+          downloading = true;
+          return async ({ result, update }) => {
+            if (result.type === "success" && result.data?.downloadUrl) {
+              window.location.assign(String(result.data.downloadUrl));
+              downloading = false;
+              await update({ reset: true });
+              return;
+            }
+            await update();
+            downloading = false;
+          };
+        }}
       >
-        <DownloadIcon />
-        Download backup
-      </Button>
+        <FormAlert message={formError(form?.errors)} />
+        <AdminConfirmFields
+          idPrefix="backup"
+          mode={data.confirmMode}
+          errors={form?.errors}
+          description="Confirm it is you before downloading the database."
+        />
+        <Button type="submit" class="self-start" disabled={downloading}>
+          {#if downloading}<Spinner />{:else}<DownloadIcon />{/if}
+          Download backup
+        </Button>
+      </form>
     </Card.Content>
   </Card.Root>
 

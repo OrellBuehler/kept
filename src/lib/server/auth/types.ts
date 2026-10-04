@@ -33,7 +33,8 @@ export class AuthError extends Error {
       | "totp_already_enabled"
       | "totp_not_pending"
       | "totp_not_enabled"
-      | "passkey_not_found",
+      | "passkey_not_found"
+      | "forbidden",
     message: string,
   ) {
     super(message);

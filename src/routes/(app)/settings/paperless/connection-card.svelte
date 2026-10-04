@@ -54,7 +54,9 @@
   <Card.Header>
     <div class="flex flex-wrap items-center justify-between gap-2">
       <Card.Title>Connection</Card.Title>
-      {#if connection}
+      {#if connection?.tokenUnreadable}
+        <Badge variant="destructive">Needs re-entry</Badge>
+      {:else if connection}
         <Badge variant={connection.enabled ? "default" : "secondary"}>
           {connection.enabled ? "Enabled" : "Paused"}
         </Badge>
@@ -68,6 +70,12 @@
   <Card.Content class="grid grid-cols-[minmax(0,1fr)] gap-6">
     {#if secret}
       <SecretBox {secret} ondismiss={ondismisssecret} />
+    {/if}
+
+    {#if connection?.tokenUnreadable}
+      <FormAlert
+        message="The saved API token can no longer be read, probably because KEPT_SECRET_KEY changed. Nothing is synced until you enter the token again and save, or disconnect."
+      />
     {/if}
 
     {#if connection}
@@ -136,17 +144,21 @@
         label="API token"
         for="token"
         errors={saveErrors.token}
-        hint={connection
-          ? "A token is stored. Leave blank to keep it; enter a new one to replace it."
-          : "Created under My Profile in Paperless. Stored encrypted, never shown again."}
+        hint={connection?.tokenUnreadable
+          ? "Enter the token again."
+          : connection
+            ? "A token is stored. Leave blank to keep it; enter a new one to replace it."
+            : "Created under My Profile in Paperless. Stored encrypted, never shown again."}
       >
         <Input
           id="token"
           name="token"
           type="password"
           autocomplete="new-password"
-          required={!connection}
-          placeholder={connection ? "Unchanged" : ""}
+          required={!connection || connection.tokenUnreadable}
+          placeholder={connection && !connection.tokenUnreadable
+            ? "Unchanged"
+            : ""}
           aria-invalid={!!saveErrors.token}
         />
       </FormField>

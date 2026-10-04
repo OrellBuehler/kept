@@ -386,7 +386,10 @@ const matrix: Record<string, Entry> = {
   },
   "/src/routes/(app)/admin/backup/+page.server.ts": {
     access: "admin",
-    handlers: { load: (m, e) => m.load(e) },
+    handlers: {
+      load: (m, e) => m.load(e),
+      "actions.download": (m, e) => m.actions.download(e),
+    },
   },
   "/src/routes/(app)/admin/backup/download/+server.ts": {
     access: "admin",
@@ -484,6 +487,7 @@ describe("authorization", () => {
         ev({
           user: member,
           form: {
+            adminPassword: member.password,
             username: "sneaky",
             password: "a-long-enough-password",
             role: "admin",

@@ -18,11 +18,17 @@ import {
 } from "$lib/server/auth/sessions";
 import { isApiPath, isPublicPath } from "$lib/server/auth/routing";
 import { describeError } from "$lib/server/errors";
+import {
+  warnIfAddressHeaderUnset,
+  warnIfProxied,
+} from "$lib/server/auth/login";
+import { withSecurityHeaders } from "$lib/server/security-headers";
 import { countUsers } from "$lib/server/auth/users";
 
 export async function init() {
   assertSecretKeyConfigured();
   getStore();
+  warnIfAddressHeaderUnset();
   runMigrations();
   startPendingSweep();
   sweepStaleStorageTemp().catch((err) =>
@@ -51,7 +57,11 @@ function redirectResponse(location: string, clearCookie?: string): Response {
   return new Response(null, { status: 303, headers });
 }
 
-export const handle: Handle = async ({ event, resolve }) => {
+async function handleRequest({
+  event,
+  resolve,
+}: Parameters<Handle>[0]): Promise<Response> {
+  warnIfProxied(event.request.headers);
   event.locals.user = null;
   event.locals.session = null;
 
@@ -86,4 +96,7 @@ export const handle: Handle = async ({ event, resolve }) => {
     `/login?redirectTo=${encodeURIComponent(pathname + search)}`,
     staleCookie,
   );
-};
+}
+
+export const handle: Handle = async (input) =>
+  withSecurityHeaders(await handleRequest(input), input.event.url);

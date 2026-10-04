@@ -14,8 +14,9 @@ export async function postJson(
   url: string,
   body: string,
   headers: Record<string, string>,
+  allowPrivate: boolean,
 ): Promise<void> {
-  await assertAllowedUrl(url);
+  await assertAllowedUrl(url, { allowPrivate });
   let res: Response;
   try {
     res = await fetchFn(url, {

@@ -12,6 +12,8 @@ import {
 } from "./client";
 import {
   getConnectionRow,
+  isTokenUnreadable,
+  privateNetworkGuard,
   saveConnection,
   type ConnectionRow,
   type SaveConnectionInput,
@@ -100,6 +102,8 @@ async function verifySameServer(
     apiVersion: null,
     timeoutMs: CHECK_TIMEOUT_MS,
     downloadTimeoutMs: CHECK_TIMEOUT_MS * 3,
+    // The new address is not saved yet, so it gets the same private-network check as saving it.
+    guard: privateNetworkGuard(input.allowPrivateNetwork !== false),
   });
   for (const sample of samples) {
     let matches: boolean;
@@ -127,6 +131,14 @@ export async function saveConnectionVerified(
   input: SaveConnectionInput,
 ): Promise<SaveConnectionResult> {
   const existing = getConnectionRow(userId);
+  // Without a new token the stored one is used for the check; if it cannot be read, ask for it.
+  if (existing && !input.token?.trim() && isTokenUnreadable(existing)) {
+    throw new LedgerError(
+      "invalid",
+      new PaperlessError("token_unreadable").message,
+      "token",
+    );
+  }
   if (existing && input.differentInstance !== true) {
     let baseUrl: string | null = null;
     try {

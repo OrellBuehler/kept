@@ -1,3 +1,5 @@
+import { SecretUnreadableError } from "$lib/server/crypto";
+import { privateNetworkAllowedForUser } from "$lib/server/net/private-network";
 import type { ChannelKind } from "$lib/notification-types";
 import { emailChannel, type SendMail } from "./channels/email";
 import type { FetchFn } from "./channels/http";
@@ -21,7 +23,8 @@ function buildChannel(
   let config;
   try {
     config = getChannelConfig(userId, kind);
-  } catch {
+  } catch (err) {
+    if (!(err instanceof SecretUnreadableError)) throw err;
     throw new ChannelError(
       "decrypt_failed",
       "The saved settings cannot be read; KEPT_SECRET_KEY may have changed. Save them again.",
@@ -30,9 +33,18 @@ function buildChannel(
   if (!config) throw new ChannelError("not_configured", "Not configured.");
   switch (kind) {
     case "ntfy":
-      return ntfyChannel(config as never, deps.fetch);
+      return ntfyChannel(
+        config as never,
+        deps.fetch,
+        privateNetworkAllowedForUser(userId),
+      );
     case "webhook":
-      return webhookChannel(config as never, deps.fetch);
+      return webhookChannel(
+        config as never,
+        deps.fetch,
+        undefined,
+        privateNetworkAllowedForUser(userId),
+      );
     case "email":
       if (!deps.smtp) {
         throw new ChannelError(
@@ -77,6 +89,14 @@ export async function deliver(
   let delivered = 0;
   for (const channel of listChannels(userId)) {
     if (!channel.enabled) continue;
+    if (channel.needsReentry) {
+      console.warn(
+        "notification channel skipped",
+        channel.kind,
+        "secret_unreadable",
+      );
+      continue;
+    }
     const result = await sendVia(userId, channel.kind, message, deps);
     if (result.ok) delivered += 1;
   }

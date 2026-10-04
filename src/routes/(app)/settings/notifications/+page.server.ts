@@ -1,6 +1,7 @@
 import { fail } from "@sveltejs/kit";
 import { CHANNEL_KINDS, type ChannelKind } from "$lib/notification-types";
 import { requireUser } from "$lib/server/auth/guards";
+import { privateNetworkAllowed } from "$lib/server/net/private-network";
 import { assertAllowedUrl } from "$lib/server/notifications/channels/guard";
 import { ChannelError } from "$lib/server/notifications/types";
 import { parseForm } from "$lib/server/forms";
@@ -13,7 +14,7 @@ import {
 } from "$lib/server/notifications/schemas";
 import {
   deleteChannel,
-  getChannelConfig,
+  getReadableChannelConfig,
   getSettings,
   listChannels,
   saveChannel,
@@ -69,26 +70,43 @@ export const actions: Actions = {
     if (!parsed.ok) {
       return fail(400, { action: "channel", kind, errors: parsed.errors });
     }
-    // A blank secret keeps the stored one.
+    // A blank secret keeps the stored one. If the stored one cannot be read
+    // there is nothing to keep: it must be entered again or removed explicitly.
     const data = parsed.data as ChannelConfig & {
       token?: string;
       secret?: string;
     };
-    const previous = getChannelConfig(user.id, kind) as {
-      token?: string;
-      secret?: string;
-    } | null;
-    if (kind === "ntfy" && data.token === undefined && previous?.token) {
-      data.token = previous.token;
-    }
-    if (kind === "webhook" && data.secret === undefined && previous?.secret) {
-      data.secret = previous.secret;
+    const secretField =
+      kind === "ntfy" ? "token" : kind === "webhook" ? "secret" : null;
+    if (secretField && data[secretField] === undefined) {
+      const previous = getReadableChannelConfig(user.id, kind) as {
+        token?: string;
+        secret?: string;
+      } | null;
+      if (previous?.[secretField]) {
+        data[secretField] = previous[secretField];
+      } else if (
+        listChannels(user.id).find((c) => c.kind === kind)?.needsReentry &&
+        form.get("removeSecret") !== "on"
+      ) {
+        return fail(400, {
+          action: "channel",
+          kind,
+          errors: {
+            [secretField]: [
+              'The saved secret can no longer be read. Enter it again, or tick "Remove the saved secret".',
+            ],
+          },
+        });
+      }
     }
     const target =
       "serverUrl" in data ? data.serverUrl : "url" in data ? data.url : null;
     if (target) {
       try {
-        await assertAllowedUrl(target);
+        await assertAllowedUrl(target, {
+          allowPrivate: privateNetworkAllowed(user.role),
+        });
       } catch (err) {
         if (!(err instanceof ChannelError)) throw err;
         const field = kind === "ntfy" ? "serverUrl" : "url";

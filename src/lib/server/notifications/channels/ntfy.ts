@@ -11,6 +11,7 @@ export interface NtfyConfig {
 export function ntfyChannel(
   config: NtfyConfig,
   fetchFn: FetchFn = fetch,
+  allowPrivate = false,
 ): Channel {
   return {
     async send({ title, body }) {
@@ -19,6 +20,7 @@ export function ntfyChannel(
         config.serverUrl,
         JSON.stringify({ topic: config.topic, title, message: body }),
         config.token ? { authorization: `Bearer ${config.token}` } : {},
+        allowPrivate,
       );
     },
   };

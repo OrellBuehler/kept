@@ -212,6 +212,40 @@ describe("pushBill", () => {
     expect(fake.requestsTo("/download/")).toHaveLength(0);
   });
 
+  describe("with KEPT_ALLOW_PRIVATE_NETWORK cleared", () => {
+    beforeEach(() => vi.stubEnv("KEPT_ALLOW_PRIVATE_NETWORK", ""));
+    afterEach(() => vi.stubEnv("KEPT_ALLOW_PRIVATE_NETWORK", "true"));
+
+    const change = () =>
+      updateBill(
+        user.id,
+        billId(),
+        billInput({
+          creditorName: "Example Energy Ltd",
+          dueDate: "2026-11-30",
+          amount: 5 as Minor,
+        }),
+      );
+
+    it("a member's stored private connection is not written to", async () => {
+      change();
+      fake.requests = [];
+      await expect(pushBill(user.id, billId())).rejects.toMatchObject({
+        code: "blocked_address",
+      });
+      expect(fake.requests).toHaveLength(0);
+    });
+
+    it("the listener-safe push records the failure by code and sends nothing", async () => {
+      vi.spyOn(console, "error").mockImplementation(() => {});
+      change();
+      fake.requests = [];
+      expect(await pushBillSafely(user.id, billId())).toBeNull();
+      expect(fake.requests).toHaveLength(0);
+      expect(getConnectionRow(user.id)!.lastError).toBe("push_blocked_address");
+    });
+  });
+
   it("skips the call when nothing changed", async () => {
     fake.requests = [];
     const r = await pushBill(user.id, billId());

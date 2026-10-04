@@ -207,4 +207,36 @@ describe("users", () => {
       expect(validateSessionToken(s.token)).toBeNull();
     });
   });
+
+  describe("audit in the same transaction", () => {
+    const boom = () => {
+      throw new Error("audit failed");
+    };
+
+    it("createUser rolls the user back when the audit write fails", async () => {
+      await expect(
+        createUser(
+          {
+            username: "newbie",
+            password: "a-long-enough-password",
+            role: "member",
+          },
+          boom,
+        ),
+      ).rejects.toThrow("audit failed");
+      expect(listUsers()).toHaveLength(0);
+    });
+
+    it("deleteUser keeps the user when the audit write fails", async () => {
+      const admin = await createTestUser({ role: "admin" });
+      const member = await createTestUser();
+      expect(() => deleteUser(admin.id, member.id, boom)).toThrow(
+        "audit failed",
+      );
+      expect(listUsers()).toHaveLength(2);
+      const seen: string[] = [];
+      deleteUser(admin.id, member.id, (_tx, t) => seen.push(t.username));
+      expect(seen).toEqual([member.username]);
+    });
+  });
 });

@@ -138,14 +138,59 @@ describe("settings/notifications", () => {
     expect(listChannels(user.id)).toEqual([]);
   });
 
-  it("rejects private destinations at save time when blocking is on", async () => {
-    vi.stubEnv("KEPT_NOTIFY_BLOCK_PRIVATE", "true");
-    const res = await act("saveChannel", user, {
+  describe("private network targets", () => {
+    const privateHook = {
       kind: "webhook",
       url: "http://127.0.0.1:9000/hook",
+    };
+
+    it("are refused for members by default", async () => {
+      vi.stubEnv("KEPT_ALLOW_PRIVATE_NETWORK", "");
+      const res = await act("saveChannel", user, privateHook);
+      expect(res.type).toBe("fail");
+      expect(listChannels(user.id)).toEqual([]);
+      const meta = await act("saveChannel", user, {
+        kind: "ntfy",
+        serverUrl: "http://169.254.169.254",
+        topic: "kept",
+      });
+      expect(meta.type).toBe("fail");
     });
-    expect(res.type).toBe("fail");
-    expect(listChannels(user.id)).toEqual([]);
+
+    it("are accepted for administrators", async () => {
+      vi.stubEnv("KEPT_ALLOW_PRIVATE_NETWORK", "");
+      const admin = await createTestUser({ role: "admin" });
+      const res = await act("saveChannel", admin, privateHook);
+      expect(res.type).toBe("return");
+      expect(listChannels(admin.id)).toHaveLength(1);
+    });
+
+    it("are accepted for members with KEPT_ALLOW_PRIVATE_NETWORK=true", async () => {
+      vi.stubEnv("KEPT_ALLOW_PRIVATE_NETWORK", "true");
+      const res = await act("saveChannel", user, privateHook);
+      expect(res.type).toBe("return");
+    });
+
+    it("are refused for administrators when KEPT_NOTIFY_BLOCK_PRIVATE=true", async () => {
+      vi.stubEnv("KEPT_ALLOW_PRIVATE_NETWORK", "");
+      vi.stubEnv("KEPT_NOTIFY_BLOCK_PRIVATE", "true");
+      const admin = await createTestUser({ role: "admin" });
+      const res = await act("saveChannel", admin, privateHook);
+      expect(res.type).toBe("fail");
+    });
+
+    it("are refused again at send time if a member's channel already points inside", async () => {
+      vi.stubEnv("KEPT_ALLOW_PRIVATE_NETWORK", "true");
+      await act("saveChannel", user, privateHook);
+      vi.stubEnv("KEPT_ALLOW_PRIVATE_NETWORK", "");
+      const fetchMock = vi.fn(async () => new Response(null, { status: 200 }));
+      vi.stubGlobal("fetch", fetchMock);
+      const res = (await act("testChannel", user, { kind: "webhook" })) as {
+        value: { result: { ok: boolean } };
+      };
+      expect(res.value.result.ok).toBe(false);
+      expect(fetchMock).not.toHaveBeenCalled();
+    });
   });
 
   it("never touches another user's channels", async () => {
@@ -156,5 +201,122 @@ describe("settings/notifications", () => {
     });
     await act("deleteChannel", user, { kind: "webhook" });
     expect(listChannels(other.id)).toHaveLength(1);
+  });
+
+  describe("after KEPT_SECRET_KEY changed", () => {
+    const keyA = Buffer.alloc(32, 1).toString("base64");
+    const keyB = Buffer.alloc(32, 2).toString("base64");
+
+    async function brokenChannel() {
+      vi.stubEnv("KEPT_SECRET_KEY", keyA);
+      await act("saveChannel", user, {
+        kind: "ntfy",
+        serverUrl: "https://ntfy.example.org",
+        topic: "kept",
+        token: "tk_secret",
+      });
+      vi.stubEnv("KEPT_SECRET_KEY", keyB);
+    }
+
+    it("load does not throw and flags the channel", async () => {
+      await brokenChannel();
+      const data = (await load(
+        createTestEvent({
+          user,
+          url: "http://kept.test/settings/notifications",
+        }) as never,
+      )) as { channels: { kind: string; needsReentry: boolean }[] };
+      expect(data.channels).toEqual([
+        expect.objectContaining({ kind: "ntfy", needsReentry: true }),
+      ]);
+    });
+
+    it("re-saving with a blank token is refused instead of silently dropping the secret", async () => {
+      await brokenChannel();
+      const res = await act("saveChannel", user, {
+        kind: "ntfy",
+        serverUrl: "https://ntfy.example.org",
+        topic: "kept2",
+      });
+      expect(res.type).toBe("fail");
+      expect(JSON.stringify(res)).toContain("Enter it again");
+      expect(listChannels(user.id)[0]).toMatchObject({ needsReentry: true });
+    });
+
+    it("re-saving with a new token stores it", async () => {
+      await brokenChannel();
+      const res = await act("saveChannel", user, {
+        kind: "ntfy",
+        serverUrl: "https://ntfy.example.org",
+        topic: "kept2",
+        token: "tk_new",
+      });
+      expect(res.type).toBe("return");
+      expect(listChannels(user.id)[0]).toMatchObject({
+        needsReentry: false,
+        fields: { topic: "kept2" },
+        hasSecret: true,
+      });
+    });
+
+    it("the secret can be removed explicitly", async () => {
+      await brokenChannel();
+      const res = await act("saveChannel", user, {
+        kind: "ntfy",
+        serverUrl: "https://ntfy.example.org",
+        topic: "kept2",
+        removeSecret: "on",
+      });
+      expect(res.type).toBe("return");
+      expect(listChannels(user.id)[0]).toMatchObject({
+        needsReentry: false,
+        fields: { topic: "kept2" },
+        hasSecret: false,
+      });
+    });
+
+    it("the same rule holds for the webhook signing secret", async () => {
+      vi.stubEnv("KEPT_SECRET_KEY", keyA);
+      await act("saveChannel", user, {
+        kind: "webhook",
+        url: "https://hooks.example.org/k",
+        secret: "sig",
+      });
+      vi.stubEnv("KEPT_SECRET_KEY", keyB);
+      const refused = await act("saveChannel", user, {
+        kind: "webhook",
+        url: "https://hooks.example.org/k",
+      });
+      expect(refused.type).toBe("fail");
+      expect(JSON.stringify(refused)).toContain("secret");
+      const ok = await act("saveChannel", user, {
+        kind: "webhook",
+        url: "https://hooks.example.org/k",
+        removeSecret: "on",
+      });
+      expect(ok.type).toBe("return");
+    });
+
+    it("a first save without a secret is unaffected", async () => {
+      vi.stubEnv("KEPT_SECRET_KEY", keyB);
+      const res = await act("saveChannel", user, {
+        kind: "ntfy",
+        serverUrl: "https://ntfy.example.org",
+        topic: "kept",
+      });
+      expect(res.type).toBe("return");
+    });
+
+    it("the channel can be removed, and toggling does not throw", async () => {
+      await brokenChannel();
+      expect(
+        (await act("toggleChannel", user, { kind: "ntfy", enabled: "false" }))
+          .type,
+      ).toBe("return");
+      expect((await act("deleteChannel", user, { kind: "ntfy" })).type).toBe(
+        "return",
+      );
+      expect(listChannels(user.id)).toEqual([]);
+    });
   });
 });

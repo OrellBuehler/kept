@@ -9,13 +9,18 @@ import {
   totpCredentials,
   users,
 } from "$lib/server/db";
-import { decryptSecret, encryptSecret } from "$lib/server/crypto";
+import {
+  SecretUnreadableError,
+  decryptSecret,
+  encryptSecret,
+} from "$lib/server/crypto";
 import { logAuthEvent } from "./events";
 import { verifyPassword } from "./password";
 import { twoFactorManageLimiter, type LoginRateLimiter } from "./rate-limit";
 import { hashToken, invalidateUserSessions } from "./sessions";
 import { generateTotpSecret, otpauthUri, verifyTotp } from "./totp";
 import { AuthError } from "./types";
+import type { InTransaction } from "./users";
 
 export const RECOVERY_CODE_COUNT = 10;
 const RECOVERY_ALPHABET = "abcdefghjkmnpqrstuvwxyz23456789";
@@ -89,7 +94,15 @@ export function getPendingTotpEnrolment(
       ),
     )
     .get();
-  return row ? enrolmentFor(username, row.secret) : null;
+  if (!row) return null;
+  try {
+    return enrolmentFor(username, row.secret);
+  } catch (err) {
+    if (!(err instanceof SecretUnreadableError)) throw err;
+    // KEPT_SECRET_KEY changed mid-enrolment: treat it as not started; starting again replaces it.
+    console.warn("totp enrolment skipped", err.code);
+    return null;
+  }
 }
 
 /** Starts (or restarts) enrolment with a fresh secret. Fails if TOTP is already on. */
@@ -180,12 +193,16 @@ export function consumeTotpCode(
         .get();
       if (!row) return false;
       if (!opts.confirming && !row.confirmedAt) return false;
-      const step = verifyTotp(
-        decryptSecret(row.secret),
-        code,
-        now,
-        row.lastStep,
-      );
+      let secret: string;
+      try {
+        secret = decryptSecret(row.secret);
+      } catch (err) {
+        if (!(err instanceof SecretUnreadableError)) throw err;
+        // KEPT_SECRET_KEY changed: no authenticator code can match; recovery codes and an admin reset still work.
+        console.warn("totp code rejected", err.code);
+        return false;
+      }
+      const step = verifyTotp(secret, code, now, row.lastStep);
       if (step === null) return false;
       tx.update(totpCredentials)
         .set({
@@ -410,27 +427,34 @@ export function resetTwoFactor(
   actorId: string,
   targetId: string,
   keepSessionId?: string,
+  audit?: InTransaction<{ id: string; username: string }>,
 ): void {
-  const db = getDB();
-  const target = db
-    .select({ id: users.id })
-    .from(users)
-    .where(eq(users.id, targetId))
-    .get();
-  if (!target) throw new AuthError("user_not_found", "User not found.");
-  db.transaction((tx) => {
-    tx.delete(totpCredentials)
-      .where(eq(totpCredentials.userId, targetId))
-      .run();
-    tx.delete(recoveryCodes).where(eq(recoveryCodes.userId, targetId)).run();
-    tx.delete(passkeys).where(eq(passkeys.userId, targetId)).run();
-    tx.delete(authChallenges).where(eq(authChallenges.userId, targetId)).run();
-  });
-  invalidateUserSessions(
-    targetId,
-    actorId === targetId ? keepSessionId : undefined,
+  getDB().transaction(
+    (tx) => {
+      const target = tx
+        .select({ id: users.id, username: users.username })
+        .from(users)
+        .where(eq(users.id, targetId))
+        .get();
+      if (!target) throw new AuthError("user_not_found", "User not found.");
+      tx.delete(totpCredentials)
+        .where(eq(totpCredentials.userId, targetId))
+        .run();
+      tx.delete(recoveryCodes).where(eq(recoveryCodes.userId, targetId)).run();
+      tx.delete(passkeys).where(eq(passkeys.userId, targetId)).run();
+      tx.delete(authChallenges)
+        .where(eq(authChallenges.userId, targetId))
+        .run();
+      // same connection, so these writes are part of this transaction
+      invalidateUserSessions(
+        targetId,
+        actorId === targetId ? keepSessionId : undefined,
+      );
+      logAuthEvent("two_factor_reset", targetId, actorId);
+      audit?.(tx, target);
+    },
+    { behavior: "immediate" },
   );
-  logAuthEvent("two_factor_reset", targetId, actorId);
 }
 
 export function usersWithTwoFactor(): Set<string> {

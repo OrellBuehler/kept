@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { passwordSchema, usernameSchema } from "./schemas";
+import {
+  USERNAME_MAX,
+  loginSchema,
+  passwordSchema,
+  usernameSchema,
+} from "./schemas";
 
 describe("passwordSchema", () => {
   it("enforces 10..256 characters", () => {
@@ -34,5 +39,28 @@ describe("usernameSchema", () => {
     for (const bad of ["a b c", "ab@cd", "müller", "a/b", "a\\b"]) {
       expect(usernameSchema.safeParse(bad).success).toBe(false);
     }
+  });
+});
+
+describe("loginSchema", () => {
+  const base = { password: "x" };
+
+  it("keeps normal usernames, trimmed and lowercased", () => {
+    const r = loginSchema.parse({ ...base, username: "  Alice " });
+    expect(r.username).toBe("alice");
+  });
+
+  it("cuts oversized usernames so they never match an account or bloat the limiter", () => {
+    const r = loginSchema.parse({
+      ...base,
+      username: "a".repeat(100_000),
+    });
+    expect(r.username).toHaveLength(USERNAME_MAX + 1);
+    expect(usernameSchema.safeParse(r.username).success).toBe(false);
+  });
+
+  it("an exactly maximal username is untouched", () => {
+    const name = "a".repeat(USERNAME_MAX);
+    expect(loginSchema.parse({ ...base, username: name }).username).toBe(name);
   });
 });

@@ -1,7 +1,11 @@
 import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
 import { and, eq, isNull, sql } from "drizzle-orm";
 import { z } from "zod";
-import { decryptSecret, encryptSecret } from "$lib/server/crypto";
+import {
+  SecretUnreadableError,
+  decryptSecret,
+  encryptSecret,
+} from "$lib/server/crypto";
 import {
   bills,
   getDB,
@@ -12,6 +16,12 @@ import {
   type PaperlessBillSource,
   type PaperlessFieldMapping,
 } from "$lib/server/db";
+import {
+  PrivateNetworkError,
+  assertHostAllowed,
+  isPrivateLiteralHost,
+  privateNetworkAllowedForUser,
+} from "$lib/server/net/private-network";
 import { LedgerError, notFound } from "$lib/server/ledger/errors";
 import {
   PaperlessClient,
@@ -137,7 +147,19 @@ export interface ConnectionView {
   lastSyncAt: number | null;
   lastError: string | null;
   webhookToken: string;
+  /** The stored token cannot be decrypted (KEPT_SECRET_KEY changed): it must be entered again. */
+  tokenUnreadable: boolean;
   createdAt: number;
+}
+
+export function isTokenUnreadable(row: ConnectionRow): boolean {
+  try {
+    decryptSecret(row.tokenEncrypted);
+    return false;
+  } catch (err) {
+    if (err instanceof SecretUnreadableError) return true;
+    throw err;
+  }
 }
 
 export function toView(row: ConnectionRow): ConnectionView {
@@ -153,6 +175,7 @@ export function toView(row: ConnectionRow): ConnectionView {
     lastSyncAt: row.lastSyncAt ? row.lastSyncAt.getTime() : null,
     lastError: row.lastError,
     webhookToken: row.webhookToken,
+    tokenUnreadable: isTokenUnreadable(row),
     createdAt: row.createdAt.getTime(),
   };
 }
@@ -234,6 +257,8 @@ export interface SaveConnectionInput {
    * links to the old server's documents and start over. Without it, an address change keeps them.
    */
   differentInstance?: boolean;
+  /** Whether this user may point Kept at private-network hosts; see `privateNetworkAllowed`. */
+  allowPrivateNetwork?: boolean;
 }
 
 export interface SaveConnectionResult {
@@ -255,6 +280,13 @@ export function saveConnection(
       throw new LedgerError("invalid", err.message, "baseUrl");
     }
     throw err;
+  }
+  if (input.allowPrivateNetwork === false && isPrivateLiteralHost(baseUrl)) {
+    throw new LedgerError(
+      "invalid",
+      new PaperlessError("blocked_address").message,
+      "baseUrl",
+    );
   }
   const token = input.token?.trim() ? input.token.trim() : null;
   if (token !== null) {
@@ -291,6 +323,13 @@ export function saveConnection(
     return { connection: toView(row), webhookSecret: secret };
   }
 
+  if (token === null && isTokenUnreadable(existing)) {
+    throw new LedgerError(
+      "invalid",
+      new PaperlessError("token_unreadable").message,
+      "token",
+    );
+  }
   const moved = existing.baseUrl !== baseUrl;
   const reset = input.differentInstance === true;
   const row = db.transaction((tx) => {
@@ -472,13 +511,40 @@ export function clientForRow(
   row: ConnectionRow,
   options: { timeoutMs?: number } = {},
 ): PaperlessClient {
+  let token: string;
+  try {
+    token = decryptSecret(row.tokenEncrypted);
+  } catch (err) {
+    if (err instanceof SecretUnreadableError) {
+      throw new PaperlessError("token_unreadable", { cause: err });
+    }
+    throw err;
+  }
   return new PaperlessClient({
     ...options,
     baseUrl: row.baseUrl,
-    token: decryptSecret(row.tokenEncrypted),
+    token,
     allowInsecureTls: row.allowInsecureTls,
     apiVersion: row.apiVersion,
+    guard: privateNetworkGuard(privateNetworkAllowedForUser(row.userId)),
   });
+}
+
+/** The request guard for a client: none when private hosts are allowed, else a resolve-and-check. */
+export function privateNetworkGuard(
+  allowPrivate: boolean,
+): ((url: string) => Promise<void>) | undefined {
+  if (allowPrivate) return undefined;
+  return async (url) => {
+    try {
+      await assertHostAllowed(url, { allowPrivate: false });
+    } catch (err) {
+      if (!(err instanceof PrivateNetworkError)) throw err;
+      throw new PaperlessError(
+        err.code === "dns" ? "network" : "blocked_address",
+      );
+    }
+  };
 }
 
 /** Stores what a call learned about the server (negotiated API version, release). */

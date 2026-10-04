@@ -180,8 +180,9 @@ async function runSync(
     throw new LedgerError("not_found", "Paperless connection not found.");
   }
   const result = emptyResult();
-  const client = clientForRow(row);
+  let client: PaperlessClient | null = null;
   try {
+    client = clientForRow(row);
     await sync(userId, row, client, options, result);
   } catch (err) {
     const code =
@@ -196,7 +197,7 @@ async function runSync(
   }
   // New or changed bills may match payments that are already booked.
   if (result.imported + result.updated > 0) autoMatchQuietly(userId);
-  rememberServerInfo(row, client);
+  if (client) rememberServerInfo(row, client);
   recordConnectionState(row, {
     lastError: result.error,
     lastSyncAt: new Date(),

@@ -229,6 +229,39 @@ export const authEvents = sqliteTable(
   (t) => [index("auth_events_user_id_idx").on(t.userId)],
 );
 
+export const ADMIN_ACTIONS = [
+  "user_create",
+  "user_delete",
+  "user_reset_two_factor",
+  "backup_download",
+  "backup_link_issued",
+  "admin_confirm_failed",
+  "admin_confirm_rate_limited",
+] as const;
+export type AdminAction = (typeof ADMIN_ACTIONS)[number];
+
+/**
+ * Audit trail of administrator actions. Ids and usernames only, no secrets;
+ * not a foreign key so entries outlive deleted users.
+ */
+export const adminAuditLog = sqliteTable(
+  "admin_audit_log",
+  {
+    id: text("id")
+      .primaryKey()
+      .$defaultFn(() => crypto.randomUUID()),
+    actorUserId: text("actor_user_id").notNull(),
+    actorUsername: text("actor_username").notNull(),
+    action: text("action", { enum: ADMIN_ACTIONS }).notNull(),
+    targetUserId: text("target_user_id"),
+    targetUsername: text("target_username"),
+    /** Short non-sensitive context such as "role=admin". */
+    details: text("details"),
+    ...timestamps,
+  },
+  (t) => [index("admin_audit_log_created_at_idx").on(t.createdAt)],
+);
+
 const id = () =>
   text("id")
     .primaryKey()

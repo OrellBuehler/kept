@@ -284,6 +284,20 @@
         >
           <FormAlert message={formError(errorsFor("confirmTotp"))} />
           <Field.Field>
+            <Field.Label for="confirm-password">Password</Field.Label>
+            <Input
+              id="confirm-password"
+              name="password"
+              type="password"
+              autocomplete="current-password"
+              required
+              aria-invalid={hasError(errorsFor("confirmTotp"), "password")}
+            />
+            <Field.Error
+              errors={fieldErrors(errorsFor("confirmTotp"), "password")}
+            />
+          </Field.Field>
+          <Field.Field>
             <Field.Label for="confirm-code">
               Enter the current code to finish
             </Field.Label>
@@ -330,10 +344,25 @@
         <form
           method="POST"
           action="?/startTotp"
+          class="flex flex-col gap-3"
           use:enhance={submit("startTotp")}
         >
           <FormAlert message={formError(errorsFor("startTotp"))} />
-          <Button type="submit" disabled={pending !== null}>
+          <Field.Field>
+            <Field.Label for="start-password">Password</Field.Label>
+            <Input
+              id="start-password"
+              name="password"
+              type="password"
+              autocomplete="current-password"
+              required
+              aria-invalid={hasError(errorsFor("startTotp"), "password")}
+            />
+            <Field.Error
+              errors={fieldErrors(errorsFor("startTotp"), "password")}
+            />
+          </Field.Field>
+          <Button type="submit" class="self-start" disabled={pending !== null}>
             Set up authenticator app
           </Button>
         </form>
