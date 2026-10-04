@@ -21,6 +21,7 @@ export interface PlanAccount {
   openingDate: string | null;
   fillFromTransfers: boolean;
   hasPortfolios: boolean;
+  archived: boolean;
 }
 
 export interface PlanTransaction {
@@ -71,8 +72,13 @@ export interface PlanInput {
   /** Rows that may be paired with a source (on any account). */
   candidates: readonly PlanTransaction[];
   accounts: readonly PlanAccount[];
-  /** Ids of rows that already have a transfers row, whatever its status. */
+  /** Ids of rows that already have a linked or dismissed transfers row. */
   taken: ReadonlySet<string>;
+  /**
+   * Ids of rows that wait for the amount of the other side (a `needs_amount`
+   * row). They may still pair with a real counterpart that shows up later.
+   */
+  pending: ReadonlySet<string>;
 }
 
 export function dayNumber(date: string): number {
@@ -129,7 +135,13 @@ export function counterAmount(
   return null;
 }
 
-/** Whether a row on the other side of `source` can be its counterpart, apart from the date. */
+/**
+ * Whether a row on the other side of `source` can be its counterpart, apart
+ * from the date. The amounts agree when the source's counter-amount (its own
+ * or its original amount in the target's currency) equals the candidate's, or
+ * when the candidate's original amount in the source's currency equals the
+ * source's: whichever side carries the foreign amount, the pair is found.
+ */
 function counterpartMatches(
   source: PlanTransaction,
   sourceAccount: PlanAccount,
@@ -138,10 +150,12 @@ function counterpartMatches(
 ): boolean {
   if (candidate.accountId !== target.id) return false;
   if (sign(candidate.amount) !== -sign(source.amount)) return false;
-  const expected = counterAmount(source, target);
-  if (expected === null || Math.abs(candidate.amount) !== Math.abs(expected)) {
-    return false;
-  }
+  const forward = counterAmount(source, target);
+  const backward = counterAmount(candidate, sourceAccount);
+  const agrees =
+    (forward !== null && Math.abs(forward) === Math.abs(candidate.amount)) ||
+    (backward !== null && Math.abs(backward) === Math.abs(source.amount));
+  if (!agrees) return false;
   // A counterparty that names someone else is a different payment.
   if (
     candidate.counterpartyIban !== null &&
@@ -153,24 +167,61 @@ function counterpartMatches(
   return true;
 }
 
-/** The unique closest candidate within the window, or null when there is none or it is ambiguous. */
-function closestUnique(
-  source: PlanTransaction,
-  matches: readonly PlanTransaction[],
-): PlanTransaction | null {
-  let best: PlanTransaction | null = null;
-  let bestDistance = Infinity;
-  let tie = false;
-  for (const m of matches) {
-    const d = daysApart(source.bookingDate, m.bookingDate);
-    if (d > LINK_WINDOW_DAYS) continue;
-    if (d < bestDistance) {
-      best = m;
-      bestDistance = d;
-      tie = false;
-    } else if (d === bestDistance) tie = true;
-  }
-  return tie ? null : best;
+/** Whether `iban` is absent or names `account`: a row that names someone else is a different payment. */
+function namesOrSilent(iban: string | null, account: PlanAccount): boolean {
+  return (
+    iban === null ||
+    (account.iban !== null && normalizeIban(iban) === account.iban)
+  );
+}
+
+/**
+ * Whether two booked rows on different accounts still look like the two sides
+ * of one transfer, e.g. after one of them was edited: opposite signs, within
+ * the window, agreeing amounts and no counterparty IBAN naming another account.
+ */
+export function pairIsConsistent(
+  a: PlanTransaction,
+  aAccount: PlanAccount,
+  b: PlanTransaction,
+  bAccount: PlanAccount,
+): boolean {
+  if (aAccount.id === bAccount.id) return false;
+  if (a.amount === 0 || sign(a.amount) !== -sign(b.amount)) return false;
+  if (daysApart(a.bookingDate, b.bookingDate) > LINK_WINDOW_DAYS) return false;
+  const forward = counterAmount(a, bAccount);
+  const backward = counterAmount(b, aAccount);
+  const agrees =
+    (forward !== null && Math.abs(forward) === Math.abs(b.amount)) ||
+    (backward !== null && Math.abs(backward) === Math.abs(a.amount));
+  return (
+    agrees &&
+    namesOrSilent(a.counterpartyIban, bAccount) &&
+    namesOrSilent(b.counterpartyIban, aAccount)
+  );
+}
+
+/**
+ * Whether a link the user made by hand can stand after an edit: the rows still
+ * have opposite signs and neither names a different account of the user.
+ */
+export function manualLinkIsConsistent(
+  a: PlanTransaction,
+  aAccount: PlanAccount,
+  b: PlanTransaction,
+  bAccount: PlanAccount,
+  accounts: readonly PlanAccount[],
+): boolean {
+  if (a.amount === 0 || sign(a.amount) !== -sign(b.amount)) return false;
+  const byIban = accountsByIban(accounts);
+  const fine = (iban: string | null, peer: PlanAccount) => {
+    if (iban === null) return true;
+    const owner = byIban.get(normalizeIban(iban));
+    return owner === undefined || owner.id === peer.id;
+  };
+  return (
+    fine(a.counterpartyIban, bAccount) && fine(b.counterpartyIban, aAccount)
+  );
 }
 
 export function canMirrorOnto(
@@ -179,6 +230,7 @@ export function canMirrorOnto(
 ): boolean {
   return (
     target.fillFromTransfers &&
+    !target.archived &&
     target.type !== "pillar_3a" &&
     !target.hasPortfolios &&
     (target.openingDate === null || bookingDate >= target.openingDate)
@@ -200,64 +252,159 @@ function sidesOf(
   };
 }
 
+/** Candidates of one account by the absolute amounts they can be found under (booked and original). */
+type CandidateIndex = Map<string, Map<number, PlanTransaction[]>>;
+
+function indexCandidates(
+  candidates: readonly PlanTransaction[],
+): CandidateIndex {
+  const index: CandidateIndex = new Map();
+  for (const c of candidates) {
+    if (c.source === "mirror") continue;
+    let byAmount = index.get(c.accountId);
+    if (!byAmount) {
+      byAmount = new Map();
+      index.set(c.accountId, byAmount);
+    }
+    const amounts = new Set([Math.abs(c.amount)]);
+    if (c.originalAmount !== null && c.originalCurrency !== null) {
+      amounts.add(Math.abs(c.originalAmount));
+    }
+    for (const amount of amounts) {
+      const list = byAmount.get(amount);
+      if (list) list.push(c);
+      else byAmount.set(amount, [c]);
+    }
+  }
+  return index;
+}
+
+function candidatesFor(
+  index: CandidateIndex,
+  source: PlanTransaction,
+  targetId: string,
+): PlanTransaction[] {
+  const byAmount = index.get(targetId);
+  if (!byAmount) return [];
+  const found = new Map<string, PlanTransaction>();
+  const amounts = new Set([Math.abs(source.amount)]);
+  if (source.originalAmount !== null) {
+    amounts.add(Math.abs(source.originalAmount));
+  }
+  for (const amount of amounts) {
+    for (const c of byAmount.get(amount) ?? []) found.set(c.id, c);
+  }
+  return [...found.values()];
+}
+
+interface PairOption {
+  source: PlanTransaction;
+  candidate: PlanTransaction;
+  distance: number;
+}
+
 /**
  * For every source row whose counterparty IBAN belongs to another account of
- * the user and that has no transfers row yet:
+ * the user and that has no linked or dismissed transfers row yet:
  *  1. pair it with the unique closest opposite row on that account, or
  *  2. when that account is filled from transfers, mirror it there (or ask for
  *     the received amount when the currencies differ and none is known).
- * An ambiguous pair is skipped entirely so the user can link it by hand; a row
- * is never used twice.
+ * Pairs are assigned globally, closest dates first, so a row goes to the
+ * source nearest to it. An ambiguous pair is skipped entirely so the user can
+ * link it by hand; a row is never used twice. Rows in `pending` already wait
+ * for an amount: they may pair, but are not asked about again.
  */
 export function planLinks(input: PlanInput): PlannedLink[] {
   const byId = new Map(input.accounts.map((a) => [a.id, a]));
   const byIban = accountsByIban(input.accounts);
   const used = new Set(input.taken);
-  const candidatesByAccount = new Map<string, PlanTransaction[]>();
-  for (const c of input.candidates) {
-    if (c.source === "mirror") continue;
-    const list = candidatesByAccount.get(c.accountId) ?? [];
-    list.push(c);
-    candidatesByAccount.set(c.accountId, list);
-  }
+  const index = indexCandidates(input.candidates);
 
   const sources = [...input.sources].sort(
     (a, b) =>
       a.bookingDate.localeCompare(b.bookingDate) || a.id.localeCompare(b.id),
   );
-  const out: PlannedLink[] = [];
+  const order = new Map(sources.map((s, i) => [s.id, i]));
+  const homes = new Map<string, PlanAccount>();
+  const targets = new Map<string, PlanAccount>();
+  const options: PairOption[] = [];
+  const optionsOf = new Map<string, PairOption[]>();
   for (const source of sources) {
     if (source.source === "mirror" || used.has(source.id)) continue;
     if (source.amount === 0 || source.counterpartyIban === null) continue;
     const target = byIban.get(normalizeIban(source.counterpartyIban));
     const home = byId.get(source.accountId);
     if (!target || !home || target.id === home.id) continue;
-
-    const matches = (candidatesByAccount.get(target.id) ?? []).filter(
-      (c) => !used.has(c.id) && counterpartMatches(source, home, target, c),
-    );
-    const near = matches.filter(
-      (c) => daysApart(source.bookingDate, c.bookingDate) <= LINK_WINDOW_DAYS,
-    );
-    if (near.length > 0) {
-      const pick = closestUnique(source, near);
-      if (pick) {
-        used.add(source.id);
-        used.add(pick.id);
-        out.push({
-          kind: "pair",
-          sourceId: source.id,
-          candidateId: pick.id,
-          ...sidesOf(source, pick.id, home.id, target.id),
-        });
+    homes.set(source.id, home);
+    targets.set(source.id, target);
+    const own: PairOption[] = [];
+    for (const c of candidatesFor(index, source, target.id)) {
+      if (used.has(c.id) || !counterpartMatches(source, home, target, c)) {
+        continue;
       }
+      const distance = daysApart(source.bookingDate, c.bookingDate);
+      if (distance > LINK_WINDOW_DAYS) continue;
+      own.push({ source, candidate: c, distance });
+    }
+    optionsOf.set(source.id, own);
+    options.push(...own);
+  }
+
+  options.sort(
+    (a, b) =>
+      a.distance - b.distance ||
+      order.get(a.source.id)! - order.get(b.source.id)! ||
+      a.candidate.id.localeCompare(b.candidate.id),
+  );
+  const links = new Map<string, PlannedLink>();
+  const skipped = new Set<string>();
+  for (const o of options) {
+    const { source, candidate } = o;
+    if (skipped.has(source.id) || links.has(source.id)) continue;
+    if (used.has(source.id) || used.has(candidate.id)) continue;
+    const rival = optionsOf
+      .get(source.id)!
+      .some(
+        (x) =>
+          x.distance === o.distance &&
+          x.candidate.id !== candidate.id &&
+          !used.has(x.candidate.id),
+      );
+    if (rival) {
+      skipped.add(source.id);
       continue;
     }
+    used.add(source.id);
+    used.add(candidate.id);
+    links.set(source.id, {
+      kind: "pair",
+      sourceId: source.id,
+      candidateId: candidate.id,
+      ...sidesOf(
+        source,
+        candidate.id,
+        homes.get(source.id)!.id,
+        targets.get(source.id)!.id,
+      ),
+    });
+  }
 
+  const out: PlannedLink[] = [];
+  for (const source of sources) {
+    const pair = links.get(source.id);
+    if (pair) {
+      out.push(pair);
+      continue;
+    }
+    const home = homes.get(source.id);
+    const target = targets.get(source.id);
+    if (!home || !target) continue;
+    if (used.has(source.id) || skipped.has(source.id)) continue;
     if (!canMirrorOnto(target, source.bookingDate)) continue;
     const amount = counterAmount(source, target);
     used.add(source.id);
     if (amount === null) {
+      if (input.pending.has(source.id)) continue;
       out.push({
         kind: "needs_amount",
         sourceId: source.id,
@@ -292,6 +439,9 @@ export interface MirrorRow {
   amount: number;
   /** The IBAN of the account the mirror was created from. */
   counterpartyIban: string | null;
+  /** Copied from the source row. */
+  reference: string | null;
+  description: string | null;
 }
 
 export interface IncomingRow {
@@ -299,12 +449,63 @@ export interface IncomingRow {
   bookingDate: string;
   amount: number;
   counterpartyIban: string | null;
+  reference: string | null;
+  description: string | null;
+}
+
+/** Words too common in transfer texts to tell two payments apart. */
+const GENERIC_WORDS = new Set([
+  "transfer",
+  "payment",
+  "zahlung",
+  "ueberweisung",
+  "überweisung",
+  "gutschrift",
+  "belastung",
+  "dauerauftrag",
+  "standing",
+  "order",
+  "from",
+  "virement",
+  "bonifico",
+  "credit",
+  "debit",
+]);
+
+function significantWords(text: string | null): Set<string> {
+  const out = new Set<string>();
+  if (!text) return out;
+  for (const word of text.toLowerCase().split(/[^\p{L}\p{N}]+/u)) {
+    if (word.length < 4 || GENERIC_WORDS.has(word)) continue;
+    if (/^\d+$/.test(word) && word.length < 6) continue;
+    out.add(word);
+  }
+  return out;
+}
+
+const normalizeReference = (r: string | null): string =>
+  (r ?? "").replace(/\s+/g, "").toUpperCase();
+
+/** The row and the mirror carry the same reference or share a significant word. */
+function sharesSignal(row: IncomingRow, mirror: MirrorRow): boolean {
+  const reference = normalizeReference(row.reference);
+  if (reference !== "" && reference === normalizeReference(mirror.reference)) {
+    return true;
+  }
+  const words = significantWords(row.description);
+  if (words.size === 0) return false;
+  for (const word of significantWords(mirror.description)) {
+    if (words.has(word)) return true;
+  }
+  return false;
 }
 
 /**
  * Which real rows take over which mirrors: same amount, within the window, and
- * a counterparty that is the mirror's source account (a row without any
- * counterparty IBAN only counts when it is the single match for that mirror).
+ * a counterparty that is the mirror's source account. A row without any
+ * counterparty IBAN only counts when it is the single match for that mirror
+ * (exact matches count as competition), and it carries the same reference or
+ * shares a significant description word with it.
  * Closest dates are matched first; a mirror is used once. Returns row key -> mirror id.
  */
 export function matchMirrors(
@@ -337,18 +538,18 @@ export function matchMirrors(
       pairs.push({ row, mirror, distance, exact: rowIban !== null });
     }
   }
-  const blindPerMirror = new Map<string, number>();
-  const blindPerRow = new Map<string, number>();
+  const perMirror = new Map<string, number>();
+  const perRow = new Map<string, number>();
   for (const p of pairs) {
-    if (p.exact) continue;
-    blindPerMirror.set(p.mirror.id, (blindPerMirror.get(p.mirror.id) ?? 0) + 1);
-    blindPerRow.set(p.row.key, (blindPerRow.get(p.row.key) ?? 0) + 1);
+    perMirror.set(p.mirror.id, (perMirror.get(p.mirror.id) ?? 0) + 1);
+    perRow.set(p.row.key, (perRow.get(p.row.key) ?? 0) + 1);
   }
   const eligible = pairs.filter(
     (p) =>
       p.exact ||
-      (blindPerMirror.get(p.mirror.id) === 1 &&
-        blindPerRow.get(p.row.key) === 1),
+      (perMirror.get(p.mirror.id) === 1 &&
+        perRow.get(p.row.key) === 1 &&
+        sharesSignal(p.row, p.mirror)),
   );
   eligible.sort(
     (a, b) =>

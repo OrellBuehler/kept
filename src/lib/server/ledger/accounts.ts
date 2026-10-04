@@ -12,7 +12,11 @@ import {
   transactions,
 } from "$lib/server/db";
 import { assertReferenceFits } from "$lib/server/pillar3a/portfolios";
-import { linkTransfers, removeMirrors } from "$lib/server/transfers";
+import {
+  linkTransfers,
+  removeMirrors,
+  revalidateLinks,
+} from "$lib/server/transfers";
 import { currentValues, type CurrentValue } from "./balances";
 import { LedgerError, notFound } from "./errors";
 import type { AccountInput } from "./schemas";
@@ -262,13 +266,13 @@ export function createAccount(
         sortOrder,
         userId,
         fillFromTransfers:
-          input.fillFromTransfers && input.type !== "pillar_3a",
+          input.fillFromTransfers === true && input.type !== "pillar_3a",
         tradesMoveCash: input.tradesMoveCash && input.type === "investment",
       })
       .returning({ id: accounts.id })
       .get();
     // Transfers other accounts already show to this IBAN become mirrors here.
-    if (input.fillFromTransfers && input.type !== "pillar_3a") {
+    if (input.fillFromTransfers === true && input.type !== "pillar_3a") {
       linkTransfers(userId, { targetAccountId: created.id }, tx);
     }
     return created;
@@ -355,7 +359,7 @@ export function updateAccount(
       .where(eq(trades.accountId, id))
       .get() !== undefined;
   const fillFromTransfers =
-    rest.fillFromTransfers &&
+    (rest.fillFromTransfers ?? current.fillFromTransfers) &&
     rest.type !== "pillar_3a" &&
     portfolioRows.length === 0;
   const tradesMoveCash =
@@ -393,6 +397,8 @@ export function updateAccount(
         )
         .run();
     }
+    // Links that depended on the old IBAN go before the new one links anything.
+    if (ibanChanged) revalidateLinks(userId, id, tx);
     if (
       (fillFromTransfers && !current.fillFromTransfers) ||
       (ibanChanged && rest.iban !== null)

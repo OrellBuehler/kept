@@ -21,6 +21,7 @@ import {
 import { LedgerError } from "$lib/server/ledger/errors";
 import { accountInputSchema } from "$lib/server/ledger/schemas";
 import {
+  createManualTransaction,
   deleteTransaction,
   getTransaction,
   listTransactions,
@@ -69,6 +70,8 @@ import {
 import {
   countMirrors,
   enableFill,
+  findReplacements,
+  linkAfterWrite,
   fillSuggestion,
   linkManually,
   linkTransfers,
@@ -336,11 +339,46 @@ describe("linkTransfers", () => {
     });
   });
 
+  it("reads the fill toggle from the form only when its marker came along", () => {
+    const base = { name: "Main", type: "current", currency: "CHF" };
+    const fill = (extra: Record<string, string>) =>
+      accountInputSchema.parse({ ...base, ...extra }).fillFromTransfers;
+    expect(fill({})).toBeUndefined();
+    expect(fill({ fillFromTransfersField: "1" })).toBe(false);
+    expect(fill({ fillFromTransfersField: "1", fillFromTransfers: "on" })).toBe(
+      true,
+    );
+    expect(fill({ fillFromTransfers: "on" })).toBe(true);
+    expect(
+      accountInputSchema.parse({ ...base, fillFromTransfersField: "1" }),
+    ).not.toHaveProperty("fillFromTransfersField");
+  });
+
+  it("keeps the stored toggle and the mirrors when an update omits the field", async () => {
+    const { user, b, send } = await setup();
+    send();
+    linkTransfers(user.id, {});
+    const input = {
+      ...inputOf(getAccount(user.id, b.id)),
+      fillFromTransfers: undefined,
+    };
+    updateAccount(user.id, b.id, { ...input, name: "Renamed" });
+    expect(getAccount(user.id, b.id).fillFromTransfers).toBe(true);
+    expect(rowsOf(b.id)).toHaveLength(1);
+    updateAccount(user.id, b.id, { ...input, fillFromTransfers: false });
+    expect(getAccount(user.id, b.id).fillFromTransfers).toBe(false);
+    expect(rowsOf(b.id)).toEqual([]);
+  });
+
   it("recognises archived accounts and ignores deposit IBANs", async () => {
     const { user, b, send } = await setup();
     send();
     setAccountArchived(user.id, b.id, true);
     expect(ownIbans(user.id).get(EXAMPLE_IBAN_OTHER)).toBe(b.id);
+    // Still addressable, but nothing new is mirrored onto it.
+    expect(linkTransfers(user.id, {}).mirrored).toBe(0);
+    expect(rowsOf(b.id)).toEqual([]);
+    setAccountArchived(user.id, b.id, false);
     expect(linkTransfers(user.id, {}).mirrored).toBe(1);
 
     const p3a = seedPillar3aAccount(user.id, {
@@ -501,6 +539,120 @@ describe("foreign currency transfers", () => {
       inTransactionId: expect.any(String),
       outTransactionId: rowsOf(eur.id)[0]!.id,
     });
+  });
+
+  const euroCredit = (
+    user: { id: string },
+    eurId: string,
+    over: Parameters<typeof seedImportedTransaction>[2] = {},
+  ) =>
+    seedImportedTransaction(user.id, eurId, {
+      bookingDate: "2026-03-11",
+      amount: m(9300),
+      currency: "EUR",
+      originalAmount: m(10000),
+      originalCurrency: "CHF",
+      counterpartyIban: EXAMPLE_IBAN,
+      ...over,
+    });
+
+  it("pairs a waiting debit with the counterpart that arrives later instead of asking again", async () => {
+    const { user, a, eur } = await fx();
+    const out = seedImportedTransaction(user.id, a.id, {
+      bookingDate: "2026-03-10",
+      amount: m(-10000),
+      counterpartyIban: EXAMPLE_IBAN_OTHER,
+    });
+    expect(linkTransfers(user.id, {}).needsAmount).toBe(1);
+    const credit = euroCredit(user, eur.id);
+    const result = getDB().transaction((tx) =>
+      linkAfterWrite(user.id, eur.id, [credit.id], [credit.bookingDate], tx),
+    );
+    expect(result).toMatchObject({ paired: 1, needsAmount: 0, mirrored: 0 });
+    expect(listNeedsAmount(user.id)).toEqual([]);
+    expect(allTransfers()).toEqual([
+      expect.objectContaining({
+        status: "linked",
+        method: "paired",
+        outTransactionId: out.id,
+        inTransactionId: credit.id,
+      }),
+    ]);
+    expect(rowsOf(eur.id)).toHaveLength(1);
+  });
+
+  it("pairs the same two rows within one run, the debit dated earlier", async () => {
+    const { user, a, eur } = await fx();
+    const out = seedImportedTransaction(user.id, a.id, {
+      bookingDate: "2026-03-09",
+      amount: m(-10000),
+      counterpartyIban: EXAMPLE_IBAN_OTHER,
+    });
+    const credit = euroCredit(user, eur.id);
+    expect(linkTransfers(user.id, {})).toMatchObject({
+      paired: 1,
+      needsAmount: 0,
+      mirrored: 0,
+    });
+    expect(allTransfers()).toEqual([
+      expect.objectContaining({
+        status: "linked",
+        outTransactionId: out.id,
+        inTransactionId: credit.id,
+      }),
+    ]);
+    expect(rowsOf(eur.id)).toHaveLength(1);
+  });
+
+  it("refuses to resolve while the receiving account has an unlinked opposite row near the date", async () => {
+    const { user, a, eur } = await fx();
+    seedImportedTransaction(user.id, a.id, {
+      bookingDate: "2026-03-10",
+      amount: m(-10000),
+      counterpartyIban: EXAMPLE_IBAN_OTHER,
+    });
+    linkTransfers(user.id, {});
+    const [pending] = listNeedsAmount(user.id);
+    const near = seedImportedTransaction(user.id, eur.id, {
+      bookingDate: "2026-03-12",
+      amount: m(9000),
+      currency: "EUR",
+    });
+    expect(() =>
+      resolveNeedsAmount(user.id, pending!.transferId, m(9300)),
+    ).toThrow(/link/i);
+    expect(rowsOf(eur.id)).toHaveLength(1);
+    // Once that row is part of another transfer it no longer blocks.
+    const other = seedImportedTransaction(user.id, a.id, {
+      bookingDate: "2026-03-30",
+      amount: m(-9000),
+    });
+    linkManually(user.id, other.id, near.id);
+    resolveNeedsAmount(user.id, pending!.transferId, m(9300));
+    expect(rowsOf(eur.id)).toHaveLength(2);
+  });
+
+  it("does not let a far-away or same-direction row block resolving", async () => {
+    const { user, a, eur } = await fx();
+    seedImportedTransaction(user.id, a.id, {
+      bookingDate: "2026-03-10",
+      amount: m(-10000),
+      counterpartyIban: EXAMPLE_IBAN_OTHER,
+    });
+    linkTransfers(user.id, {});
+    seedImportedTransaction(user.id, eur.id, {
+      bookingDate: "2026-03-20",
+      amount: m(9000),
+      currency: "EUR",
+    });
+    seedImportedTransaction(user.id, eur.id, {
+      bookingDate: "2026-03-11",
+      amount: m(-9000),
+      currency: "EUR",
+    });
+    const [pending] = listNeedsAmount(user.id);
+    resolveNeedsAmount(user.id, pending!.transferId, m(9300));
+    expect(allTransfers()[0]).toMatchObject({ status: "linked" });
   });
 
   it("refuses to resolve once filling was turned off", async () => {
@@ -708,6 +860,311 @@ describe("transferCandidates", () => {
     send();
     linkTransfers(user.id, {});
     expect(transferCandidates(user.id, rowsOf(b.id)[0]!.id)).toEqual([]);
+  });
+});
+
+const manualInput = (
+  over: Partial<Parameters<typeof createManualTransaction>[2]> = {},
+) => ({
+  bookingDate: "2026-03-11",
+  valueDate: null,
+  amount: m(10000),
+  counterpartyName: null,
+  counterpartyIban: EXAMPLE_IBAN,
+  description: null,
+  reference: null,
+  note: null,
+  ...over,
+});
+
+describe("replacing mirrors", () => {
+  async function mirrored() {
+    const ctx = await setup();
+    ctx.send({ reference: "RF-1" });
+    linkTransfers(ctx.user.id, {});
+    const mirror = rowsOf(ctx.b.id)[0]!;
+    return { ...ctx, mirror };
+  }
+  const incoming = (over = {}) => ({
+    key: "r",
+    bookingDate: "2026-03-11",
+    amount: 10000,
+    counterpartyIban: null,
+    reference: null,
+    description: null,
+    ...over,
+  });
+
+  it("takes a row without a counterparty only with the same reference or a shared word", async () => {
+    const { user, b, mirror } = await mirrored();
+    const find = (over = {}) =>
+      findReplacements(user.id, b.id, [incoming(over)]).get("r");
+    expect(find()).toBeUndefined();
+    expect(find({ description: "Cash deposit" })).toBeUndefined();
+    expect(find({ reference: "RF-1" })).toBe(mirror.id);
+    expect(find({ description: "Savings top-up" })).toBe(mirror.id);
+  });
+
+  it("leaves the mirror, flagged inside an imported period, when nothing ties the row to it", async () => {
+    const { user, b, mirror } = await mirrored();
+    seedImport(user.id, b.id, {
+      statementFrom: "2026-03-01",
+      statementTo: "2026-03-31",
+    });
+    expect(
+      findReplacements(user.id, b.id, [incoming({ description: "Cash" })]).size,
+    ).toBe(0);
+    expect(getTransaction(user.id, mirror.id).mirrorOf).toMatchObject({
+      noBankCounterpart: true,
+    });
+  });
+
+  it("is replaced by a manual row that matches, which keeps the link", async () => {
+    const { user, a, b, mirror } = await mirrored();
+    const out = rowsOf(a.id)[0]!;
+    const view = createManualTransaction(user.id, b.id, manualInput());
+    expect(rowsOf(b.id).map((r) => r.id)).toEqual([view.id]);
+    expect(rowsOf(b.id)[0]!.id).not.toBe(mirror.id);
+    expect(allTransfers()).toEqual([
+      expect.objectContaining({
+        status: "linked",
+        method: "paired",
+        outTransactionId: out.id,
+        inTransactionId: view.id,
+      }),
+    ]);
+  });
+
+  it("is kept when the manual row differs, or names another counterparty", async () => {
+    const { user, b, mirror } = await mirrored();
+    createManualTransaction(user.id, b.id, manualInput({ amount: m(9999) }));
+    createManualTransaction(
+      user.id,
+      b.id,
+      manualInput({ counterpartyIban: EXAMPLE_IBAN_THIRD }),
+    );
+    expect(rowsOf(b.id).some((r) => r.id === mirror.id)).toBe(true);
+    expect(rowsOf(b.id)).toHaveLength(3);
+  });
+
+  it("takes over nothing from another user", async () => {
+    const { user, b } = await mirrored();
+    const other = await createTestUser();
+    const theirs = seedAccount(other.id, { iban: FOREIGN_IBANS[0]! });
+    createManualTransaction(
+      other.id,
+      theirs.id,
+      manualInput({ counterpartyIban: null }),
+    );
+    expect(rowsOf(b.id)).toHaveLength(1);
+    expect(rowsOf(b.id)[0]!.source).toBe("mirror");
+    expect(user.id).not.toBe(other.id);
+  });
+});
+
+describe("dismissed transfers", () => {
+  it("count again in the month summary and the review once unlinked", async () => {
+    const { user, send } = await setup();
+    send();
+    linkTransfers(user.id, {});
+    expect(monthSummary(user.id, { month: "2026-03" }).totals).toEqual([]);
+    unlink(user.id, allTransfers()[0]!.id);
+    expect(monthSummary(user.id, { month: "2026-03" }).totals).toEqual([
+      { currency: "CHF", income: 0, expenses: 10000, net: -10000 },
+    ]);
+    const review = yearReview(user.id, { year: 2026, today: "2026-12-31" });
+    expect(review.excludedTransfers).toBe(0);
+    expect(review.currencies).toHaveLength(1);
+  });
+
+  it("only turn the heuristic off for the rows they name", async () => {
+    const { user, send } = await setup();
+    send();
+    send({ bookingDate: "2026-03-20", amount: m(-500) });
+    linkTransfers(user.id, {});
+    const first = allTransfers().find((t) => t.outTransactionId !== null)!;
+    unlink(user.id, first.id);
+    const totals = monthSummary(user.id, { month: "2026-03" }).totals;
+    expect(totals).toHaveLength(1);
+    expect(totals[0]!.expenses).toBeGreaterThan(0);
+    expect(totals[0]!.expenses).toBeLessThan(10500);
+  });
+});
+
+describe("keeping links valid", () => {
+  const manualDebit = (userId: string, accountId: string, over = {}) =>
+    createManualTransaction(
+      userId,
+      accountId,
+      manualInput({
+        amount: m(-10000),
+        counterpartyIban: EXAMPLE_IBAN_OTHER,
+        bookingDate: "2026-03-10",
+        ...over,
+      }),
+    );
+  const edit = (view: ReturnType<typeof getTransaction>, over = {}) => ({
+    bookingDate: view.bookingDate,
+    valueDate: view.valueDate,
+    amount: view.amount,
+    counterpartyName: view.counterpartyName,
+    counterpartyIban: view.counterpartyIban,
+    description: view.description,
+    reference: view.reference,
+    note: view.note,
+    ...over,
+  });
+
+  it("drops a pair that no longer fits after the manual row was edited", async () => {
+    const { user, a, b } = await setup({ fill: false });
+    const real = seedImportedTransaction(user.id, b.id, {
+      bookingDate: "2026-03-11",
+      amount: m(10000),
+    });
+    const out = manualDebit(user.id, a.id);
+    expect(allTransfers()).toEqual([
+      expect.objectContaining({ method: "paired", status: "linked" }),
+    ]);
+    // A text change keeps it.
+    updateTransaction(user.id, out.id, edit(out, { description: "Rent" }));
+    expect(allTransfers()).toHaveLength(1);
+    // Another amount breaks it; both rows stay.
+    updateTransaction(user.id, out.id, edit(out, { amount: m(-9000) }));
+    expect(allTransfers()).toEqual([]);
+    expect(getTransaction(user.id, real.id).transfer).toBeNull();
+    expect(getTransaction(user.id, out.id).transfer).toBeNull();
+    // Changing it back links the pair again.
+    updateTransaction(user.id, out.id, edit(out));
+    expect(allTransfers()).toHaveLength(1);
+  });
+
+  it("moves a pair to the account the edited IBAN now names", async () => {
+    const { user, a, b } = await setup({ fill: false });
+    const c = seedAccount(user.id, { name: "Third", iban: EXAMPLE_IBAN_THIRD });
+    const realB = seedImportedTransaction(user.id, b.id, {
+      bookingDate: "2026-03-11",
+      amount: m(10000),
+    });
+    const realC = seedImportedTransaction(user.id, c.id, {
+      bookingDate: "2026-03-12",
+      amount: m(10000),
+    });
+    const out = manualDebit(user.id, a.id);
+    expect(allTransfers().map((t) => t.inTransactionId)).toEqual([realB.id]);
+    updateTransaction(
+      user.id,
+      out.id,
+      edit(out, { counterpartyIban: EXAMPLE_IBAN_THIRD }),
+    );
+    expect(getTransaction(user.id, realB.id).transfer).toBeNull();
+    expect(allTransfers().map((t) => t.inTransactionId)).toEqual([realC.id]);
+  });
+
+  it("keeps a manual link through a text edit and drops it when the signs stop being opposite", async () => {
+    const { user, a, b } = await setup({ fill: false });
+    const out = manualDebit(user.id, a.id, { counterpartyIban: null });
+    const into = seedImportedTransaction(user.id, b.id, {
+      bookingDate: "2026-03-30",
+      amount: m(4000),
+    });
+    linkManually(user.id, out.id, into.id);
+    updateTransaction(user.id, out.id, edit(out, { description: "x" }));
+    expect(allTransfers()).toEqual([
+      expect.objectContaining({ method: "manual", status: "linked" }),
+    ]);
+    updateTransaction(user.id, out.id, edit(out, { amount: m(500) }));
+    expect(allTransfers()).toEqual([]);
+  });
+
+  it("drops mirrors and pairs when the receiving account's IBAN changes", async () => {
+    const { user, a, b, send } = await setup();
+    send();
+    send({ bookingDate: "2026-03-20", amount: m(-700) });
+    seedImportedTransaction(user.id, b.id, {
+      bookingDate: "2026-03-21",
+      amount: m(700),
+    });
+    linkTransfers(user.id, {});
+    expect(allTransfers()).toHaveLength(2);
+    const view = getAccount(user.id, b.id);
+    updateAccount(user.id, b.id, {
+      ...inputOf(view),
+      iban: EXAMPLE_IBAN_THIRD,
+    });
+    expect(allTransfers()).toEqual([]);
+    expect(rowsOf(b.id).every((r) => r.source !== "mirror")).toBe(true);
+    // Rows naming the new IBAN link from now on.
+    seedImportedTransaction(user.id, a.id, {
+      bookingDate: "2026-04-01",
+      amount: m(-100),
+      counterpartyIban: EXAMPLE_IBAN_THIRD,
+    });
+    updateAccount(user.id, b.id, { ...inputOf(getAccount(user.id, b.id)) });
+    expect(linkTransfers(user.id, {}).mirrored).toBe(1);
+  });
+
+  it("keeps links when an account is saved without a new IBAN", async () => {
+    const { user, b, send } = await setup();
+    send();
+    linkTransfers(user.id, {});
+    updateAccount(user.id, b.id, {
+      ...inputOf(getAccount(user.id, b.id)),
+      name: "Renamed",
+    });
+    expect(allTransfers()).toHaveLength(1);
+  });
+
+  it("refuses to delete a mirror that has no transfer", async () => {
+    const { user, b } = await setup();
+    const orphan = seedImportedTransaction(user.id, b.id, {
+      source: "mirror",
+      externalId: "mirror:orphan",
+      amount: m(100),
+    });
+    expect(() => deleteTransaction(user.id, orphan.id)).toThrow(
+      expect.objectContaining({ code: "not_found" }),
+    );
+    expect(rowsOf(b.id)).toHaveLength(1);
+  });
+});
+
+describe("listing needs-amount rows", () => {
+  it("lists every pending transfer, newest first, filtered by account, across users", async () => {
+    const user = await createTestUser();
+    const a = seedAccount(user.id, { name: "Main", iban: EXAMPLE_IBAN });
+    const eur = seedAccount(user.id, {
+      name: "Euro",
+      currency: "EUR",
+      iban: EXAMPLE_IBAN_OTHER,
+      fillFromTransfers: true,
+    });
+    const usd = seedAccount(user.id, {
+      name: "Dollar",
+      currency: "USD",
+      iban: EXAMPLE_IBAN_THIRD,
+      fillFromTransfers: true,
+    });
+    for (const [date, iban, amount] of [
+      ["2026-03-10", EXAMPLE_IBAN_OTHER, -100],
+      ["2026-03-12", EXAMPLE_IBAN_THIRD, -200],
+      ["2026-03-11", EXAMPLE_IBAN_OTHER, 300],
+    ] as const) {
+      seedImportedTransaction(user.id, a.id, {
+        bookingDate: date,
+        amount: m(amount),
+        counterpartyIban: iban,
+      });
+    }
+    linkTransfers(user.id, {});
+    expect(listNeedsAmount(user.id).map((r) => r.bookingDate)).toEqual([
+      "2026-03-12",
+      "2026-03-11",
+      "2026-03-10",
+    ]);
+    expect(listNeedsAmount(user.id, eur.id)).toHaveLength(2);
+    expect(listNeedsAmount(user.id, usd.id)).toHaveLength(1);
+    const other = await createTestUser();
+    expect(listNeedsAmount(other.id)).toEqual([]);
   });
 });
 

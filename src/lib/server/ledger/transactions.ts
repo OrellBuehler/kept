@@ -10,6 +10,10 @@ import {
 } from "$lib/server/transfers/view";
 import { linkAfterWrite } from "$lib/server/transfers/link";
 import { unlink } from "$lib/server/transfers/manual";
+import {
+  findReplacements,
+  takeOverMirror,
+} from "$lib/server/transfers/replace";
 import { resyncSource } from "$lib/server/transfers/sync";
 import { LedgerError, notFound } from "./errors";
 import type {
@@ -213,6 +217,24 @@ export function createManualTransaction(
       })
       .returning({ id: transactions.id })
       .get();
+    // Like an imported row, a manual one takes over the mirror it stands for.
+    const mirrorId = findReplacements(
+      userId,
+      accountId,
+      [
+        {
+          key: created.id,
+          bookingDate: input.bookingDate,
+          amount: input.amount,
+          counterpartyIban: input.counterpartyIban,
+          reference: input.reference,
+          description: input.description,
+        },
+      ],
+      tx,
+    ).get(created.id);
+    if (mirrorId !== undefined)
+      takeOverMirror(userId, mirrorId, created.id, tx);
     linkAfterWrite(userId, accountId, [created.id], [input.bookingDate], tx);
     return created;
   });
@@ -250,7 +272,8 @@ export function deleteTransaction(userId: string, id: string): void {
   const current = getTransaction(userId, id);
   if (current.source === "mirror") {
     // Deleting a mirror means "this is not a transfer": the unlink remembers it.
-    if (current.transfer) unlink(userId, current.transfer.id);
+    if (!current.transfer) throw notFound("Transfer");
+    unlink(userId, current.transfer.id);
     return;
   }
   if (current.source !== "manual") {

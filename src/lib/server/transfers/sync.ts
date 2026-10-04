@@ -1,4 +1,4 @@
-import { and, eq, or } from "drizzle-orm";
+import { and, eq, inArray, ne, or } from "drizzle-orm";
 import { normalizeIban } from "$lib/iban";
 import { minor } from "$lib/money";
 import { transactions, transfers } from "$lib/server/db";
@@ -8,14 +8,22 @@ import {
   type Conn,
   type LinkResult,
 } from "./link";
-import { accountsByIban, canMirrorOnto, counterAmount } from "./plan";
+import {
+  accountsByIban,
+  canMirrorOnto,
+  counterAmount,
+  manualLinkIsConsistent,
+  pairIsConsistent,
+} from "./plan";
 
 /**
  * Keeps the transfer of a manual transaction in step after it was edited
  * (`previousIban` is its counterparty IBAN before the edit): a mirror follows
  * the source's amount, dates and text; one that no longer fits is removed;
- * a changed counterparty forgets an earlier unlink. Then the row is linked
- * again where it can be. Pairs made with a real row are left as they are.
+ * a changed counterparty forgets an earlier unlink. A pair or manual link with
+ * another row that no longer fits (other amount, date, counterparty or sign)
+ * is removed, both rows staying; a link that still fits stays. Then the row is
+ * linked again where it can be.
  */
 export function resyncSource(
   userId: string,
@@ -72,6 +80,27 @@ export function resyncSource(
       conn.delete(transfers).where(eq(transfers.id, t.id)).run();
       continue;
     }
+    if (t.method !== "mirrored" && mirrorId !== null) {
+      const peer = conn
+        .select()
+        .from(transactions)
+        .where(
+          and(eq(transactions.userId, userId), eq(transactions.id, mirrorId)),
+        )
+        .get();
+      const peerAccount = peer
+        ? plan.find((a) => a.id === peer.accountId)
+        : undefined;
+      const fits =
+        home !== undefined &&
+        peer !== undefined &&
+        peerAccount !== undefined &&
+        (t.method === "manual"
+          ? manualLinkIsConsistent(source, home, peer, peerAccount, plan)
+          : pairIsConsistent(source, home, peer, peerAccount));
+      if (!fits) conn.delete(transfers).where(eq(transfers.id, t.id)).run();
+      continue;
+    }
     if (t.method !== "mirrored" || mirrorId === null) continue;
     const mirror = conn
       .select()
@@ -115,4 +144,91 @@ export function resyncSource(
     [source.bookingDate],
     conn,
   );
+}
+
+/**
+ * After an account's IBAN changed: removes the automatic links of the account
+ * that the new IBAN no longer supports. A mirror or pending amount needs its
+ * source to name the receiving account; a pair needs both rows to still fit
+ * (see `pairIsConsistent`). Links made by hand stay. Returns how many went.
+ */
+export function revalidateLinks(
+  userId: string,
+  accountId: string,
+  conn: Conn,
+): number {
+  const plan = loadPlanAccounts(userId, conn);
+  const byIban = accountsByIban(plan);
+  const byId = new Map(plan.map((a) => [a.id, a]));
+  const rows = conn
+    .select()
+    .from(transfers)
+    .where(
+      and(
+        eq(transfers.userId, userId),
+        ne(transfers.status, "dismissed"),
+        ne(transfers.method, "manual"),
+        or(
+          eq(transfers.fromAccountId, accountId),
+          eq(transfers.toAccountId, accountId),
+        ),
+      ),
+    )
+    .all();
+  const ids = [
+    ...new Set(
+      rows
+        .flatMap((r) => [r.outTransactionId, r.inTransactionId])
+        .filter((id): id is string => id !== null),
+    ),
+  ];
+  const loaded = new Map<string, typeof transactions.$inferSelect>();
+  for (let i = 0; i < ids.length; i += 500) {
+    for (const t of conn
+      .select()
+      .from(transactions)
+      .where(
+        and(
+          eq(transactions.userId, userId),
+          inArray(transactions.id, ids.slice(i, i + 500)),
+        ),
+      )
+      .all()) {
+      loaded.set(t.id, t);
+    }
+  }
+  let removed = 0;
+  for (const t of rows) {
+    const out = t.outTransactionId ? loaded.get(t.outTransactionId) : undefined;
+    const into = t.inTransactionId ? loaded.get(t.inTransactionId) : undefined;
+    let valid: boolean;
+    if (t.method === "paired") {
+      const outAccount = out ? byId.get(out.accountId) : undefined;
+      const inAccount = into ? byId.get(into.accountId) : undefined;
+      valid =
+        !!out &&
+        !!into &&
+        !!outAccount &&
+        !!inAccount &&
+        pairIsConsistent(out, outAccount, into, inAccount);
+    } else {
+      // Mirrored or waiting for an amount: the real row is the source, and it must name the receiving account.
+      const source = out && out.source !== "mirror" ? out : into;
+      const receiving = source === out ? t.toAccountId : t.fromAccountId;
+      valid =
+        !!source &&
+        source.source !== "mirror" &&
+        source.counterpartyIban !== null &&
+        byIban.get(normalizeIban(source.counterpartyIban))?.id === receiving;
+    }
+    if (valid) continue;
+    conn.delete(transfers).where(eq(transfers.id, t.id)).run();
+    for (const m of [out, into]) {
+      if (m?.source === "mirror") {
+        conn.delete(transactions).where(eq(transactions.id, m.id)).run();
+      }
+    }
+    removed += 1;
+  }
+  return removed;
 }

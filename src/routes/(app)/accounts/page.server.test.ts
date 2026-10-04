@@ -59,6 +59,27 @@ describe("accounts page", () => {
     ]);
   });
 
+  it("creates an account with filling off unless it is switched on", async () => {
+    const u = await createTestUser();
+    const base = { type: "savings", currency: "CHF" };
+    await run("createAccount", u, { ...base, name: "Plain" });
+    await run("createAccount", u, {
+      ...base,
+      name: "Marker only",
+      fillFromTransfersField: "1",
+    });
+    await run("createAccount", u, {
+      ...base,
+      name: "Filled",
+      fillFromTransfersField: "1",
+      fillFromTransfers: "on",
+    });
+    const fill = Object.fromEntries(
+      listAccounts(u.id).map((a) => [a.name, a.fillFromTransfers]),
+    );
+    expect(fill).toEqual({ Plain: false, "Marker only": false, Filled: true });
+  });
+
   it("creates, updates and deletes an institution", async () => {
     const u = await createTestUser();
     const created = await run("createInstitution", u, {

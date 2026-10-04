@@ -25,7 +25,14 @@ import {
   type Conn,
   type LinkResult,
 } from "./link";
-import { canMirrorOnto, counterAmount, daysApart, shiftDate } from "./plan";
+import { notInLinkedTransfer } from "./exclusion";
+import {
+  LINK_WINDOW_DAYS,
+  canMirrorOnto,
+  counterAmount,
+  daysApart,
+  shiftDate,
+} from "./plan";
 
 type TransferRow = typeof transfers.$inferSelect;
 
@@ -212,6 +219,8 @@ export interface NeedsAmountView {
   description: string | null;
 }
 
+const SOURCE_CHUNK = 500;
+
 /** FX transfers waiting for the amount the other account booked, newest first. */
 export function listNeedsAmount(
   userId: string,
@@ -237,17 +246,33 @@ export function listNeedsAmount(
       .all()
       .map((a) => [a.id, a]),
   );
+  const sourceIds = [
+    ...new Set(
+      rows
+        .map((r) => r.outTransactionId ?? r.inTransactionId)
+        .filter((id): id is string => id !== null),
+    ),
+  ];
+  const sources = new Map<string, typeof transactions.$inferSelect>();
+  for (let i = 0; i < sourceIds.length; i += SOURCE_CHUNK) {
+    for (const t of db
+      .select()
+      .from(transactions)
+      .where(
+        and(
+          eq(transactions.userId, userId),
+          inArray(transactions.id, sourceIds.slice(i, i + SOURCE_CHUNK)),
+        ),
+      )
+      .all()) {
+      sources.set(t.id, t);
+    }
+  }
   const views: NeedsAmountView[] = [];
   for (const r of rows) {
     const sourceId = r.outTransactionId ?? r.inTransactionId;
     if (sourceId === null) continue;
-    const tx = db
-      .select()
-      .from(transactions)
-      .where(
-        and(eq(transactions.userId, userId), eq(transactions.id, sourceId)),
-      )
-      .get();
+    const tx = sources.get(sourceId);
     if (!tx) continue;
     const outgoing = r.outTransactionId !== null;
     const targetId = outgoing ? r.toAccountId : r.fromAccountId;
@@ -314,6 +339,36 @@ export function resolveNeedsAmount(
       throw new LedgerError(
         "conflict",
         "The receiving account is no longer filled from transfers.",
+      );
+    }
+    // A booked row that may be the real counterpart: link it instead of booking a second one.
+    const counterpart = tx
+      .select({ id: transactions.id })
+      .from(transactions)
+      .where(
+        and(
+          eq(transactions.userId, userId),
+          eq(transactions.accountId, target.id),
+          ne(transactions.source, "mirror"),
+          outgoing
+            ? sql`${transactions.amount} > 0`
+            : sql`${transactions.amount} < 0`,
+          gte(
+            transactions.bookingDate,
+            shiftDate(source.bookingDate, -LINK_WINDOW_DAYS),
+          ),
+          lte(
+            transactions.bookingDate,
+            shiftDate(source.bookingDate, LINK_WINDOW_DAYS),
+          ),
+          notInLinkedTransfer,
+        ),
+      )
+      .get();
+    if (counterpart) {
+      throw new LedgerError(
+        "conflict",
+        "The receiving account has a transaction that may be the other side of this transfer. Link them instead of entering an amount.",
       );
     }
     const mirror = tx

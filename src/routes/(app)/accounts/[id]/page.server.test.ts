@@ -308,6 +308,30 @@ describe("account detail page", () => {
     expect(listAccounts(u.id)).toEqual([]);
   });
 
+  it("updateAccount turns filling off only when the form says the field was shown", async () => {
+    const u = await createTestUser();
+    const acc = seedAccount(u.id, {
+      type: "savings",
+      fillFromTransfers: true,
+    });
+    const form = { name: "Main", type: "savings", currency: "CHF" };
+    await run("updateAccount", u, acc.id, form);
+    expect(getAccount(u.id, acc.id).fillFromTransfers).toBe(true);
+    await run("updateAccount", u, acc.id, {
+      ...form,
+      fillFromTransfersField: "1",
+      fillFromTransfers: "on",
+    });
+    expect(getAccount(u.id, acc.id).fillFromTransfers).toBe(true);
+    await run("updateAccount", u, acc.id, {
+      ...form,
+      fillFromTransfersField: "1",
+    });
+    expect(getAccount(u.id, acc.id).fillFromTransfers).toBe(false);
+    await run("updateAccount", u, acc.id, form);
+    expect(getAccount(u.id, acc.id).fillFromTransfers).toBe(false);
+  });
+
   it("updateAccount validation failure echoes values", async () => {
     const u = await createTestUser();
     const acc = seedAccount(u.id);
@@ -954,6 +978,8 @@ describe("account page: transfer linking", () => {
     type: "savings",
     currency: "CHF",
     iban: EXAMPLE_IBAN_OTHER,
+    // The form always posts this marker: a missing toggle then means off.
+    fillFromTransfersField: "1",
     ...over,
   });
 

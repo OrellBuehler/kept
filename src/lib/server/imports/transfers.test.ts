@@ -145,6 +145,50 @@ describe("confirmImport links transfers", () => {
     ]);
   });
 
+  it("pairs a debit that waits for an amount with the later foreign-currency import", async () => {
+    const user = await createTestUser();
+    const a = seedAccount(user.id, { iban: EXAMPLE_IBAN });
+    const eur = seedAccount(user.id, {
+      name: "Euro",
+      currency: "EUR",
+      iban: EXAMPLE_IBAN_OTHER,
+      fillFromTransfers: true,
+    });
+    const first = confirmImport(
+      user.id,
+      uploadBytes(user.id, a.id, statementA([entry()])),
+    );
+    expect(first.transfers.needsAmount).toBe(1);
+    const second = confirmImport(
+      user.id,
+      uploadBytes(
+        user.id,
+        eur.id,
+        buildCamt({
+          iban: EXAMPLE_IBAN_OTHER,
+          currency: "EUR",
+          entries: [
+            entry({
+              date: "2024-03-11",
+              amount: "93.00",
+              sign: "CRDT",
+              ref: "R9",
+              counterpartyIban: EXAMPLE_IBAN,
+              original: { amount: "100.00", currency: "CHF" },
+            }),
+          ],
+        }),
+      ),
+    );
+    expect(second.transfers).toMatchObject({ paired: 1, needsAmount: 0 });
+    expect(allTransfers()).toEqual([
+      expect.objectContaining({ status: "linked", method: "paired" }),
+    ]);
+    expect(rowsOf(eur.id)).toEqual([
+      expect.objectContaining({ source: "import", amount: 9300 }),
+    ]);
+  });
+
   it("undoing the source import removes the mirror, and a repeat import brings it back", async () => {
     const { user, a, b } = await setup();
     const bytes = statementA([entry()]);

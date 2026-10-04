@@ -535,6 +535,8 @@ export function buildPreview(
         bookingDate: r.tx.bookingDate,
         amount: r.tx.amount,
         counterpartyIban: r.tx.counterpartyIban,
+        reference: r.tx.reference,
+        description: r.tx.description,
       })),
   );
   for (const r of rows) {

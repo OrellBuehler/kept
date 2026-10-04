@@ -1,4 +1,4 @@
-import { and, eq, gte, inArray, lte, ne, sql } from "drizzle-orm";
+import { and, eq, gte, inArray, lte, ne, or, sql } from "drizzle-orm";
 import { normalizeIban } from "$lib/iban";
 import { minor } from "$lib/money";
 import {
@@ -42,6 +42,7 @@ export function loadPlanAccounts(userId: string, conn: Conn): PlanAccount[] {
       iban: accounts.iban,
       openingDate: accounts.openingDate,
       fillFromTransfers: accounts.fillFromTransfers,
+      archived: accounts.archived,
     })
     .from(accounts)
     .where(eq(accounts.userId, userId))
@@ -86,21 +87,31 @@ const planColumns = {
   referenceType: transactions.referenceType,
 };
 
-/** Ids of transactions that appear in any transfers row of the user. */
-export function takenTransactionIds(userId: string, conn: Conn): Set<string> {
+/**
+ * Ids of transactions that appear in a transfers row of the user: `taken`
+ * for linked and dismissed rows, `pending` for rows that wait for an amount
+ * (those may still pair with a real counterpart).
+ */
+export function transferClaims(
+  userId: string,
+  conn: Conn,
+): { taken: Set<string>; pending: Set<string> } {
   const taken = new Set<string>();
+  const pending = new Set<string>();
   for (const r of conn
     .select({
       out: transfers.outTransactionId,
       in: transfers.inTransactionId,
+      status: transfers.status,
     })
     .from(transfers)
     .where(eq(transfers.userId, userId))
     .all()) {
-    if (r.out) taken.add(r.out);
-    if (r.in) taken.add(r.in);
+    const into = r.status === "needs_amount" ? pending : taken;
+    if (r.out) into.add(r.out);
+    if (r.in) into.add(r.in);
   }
-  return taken;
+  return { taken, pending };
 }
 
 export interface LinkScope {
@@ -216,7 +227,29 @@ function loadCandidates(
     .all();
 }
 
+/** Deletes the needs-amount rows of these transactions: their counter-side exists now. */
+function dropWaiting(userId: string, ids: readonly string[], conn: Conn): void {
+  conn
+    .delete(transfers)
+    .where(
+      and(
+        eq(transfers.userId, userId),
+        eq(transfers.status, "needs_amount"),
+        or(
+          inArray(transfers.outTransactionId, ids as string[]),
+          inArray(transfers.inTransactionId, ids as string[]),
+        ),
+      ),
+    )
+    .run();
+}
+
 function apply(userId: string, link: PlannedLink, conn: Conn): void {
+  if (link.kind === "pair") {
+    dropWaiting(userId, [link.sourceId, link.candidateId], conn);
+  } else if (link.kind === "mirror") {
+    dropWaiting(userId, [link.sourceId], conn);
+  }
   let outId = link.outTransactionId;
   let inId = link.inTransactionId;
   let status: "linked" | "needs_amount" = "linked";
@@ -287,7 +320,8 @@ function apply(userId: string, link: PlannedLink, conn: Conn): void {
  * scope) and links the transfers between the user's own accounts: pairs the
  * two booked sides, or mirrors the missing one onto an account that is filled
  * from transfers (see `planLinks`). Rows that already have a transfers row,
- * dismissed ones included, are left alone. Pass `conn` to run inside a
+ * dismissed ones included, are left alone; a row waiting for an amount pairs
+ * with its real counterpart once that shows up. Pass `conn` to run inside a
  * transaction you already hold; otherwise one is opened.
  */
 export function linkTransfers(
@@ -301,11 +335,13 @@ export function linkTransfers(
   const accountList = loadPlanAccounts(userId, conn);
   const sources = loadSources(userId, scope, accountList, conn);
   if (sources.length === 0) return { ...NONE };
+  const { taken, pending } = transferClaims(userId, conn);
   const plan = planLinks({
     sources,
     candidates: loadCandidates(userId, sources, accountList, conn),
     accounts: accountList,
-    taken: takenTransactionIds(userId, conn),
+    taken,
+    pending,
   });
   const result = { ...NONE };
   for (const link of plan) {

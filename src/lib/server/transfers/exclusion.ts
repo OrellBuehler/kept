@@ -1,4 +1,4 @@
-import { and, eq, sql } from "drizzle-orm";
+import { and, eq, inArray, sql } from "drizzle-orm";
 import { normalizeIban } from "$lib/iban";
 import { accounts, getDB, transactions, transfers } from "$lib/server/db";
 import {
@@ -29,21 +29,30 @@ export interface TransferExclusion {
  * Rows that are not linked fall back to a heuristic: the counterparty IBAN is
  * the IBAN (or pillar 3a deposit IBAN) of another account of the user, archived
  * ones included, or an outgoing payment carries a pillar 3a portfolio's
- * deposit reference.
+ * deposit reference. A row the user unlinked (a `dismissed` transfer) is no
+ * transfer to the IBAN heuristic either: "this is not a transfer" wins.
  */
 export function loadTransferExclusion(userId: string): TransferExclusion {
   const db = getDB();
   const linked = new Set<string>();
+  const dismissed = new Set<string>();
   for (const r of db
     .select({
       out: transfers.outTransactionId,
       in: transfers.inTransactionId,
+      status: transfers.status,
     })
     .from(transfers)
-    .where(and(eq(transfers.userId, userId), eq(transfers.status, "linked")))
+    .where(
+      and(
+        eq(transfers.userId, userId),
+        inArray(transfers.status, ["linked", "dismissed"]),
+      ),
+    )
     .all()) {
-    if (r.out) linked.add(r.out);
-    if (r.in) linked.add(r.in);
+    const into = r.status === "linked" ? linked : dismissed;
+    if (r.out) into.add(r.out);
+    if (r.in) into.add(r.in);
   }
   const ibanOwner = new Map<string, string>();
   for (const a of db
@@ -62,7 +71,7 @@ export function loadTransferExclusion(userId: string): TransferExclusion {
   return {
     isTransfer(row) {
       if (linked.has(row.id)) return true;
-      if (row.counterpartyIban) {
+      if (row.counterpartyIban && !dismissed.has(row.id)) {
         const owner = ibanOwner.get(normalizeIban(row.counterpartyIban));
         if (owner !== undefined && owner !== row.accountId) return true;
       }

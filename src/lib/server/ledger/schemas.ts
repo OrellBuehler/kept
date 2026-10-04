@@ -190,7 +190,13 @@ export const accountInputSchema = z
         .transform(Number),
     ),
     /** Create the counter-transaction here when another account shows a transfer to this IBAN. */
-    fillFromTransfers: checkbox,
+    fillFromTransfers: z.string().optional(),
+    /**
+     * Posted (as "1") by forms that show the toggle: an unchecked checkbox sends
+     * nothing, so only with this marker does a missing `fillFromTransfers` mean off.
+     * Without it the field is left alone: the stored value stays, a new account gets off.
+     */
+    fillFromTransfersField: z.string().optional(),
     /** Trades reduce (buys) or increase (sells) the cash balance. Investment accounts, or accounts with trades. */
     tradesMoveCash: checkbox,
   })
@@ -211,7 +217,13 @@ export const accountInputSchema = z
       openingBalance = r.value;
     }
     let shareBps = FULL_SHARE_BPS;
-    const { share, ...rest } = v;
+    const { share, fillFromTransfers, fillFromTransfersField, ...rest } = v;
+    const fillRequested =
+      fillFromTransfers !== undefined
+        ? ["on", "true", "1"].includes(fillFromTransfers)
+        : fillFromTransfersField !== undefined
+          ? false
+          : undefined;
     const pillar3a = v.type === "pillar_3a";
     if (pillar3a && v.currency !== PILLAR_3A_CURRENCY) {
       ctx.issues.push({
@@ -298,7 +310,7 @@ export const accountInputSchema = z
       contractNumber: pillar3a ? rest.contractNumber : null,
       depositIban: pillar3a ? rest.depositIban : null,
       sharedWith: pillar3a ? null : rest.sharedWith,
-      fillFromTransfers: pillar3a ? false : rest.fillFromTransfers,
+      fillFromTransfers: pillar3a ? false : fillRequested,
       tradesMoveCash: pillar3a ? false : rest.tradesMoveCash,
       openingBalance,
       shareBps,

@@ -10,6 +10,7 @@ import { createTestUser } from "$lib/testing/auth";
 import { seedBill } from "$lib/testing/bills";
 import { useTestDB } from "$lib/testing/db";
 import { EXAMPLE_IBAN } from "$lib/testing/fixtures/bill-identifiers";
+import { seedSecurity, seedTrade } from "$lib/testing/investments";
 import { seedAccount, seedImportedTransaction } from "$lib/testing/ledger";
 import {
   accountStatementReport,
@@ -267,6 +268,87 @@ describe("loaders and buildReport", () => {
     expect(s.transactions.map((t) => t.amount)).toEqual([-200, 500]);
     expect(s.account.ibanMasked).toContain("•");
     expect(s.account.ibanMasked).not.toBe(EXAMPLE_IBAN);
+  });
+
+  it("lists trade cash movements as lines when trades move cash, so balances reconcile", async () => {
+    const u = await createTestUser();
+    const a = seedAccount(u.id, {
+      type: "investment",
+      tradesMoveCash: true,
+      openingBalance: m(500000),
+      openingDate: "2026-01-01",
+    });
+    const etf = seedSecurity(u.id, { name: "Example World ETF" });
+    seedTrade(u.id, a.id, etf.id, {
+      date: "2026-09-10",
+      side: "buy",
+      amount: 100000,
+    });
+    seedTrade(u.id, a.id, etf.id, {
+      date: "2026-09-20",
+      side: "sell",
+      qty: "2",
+      amount: 30000,
+    });
+    seedTrade(u.id, a.id, etf.id, {
+      date: "2026-10-02",
+      side: "buy",
+      amount: 5000,
+    });
+    seedImportedTransaction(u.id, a.id, {
+      bookingDate: "2026-09-15",
+      amount: m(-250),
+      description: "Custody fee",
+    });
+    const s = loadAccountStatement(
+      u.id,
+      a.id,
+      "2026-09-01",
+      "2026-09-30",
+      TODAY,
+    );
+    expect(
+      s.transactions.map((t) => [t.bookingDate, t.description, t.amount]),
+    ).toEqual([
+      ["2026-09-10", "Buy Example World ETF", -100000],
+      ["2026-09-15", "Custody fee", -250],
+      ["2026-09-20", "Sell Example World ETF", 30000],
+    ]);
+    expect(
+      s.openingBalance + s.transactions.reduce((n, t) => n + t.amount, 0),
+    ).toBe(s.closingBalance);
+    const text = await pdfText(await accountStatementReport(s));
+    expect(text).not.toContain("Adjusted by balance snapshot");
+  });
+
+  it("lists no trade lines when trades do not move cash, or for another user", async () => {
+    const u = await createTestUser();
+    const other = await createTestUser();
+    const a = seedAccount(u.id, { type: "investment" });
+    const theirs = seedAccount(other.id, {
+      type: "investment",
+      tradesMoveCash: true,
+    });
+    const etf = seedSecurity(u.id);
+    const theirEtf = seedSecurity(other.id);
+    seedTrade(u.id, a.id, etf.id, { date: "2026-09-10", amount: 100000 });
+    seedTrade(other.id, theirs.id, theirEtf.id, {
+      date: "2026-09-10",
+      amount: 100000,
+    });
+    expect(
+      loadAccountStatement(u.id, a.id, "2026-09-01", "2026-09-30", TODAY)
+        .transactions,
+    ).toEqual([]);
+    const mine = seedAccount(u.id, {
+      type: "investment",
+      tradesMoveCash: true,
+      iban: EXAMPLE_IBAN,
+    });
+    expect(
+      loadAccountStatement(u.id, mine.id, "2026-09-01", "2026-09-30", TODAY)
+        .transactions,
+    ).toEqual([]);
   });
 
   it("uses snapshots for balances", async () => {

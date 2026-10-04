@@ -11,7 +11,8 @@ import type { Conn } from "./link";
 /**
  * Which rows of an incoming statement for `accountId` take over a mirror:
  * row key -> mirror id (see `matchMirrors`). Rows are matched by amount, date
- * and counterparty only; they are not in the database yet.
+ * counterparty and, for rows without a counterparty IBAN, reference or text;
+ * they are not in the database yet.
  */
 export function findReplacements(
   userId: string,
@@ -32,6 +33,8 @@ export function findReplacements(
       bookingDate: transactions.bookingDate,
       amount: transactions.amount,
       counterpartyIban: transactions.counterpartyIban,
+      reference: transactions.reference,
+      description: transactions.description,
     })
     .from(transactions)
     .where(

@@ -26,6 +26,7 @@ const acc = (id: string, over: Partial<PlanAccount> = {}): PlanAccount => ({
   openingDate: null,
   fillFromTransfers: false,
   hasPortfolios: false,
+  archived: false,
   ...over,
 });
 
@@ -55,7 +56,15 @@ const plan = (
   candidates: PlanTransaction[] = [],
   accounts: PlanAccount[] = [A, B],
   taken: string[] = [],
-) => planLinks({ sources, candidates, accounts, taken: new Set(taken) });
+  pending: string[] = [],
+) =>
+  planLinks({
+    sources,
+    candidates,
+    accounts,
+    taken: new Set(taken),
+    pending: new Set(pending),
+  });
 
 describe("planLinks", () => {
   it("mirrors an outgoing payment onto a filled account with flipped sign", () => {
@@ -253,10 +262,58 @@ describe("planLinks", () => {
     expect(plan([tx({ amount: 0 })])).toEqual([]);
   });
 
-  it("recognises an archived account's IBAN like any other", () => {
-    // Archiving is not part of the plan input: archived accounts are passed like the others.
-    const archived = acc("b", { iban: IBAN_B, fillFromTransfers: true });
-    expect(plan([tx({})], [], [A, archived])).toHaveLength(1);
+  it("never mirrors onto an archived account, but still pairs with it", () => {
+    const archived = acc("b", {
+      iban: IBAN_B,
+      fillFromTransfers: true,
+      archived: true,
+    });
+    expect(plan([tx({})], [], [A, archived])).toEqual([]);
+    const real = tx({ accountId: "b", amount: 10000 });
+    expect(plan([tx({})], [real], [A, archived])).toMatchObject([
+      { kind: "pair" },
+    ]);
+  });
+
+  it("gives a candidate to the closest source, not to the first one", () => {
+    const early = tx({ bookingDate: "2024-03-08" });
+    const near = tx({ bookingDate: "2024-03-12" });
+    const only = tx({
+      accountId: "b",
+      amount: 10000,
+      bookingDate: "2024-03-13",
+    });
+    const result = plan([early, near], [only]);
+    expect(result.find((r) => r.kind === "pair")).toMatchObject({
+      sourceId: near.id,
+      candidateId: only.id,
+    });
+    expect(result.find((r) => r.kind === "mirror")).toMatchObject({
+      sourceId: early.id,
+    });
+  });
+
+  it("finds the same pairs among many candidates", () => {
+    const sources = Array.from({ length: 50 }, (_, i) =>
+      tx({ amount: -(1000 + i), bookingDate: "2024-03-10" }),
+    );
+    const candidates = Array.from({ length: 50 }, (_, i) =>
+      tx({
+        accountId: "b",
+        amount: 1000 + i,
+        bookingDate: "2024-03-11",
+        counterpartyIban: IBAN_A,
+      }),
+    );
+    const result = plan(sources, candidates);
+    expect(result.every((r) => r.kind === "pair")).toBe(true);
+    expect(result).toHaveLength(50);
+    for (const link of result) {
+      if (link.kind !== "pair") continue;
+      const s = sources.find((x) => x.id === link.sourceId)!;
+      const c = candidates.find((x) => x.id === link.candidateId)!;
+      expect(c.amount).toBe(-s.amount);
+    }
   });
 
   it("skips mirrors as sources and rows that already have a transfer", () => {
@@ -329,6 +386,84 @@ describe("planLinks", () => {
       ]);
     });
 
+    it("pairs a debit without a counter-amount with a later credit that carries the original amount", () => {
+      const out = tx({});
+      const real = tx({
+        accountId: "b",
+        amount: 9300,
+        currency: "EUR",
+        originalAmount: 10000,
+        originalCurrency: "CHF",
+        counterpartyIban: IBAN_A,
+        bookingDate: "2024-03-11",
+      });
+      expect(plan([out], [real], [A, eur])).toMatchObject([
+        {
+          kind: "pair",
+          sourceId: out.id,
+          candidateId: real.id,
+          outTransactionId: out.id,
+          inTransactionId: real.id,
+        },
+      ]);
+    });
+
+    it("pairs the same two rows within one run, the debit dated earlier", () => {
+      const out = tx({ bookingDate: "2024-03-09" });
+      const real = tx({
+        accountId: "b",
+        amount: 9300,
+        currency: "EUR",
+        originalAmount: 10000,
+        originalCurrency: "CHF",
+        counterpartyIban: IBAN_A,
+        bookingDate: "2024-03-11",
+      });
+      const result = plan([out, real], [out, real], [A, eur]);
+      expect(result).toHaveLength(1);
+      expect(result[0]).toMatchObject({ kind: "pair" });
+    });
+
+    it("does not pair on an original amount of another size or currency", () => {
+      const out = tx({});
+      const wrongAmount = tx({
+        accountId: "b",
+        amount: 9300,
+        currency: "EUR",
+        originalAmount: 9000,
+        originalCurrency: "CHF",
+      });
+      const wrongCurrency = tx({
+        accountId: "b",
+        amount: 9300,
+        currency: "EUR",
+        originalAmount: 10000,
+        originalCurrency: "USD",
+      });
+      expect(plan([out], [wrongAmount, wrongCurrency], [A, eur])).toMatchObject(
+        [{ kind: "needs_amount" }],
+      );
+    });
+
+    it("pairs a waiting row instead of asking again, and leaves it waiting otherwise", () => {
+      const out = tx({});
+      expect(plan([out], [], [A, eur], [], [out.id])).toEqual([]);
+      const real = tx({
+        accountId: "b",
+        amount: 9300,
+        currency: "EUR",
+        originalAmount: 10000,
+        originalCurrency: "CHF",
+        counterpartyIban: IBAN_A,
+      });
+      expect(
+        plan([out, real], [out, real], [A, eur], [], [out.id]),
+      ).toMatchObject([{ kind: "pair", candidateId: real.id }]);
+      expect(plan([real], [out], [A, eur], [], [out.id])).toMatchObject([
+        { kind: "pair", sourceId: real.id, candidateId: out.id },
+      ]);
+    });
+
     it("does not pair equal numbers in different currencies", () => {
       const out = tx({});
       const real = tx({ accountId: "b", amount: 10000, currency: "EUR" });
@@ -370,6 +505,8 @@ describe("matchMirrors", () => {
     bookingDate: "2024-03-10",
     amount: 10000,
     counterpartyIban: IBAN_A,
+    reference: "RF-7788",
+    description: "Move to savings",
     ...over,
   });
   const row = (key: string, over = {}) => ({
@@ -377,8 +514,12 @@ describe("matchMirrors", () => {
     bookingDate: "2024-03-12",
     amount: 10000,
     counterpartyIban: IBAN_A,
+    reference: null as string | null,
+    description: null as string | null,
     ...over,
   });
+  const blind = (key: string, over = {}) =>
+    row(key, { counterpartyIban: null, reference: "RF-7788", ...over });
 
   it("matches by amount, date and counterparty", () => {
     expect(matchMirrors([row("r1")], [mirror("m1")])).toEqual(
@@ -401,24 +542,55 @@ describe("matchMirrors", () => {
   });
 
   it("accepts a row without a counterparty only as the single match", () => {
-    expect(
-      matchMirrors([row("r", { counterpartyIban: null })], [mirror("m")]),
-    ).toEqual(new Map([["r", "m"]]));
+    expect(matchMirrors([blind("r")], [mirror("m")])).toEqual(
+      new Map([["r", "m"]]),
+    );
+    expect(matchMirrors([blind("r")], [mirror("m1"), mirror("m2")]).size).toBe(
+      0,
+    );
+    expect(matchMirrors([blind("r1"), blind("r2")], [mirror("m")]).size).toBe(
+      0,
+    );
+  });
+
+  it("needs the same reference or a shared description word for a row without a counterparty", () => {
     expect(
       matchMirrors(
-        [row("r", { counterpartyIban: null })],
-        [mirror("m1"), mirror("m2")],
+        [blind("r", { reference: null })],
+        [mirror("m", { description: null })],
       ).size,
     ).toBe(0);
     expect(
+      matchMirrors([blind("r", { reference: "OTHER" })], [mirror("m")]).size,
+    ).toBe(0);
+    expect(
       matchMirrors(
-        [
-          row("r1", { counterpartyIban: null }),
-          row("r2", { counterpartyIban: null }),
-        ],
+        [blind("r", { reference: null, description: "Savings top-up" })],
         [mirror("m")],
-      ).size,
-    ).toBe(0);
+      ),
+    ).toEqual(new Map([["r", "m"]]));
+  });
+
+  it("ignores short words, numbers and generic words as a signal", () => {
+    const signal = (description: string) =>
+      matchMirrors(
+        [blind("r", { reference: null, description })],
+        [mirror("m", { description: "Transfer 2024 to the savings" })],
+      ).size;
+    expect(signal("Transfer 2024 to a x")).toBe(0);
+    expect(signal("transfer")).toBe(0);
+    expect(signal("my savings")).toBe(1);
+  });
+
+  it("never lets a row without a counterparty compete with an exact match", () => {
+    const result = matchMirrors(
+      [
+        blind("blind", { bookingDate: "2024-03-10" }),
+        row("exact", { bookingDate: "2024-03-12" }),
+      ],
+      [mirror("m")],
+    );
+    expect(result).toEqual(new Map([["exact", "m"]]));
   });
 
   it("uses each mirror once and prefers the closest date", () => {
