@@ -61,6 +61,20 @@ export function formatAmount(
   }).format(value / 10 ** exp);
 }
 
+/** Short form for chart labels, e.g. "CHF 1.2K"; never used where exact amounts matter. */
+export function formatCompactAmount(
+  value: Minor,
+  currency: string,
+  locale = "en",
+): string {
+  return new Intl.NumberFormat(locale, {
+    style: "currency",
+    currency,
+    notation: "compact",
+    maximumFractionDigits: 1,
+  }).format(value / 10 ** currencyExponent(currency));
+}
+
 /** Ownership share of an account in basis points: 10000 = 100%. */
 export const FULL_SHARE_BPS = 10_000;
 
