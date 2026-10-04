@@ -1,14 +1,18 @@
 import type { BlobStore } from "./blob-store";
 import { createFsBlobStore, FsBlobStore } from "./fs";
+import { S3BlobStore } from "./s3";
 import { readStorageConfig, type StorageConfig } from "./config";
 
 export * from "./config";
 export * from "./blob-store";
 export { FsBlobStore } from "./fs";
 export { MemoryBlobStore } from "./memory";
+export { S3BlobStore } from "./s3";
 
 export function createStore(config: StorageConfig): BlobStore {
-  return createFsBlobStore(config.dir);
+  return config.kind === "s3"
+    ? new S3BlobStore(config)
+    : createFsBlobStore(config.dir);
 }
 
 let store: BlobStore | null = null;
