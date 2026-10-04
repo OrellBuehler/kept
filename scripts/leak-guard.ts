@@ -56,18 +56,22 @@ const patterns = terms.map(termRegex);
 
 const findings: string[] = [];
 for (const file of files) {
-  for (const { location, patternIndex } of scanFile(
+  for (const { location, patternIndex, problem } of scanFile(
     file,
     readFileSync(file),
     patterns,
   )) {
-    findings.push(`${location}: private term #${patternIndex + 1}`);
+    findings.push(
+      problem
+        ? `${location}: ${problem}`
+        : `${location}: private term #${patternIndex + 1}`,
+    );
   }
 }
 
 if (findings.length > 0) {
   console.error(
-    "leak-guard: private data found — remove it before committing:\n",
+    "leak-guard: private data found or files could not be scanned — fix before committing:\n",
   );
   for (const finding of findings) console.error(`  ${finding}`);
   process.exit(1);
