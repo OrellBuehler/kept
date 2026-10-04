@@ -60,8 +60,12 @@ export const adminPasswordSchema = z
   .min(1, "Enter your password to confirm.")
   .max(PASSWORD_MAX);
 
+/** Authenticator or recovery code that confirms an administrator action when 2FA is on. */
+export const adminCodeSchema = z.string().trim().max(64).default("");
+
 export const createUserSchema = z.object({
   adminPassword: adminPasswordSchema,
+  adminCode: adminCodeSchema,
   username: usernameSchema,
   password: passwordSchema,
   role: roleSchema,
@@ -70,6 +74,7 @@ export const createUserSchema = z.object({
 
 export const deleteUserSchema = z.object({
   adminPassword: adminPasswordSchema,
+  adminCode: adminCodeSchema,
   userId: z.string().min(1, "Missing user."),
 });
 
@@ -123,6 +128,7 @@ export const passkeyIdSchema = z.object({
 
 export const resetTwoFactorSchema = z.object({
   adminPassword: adminPasswordSchema,
+  adminCode: adminCodeSchema,
   userId: z.string().min(1, "Missing user."),
 });
 

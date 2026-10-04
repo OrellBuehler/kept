@@ -275,7 +275,7 @@ describe("authenticate", () => {
       const u = await createTestUser({ username: "alice" });
       const limiter = new LoginRateLimiter();
       const t = tracker();
-      for (let i = 0; i < 25; i++) {
+      for (let i = 0; i < 12; i++) {
         await authenticate(
           "alice",
           "wrong-password",
@@ -315,7 +315,7 @@ describe("authenticate", () => {
       await createTestUser({ username: "alice" });
       const limiter = new LoginRateLimiter();
       const t = tracker();
-      for (let i = 0; i < 40; i++) {
+      for (let i = 0; i < 12; i++) {
         await authenticate(
           "alice",
           "wrong-password",

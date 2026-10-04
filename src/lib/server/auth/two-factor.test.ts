@@ -203,6 +203,27 @@ describe("two-factor", () => {
     expect(() => resetTwoFactor(admin.id, "missing")).toThrow(AuthError);
   });
 
+  it("resetTwoFactor changes nothing when the audit write fails", async () => {
+    const admin = await createTestUser({ role: "admin" });
+    const u = await createTestUser();
+    await enrol(u.id, u.username);
+    const s = loginTestUser(u);
+    expect(() =>
+      resetTwoFactor(admin.id, u.id, undefined, () => {
+        throw new Error("audit failed");
+      }),
+    ).toThrow("audit failed");
+    expect(getTwoFactorStatus(u.id).totpEnabled).toBe(true);
+    expect(validateSessionToken(s.token)).not.toBeNull();
+    expect(
+      getDB()
+        .select()
+        .from(authEvents)
+        .all()
+        .some((e) => e.type === "two_factor_reset"),
+    ).toBe(false);
+  });
+
   it("passkey-only users cannot pass the password+code reauthentication", async () => {
     const u = await createTestUser();
     getDB()

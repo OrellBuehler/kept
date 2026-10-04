@@ -1,3 +1,9 @@
+import { totpCode } from "$lib/server/auth/totp";
+import {
+  confirmTotpEnrolment,
+  startTotpEnrolment,
+} from "$lib/server/auth/two-factor";
+import { getDB, passkeys } from "$lib/server/db";
 import { createSession } from "$lib/server/auth/sessions";
 import type { SessionUser } from "$lib/server/auth/types";
 import { createUser } from "$lib/server/auth/users";
@@ -33,4 +39,25 @@ export async function createTestUser(
 /** A logged-in browser stand-in: real session row plus its token. */
 export function loginTestUser(user: SessionUser) {
   return createSession(user.id);
+}
+
+/** Switches an authenticator app on for the user; returns the recovery codes (single use, time independent). */
+export function enableTotp(user: { id: string; username: string }): string[] {
+  const { secret } = startTotpEnrolment(user.id, user.username);
+  return confirmTotpEnrolment(user.id, totpCode(secret, Date.now()));
+}
+
+/** Registers a dummy passkey row (never used to sign in) so the user counts as having one. */
+export function addPasskey(userId: string): void {
+  getDB()
+    .insert(passkeys)
+    .values({
+      userId,
+      name: "test key",
+      credentialId: `cred-${crypto.randomUUID()}`,
+      publicKey: "pk",
+      deviceType: "singleDevice",
+      backedUp: false,
+    })
+    .run();
 }

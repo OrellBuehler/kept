@@ -199,6 +199,12 @@ half-finished login expires after 5 minutes and grants access to nothing.
   `two_factor_reset` entry (who, whom, when; never any secrets) in the `auth_events` table and
   the server log. If the only administrator loses their second factor, delete that user's rows
   in `totp_credentials`, `recovery_codes` and `passkeys` directly in the database.
+- **Administrator confirmation:** creating or deleting users, resetting two-factor and downloading
+  a backup ask the acting administrator for their password. With an authenticator app, a current
+  code (or a recovery code) is required as well. An administrator whose only second factor is a
+  passkey must first confirm with a passkey on **Settings > Security** (valid for five minutes)
+  and then enter the password. Each action and its audit row are written in one transaction;
+  failed confirmations, rate-limit hits (once per window) and backup links are audited too.
 
 **Passkeys and `ORIGIN`:** a passkey is tied to the relying party ID, which Kept takes from the
 host name of `ORIGIN` (for example `https://kept.example.org` gives `kept.example.org`), and the

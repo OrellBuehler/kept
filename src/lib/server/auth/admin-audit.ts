@@ -1,10 +1,11 @@
-import { desc } from "drizzle-orm";
+import { and, desc, eq, gt } from "drizzle-orm";
 import {
   adminAuditLog,
   getDB,
   type AdminAction,
   type UserRole,
 } from "$lib/server/db";
+import { WINDOW_MS } from "./rate-limit";
 import { AuthError } from "./types";
 
 export const AUDIT_LOG_PAGE_SIZE = 20;
@@ -23,14 +24,19 @@ export interface AdminAuditEntry {
   createdAt: Date;
 }
 
-/** Records an administrator action. Ids, usernames and short context only, never secrets. */
+type AuditDb = Pick<ReturnType<typeof getDB>, "insert">;
+
+/**
+ * Records an administrator action. Ids, usernames and short context only, never secrets.
+ * Pass the transaction of the action itself as `db` so the change and its audit row commit together.
+ */
 export function recordAdminAction(
   actor: Person,
   action: AdminAction,
   opts: { target?: Person; details?: string } = {},
+  db: AuditDb = getDB(),
 ): void {
-  getDB()
-    .insert(adminAuditLog)
+  db.insert(adminAuditLog)
     .values({
       actorUserId: actor.id,
       actorUsername: actor.username,
@@ -47,6 +53,30 @@ export function recordAdminAction(
       targetId: opts.target?.id ?? null,
     }),
   );
+}
+
+/**
+ * A confirmation attempt was refused for being over the rate limit. Written at
+ * most once per limiter window per administrator so a flood cannot fill the table.
+ */
+export function recordConfirmationRateLimited(
+  actor: Person,
+  now: number = Date.now(),
+): void {
+  const recent = getDB()
+    .select({ id: adminAuditLog.id })
+    .from(adminAuditLog)
+    .where(
+      and(
+        eq(adminAuditLog.actorUserId, actor.id),
+        eq(adminAuditLog.action, "admin_confirm_rate_limited"),
+        gt(adminAuditLog.createdAt, new Date(now - WINDOW_MS)),
+      ),
+    )
+    .limit(1)
+    .get();
+  if (recent) return;
+  recordAdminAction(actor, "admin_confirm_rate_limited");
 }
 
 /** Newest first. Administrators only; any other caller gets an AuthError. */

@@ -5,11 +5,10 @@
   import * as Card from "$lib/components/ui/card/index.js";
   import * as Table from "$lib/components/ui/table/index.js";
   import { Button } from "$lib/components/ui/button/index.js";
-  import * as Field from "$lib/components/ui/field/index.js";
-  import { Input } from "$lib/components/ui/input/index.js";
   import { Spinner } from "$lib/components/ui/spinner/index.js";
   import FormAlert from "$lib/components/app/form-alert.svelte";
-  import { fieldErrors, formError, hasError } from "$lib/form-errors";
+  import AdminConfirmFields from "$lib/components/app/admin-confirm-fields.svelte";
+  import { formError } from "$lib/form-errors";
   import LocalTime from "$lib/components/app/local-time.svelte";
   import type { PageProps } from "./$types";
 
@@ -60,21 +59,12 @@
         }}
       >
         <FormAlert message={formError(form?.errors)} />
-        <Field.Field>
-          <Field.Label for="backup-password">Your password</Field.Label>
-          <Input
-            id="backup-password"
-            name="adminPassword"
-            type="password"
-            autocomplete="current-password"
-            required
-            aria-invalid={hasError(form?.errors, "adminPassword")}
-          />
-          <Field.Description>
-            Confirm it is you before downloading the database.
-          </Field.Description>
-          <Field.Error errors={fieldErrors(form?.errors, "adminPassword")} />
-        </Field.Field>
+        <AdminConfirmFields
+          idPrefix="backup"
+          mode={data.confirmMode}
+          errors={form?.errors}
+          description="Confirm it is you before downloading the database."
+        />
         <Button type="submit" class="self-start" disabled={downloading}>
           {#if downloading}<Spinner />{:else}<DownloadIcon />{/if}
           Download backup

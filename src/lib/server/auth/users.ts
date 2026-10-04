@@ -55,11 +55,25 @@ function insertUser(
     .get();
 }
 
-export async function createUser(input: NewUser): Promise<SessionUser> {
+/** Runs inside the transaction of the change, so the audit row commits or rolls back with it. */
+export type InTransaction<T> = (
+  tx: Pick<ReturnType<typeof getDB>, "insert">,
+  subject: T,
+) => void;
+
+export async function createUser(
+  input: NewUser,
+  audit?: InTransaction<SessionUser>,
+): Promise<SessionUser> {
   const passwordHash = await hashPassword(input.password);
-  return getDB().transaction((tx) => insertUser(tx, input, passwordHash), {
-    behavior: "immediate",
-  });
+  return getDB().transaction(
+    (tx) => {
+      const created = insertUser(tx, input, passwordHash);
+      audit?.(tx, created);
+      return created;
+    },
+    { behavior: "immediate" },
+  );
 }
 
 /**
@@ -138,7 +152,11 @@ export function listUsers(): UserListEntry[] {
     .all();
 }
 
-export function deleteUser(actorId: string, targetId: string): void {
+export function deleteUser(
+  actorId: string,
+  targetId: string,
+  audit?: InTransaction<{ id: string; username: string; role: UserRole }>,
+): void {
   getDB().transaction(
     (tx) => {
       if (actorId === targetId) {
@@ -148,7 +166,7 @@ export function deleteUser(actorId: string, targetId: string): void {
         );
       }
       const target = tx
-        .select({ id: users.id, role: users.role })
+        .select({ id: users.id, username: users.username, role: users.role })
         .from(users)
         .where(eq(users.id, targetId))
         .get();
@@ -168,6 +186,7 @@ export function deleteUser(actorId: string, targetId: string): void {
         }
       }
       tx.delete(users).where(eq(users.id, targetId)).run();
+      audit?.(tx, target);
     },
     { behavior: "immediate" },
   );

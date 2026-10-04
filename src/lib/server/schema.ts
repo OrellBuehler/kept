@@ -234,6 +234,9 @@ export const ADMIN_ACTIONS = [
   "user_delete",
   "user_reset_two_factor",
   "backup_download",
+  "backup_link_issued",
+  "admin_confirm_failed",
+  "admin_confirm_rate_limited",
 ] as const;
 export type AdminAction = (typeof ADMIN_ACTIONS)[number];
 

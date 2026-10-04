@@ -1,14 +1,55 @@
 import { randomBytes } from "node:crypto";
 import { adminActionLimiter, type LoginRateLimiter } from "./rate-limit";
-import { reauthenticatePasswordOnly } from "./two-factor";
+import {
+  getTwoFactorStatus,
+  hasRecentReauth,
+  reauthenticate,
+  reauthenticatePasswordOnly,
+} from "./two-factor";
+import { AuthError } from "./types";
 
-/** Password re-check before an administrator action. Throws AuthError or RateLimitedError. */
-export function confirmAdminPassword(
+/**
+ * Re-checks the acting administrator before a sensitive action:
+ * - with an authenticator app: password plus a current code (or a recovery code);
+ * - with passkeys only: password plus a passkey step-up of this session within
+ *   REAUTH_WINDOW_MS (done on the security page), since a code cannot be typed;
+ * - without a second factor: password only.
+ * Throws AuthError (invalid_credentials, invalid_code, passkey_required) or RateLimitedError.
+ */
+export async function confirmAdmin(
   userId: string,
-  password: string,
+  sessionId: string | undefined,
+  input: { password: string; code?: string },
   limiter: LoginRateLimiter = adminActionLimiter,
+  now: number = Date.now(),
 ): Promise<void> {
-  return reauthenticatePasswordOnly(userId, password, limiter);
+  const status = getTwoFactorStatus(userId);
+  if (status.totpEnabled) {
+    await reauthenticate(
+      userId,
+      input.password,
+      input.code ?? "",
+      limiter,
+      now,
+    );
+    return;
+  }
+  if (status.passkeyCount > 0 && !hasRecentReauth(sessionId, now)) {
+    throw new AuthError(
+      "passkey_required",
+      "Confirm with one of your passkeys on the security page first.",
+    );
+  }
+  await reauthenticatePasswordOnly(userId, input.password, limiter);
+}
+
+/** Which extra proof the administrator's forms must ask for. */
+export function adminConfirmMode(
+  userId: string,
+): "password" | "totp" | "passkey" {
+  const status = getTwoFactorStatus(userId);
+  if (status.totpEnabled) return "totp";
+  return status.passkeyCount > 0 ? "passkey" : "password";
 }
 
 export const DOWNLOAD_TOKEN_TTL_MS = 60_000;

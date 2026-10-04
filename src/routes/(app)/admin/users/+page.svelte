@@ -19,6 +19,7 @@
   import { Badge } from "$lib/components/ui/badge/index.js";
   import { Spinner } from "$lib/components/ui/spinner/index.js";
   import FormAlert from "$lib/components/app/form-alert.svelte";
+  import AdminConfirmFields from "$lib/components/app/admin-confirm-fields.svelte";
   import LocalTime from "$lib/components/app/local-time.svelte";
   import { fieldErrors, formError, hasError } from "$lib/form-errors";
   import type { PageProps } from "./$types";
@@ -41,6 +42,9 @@
     user_delete: "Deleted user",
     user_reset_two_factor: "Reset two-factor",
     backup_download: "Downloaded backup",
+    backup_link_issued: "Issued backup link",
+    admin_confirm_failed: "Failed confirmation",
+    admin_confirm_rate_limited: "Confirmation rate limited",
   };
 
   const createFailure = $derived(form && "values" in form ? form : null);
@@ -303,23 +307,12 @@
           </NativeSelect>
           <Field.Error errors={fieldErrors(createFailure?.errors, "role")} />
         </Field.Field>
-        <Field.Field>
-          <Field.Label for="new-adminPassword">Your password</Field.Label>
-          <Input
-            id="new-adminPassword"
-            name="adminPassword"
-            type="password"
-            autocomplete="current-password"
-            required
-            aria-invalid={hasError(createFailure?.errors, "adminPassword")}
-          />
-          <Field.Description>
-            Confirm it is you before creating an account.
-          </Field.Description>
-          <Field.Error
-            errors={fieldErrors(createFailure?.errors, "adminPassword")}
-          />
-        </Field.Field>
+        <AdminConfirmFields
+          idPrefix="new"
+          mode={data.confirmMode}
+          errors={createFailure?.errors}
+          description="Confirm it is you before creating an account."
+        />
       </Field.Group>
       <Dialog.Footer>
         <Button
@@ -370,6 +363,7 @@
               Record<string, string[]> | undefined;
             confirmError =
               errors?.adminPassword?.[0] ??
+              errors?.adminCode?.[0] ??
               errors?.form?.[0] ??
               "Could not delete the user.";
           } else if (result.type === "error") {
@@ -381,16 +375,11 @@
     >
       <input type="hidden" name="userId" value={lastTarget?.id ?? ""} />
       <FormAlert message={confirmError} />
-      <Field.Field>
-        <Field.Label for="delete-adminPassword">Your password</Field.Label>
-        <Input
-          id="delete-adminPassword"
-          name="adminPassword"
-          type="password"
-          autocomplete="current-password"
-          required
-        />
-      </Field.Field>
+      <AdminConfirmFields
+        idPrefix="delete"
+        mode={data.confirmMode}
+        errors={undefined}
+      />
       <AlertDialog.Footer>
         <AlertDialog.Cancel type="button" disabled={deleting}
           >Cancel</AlertDialog.Cancel
@@ -438,6 +427,7 @@
               Record<string, string[]> | undefined;
             confirmError =
               errors?.adminPassword?.[0] ??
+              errors?.adminCode?.[0] ??
               errors?.form?.[0] ??
               "Could not reset two-factor authentication.";
           } else if (result.type === "error") {
@@ -449,16 +439,11 @@
     >
       <input type="hidden" name="userId" value={lastReset?.id ?? ""} />
       <FormAlert message={confirmError} />
-      <Field.Field>
-        <Field.Label for="reset-adminPassword">Your password</Field.Label>
-        <Input
-          id="reset-adminPassword"
-          name="adminPassword"
-          type="password"
-          autocomplete="current-password"
-          required
-        />
-      </Field.Field>
+      <AdminConfirmFields
+        idPrefix="reset"
+        mode={data.confirmMode}
+        errors={undefined}
+      />
       <AlertDialog.Footer>
         <AlertDialog.Cancel type="button" disabled={resetting}
           >Cancel</AlertDialog.Cancel

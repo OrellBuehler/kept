@@ -12,14 +12,16 @@ export const GET: RequestHandler = ({ locals, url }) => {
   if (!consumeDownloadToken(url.searchParams.get("token"), admin.id)) {
     error(403, "Confirm your password on the backup page to download.");
   }
+  // Audited before anything is created or streamed: a download that starts always has its row.
+  recordAdminAction(admin, "backup_download", { details: "outcome=started" });
   let download;
   try {
     download = createBackupDownload(getDB());
   } catch (err) {
     console.error("backup download failed", describeError(err));
+    recordAdminAction(admin, "backup_download", { details: "outcome=failed" });
     error(500, "The backup could not be created. Check the server log.");
   }
-  recordAdminAction(admin, "backup_download");
   return new Response(download.stream, {
     headers: {
       "Content-Type": "application/vnd.sqlite3",

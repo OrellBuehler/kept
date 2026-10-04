@@ -20,6 +20,7 @@ import { twoFactorManageLimiter, type LoginRateLimiter } from "./rate-limit";
 import { hashToken, invalidateUserSessions } from "./sessions";
 import { generateTotpSecret, otpauthUri, verifyTotp } from "./totp";
 import { AuthError } from "./types";
+import type { InTransaction } from "./users";
 
 export const RECOVERY_CODE_COUNT = 10;
 const RECOVERY_ALPHABET = "abcdefghjkmnpqrstuvwxyz23456789";
@@ -426,27 +427,34 @@ export function resetTwoFactor(
   actorId: string,
   targetId: string,
   keepSessionId?: string,
+  audit?: InTransaction<{ id: string; username: string }>,
 ): void {
-  const db = getDB();
-  const target = db
-    .select({ id: users.id })
-    .from(users)
-    .where(eq(users.id, targetId))
-    .get();
-  if (!target) throw new AuthError("user_not_found", "User not found.");
-  db.transaction((tx) => {
-    tx.delete(totpCredentials)
-      .where(eq(totpCredentials.userId, targetId))
-      .run();
-    tx.delete(recoveryCodes).where(eq(recoveryCodes.userId, targetId)).run();
-    tx.delete(passkeys).where(eq(passkeys.userId, targetId)).run();
-    tx.delete(authChallenges).where(eq(authChallenges.userId, targetId)).run();
-  });
-  invalidateUserSessions(
-    targetId,
-    actorId === targetId ? keepSessionId : undefined,
+  getDB().transaction(
+    (tx) => {
+      const target = tx
+        .select({ id: users.id, username: users.username })
+        .from(users)
+        .where(eq(users.id, targetId))
+        .get();
+      if (!target) throw new AuthError("user_not_found", "User not found.");
+      tx.delete(totpCredentials)
+        .where(eq(totpCredentials.userId, targetId))
+        .run();
+      tx.delete(recoveryCodes).where(eq(recoveryCodes.userId, targetId)).run();
+      tx.delete(passkeys).where(eq(passkeys.userId, targetId)).run();
+      tx.delete(authChallenges)
+        .where(eq(authChallenges.userId, targetId))
+        .run();
+      // same connection, so these writes are part of this transaction
+      invalidateUserSessions(
+        targetId,
+        actorId === targetId ? keepSessionId : undefined,
+      );
+      logAuthEvent("two_factor_reset", targetId, actorId);
+      audit?.(tx, target);
+    },
+    { behavior: "immediate" },
   );
-  logAuthEvent("two_factor_reset", targetId, actorId);
 }
 
 export function usersWithTwoFactor(): Set<string> {

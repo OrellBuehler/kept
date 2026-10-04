@@ -13,7 +13,13 @@ import {
 } from "$lib/server/auth/admin-audit";
 import { adminActionLimiter } from "$lib/server/auth/rate-limit";
 import { beforeEach } from "vitest";
-import { createTestUser } from "$lib/testing/auth";
+import {
+  addPasskey,
+  createTestUser,
+  enableTotp,
+  loginTestUser,
+} from "$lib/testing/auth";
+import { markSessionReauthenticated } from "$lib/server/auth/two-factor";
 import { useTestDB } from "$lib/testing/db";
 import { createTestEvent, outcome } from "$lib/testing/event";
 import { actions, load } from "./+page.server";
@@ -235,7 +241,13 @@ describe("admin/users", () => {
         }
       }
       expect(listUsers()).toHaveLength(2);
-      expect(audit()).toHaveLength(0);
+      // only the three real wrong-password attempts are audited, and no action is
+      expect(audit().map((r) => r.action)).toEqual([
+        "admin_confirm_failed",
+        "admin_confirm_failed",
+        "admin_confirm_failed",
+      ]);
+      expect(audit().every((r) => r.details === "reason=password")).toBe(true);
     });
 
     it("wrong password attempts are rate limited", async () => {
@@ -254,6 +266,28 @@ describe("admin/users", () => {
       }
       expect(last).toMatchObject({ type: "fail", status: 429 });
       expect(listUsers()).toHaveLength(2);
+    });
+
+    it("records rate-limit hits once per window instead of once per request", async () => {
+      const admin = await createTestUser({ role: "admin" });
+      const member = await createTestUser();
+      for (let i = 0; i < 12; i++) {
+        await outcome(() =>
+          actions.delete(
+            createTestEvent({
+              user: admin,
+              form: { userId: member.id, adminPassword: "nope-nope-nope" },
+            }) as never,
+          ),
+        );
+      }
+      const actionsSeen = audit().map((r) => r.action);
+      expect(
+        actionsSeen.filter((a) => a === "admin_confirm_failed"),
+      ).toHaveLength(5);
+      expect(
+        actionsSeen.filter((a) => a === "admin_confirm_rate_limited"),
+      ).toHaveLength(1);
     });
 
     it("records create, delete and reset without secrets", async () => {
@@ -336,6 +370,123 @@ describe("admin/users", () => {
         await outcome(() => load(createTestEvent({ user: member }) as never)),
       ).toEqual({ type: "error", status: 403 });
       expect(() => listAdminAuditLog(member)).toThrow(/Administrator/);
+    });
+  });
+  describe("second factor on the acting administrator", () => {
+    const audit = () => getDB().select().from(adminAuditLog).all();
+    const create = (
+      user: Awaited<ReturnType<typeof createTestUser>>,
+      extra: Record<string, string>,
+      session?: ReturnType<typeof loginTestUser>["session"],
+    ) =>
+      outcome(() =>
+        actions.create(
+          createTestEvent({
+            user,
+            session,
+            form: {
+              username: "erin",
+              password: "a-long-enough-password",
+              role: "member",
+              ...extra,
+            },
+          }) as never,
+        ),
+      );
+
+    it("with an authenticator app the password alone is not enough", async () => {
+      const admin = await createTestUser({ role: "admin" });
+      const [recovery] = enableTotp(admin);
+
+      for (const code of [undefined, "", "000000", "bad"]) {
+        const r = await create(admin, {
+          adminPassword: admin.password,
+          ...(code === undefined ? {} : { adminCode: code }),
+        });
+        expect(r).toMatchObject({ type: "fail", status: 400 });
+        expect(JSON.stringify(r)).toContain("adminCode");
+      }
+      expect(listUsers()).toHaveLength(1);
+      expect(audit().every((r) => r.details === "reason=code")).toBe(true);
+      expect(audit()).toHaveLength(4);
+
+      const ok = await create(admin, {
+        adminPassword: admin.password,
+        adminCode: recovery,
+      });
+      expect(ok).toMatchObject({ type: "return" });
+      expect(listUsers()).toHaveLength(2);
+    });
+
+    it("a correct code does not replace the password", async () => {
+      const admin = await createTestUser({ role: "admin" });
+      const [recovery] = enableTotp(admin);
+      const r = await create(admin, {
+        adminPassword: "wrong-password-here",
+        adminCode: recovery,
+      });
+      expect(r).toMatchObject({ type: "fail", status: 400 });
+      expect(listUsers()).toHaveLength(1);
+    });
+
+    it("a wrong code counts against the same rate limit", async () => {
+      const admin = await createTestUser({ role: "admin" });
+      enableTotp(admin);
+      let last: unknown;
+      for (let i = 0; i < 6; i++) {
+        last = await create(admin, {
+          adminPassword: admin.password,
+          adminCode: "000000",
+        });
+      }
+      expect(last).toMatchObject({ type: "fail", status: 429 });
+    });
+
+    it("with only passkeys, a recent passkey step-up of the session is required too", async () => {
+      const admin = await createTestUser({ role: "admin" });
+      addPasskey(admin.id);
+      const { session } = loginTestUser(admin);
+
+      const refused = await create(
+        admin,
+        { adminPassword: admin.password },
+        session,
+      );
+      expect(refused).toMatchObject({ type: "fail", status: 400 });
+      expect(JSON.stringify(refused)).toContain("passkey");
+      expect(listUsers()).toHaveLength(1);
+
+      markSessionReauthenticated(admin.id, session.id);
+      const wrong = await create(
+        admin,
+        { adminPassword: "wrong-password-here" },
+        session,
+      );
+      expect(wrong).toMatchObject({ type: "fail", status: 400 });
+      const ok = await create(
+        admin,
+        { adminPassword: admin.password },
+        session,
+      );
+      expect(ok).toMatchObject({ type: "return" });
+      expect(listUsers()).toHaveLength(2);
+    });
+
+    it("exposes which extra proof the forms must ask for", async () => {
+      const plain = await createTestUser({ role: "admin" });
+      const withTotp = await createTestUser({ role: "admin" });
+      enableTotp(withTotp);
+      const withKey = await createTestUser({ role: "admin" });
+      addPasskey(withKey.id);
+      const mode = async (user: typeof plain) =>
+        (
+          (await outcome(() => load(createTestEvent({ user }) as never))) as {
+            value: { confirmMode: string };
+          }
+        ).value.confirmMode;
+      expect(await mode(plain)).toBe("password");
+      expect(await mode(withTotp)).toBe("totp");
+      expect(await mode(withKey)).toBe("passkey");
     });
   });
 });
