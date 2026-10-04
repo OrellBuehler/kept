@@ -41,6 +41,36 @@ export function clientKey(getClientAddress: () => string): string {
   }
 }
 
+/** Logs once if ADDRESS_HEADER is unset: behind a proxy every client then shares one rate-limit key. */
+export function warnIfAddressHeaderUnset(env = process.env): void {
+  if (env.ADDRESS_HEADER) return;
+  console.warn(
+    "ADDRESS_HEADER is not set. If Kept runs behind a reverse proxy, all clients share the proxy address for login rate limiting; set ADDRESS_HEADER (e.g. X-Forwarded-For) and XFF_DEPTH.",
+  );
+}
+
+let warnedProxy = false;
+
+/** Cheap runtime hint: proxy headers present while ADDRESS_HEADER is unset means the address is the proxy's. */
+export function warnIfProxied(headers: Headers, env = process.env): void {
+  if (warnedProxy || env.ADDRESS_HEADER) return;
+  if (
+    headers.has("x-forwarded-for") ||
+    headers.has("x-real-ip") ||
+    headers.has("forwarded")
+  ) {
+    warnedProxy = true;
+    console.warn(
+      "Requests carry proxy headers but ADDRESS_HEADER is not set; login rate limiting sees only the proxy address, so one client's failures can block others. Set ADDRESS_HEADER and XFF_DEPTH.",
+    );
+  }
+}
+
+export function resetAddressWarnings(): void {
+  warnedProxy = false;
+  warnedAddress = false;
+}
+
 export interface SecondFactorRequired {
   secondFactorRequired: true;
   /** Opaque token for the short-lived half-authenticated state; goes into a cookie. */
@@ -82,9 +112,11 @@ export async function authenticate(
   ip: string,
   limiter: LoginRateLimiter = loginRateLimiter,
   now: number = Date.now(),
+  sleep: (ms: number) => Promise<void> = (ms) => Bun.sleep(ms),
 ): Promise<LoginResult | SecondFactorRequired | null> {
   // Reserved before any await so parallel guesses are counted immediately.
-  const release = limiter.acquireOrThrow(username, ip);
+  const { release, delayMs } = limiter.reserve(username, ip);
+  if (delayMs > 0) await sleep(delayMs);
 
   const row = findUserByUsername(username);
   let ok = false;

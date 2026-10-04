@@ -18,11 +18,16 @@ import {
 } from "$lib/server/auth/sessions";
 import { isApiPath, isPublicPath } from "$lib/server/auth/routing";
 import { describeError } from "$lib/server/errors";
+import {
+  warnIfAddressHeaderUnset,
+  warnIfProxied,
+} from "$lib/server/auth/login";
 import { countUsers } from "$lib/server/auth/users";
 
 export async function init() {
   assertSecretKeyConfigured();
   getStore();
+  warnIfAddressHeaderUnset();
   runMigrations();
   startPendingSweep();
   sweepStaleStorageTemp().catch((err) =>
@@ -52,6 +57,7 @@ function redirectResponse(location: string, clearCookie?: string): Response {
 }
 
 export const handle: Handle = async ({ event, resolve }) => {
+  warnIfProxied(event.request.headers);
   event.locals.user = null;
   event.locals.session = null;
 

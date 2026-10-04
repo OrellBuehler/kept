@@ -1,7 +1,10 @@
 export const WINDOW_MS = 15 * 60 * 1000;
 export const MAX_FAILURES_PER_USER_IP = 5;
-export const MAX_FAILURES_PER_USER = 20;
 export const MAX_FAILURES_PER_IP = 20;
+/** Failures on one username across all IPs before attempts on it are slowed down (never blocked). */
+export const DELAY_AFTER_FAILURES_PER_USER = 10;
+export const DELAY_STEP_MS = 250;
+export const DELAY_MAX_MS = 5000;
 
 const SWEEP_THRESHOLD = 5000;
 
@@ -19,6 +22,8 @@ export type Acquired =
       allowed: true;
       /** Call after a successful attempt: refunds the reservation and clears the username+IP counter. */
       release: () => void;
+      /** Backoff to wait before verifying; non-zero only for a username under distributed guessing. */
+      delayMs: number;
     }
   | { allowed: false; retryAfterMs: number; retryAfterMinutes: number };
 
@@ -27,12 +32,12 @@ export type Acquired =
  * (before any await) and only refunded on success, so parallel guesses cannot
  * slip past the check while an earlier one is still being verified.
  *
- * Three counters: username+IP (tight), IP (across usernames), and username
- * across all IPs (looser). The last one stops a distributed guess against one
- * account, at the price that an attacker can lock a known username out for up
- * to one window by deliberately failing; the looser cap keeps that
- * unattractive while a legitimate user on their usual IP is only hit by the
- * tighter counters of others.
+ * Hard blocks apply per username+IP (tight) and per IP across usernames. A
+ * username alone is never blocked, otherwise anyone could lock a known
+ * account out by failing on purpose (or, behind a proxy that hides client
+ * addresses, everyone would share one budget). Instead, many failures on one
+ * username across all IPs add a growing delay to further attempts on it,
+ * which caps the rate of a distributed guess without denying the owner.
  */
 export class LoginRateLimiter {
   private failures = new Map<string, number[]>();
@@ -42,7 +47,9 @@ export class LoginRateLimiter {
     private readonly windowMs = WINDOW_MS,
     private readonly maxPerUserIp = MAX_FAILURES_PER_USER_IP,
     private readonly maxPerIp = MAX_FAILURES_PER_IP,
-    private readonly maxPerUser = MAX_FAILURES_PER_USER,
+    private readonly delayAfterPerUser = DELAY_AFTER_FAILURES_PER_USER,
+    private readonly delayStepMs = DELAY_STEP_MS,
+    private readonly delayMaxMs = DELAY_MAX_MS,
   ) {}
 
   private userIpKey(username: string, ip: string): string {
@@ -82,7 +89,6 @@ export class LoginRateLimiter {
     const wait = Math.max(
       this.blockedFor(uiKey, this.maxPerUserIp, now),
       this.blockedFor(ipKey, this.maxPerIp, now),
-      this.blockedFor(uKey, this.maxPerUser, now),
     );
     if (wait > 0) {
       return {
@@ -92,13 +98,18 @@ export class LoginRateLimiter {
       };
     }
     if (this.failures.size > SWEEP_THRESHOLD) this.sweep(now);
+    const priorForUser = this.recent(uKey, now).length;
     for (const key of [uiKey, ipKey, uKey]) {
       const list = this.recent(key, now);
       list.push(now);
       this.failures.set(key, list);
     }
+    const over = priorForUser - this.delayAfterPerUser + 1;
+    const delayMs =
+      over > 0 ? Math.min(this.delayMaxMs, over * this.delayStepMs) : 0;
     return {
       allowed: true,
+      delayMs,
       release: () => {
         this.removeOne(ipKey, now);
         this.removeOne(uKey, now);
@@ -109,9 +120,17 @@ export class LoginRateLimiter {
 
   /** Throws RateLimitedError when blocked. */
   acquireOrThrow(username: string, ip: string): () => void {
+    return this.reserve(username, ip).release;
+  }
+
+  /** Like acquireOrThrow, but also reports the backoff the caller must wait out. */
+  reserve(
+    username: string,
+    ip: string,
+  ): { release: () => void; delayMs: number } {
     const r = this.acquire(username, ip);
     if (!r.allowed) throw new RateLimitedError(r.retryAfterMinutes);
-    return r.release;
+    return { release: r.release, delayMs: r.delayMs };
   }
 
   private removeOne(key: string, stamp: number): void {

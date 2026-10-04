@@ -1,7 +1,14 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { createTestUser } from "$lib/testing/auth";
 import { useTestDB } from "$lib/testing/db";
-import { RateLimitedError, authenticate, clientKey } from "./login";
+import {
+  RateLimitedError,
+  authenticate,
+  clientKey,
+  resetAddressWarnings,
+  warnIfAddressHeaderUnset,
+  warnIfProxied,
+} from "./login";
 import { LoginRateLimiter } from "./rate-limit";
 import { validateSessionToken } from "./sessions";
 
@@ -88,5 +95,68 @@ describe("authenticate", () => {
     };
     expect(clientKey(boom)).toBe("unknown");
     expect(clientKey(() => "1.2.3.4")).toBe("1.2.3.4");
+  });
+
+  it("many failures on a username from other clients never lock out the owner", async () => {
+    const u = await createTestUser({ username: "alice" });
+    const limiter = new LoginRateLimiter();
+    const slept: number[] = [];
+    const sleep = async (ms: number) => {
+      slept.push(ms);
+    };
+    for (let i = 0; i < 25; i++) {
+      await authenticate(
+        "alice",
+        "wrong-password",
+        `10.0.0.${i}`,
+        limiter,
+        Date.now(),
+        sleep,
+      );
+    }
+    const r = await authenticate(
+      "alice",
+      u.password,
+      "9.9.9.9",
+      limiter,
+      Date.now(),
+      sleep,
+    );
+    if (!r || !("user" in r)) throw new Error("expected a full login");
+    expect(r.user.id).toBe(u.id);
+    expect(slept.length).toBeGreaterThan(0);
+    expect(slept.at(-1)).toBeGreaterThan(0);
+  });
+
+  it("an exhausted username+ip budget is still enforced", async () => {
+    const u = await createTestUser({ username: "alice" });
+    const limiter = new LoginRateLimiter();
+    for (let i = 0; i < 5; i++) {
+      await authenticate("alice", "wrong-password", "6.6.6.6", limiter);
+    }
+    await expect(
+      authenticate("alice", u.password, "6.6.6.6", limiter),
+    ).rejects.toBeInstanceOf(RateLimitedError);
+  });
+
+  it("warns once about a missing ADDRESS_HEADER at startup and on proxy headers", () => {
+    resetAddressWarnings();
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    warnIfAddressHeaderUnset({});
+    expect(warn).toHaveBeenCalledTimes(1);
+    warnIfAddressHeaderUnset({ ADDRESS_HEADER: "x-forwarded-for" });
+    expect(warn).toHaveBeenCalledTimes(1);
+
+    const plain = new Headers();
+    const proxied = new Headers({ "x-forwarded-for": "203.0.113.5" });
+    warnIfProxied(plain, {});
+    expect(warn).toHaveBeenCalledTimes(1);
+    warnIfProxied(proxied, { ADDRESS_HEADER: "x-forwarded-for" });
+    expect(warn).toHaveBeenCalledTimes(1);
+    warnIfProxied(proxied, {});
+    warnIfProxied(proxied, {});
+    expect(warn).toHaveBeenCalledTimes(2);
+    warn.mockRestore();
+    resetAddressWarnings();
   });
 });

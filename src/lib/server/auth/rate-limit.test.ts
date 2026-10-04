@@ -37,11 +37,47 @@ describe("LoginRateLimiter", () => {
     expect(limiter.acquire("fresh", "9.9.9.9").allowed).toBe(true);
   });
 
-  it("blocks a username after 20 attempts spread across ips", () => {
+  it("never hard-blocks a username across ips; it only adds a growing delay", () => {
     const { limiter } = setup();
-    for (let i = 0; i < 20; i++) limiter.acquire("alice", `10.0.0.${i}`);
-    expect(limiter.acquire("alice", "10.0.1.1").allowed).toBe(false);
-    expect(limiter.acquire("bob", "10.0.1.1").allowed).toBe(true);
+    const delays: number[] = [];
+    for (let i = 0; i < 40; i++) {
+      const r = limiter.acquire("alice", `10.0.0.${i}`);
+      expect(r.allowed).toBe(true);
+      if (r.allowed) delays.push(r.delayMs);
+    }
+    expect(delays.slice(0, 10).every((d) => d === 0)).toBe(true);
+    expect(delays[10]).toBeGreaterThan(0);
+    expect(delays[20]).toBeGreaterThan(delays[10]);
+    expect(Math.max(...delays)).toBe(5000);
+    const other = limiter.acquire("bob", "10.0.1.1");
+    expect(other.allowed && other.delayMs).toBe(0);
+  });
+
+  it("a client under its own budget still gets in while others hammer the username", () => {
+    const { limiter } = setup();
+    for (let i = 0; i < 30; i++) limiter.acquire("alice", `10.0.0.${i}`);
+    for (let i = 0; i < 5; i++) limiter.acquire("alice", "6.6.6.6");
+    expect(limiter.acquire("alice", "6.6.6.6").allowed).toBe(false);
+    expect(limiter.acquire("alice", "7.7.7.7").allowed).toBe(true);
+  });
+
+  it("the backoff ages out with the window", () => {
+    const { limiter, advance } = setup();
+    for (let i = 0; i < 30; i++) limiter.acquire("alice", `10.0.0.${i}`);
+    advance(16 * MIN);
+    const r = limiter.acquire("alice", "10.0.9.9");
+    expect(r.allowed && r.delayMs).toBe(0);
+  });
+
+  it("a successful login refunds one failure on the username counter", () => {
+    const { limiter } = setup();
+    for (let i = 0; i < 10; i++) limiter.acquire("alice", `10.0.0.${i}`);
+    const ok = limiter.acquire("alice", "10.0.5.5");
+    if (!ok.allowed) throw new Error("expected allowed");
+    expect(ok.delayMs).toBeGreaterThan(0);
+    ok.release();
+    const next = limiter.acquire("alice", "10.0.5.6");
+    expect(next.allowed && next.delayMs).toBe(ok.delayMs);
   });
 
   it("slides: attempts age out of the window", () => {
