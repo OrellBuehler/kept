@@ -1,22 +1,25 @@
 # syntax=docker/dockerfile:1
 
-FROM oven/bun:1-alpine AS deps
+# Keep the tag in sync with .bun-version; Dependabot bumps tag and digest together.
+FROM oven/bun:1.4.2-alpine@sha256:d888c0ae6c86d7866ff10c5aafdd9077b36aee6455b33dd270fb93c0dd5cef6f AS base
+
+FROM base AS deps
 WORKDIR /app
 COPY package.json bun.lock ./
 RUN bun install --frozen-lockfile --ignore-scripts
 
-FROM oven/bun:1-alpine AS builder
+FROM base AS builder
 WORKDIR /app
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
 RUN bun --bun run build
 
-FROM oven/bun:1-alpine AS prod-deps
+FROM base AS prod-deps
 WORKDIR /app
 COPY package.json bun.lock ./
 RUN bun install --frozen-lockfile --production --ignore-scripts
 
-FROM oven/bun:1-alpine AS runner
+FROM base AS runner
 ARG APP_VERSION=dev
 ARG GIT_HASH=unknown
 ARG BUILD_TIMESTAMP=unknown

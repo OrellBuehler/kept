@@ -23,7 +23,7 @@ export default defineConfig({
     testTimeout: 30000,
     coverage: {
       provider: "v8",
-      include: ["src/lib/**/*.ts"],
+      include: ["src/lib/**/*.ts", "src/routes/**/*.ts"],
       exclude: ["src/lib/components/ui/**"],
       reporter: ["text", "json-summary"],
     },
