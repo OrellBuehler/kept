@@ -1,16 +1,18 @@
 import { z } from "zod";
 import type { SecurityKind } from "$lib/investment-types";
 import { fixedFromProviderNumber, type Fixed8 } from "$lib/quantity";
-import type {
-  FxPoint,
-  QuoteProvider,
-  QuotePoint,
-  SecurityMatch,
+import {
+  QuoteProviderError,
+  type FxPoint,
+  type QuoteProvider,
+  type QuotePoint,
+  type SecurityMatch,
 } from "$lib/server/investments";
 
 const CHART_URL = "https://query1.finance.yahoo.com/v8/finance/chart";
 const SEARCH_URL = "https://query2.finance.yahoo.com/v1/finance/search";
 const DEFAULT_TIMEOUT_MS = 15_000;
+const SIGNIFICANT_DIGITS = 7;
 const DAY_SECONDS = 86_400;
 const USER_AGENT =
   "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36";
@@ -29,7 +31,7 @@ const KINDS: Record<string, SecurityKind> = {
   MUTUALFUND: "fund",
 };
 
-export class YahooError extends Error {
+export class YahooError extends QuoteProviderError {
   constructor(
     readonly code: "http" | "rate_limited" | "no_data" | "invalid" | "network",
     message: string,
@@ -133,6 +135,14 @@ function zoneFormatter(name: string | undefined): Intl.DateTimeFormat | null {
   }
 }
 
+/**
+ * Closes arrive as float32-ish values (773.38000488). Seven significant digits
+ * is what float32 carries, so rounding there recovers the quoted price.
+ */
+function roundSignificant(n: number): number {
+  return Number(n.toPrecision(SIGNIFICANT_DIGITS));
+}
+
 /** Divides a fixed-point price by 100, rounding half up (prices are positive). */
 function centsToUnits(value: Fixed8): Fixed8 {
   return Number((BigInt(value) + 50n) / 100n) as Fixed8;
@@ -232,7 +242,7 @@ export function createYahooProvider(options: YahooOptions = {}): QuoteProvider {
       if (close === null || close === undefined || !(close > 0)) return;
       const date = localDateOf(timestamp, series.meta, formatter);
       if (date < from || date > to) return;
-      byDate.set(date, fixedFromProviderNumber(close));
+      byDate.set(date, fixedFromProviderNumber(roundSignificant(close)));
     });
     const points = [...byDate]
       .map(([date, price]) => ({ date, price }))

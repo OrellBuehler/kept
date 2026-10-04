@@ -56,7 +56,7 @@ function forecastAccounts(userId: string, today: string): ForecastAccount[] {
     id: a.id,
     name: a.name,
     currency: a.currency,
-    balance: a.noData ? null : a.balance,
+    balance: a.noData ? null : a.cashBalance,
     threshold: settings.get(a.id)?.threshold ?? null,
     defaultPayment: settings.get(a.id)?.defaultPayment ?? false,
   }));

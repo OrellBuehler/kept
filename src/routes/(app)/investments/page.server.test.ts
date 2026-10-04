@@ -1,7 +1,11 @@
 import { afterEach, describe, expect, it } from "vitest";
+import { parseFixed } from "$lib/quantity";
 import {
   getSecurity,
   listPrices,
+  PRICE_LIST_LIMIT,
+  QuoteProviderError,
+  upsertProviderPrices,
   listSecurities,
   setMarketDataEnabled,
   setQuoteProvider,
@@ -84,6 +88,32 @@ describe("investments page", () => {
     expect(
       v.priceHistory?.prices.map((p: { source: string }) => p.source).sort(),
     ).toEqual(["manual", "provider"]);
+  });
+
+  it("limits the price history and can show all of it", async () => {
+    const u = await createTestUser();
+    const sec = seedSecurity(u.id);
+    upsertProviderPrices(
+      u.id,
+      sec.id,
+      Array.from({ length: 400 }, (_, i) => ({
+        date: new Date(Date.UTC(2023, 0, 1 + i)).toISOString().slice(0, 10),
+        price: parseFixed("1"),
+      })),
+    );
+    const limited = await loaded(u, `?prices=${sec.id}`);
+    expect(limited.priceHistory).toMatchObject({ total: 400 });
+    expect(limited.priceHistory?.prices).toHaveLength(PRICE_LIST_LIMIT);
+    const all = await loaded(u, `?prices=${sec.id}&all=1`);
+    expect(all.priceHistory?.prices).toHaveLength(400);
+  });
+
+  it("404s a malformed prices parameter", async () => {
+    const u = await createTestUser();
+    expect(await loadAs(u, `?prices=${"x".repeat(100)}`)).toEqual({
+      type: "error",
+      status: 404,
+    });
   });
 
   it("reports whether a lookup is possible", async () => {
@@ -251,18 +281,35 @@ describe("investments page", () => {
       expect(called).toBe(false);
     });
 
-    it("shows the provider's message when the search fails", async () => {
+    it("shows a provider error's message when the search fails", async () => {
       const u = await createTestUser();
       setMarketDataEnabled(u.id, true);
       setQuoteProvider(
         fakeProvider(async () => {
-          throw new Error("The provider is busy.");
+          throw new QuoteProviderError("The provider is busy.");
         }),
       );
       expect(await run("lookup", u, { q: "example" })).toMatchObject({
         type: "fail",
         status: 400,
         data: { errors: { form: ["The provider is busy."] } },
+      });
+    });
+
+    it("hides the message of an unexpected error", async () => {
+      const u = await createTestUser();
+      setMarketDataEnabled(u.id, true);
+      setQuoteProvider(
+        fakeProvider(async () => {
+          throw new Error("SQLITE: secret internals");
+        }),
+      );
+      expect(await run("lookup", u, { q: "example" })).toMatchObject({
+        type: "fail",
+        status: 400,
+        data: {
+          errors: { form: ["The lookup failed. Please try again."] },
+        },
       });
     });
   });

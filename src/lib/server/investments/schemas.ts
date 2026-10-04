@@ -37,6 +37,28 @@ function positiveFixedField(label: string) {
   });
 }
 
+const ISIN_SHAPE = /^[A-Z]{2}[A-Z0-9]{9}[0-9]$/;
+
+/** Luhn check over the ISIN with letters expanded to 10..35. */
+export function isValidIsin(isin: string): boolean {
+  if (!ISIN_SHAPE.test(isin)) return false;
+  const digits = [...isin]
+    .map((c) => (/[0-9]/.test(c) ? c : String(c.charCodeAt(0) - 55)))
+    .join("");
+  let sum = 0;
+  let double = false;
+  for (let i = digits.length - 1; i >= 0; i--) {
+    let d = Number(digits[i]);
+    if (double) {
+      d *= 2;
+      if (d > 9) d -= 9;
+    }
+    sum += d;
+    double = !double;
+  }
+  return sum % 10 === 0;
+}
+
 // --- securities -----------------------------------------------------------
 
 export const securityInputSchema = z.object({
@@ -55,8 +77,12 @@ export const securityInputSchema = z.object({
         z
           .string()
           .regex(
-            /^[A-Z]{2}[A-Z0-9]{9}[0-9]$/,
+            ISIN_SHAPE,
             "An ISIN has 12 characters: 2 letters, 9 letters or digits and a check digit.",
+          )
+          .refine(
+            (v) => !ISIN_SHAPE.test(v) || isValidIsin(v),
+            "This ISIN's check digit is wrong.",
           ),
       ),
   ),

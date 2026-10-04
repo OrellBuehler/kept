@@ -1,4 +1,4 @@
-import { and, eq, inArray, lte, max } from "drizzle-orm";
+import { and, eq, inArray, lte, max, sql } from "drizzle-orm";
 import {
   accounts,
   fxRates,
@@ -142,8 +142,10 @@ export function loadHoldingsInputs(
 }
 
 /**
- * Per account with trades: the newest date, up to `today`, of a trade or a
- * price of a security traded in that account. Two queries.
+ * Per account with trades: the newest date, up to `today`, of a trade or of a
+ * manual price of a security the account still holds (quantity > 0 as of
+ * `today`). Fetched prices arrive without the user looking at the account, so
+ * they never count. Two queries.
  */
 export function latestHoldingsActivity(
   userId: string,
@@ -153,41 +155,55 @@ export function latestHoldingsActivity(
   const out = new Map<string, string>();
   if (accountIds.length === 0) return out;
   const db = getDB();
-  const ids = [...accountIds];
   const note = (accountId: string, date: string | null) => {
     if (date !== null && date > (out.get(accountId) ?? "")) {
       out.set(accountId, date);
     }
   };
-  for (const r of db
-    .select({ accountId: trades.accountId, d: max(trades.date) })
+  const positions = db
+    .select({
+      accountId: trades.accountId,
+      securityId: trades.securityId,
+      last: max(trades.date),
+      held: sql<number>`sum(case when ${trades.side} = 'buy' then ${trades.quantity} else -${trades.quantity} end)`,
+    })
     .from(trades)
     .where(
       and(
         eq(trades.userId, userId),
-        inArray(trades.accountId, ids),
+        inArray(trades.accountId, [...accountIds]),
         lte(trades.date, today),
       ),
     )
-    .groupBy(trades.accountId)
-    .all()) {
-    note(r.accountId, r.d);
-  }
-  for (const r of db
-    .select({ accountId: trades.accountId, d: max(securityPrices.date) })
-    .from(securityPrices)
-    .innerJoin(trades, eq(trades.securityId, securityPrices.securityId))
-    .where(
-      and(
-        eq(trades.userId, userId),
-        eq(securityPrices.userId, userId),
-        inArray(trades.accountId, ids),
-        lte(securityPrices.date, today),
-      ),
-    )
-    .groupBy(trades.accountId)
-    .all()) {
-    note(r.accountId, r.d);
+    .groupBy(trades.accountId, trades.securityId)
+    .all();
+  for (const p of positions) note(p.accountId, p.last);
+
+  const heldIds = [
+    ...new Set(positions.filter((p) => p.held > 0).map((p) => p.securityId)),
+  ];
+  if (heldIds.length === 0) return out;
+  const lastManual = new Map(
+    db
+      .select({
+        securityId: securityPrices.securityId,
+        d: max(securityPrices.date),
+      })
+      .from(securityPrices)
+      .where(
+        and(
+          eq(securityPrices.userId, userId),
+          eq(securityPrices.source, "manual"),
+          inArray(securityPrices.securityId, heldIds),
+          lte(securityPrices.date, today),
+        ),
+      )
+      .groupBy(securityPrices.securityId)
+      .all()
+      .map((r) => [r.securityId, r.d]),
+  );
+  for (const p of positions) {
+    if (p.held > 0) note(p.accountId, lastManual.get(p.securityId) ?? null);
   }
   return out;
 }

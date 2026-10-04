@@ -29,7 +29,11 @@ import {
   seedImport,
   seedImportedTransaction,
 } from "$lib/testing/ledger";
-import { loadHoldingsInputs, upsertFxRates } from "./index";
+import {
+  latestHoldingsActivity,
+  loadHoldingsInputs,
+  upsertFxRates,
+} from "./index";
 
 useTestDB();
 
@@ -321,8 +325,9 @@ describe("earliestDataDate", () => {
 });
 
 describe("staleness with holdings", () => {
-  it("does not flag an old import when holdings were priced recently", async () => {
-    const { user, account } = await setup();
+  it("does not flag an old import when a held security was priced manually recently", async () => {
+    const { user, account, security } = await setup();
+    seedManualPrice(user.id, security.id, "2026-10-14", "121");
     seedImport(user.id, account.id, {
       createdAt: new Date("2026-06-01T12:00:00"),
     });
@@ -330,6 +335,109 @@ describe("staleness with holdings", () => {
       (a) => a.id === account.id,
     )!;
     expect(view).toMatchObject({ stale: false, staleDays: 1 });
+  });
+
+  it("does not flag an old import when there was a recent trade", async () => {
+    const { user, account, security } = await setup();
+    seedTrade(user.id, account.id, security.id, {
+      date: "2026-10-10",
+      qty: "1",
+      price: "100",
+      amount: 100,
+    });
+    seedImport(user.id, account.id, {
+      createdAt: new Date("2026-06-01T12:00:00"),
+    });
+    expect(accountBalances(user.id, TODAY)[0]).toMatchObject({
+      stale: false,
+      staleDays: 5,
+    });
+  });
+
+  it("stays stale with an old import and daily fetched prices", async () => {
+    const { user, account, security } = await setup();
+    for (const d of ["2026-10-12", "2026-10-13", "2026-10-14"]) {
+      seedProviderPrice(user.id, security.id, d, "120");
+    }
+    seedImport(user.id, account.id, {
+      createdAt: new Date("2026-04-15T12:00:00"),
+    });
+    const view = accountBalances(user.id, TODAY).find(
+      (a) => a.id === account.id,
+    )!;
+    expect(view).toMatchObject({ stale: true });
+    expect(view.staleDays).toBe(183);
+  });
+
+  it("ignores manual prices of a fully sold security", async () => {
+    const user = await createTestUser();
+    const account = seedAccount(user.id);
+    const sec = seedSecurity(user.id);
+    seedTrade(user.id, account.id, sec.id, {
+      date: "2026-01-01",
+      qty: "5",
+      amount: 500,
+    });
+    seedTrade(user.id, account.id, sec.id, {
+      date: "2026-02-01",
+      side: "sell",
+      qty: "5",
+      amount: 500,
+    });
+    seedManualPrice(user.id, sec.id, "2026-10-14", "10");
+    seedImport(user.id, account.id, {
+      createdAt: new Date("2026-06-01T12:00:00"),
+    });
+    expect(accountBalances(user.id, TODAY)[0]).toMatchObject({
+      stale: true,
+      staleDays: 136,
+    });
+  });
+
+  it("does not count future-dated manual prices or another account's", async () => {
+    const user = await createTestUser();
+    const account = seedAccount(user.id);
+    const other = seedAccount(user.id, { name: "Other" });
+    const sec = seedSecurity(user.id);
+    const otherSec = seedSecurity(user.id, { name: "Other sec" });
+    seedTrade(user.id, account.id, sec.id, { date: "2026-01-01", amount: 1 });
+    seedTrade(user.id, other.id, otherSec.id, {
+      date: "2026-01-01",
+      amount: 1,
+    });
+    seedManualPrice(user.id, sec.id, "2026-12-01", "10");
+    seedManualPrice(user.id, otherSec.id, "2026-10-14", "10");
+    const by = Object.fromEntries(
+      accountBalances(user.id, TODAY).map((a) => [a.name, a]),
+    );
+    expect(by.Main!.stale).toBe(true);
+    expect(by.Other!.stale).toBe(false);
+  });
+
+  it("yields one date per account without multiplying rows by prices", async () => {
+    const { user, account, security } = await setup();
+    const second = seedAccount(user.id, { name: "Second" });
+    seedTrade(user.id, second.id, security.id, {
+      date: "2026-02-01",
+      amount: 1,
+    });
+    seedTrade(user.id, account.id, security.id, {
+      date: "2026-03-01",
+      amount: 1,
+    });
+    seedManualPrice(user.id, security.id, "2026-09-01", "1");
+    expect(
+      latestHoldingsActivity(user.id, [account.id, second.id], TODAY),
+    ).toEqual(
+      new Map([
+        [account.id, "2026-09-01"],
+        [second.id, "2026-09-01"],
+      ]),
+    );
+    const another = await createTestUser();
+    expect(
+      latestHoldingsActivity(another.id, [account.id, second.id], TODAY).size,
+    ).toBe(0);
   });
 
   it("stays stale when prices and trades are old too", async () => {
@@ -345,30 +453,34 @@ describe("staleness with holdings", () => {
     expect(view).toMatchObject({ stale: true, staleDays: 136 });
   });
 
-  it("is not affected by prices of securities the account does not hold", async () => {
+  it("is not affected by manual prices of securities the account does not hold", async () => {
     const user = await createTestUser();
     const account = seedAccount(user.id);
     const held = seedSecurity(user.id, { name: "Held" });
     const unheld = seedSecurity(user.id, { name: "Unheld" });
     seedTrade(user.id, account.id, held.id, { date: "2026-01-01", amount: 1 });
-    seedProviderPrice(user.id, unheld.id, "2026-10-14", "10");
+    seedManualPrice(user.id, unheld.id, "2026-10-14", "10");
     seedImport(user.id, account.id, {
       createdAt: new Date("2026-06-01T12:00:00"),
     });
     expect(accountBalances(user.id, TODAY)[0]!.stale).toBe(true);
   });
 
-  it("gives an account with only holdings activity a staleness and data", async () => {
-    const { user, account } = await setup();
-    const view = accountBalances(user.id, TODAY).find(
-      (a) => a.id === account.id,
-    )!;
-    expect(view).toMatchObject({ noData: false, stale: false, staleDays: 1 });
+  it("gives an account with only a recent trade a staleness and data", async () => {
+    const user = await createTestUser();
+    const fresh = seedAccount(user.id, { name: "Fresh" });
     const old = seedAccount(user.id, { name: "Old" });
-    const sec = seedSecurity(user.id, { name: "Old sec" });
+    const sec = seedSecurity(user.id, { name: "Sec" });
+    seedTrade(user.id, fresh.id, sec.id, { date: "2026-10-14", amount: 1 });
     seedTrade(user.id, old.id, sec.id, { date: "2026-01-01", amount: 1 });
-    expect(
-      accountBalances(user.id, TODAY).find((a) => a.id === old.id),
-    ).toMatchObject({ noData: false, stale: true });
+    const by = Object.fromEntries(
+      accountBalances(user.id, TODAY).map((a) => [a.name, a]),
+    );
+    expect(by.Fresh).toMatchObject({
+      noData: false,
+      stale: false,
+      staleDays: 1,
+    });
+    expect(by.Old).toMatchObject({ noData: false, stale: true });
   });
 });

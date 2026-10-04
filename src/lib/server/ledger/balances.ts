@@ -331,6 +331,24 @@ export function currentBalances(
   }[],
   today: string = localToday(),
 ): Map<string, Minor> {
+  return new Map(
+    [...currentBalanceParts(userId, accountRows, today)].map(([id, v]) => [
+      id,
+      v.total,
+    ]),
+  );
+}
+
+/** Per account: the cash balance and the total (cash plus holdings) as of `today`. */
+export function currentBalanceParts(
+  userId: string,
+  accountRows: readonly {
+    id: string;
+    openingBalance: number;
+    openingDate: string | null;
+  }[],
+  today: string = localToday(),
+): Map<string, { cash: Minor; total: Minor }> {
   const db = getDB();
   const txByAccount = new Map<string, BalanceInput["transactions"][number][]>();
   for (const t of db
@@ -377,19 +395,22 @@ export function currentBalances(
     today,
   );
   return new Map(
-    accountRows.map((a) => [
-      a.id,
-      balanceAt(
+    accountRows.map((a) => {
+      const input: BalanceInput = {
+        openingBalance: a.openingBalance,
+        openingDate: a.openingDate,
+        transactions: txByAccount.get(a.id) ?? [],
+        snapshots: snapByAccount.get(a.id) ?? [],
+        holdings: holdings.get(a.id),
+      };
+      return [
+        a.id,
         {
-          openingBalance: a.openingBalance,
-          openingDate: a.openingDate,
-          transactions: txByAccount.get(a.id) ?? [],
-          snapshots: snapByAccount.get(a.id) ?? [],
-          holdings: holdings.get(a.id),
+          cash: cashBalanceAt(input, today),
+          total: balanceAt(input, today),
         },
-        today,
-      ),
-    ]),
+      ];
+    }),
   );
 }
 

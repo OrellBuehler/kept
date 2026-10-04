@@ -168,6 +168,28 @@ describe("refreshPrices", () => {
     expect(calls.history[0]![1]).toBe("2023-12-01");
   });
 
+  it("skips zero and negative prices from the provider", async () => {
+    const { user, security } = await setup();
+    const { provider } = fakeProvider({
+      async history() {
+        return {
+          currency: "CHF",
+          points: [
+            { date: "2024-01-10", price: parseFixed("0") },
+            { date: "2024-01-11", price: parseFixed("-1") },
+            { date: "2024-01-12", price: parseFixed("5") },
+          ],
+        };
+      },
+    });
+    setQuoteProvider(provider);
+    const result = await refreshPrices(user.id, "2024-02-01");
+    expect(result.prices).toBe(1);
+    expect(listPrices(user.id, security.id).map((p) => p.date)).toEqual([
+      "2024-01-12",
+    ]);
+  });
+
   it("skips securities without a symbol or trades and trades dated after today", async () => {
     const { user, account } = await setup({ symbol: null });
     const future = seedSecurity(user.id, { name: "Later", symbol: "LATE.SW" });

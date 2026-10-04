@@ -1,5 +1,6 @@
 <script lang="ts">
   import { enhance } from "$app/forms";
+  import { resolve } from "$app/paths";
   import * as Empty from "$lib/components/ui/empty";
   import * as Sheet from "$lib/components/ui/sheet";
   import * as Table from "$lib/components/ui/table";
@@ -172,6 +173,18 @@
               {/each}
             </Table.Body>
           </Table.Root>
+          {#if history.total > history.prices.length}
+            <p class="text-muted-foreground text-sm">
+              Showing the latest {history.prices.length} of {history.total} prices.
+              <a
+                class="underline"
+                href="{resolve('/(app)/investments')}?prices={history.security
+                  .id}&all=1"
+              >
+                Show all
+              </a>
+            </p>
+          {/if}
         {/if}
       </div>
     {/if}

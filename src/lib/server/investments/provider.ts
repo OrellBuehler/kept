@@ -49,6 +49,18 @@ export interface QuoteProvider {
   search(query: string): Promise<SecurityMatch[]>;
 }
 
+/**
+ * A failure of a quote provider whose message is written for the user (no
+ * secrets, no request data). Anything else a provider throws is unexpected and
+ * is shown as a generic error.
+ */
+export class QuoteProviderError extends Error {
+  constructor(message: string, options?: ErrorOptions) {
+    super(message, options);
+    this.name = "QuoteProviderError";
+  }
+}
+
 let provider: QuoteProvider | null = null;
 
 /** Registers the quote provider; pass null to unregister (tests). */

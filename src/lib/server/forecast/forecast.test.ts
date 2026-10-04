@@ -6,6 +6,11 @@ import { LedgerError } from "$lib/server/ledger/errors";
 import { createTestUser } from "$lib/testing/auth";
 import { seedBill } from "$lib/testing/bills";
 import { useTestDB } from "$lib/testing/db";
+import {
+  seedProviderPrice,
+  seedSecurity,
+  seedTrade,
+} from "$lib/testing/investments";
 import { seedAccount, seedImportedTransaction } from "$lib/testing/ledger";
 import {
   createPlannedItem,
@@ -163,6 +168,24 @@ describe("forecast", () => {
     expect(p.points[0]!.balance).toBe(35_000);
     expect(p.endBalance).toBe(35_000 - 20_000 + 100_000);
     expect(f.items.map((i) => i.source)).toEqual(["bill", "bill", "planned"]);
+  });
+
+  it("starts from the cash balance, not cash plus holdings", async () => {
+    const u = await createTestUser();
+    const acc = seedAccount(u.id, {
+      type: "investment",
+      openingBalance: minor(50_000),
+    });
+    const sec = seedSecurity(u.id);
+    seedTrade(u.id, acc.id, sec.id, {
+      date: "2026-09-01",
+      qty: "10",
+      price: "100",
+      amount: 100_000,
+    });
+    seedProviderPrice(u.id, sec.id, "2026-09-30", "120");
+    const f = forecast(u.id, TODAY, 30);
+    expect(f.accounts[0]!.startBalance).toBe(50_000);
   });
 
   it("only reports negative balances as alerts", async () => {

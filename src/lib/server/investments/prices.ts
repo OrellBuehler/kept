@@ -1,4 +1,4 @@
-import { and, desc, eq, sql } from "drizzle-orm";
+import { and, count, desc, eq, sql } from "drizzle-orm";
 import type { PriceSource } from "$lib/investment-types";
 import type { Fixed8 } from "$lib/quantity";
 import { fxRates, getDB, securities, securityPrices } from "$lib/server/db";
@@ -45,8 +45,29 @@ function assertSecurity(userId: string, securityId: string) {
   if (!found) throw notFound("Security");
 }
 
-/** Newest first; a manual and a fetched price may share a date. */
-export function listPrices(userId: string, securityId: string): PriceView[] {
+/** Rows `listPrices` returns unless asked for more. */
+export const PRICE_LIST_LIMIT = 365;
+
+export function countPrices(userId: string, securityId: string): number {
+  assertSecurity(userId, securityId);
+  return getDB()
+    .select({ n: count() })
+    .from(securityPrices)
+    .where(
+      and(
+        eq(securityPrices.userId, userId),
+        eq(securityPrices.securityId, securityId),
+      ),
+    )
+    .get()!.n;
+}
+
+/** Newest first, at most `limit` rows; a manual and a fetched price may share a date. */
+export function listPrices(
+  userId: string,
+  securityId: string,
+  limit: number = PRICE_LIST_LIMIT,
+): PriceView[] {
   assertSecurity(userId, securityId);
   return getDB()
     .select(columns)
@@ -58,6 +79,7 @@ export function listPrices(userId: string, securityId: string): PriceView[] {
       ),
     )
     .orderBy(desc(securityPrices.date), desc(securityPrices.source))
+    .limit(limit)
     .all();
 }
 
@@ -106,12 +128,14 @@ export function deletePrice(userId: string, id: string): void {
     .run();
 }
 
+/** Rows with a price of zero or less are provider noise and are skipped. */
 export function upsertProviderPrices(
   userId: string,
   securityId: string,
-  rows: readonly PriceRow[],
+  allRows: readonly PriceRow[],
 ): number {
   assertSecurity(userId, securityId);
+  const rows = allRows.filter((r) => r.price > 0);
   const db = getDB();
   db.transaction((tx) => {
     for (let i = 0; i < rows.length; i += CHUNK) {

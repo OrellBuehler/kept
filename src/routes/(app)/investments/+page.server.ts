@@ -1,8 +1,9 @@
-import { fail } from "@sveltejs/kit";
+import { error, fail } from "@sveltejs/kit";
 import { z } from "zod";
 import { requireUser } from "$lib/server/auth/guards";
 import { parseForm, safeValues } from "$lib/server/forms";
 import {
+  countPrices,
   createSecurity,
   deletePrice,
   deleteSecurity,
@@ -13,13 +14,14 @@ import {
   listPrices,
   listSecurities,
   priceInputSchema,
+  QuoteProviderError,
   securityInputSchema,
   setManualPrice,
   updateSecurity,
 } from "$lib/server/investments";
 import { localToday } from "$lib/server/ledger";
 import { ledgerFailure, orNotFound } from "$lib/server/ledger/http";
-import { idFormSchema } from "$lib/server/ledger/schemas";
+import { idFormSchema, idSchema } from "$lib/server/ledger/schemas";
 import type { Actions, PageServerLoad } from "./$types";
 
 const securityFields = ["name", "kind", "isin", "symbol", "currency"] as const;
@@ -33,9 +35,20 @@ const lookupSchema = z.object({
     .max(100, "Enter at most 100 characters."),
 });
 
+const querySchema = z.object({
+  prices: idSchema.max(64).optional(),
+  all: z.literal("1").optional(),
+});
+
 export const load: PageServerLoad = ({ locals, url }) => {
   const user = requireUser(locals);
-  const securityId = url.searchParams.get("prices") || null;
+  const query = querySchema.safeParse({
+    prices: url.searchParams.get("prices") || undefined,
+    all: url.searchParams.get("all") || undefined,
+  });
+  if (!query.success) error(404, "Not found");
+  const securityId = query.data.prices ?? null;
+  const all = query.data.all === "1";
   const settings = getMarketDataSettings(user.id);
   return {
     overview: investmentsOverview(user.id, localToday()),
@@ -47,7 +60,14 @@ export const load: PageServerLoad = ({ locals, url }) => {
     priceHistory: securityId
       ? {
           security: orNotFound(() => getSecurity(user.id, securityId)),
-          prices: orNotFound(() => listPrices(user.id, securityId)),
+          prices: orNotFound(() =>
+            listPrices(
+              user.id,
+              securityId,
+              all ? Number.MAX_SAFE_INTEGER : undefined,
+            ),
+          ),
+          total: orNotFound(() => countPrices(user.id, securityId)),
         }
       : null,
   };
@@ -171,16 +191,16 @@ export const actions: Actions = {
         matches: matches.slice(0, 10),
       };
     } catch (err) {
-      // The search text is never logged; the provider's message is shown to the user.
+      // The search text is never logged; only provider errors written for users are shown.
       console.error(
         "security lookup failed:",
-        err instanceof Error ? err.message : "unknown error",
+        err instanceof Error ? err.name : "unknown error",
       );
       return fail(400, {
         action: "lookup",
         errors: {
           form: [
-            err instanceof Error && err.message
+            err instanceof QuoteProviderError
               ? err.message
               : "The lookup failed. Please try again.",
           ],

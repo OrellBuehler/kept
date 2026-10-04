@@ -21,7 +21,10 @@ import {
   deleteTrade,
   getSecurity,
   getTrade,
+  countPrices,
+  isValidIsin,
   listPrices,
+  PRICE_LIST_LIMIT,
   listSecurities,
   listTrades,
   priceInputSchema,
@@ -192,11 +195,11 @@ describe("security form", () => {
     expect(
       parseForm(
         securityInputSchema,
-        form({ ...valid, isin: " ie00abcdefg1 ", symbol: "vwrl.sw" }),
+        form({ ...valid, isin: " ie00b3rbwm25 ", symbol: "vwrl.sw" }),
       ),
     ).toMatchObject({
       ok: true,
-      data: { isin: "IE00ABCDEFG1", symbol: "VWRL.SW" },
+      data: { isin: "IE00B3RBWM25", symbol: "VWRL.SW" },
     });
   });
 
@@ -277,6 +280,35 @@ describe("price form", () => {
     ).toMatchObject({ ok: true, data: { price: parseFixed("12.5") } });
     expect(
       parseForm(priceInputSchema, form({ date: "2024-01-01", price: "0" })).ok,
+    ).toBe(false);
+  });
+});
+
+describe("isin", () => {
+  it("accepts documented example ISINs and rejects a wrong check digit", () => {
+    for (const isin of ["US0378331005", "IE00B3RBWM25", "ie00b3rbwm25"]) {
+      expect(isValidIsin(isin.toUpperCase())).toBe(true);
+      expect(
+        securityInputSchema.safeParse({
+          name: "X",
+          kind: "etf",
+          isin,
+          symbol: "",
+          currency: "CHF",
+        }).success,
+      ).toBe(true);
+    }
+    for (const isin of ["US0378331006", "IE00B3RBWM24", "US037833100"]) {
+      expect(isValidIsin(isin)).toBe(false);
+    }
+    expect(
+      securityInputSchema.safeParse({
+        name: "X",
+        kind: "etf",
+        isin: "US0378331006",
+        symbol: "",
+        currency: "CHF",
+      }).success,
     ).toBe(false);
   });
 });
@@ -550,6 +582,39 @@ describe("prices", () => {
     expect(listPrices(user.id, security.id)).toEqual([]);
   });
 
+  it("skips zero and negative provider prices", async () => {
+    const { user, security } = await setup();
+    const n = upsertProviderPrices(user.id, security.id, [
+      { date: "2024-01-01", price: parseFixed("0") },
+      { date: "2024-01-02", price: parseFixed("-3") },
+      { date: "2024-01-03", price: parseFixed("3") },
+    ]);
+    expect(n).toBe(1);
+    expect(listPrices(user.id, security.id).map((p) => p.date)).toEqual([
+      "2024-01-03",
+    ]);
+  });
+
+  it("limits the price list to the newest rows and counts them all", async () => {
+    const { user, security } = await setup();
+    upsertProviderPrices(
+      user.id,
+      security.id,
+      Array.from({ length: 400 }, (_, i) => ({
+        date: new Date(Date.UTC(2023, 0, 1 + i)).toISOString().slice(0, 10),
+        price: parseFixed("1"),
+      })),
+    );
+    const list = listPrices(user.id, security.id);
+    expect(list).toHaveLength(PRICE_LIST_LIMIT);
+    expect(list[0]!.date > list[1]!.date).toBe(true);
+    expect(countPrices(user.id, security.id)).toBe(400);
+    expect(listPrices(user.id, security.id, 1000)).toHaveLength(400);
+    const other = await createTestUser();
+    notFoundError(() => countPrices(other.id, security.id));
+    notFoundError(() => listPrices(other.id, security.id));
+  });
+
   it("keeps a manual and a provider price of the same date side by side", async () => {
     const { user, security } = await setup();
     seedProviderPrice(user.id, security.id, "2024-01-01", "100");
@@ -599,7 +664,7 @@ describe("prices", () => {
       price: fixed(100_000_000 + i),
     }));
     expect(upsertProviderPrices(user.id, security.id, rows)).toBe(1200);
-    expect(listPrices(user.id, security.id)).toHaveLength(1200);
+    expect(listPrices(user.id, security.id, 5000)).toHaveLength(1200);
   });
 
   it("upserts FX rates idempotently", async () => {

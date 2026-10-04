@@ -268,6 +268,7 @@
       trades={data.trades}
       securities={data.securities}
       currency={account.currency}
+      hasSnapshots={data.snapshots.length > 0}
     />
   {/if}
 

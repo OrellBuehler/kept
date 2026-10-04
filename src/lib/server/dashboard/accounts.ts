@@ -20,6 +20,8 @@ export interface AccountBalanceView {
   iban: string | null;
   institution: InstitutionRef | null;
   balance: Minor;
+  /** `balance` without the value of holdings. */
+  cashBalance: Minor;
   shareBps: number;
   sharedWith: string | null;
   /** `balance` at the ownership share. */
@@ -34,7 +36,8 @@ export interface AccountBalanceView {
   /**
    * Age in days of the data the stale flag is based on: the last import, or,
    * for accounts that were never imported, the last snapshot. Recent holdings
-   * activity (a trade or a price of a held security) takes over when it
+   * activity (a trade or a manual price of a held security; fetched prices do
+   * not count) takes over when it
    * clears staleness or when there is neither. Null when the account has none
    * of these.
    */
@@ -110,6 +113,7 @@ export function accountBalances(
       iban: a.iban,
       institution: a.institution,
       balance: a.balance,
+      cashBalance: a.cashBalance,
       shareBps: a.shareBps,
       sharedWith: a.sharedWith,
       shareBalance: a.shareBalance,

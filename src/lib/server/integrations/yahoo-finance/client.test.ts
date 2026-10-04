@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { parseFixed } from "$lib/quantity";
+import { QuoteProviderError } from "$lib/server/investments";
 import { createYahooProvider, YahooError } from "./client";
 
 interface Call {
@@ -218,6 +219,49 @@ describe("history", () => {
     ]);
   });
 
+  it("rounds float32-ish closes to seven significant digits before normalising", async () => {
+    const { fetch } = fakeFetch(() =>
+      json(
+        chartBody({
+          currency: "USD",
+          zone: "Europe/London",
+          timestamps: [
+            ts("2024-03-04T08:00:00Z"),
+            ts("2024-03-05T08:00:00Z"),
+            ts("2024-03-06T08:00:00Z"),
+          ],
+          close: [773.38000488, 0.82972002, 10.38599976],
+        }),
+      ),
+    );
+    const out = await createYahooProvider({ fetch }).history(
+      "AAA",
+      "2024-03-01",
+      "2024-03-10",
+    );
+    expect(out.points.map((p) => p.price)).toEqual([
+      parseFixed("773.38"),
+      parseFixed("0.82972"),
+      parseFixed("10.386"),
+    ]);
+    const pence = fakeFetch(() =>
+      json(
+        chartBody({
+          currency: "GBp",
+          zone: "Europe/London",
+          timestamps: [ts("2024-03-04T08:00:00Z")],
+          close: [773.38000488],
+        }),
+      ),
+    );
+    const gbp = await createYahooProvider({ fetch: pence.fetch }).history(
+      "AAA.L",
+      "2024-03-01",
+      "2024-03-10",
+    );
+    expect(gbp.points[0]!.price).toBe(parseFixed("7.7338"));
+  });
+
   it("leaves a plain currency alone and upper-cases it", async () => {
     const { fetch } = fakeFetch(() =>
       json(chartBody({ currency: "chf", timestamps: [], close: [] })),
@@ -370,6 +414,12 @@ describe("search", () => {
 });
 
 describe("errors", () => {
+  it("is a QuoteProviderError with a presentable message", () => {
+    const err = new YahooError("network", "Could not reach Yahoo Finance.");
+    expect(err).toBeInstanceOf(QuoteProviderError);
+    expect(err.message).toBe("Could not reach Yahoo Finance.");
+  });
+
   const history = (fetch: typeof globalThis.fetch) =>
     createYahooProvider({ fetch }).history("AAA", "2024-03-01", "2024-03-02");
 

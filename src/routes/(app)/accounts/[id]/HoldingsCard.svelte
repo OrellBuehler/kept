@@ -1,4 +1,5 @@
 <script lang="ts">
+  import * as Alert from "$lib/components/ui/alert";
   import * as Card from "$lib/components/ui/card";
   import * as Empty from "$lib/components/ui/empty";
   import * as Table from "$lib/components/ui/table";
@@ -13,6 +14,7 @@
   import PencilIcon from "@lucide/svelte/icons/pencil";
   import PlusIcon from "@lucide/svelte/icons/plus";
   import Trash2Icon from "@lucide/svelte/icons/trash-2";
+  import TriangleAlertIcon from "@lucide/svelte/icons/triangle-alert";
   import TradeFormDialog from "./TradeFormDialog.svelte";
   import type { PageData } from "./$types";
   import { usePreferences } from "$lib/preferences.svelte";
@@ -26,11 +28,13 @@
     trades,
     securities,
     currency,
+    hasSnapshots = false,
   }: {
     positions: NonNullable<PageData["value"]>["positions"];
     trades: Trade[];
     securities: PageData["securities"];
     currency: string;
+    hasSnapshots?: boolean;
   } = $props();
 
   let formOpen = $state(false);
@@ -72,7 +76,17 @@
       </Button>
     </Card.Action>
   </Card.Header>
-  <Card.Content>
+  <Card.Content class="grid gap-4">
+    {#if hasSnapshots && trades.length > 0}
+      <Alert.Root>
+        <TriangleAlertIcon />
+        <Alert.Description>
+          Balance snapshots now count as the cash balance only. A snapshot that
+          recorded the total value, holdings included, counts them twice: remove
+          it or replace it with the cash balance.
+        </Alert.Description>
+      </Alert.Root>
+    {/if}
     <Tabs.Root value="positions">
       <Tabs.List>
         <Tabs.Trigger value="positions">Positions</Tabs.Trigger>
