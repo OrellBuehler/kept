@@ -14,6 +14,7 @@
   import Amount from "$lib/components/Amount.svelte";
   import ConfirmActionDialog from "$lib/components/ConfirmActionDialog.svelte";
   import ShareBadge from "$lib/components/ShareBadge.svelte";
+  import NoticeBadge from "$lib/components/NoticeBadge.svelte";
   import { FULL_SHARE_BPS, shareOf } from "$lib/money";
   import { submitHandler } from "$lib/form-submit";
   import ArchiveIcon from "@lucide/svelte/icons/archive";
@@ -115,6 +116,12 @@
           <ShareBadge
             shareBps={account.shareBps}
             sharedWith={account.sharedWith}
+          />
+          <NoticeBadge
+            noticeMonths={account.noticeMonths}
+            freeWithdrawal={account.freeWithdrawal}
+            freeWithdrawalPeriod={account.freeWithdrawalPeriod}
+            currency={account.currency}
           />
           {#if account.archived}
             <Badge variant="outline">Archived</Badge>

@@ -7,7 +7,13 @@
   import { Input } from "$lib/components/ui/input";
   import { Spinner } from "$lib/components/ui/spinner";
   import FormField from "$lib/components/FormField.svelte";
-  import { ACCOUNT_TYPES, type AccountType } from "$lib/ledger-types";
+  import {
+    ACCOUNT_TYPES,
+    NOTICE_ACCOUNT_TYPES,
+    WITHDRAWAL_PERIODS,
+    type AccountType,
+    type WithdrawalPeriod,
+  } from "$lib/ledger-types";
   import { ACCOUNT_TYPE_LABELS, COMMON_CURRENCIES } from "$lib/account-types";
   import { minorToSignedInput } from "$lib/amount-input";
   import type { FormErrors } from "$lib/form-errors";
@@ -27,6 +33,9 @@
     openingDate: string | null;
     shareBps: number;
     sharedWith: string | null;
+    noticeMonths: number | null;
+    freeWithdrawal: Minor | null;
+    freeWithdrawalPeriod: WithdrawalPeriod | null;
   }
 
   const prefs = usePreferences();
@@ -54,6 +63,7 @@
   let errors = $state<NonNullable<FormErrors>>({});
   let institutionId = $state("");
   let type = $state<AccountType>("current");
+  let period = $state<WithdrawalPeriod | "">("");
 
   $effect(() => {
     if (!open) return;
@@ -63,10 +73,12 @@
         ? (account.institution?.id ?? "")
         : defaultInstitutionId;
       type = account?.type ?? "current";
+      period = account?.freeWithdrawalPeriod ?? "";
     });
   });
 
   const is3a = $derived(type === "pillar_3a");
+  const hasNotice = $derived(NOTICE_ACCOUNT_TYPES.includes(type));
 
   const institutionLabel = $derived(
     institutions.find((i) => i.id === institutionId)?.name ?? "None",
@@ -102,6 +114,9 @@
           "openingDate",
           "share",
           "sharedWith",
+          "noticeMonths",
+          "freeWithdrawal",
+          "freeWithdrawalPeriod",
         ],
         successMessage: editing ? "Account updated" : "Account added",
         onSuccess: () => (open = false),
@@ -109,6 +124,9 @@
     >
       <input type="hidden" name="institutionId" value={institutionId} />
       <input type="hidden" name="type" value={type} />
+      {#if hasNotice}
+        <input type="hidden" name="freeWithdrawalPeriod" value={period} />
+      {/if}
 
       <FormField label="Name" for="{uid}-name" errors={errors.name}>
         <Input
@@ -318,6 +336,87 @@
               aria-invalid={!!errors.sharedWith}
             />
           </FormField>
+        </div>
+      {/if}
+
+      {#if hasNotice}
+        <div role="group" aria-labelledby="{uid}-withdrawal" class="grid gap-4">
+          <p id="{uid}-withdrawal" class="text-sm font-medium">Withdrawal</p>
+          <div class="grid gap-4 sm:grid-cols-3">
+            <FormField
+              label="Notice period (months)"
+              for="{uid}-notice"
+              errors={errors.noticeMonths}
+              hint="Leave empty if you can withdraw at any time."
+            >
+              <Input
+                id="{uid}-notice"
+                name="noticeMonths"
+                type="number"
+                inputmode="numeric"
+                min={1}
+                max={60}
+                step={1}
+                autocomplete="off"
+                class="tabular-nums"
+                placeholder="6"
+                value={account?.noticeMonths ?? ""}
+                aria-invalid={!!errors.noticeMonths}
+              />
+            </FormField>
+            <FormField
+              label="Free withdrawal"
+              for="{uid}-free"
+              errors={errors.freeWithdrawal}
+            >
+              <Input
+                id="{uid}-free"
+                name="freeWithdrawal"
+                inputmode="decimal"
+                autocomplete="off"
+                class="tabular-nums"
+                placeholder="25000"
+                value={account?.freeWithdrawal != null
+                  ? minorToSignedInput(account.freeWithdrawal, account.currency)
+                  : ""}
+                aria-invalid={!!errors.freeWithdrawal}
+              />
+            </FormField>
+            <FormField
+              label="Per"
+              for="{uid}-period"
+              errors={errors.freeWithdrawalPeriod}
+            >
+              <Select.Root type="single" bind:value={period}>
+                <Select.Trigger
+                  id="{uid}-period"
+                  aria-label="Free withdrawal period"
+                  class="w-full"
+                >
+                  {period === ""
+                    ? "None"
+                    : period === "month"
+                      ? "Month"
+                      : "Year"}
+                </Select.Trigger>
+                <Select.Content>
+                  <Select.Item value="" label="None">None</Select.Item>
+                  {#each WITHDRAWAL_PERIODS as p (p)}
+                    <Select.Item
+                      value={p}
+                      label={p === "month" ? "Month" : "Year"}
+                    >
+                      {p === "month" ? "Month" : "Year"}
+                    </Select.Item>
+                  {/each}
+                </Select.Content>
+              </Select.Root>
+            </FormField>
+          </div>
+          <p class="text-muted-foreground -mt-2 text-xs">
+            Amount you can withdraw per month/year without notice or fees. The
+            rest is available once the notice period has passed.
+          </p>
         </div>
       {/if}
 

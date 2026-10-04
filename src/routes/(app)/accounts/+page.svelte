@@ -13,6 +13,7 @@
   import Amount from "$lib/components/Amount.svelte";
   import ConfirmActionDialog from "$lib/components/ConfirmActionDialog.svelte";
   import ShareBadge from "$lib/components/ShareBadge.svelte";
+  import NoticeBadge from "$lib/components/NoticeBadge.svelte";
   import InstitutionLogo from "$lib/components/InstitutionLogo.svelte";
   import InstitutionFormDialog from "$lib/components/InstitutionFormDialog.svelte";
   import { daysSince, formatAgo } from "$lib/format";
@@ -270,6 +271,12 @@
                         <ShareBadge
                           shareBps={account.shareBps}
                           sharedWith={account.sharedWith}
+                        />
+                        <NoticeBadge
+                          noticeMonths={account.noticeMonths}
+                          freeWithdrawal={account.freeWithdrawal}
+                          freeWithdrawalPeriod={account.freeWithdrawalPeriod}
+                          currency={account.currency}
                         />
                         {#if account.archived}
                           <Badge variant="outline">Archived</Badge>
