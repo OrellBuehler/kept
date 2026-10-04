@@ -469,12 +469,19 @@ export function buildPreview(
   const existing = existingExternalIds(
     userId,
     account.id,
-    statement.transactions.map((t) => t.externalId),
+    statement.transactions.flatMap((t) => [
+      t.externalId,
+      ...(t.legacyExternalIds ?? []),
+    ]),
   );
   const seen = new Set<string>();
   const rows: PreviewRowView[] = statement.transactions.map((tx, i) => {
     let status: RowStatus;
-    if (existing.has(tx.externalId)) status = "duplicate";
+    if (
+      existing.has(tx.externalId) ||
+      tx.legacyExternalIds?.some((id) => existing.has(id))
+    )
+      status = "duplicate";
     else if (seen.has(tx.externalId)) status = "duplicate_in_file";
     else status = "new";
     seen.add(tx.externalId);

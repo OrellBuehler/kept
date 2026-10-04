@@ -269,6 +269,24 @@ describe("buildPreview: camt.053", () => {
       total: first.rows.length,
     });
   });
+
+  it("recognises rows imported with legacy NtryRef-based ids as duplicates", async () => {
+    const { user, account } = await setup();
+    for (const externalId of [
+      "ntry:1:2024-07-02:-1200",
+      "ntry:2:2024-07-03:-500",
+      "ntry:3:2024-07-03:-500",
+      "ntry:4:2024-07-05:8000",
+      "ntry:5:2024-07-08:-1200",
+    ]) {
+      seedImportedTransaction(user.id, account.id, { externalId });
+    }
+    const p = buildPreview(
+      user.id,
+      uploadFixture(user.id, account.id, "camt053/overlap-ntryref-a.xml"),
+    );
+    expect(p.counts).toEqual({ new: 0, duplicate: 5, total: 5 });
+  });
 });
 
 describe("buildPreview: csv and xlsx", () => {
