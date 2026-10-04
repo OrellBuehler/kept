@@ -42,7 +42,14 @@ export const setupSchema = z.object({
   displayName: displayNameSchema,
 });
 
+/** The acting administrator's own password, re-checked before sensitive admin actions. */
+export const adminPasswordSchema = z
+  .string()
+  .min(1, "Enter your password to confirm.")
+  .max(PASSWORD_MAX);
+
 export const createUserSchema = z.object({
+  adminPassword: adminPasswordSchema,
   username: usernameSchema,
   password: passwordSchema,
   role: roleSchema,
@@ -50,6 +57,7 @@ export const createUserSchema = z.object({
 });
 
 export const deleteUserSchema = z.object({
+  adminPassword: adminPasswordSchema,
   userId: z.string().min(1, "Missing user."),
 });
 
@@ -102,6 +110,7 @@ export const passkeyIdSchema = z.object({
 });
 
 export const resetTwoFactorSchema = z.object({
+  adminPassword: adminPasswordSchema,
   userId: z.string().min(1, "Missing user."),
 });
 

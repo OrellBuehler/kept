@@ -6,7 +6,13 @@ import {
   startTotpEnrolment,
 } from "$lib/server/auth/two-factor";
 import { listUsers } from "$lib/server/auth/users";
-import { authEvents, getDB } from "$lib/server/db";
+import { adminAuditLog, authEvents, getDB } from "$lib/server/db";
+import {
+  listAdminAuditLog,
+  recordAdminAction,
+} from "$lib/server/auth/admin-audit";
+import { adminActionLimiter } from "$lib/server/auth/rate-limit";
+import { beforeEach } from "vitest";
 import { createTestUser } from "$lib/testing/auth";
 import { useTestDB } from "$lib/testing/db";
 import { createTestEvent, outcome } from "$lib/testing/event";
@@ -14,6 +20,7 @@ import { actions, load } from "./+page.server";
 
 describe("admin/users", () => {
   useTestDB();
+  beforeEach(() => adminActionLimiter.reset());
 
   it("lists users without password hashes", async () => {
     const admin = await createTestUser({ role: "admin" });
@@ -34,6 +41,7 @@ describe("admin/users", () => {
         createTestEvent({
           user: admin,
           form: {
+            adminPassword: admin.password,
             username: " Bob ",
             password: "a-long-enough-password",
             role: "member",
@@ -59,6 +67,7 @@ describe("admin/users", () => {
         createTestEvent({
           user: admin,
           form: {
+            adminPassword: admin.password,
             username: "BOSS",
             password: "a-long-enough-password",
             role: "member",
@@ -73,7 +82,12 @@ describe("admin/users", () => {
       actions.create(
         createTestEvent({
           user: admin,
-          form: { username: "carol", password: "short", role: "root" },
+          form: {
+            adminPassword: admin.password,
+            username: "carol",
+            password: "short",
+            role: "root",
+          },
         }) as never,
       ),
     );
@@ -87,7 +101,10 @@ describe("admin/users", () => {
     const member = await createTestUser();
     const r = await outcome(() =>
       actions.delete(
-        createTestEvent({ user: admin, form: { userId: member.id } }) as never,
+        createTestEvent({
+          user: admin,
+          form: { userId: member.id, adminPassword: admin.password },
+        }) as never,
       ),
     );
     expect(r).toEqual({ type: "return", value: { deleted: true } });
@@ -98,7 +115,10 @@ describe("admin/users", () => {
     const admin = await createTestUser({ role: "admin" });
     const r = await outcome(() =>
       actions.delete(
-        createTestEvent({ user: admin, form: { userId: admin.id } }) as never,
+        createTestEvent({
+          user: admin,
+          form: { userId: admin.id, adminPassword: admin.password },
+        }) as never,
       ),
     );
     expect(r).toMatchObject({ type: "fail", status: 400 });
@@ -108,7 +128,12 @@ describe("admin/users", () => {
   it("rejects a missing userId", async () => {
     const admin = await createTestUser({ role: "admin" });
     const r = await outcome(() =>
-      actions.delete(createTestEvent({ user: admin, form: {} }) as never),
+      actions.delete(
+        createTestEvent({
+          user: admin,
+          form: { adminPassword: admin.password },
+        }) as never,
+      ),
     );
     expect(r).toMatchObject({ type: "fail", status: 400 });
   });
@@ -128,7 +153,10 @@ describe("admin/users", () => {
 
     const r = await outcome(() =>
       actions.resetTwoFactor(
-        createTestEvent({ user: admin, form: { userId: member.id } }) as never,
+        createTestEvent({
+          user: admin,
+          form: { userId: member.id, adminPassword: admin.password },
+        }) as never,
       ),
     );
     expect(r).toEqual({ type: "return", value: { twoFactorReset: true } });
@@ -157,9 +185,157 @@ describe("admin/users", () => {
     const admin = await createTestUser({ role: "admin" });
     const r = await outcome(() =>
       actions.resetTwoFactor(
-        createTestEvent({ user: admin, form: { userId: "missing" } }) as never,
+        createTestEvent({
+          user: admin,
+          form: { userId: "missing", adminPassword: admin.password },
+        }) as never,
       ),
     );
     expect(r).toMatchObject({ type: "fail", status: 400 });
+  });
+
+  describe("password confirmation and audit trail", () => {
+    const audit = () => getDB().select().from(adminAuditLog).all();
+
+    it("create, delete and reset need the admin's own password", async () => {
+      const admin = await createTestUser({ role: "admin" });
+      const member = await createTestUser();
+      const base = { username: "dave", password: "a-long-enough-password" };
+      for (const adminPassword of [undefined, "", "wrong-password-here"]) {
+        const form = (extra: Record<string, string>) =>
+          adminPassword === undefined ? extra : { ...extra, adminPassword };
+        const results = await Promise.all([
+          outcome(() =>
+            actions.create(
+              createTestEvent({
+                user: admin,
+                form: form({ ...base, role: "admin" }),
+              }) as never,
+            ),
+          ),
+          outcome(() =>
+            actions.delete(
+              createTestEvent({
+                user: admin,
+                form: form({ userId: member.id }),
+              }) as never,
+            ),
+          ),
+          outcome(() =>
+            actions.resetTwoFactor(
+              createTestEvent({
+                user: admin,
+                form: form({ userId: member.id }),
+              }) as never,
+            ),
+          ),
+        ]);
+        for (const r of results) {
+          expect(r).toMatchObject({ type: "fail", status: 400 });
+        }
+      }
+      expect(listUsers()).toHaveLength(2);
+      expect(audit()).toHaveLength(0);
+    });
+
+    it("wrong password attempts are rate limited", async () => {
+      const admin = await createTestUser({ role: "admin" });
+      const member = await createTestUser();
+      let last: unknown;
+      for (let i = 0; i < 6; i++) {
+        last = await outcome(() =>
+          actions.delete(
+            createTestEvent({
+              user: admin,
+              form: { userId: member.id, adminPassword: "nope-nope-nope" },
+            }) as never,
+          ),
+        );
+      }
+      expect(last).toMatchObject({ type: "fail", status: 429 });
+      expect(listUsers()).toHaveLength(2);
+    });
+
+    it("records create, delete and reset without secrets", async () => {
+      const admin = await createTestUser({ role: "admin", username: "boss" });
+      const member = await createTestUser({ username: "worker" });
+      await outcome(() =>
+        actions.create(
+          createTestEvent({
+            user: admin,
+            form: {
+              adminPassword: admin.password,
+              username: "newadmin",
+              password: "a-long-enough-password",
+              role: "admin",
+            },
+          }) as never,
+        ),
+      );
+      await outcome(() =>
+        actions.resetTwoFactor(
+          createTestEvent({
+            user: admin,
+            form: { adminPassword: admin.password, userId: member.id },
+          }) as never,
+        ),
+      );
+      await outcome(() =>
+        actions.delete(
+          createTestEvent({
+            user: admin,
+            form: { adminPassword: admin.password, userId: member.id },
+          }) as never,
+        ),
+      );
+      const rows = audit();
+      expect(rows.map((r) => r.action).sort()).toEqual([
+        "user_create",
+        "user_delete",
+        "user_reset_two_factor",
+      ]);
+      const created = rows.find((r) => r.action === "user_create")!;
+      expect(created).toMatchObject({
+        actorUserId: admin.id,
+        actorUsername: "boss",
+        targetUsername: "newadmin",
+        details: "role=admin",
+      });
+      const text = JSON.stringify(rows);
+      expect(text).not.toContain(admin.password);
+      expect(text).not.toContain("a-long-enough-password");
+      expect(text).not.toContain("passwordHash");
+    });
+
+    it("failed actions leave no audit entry", async () => {
+      const admin = await createTestUser({ role: "admin" });
+      await outcome(() =>
+        actions.delete(
+          createTestEvent({
+            user: admin,
+            form: { adminPassword: admin.password, userId: admin.id },
+          }) as never,
+        ),
+      );
+      expect(audit()).toHaveLength(0);
+    });
+
+    it("load shows the newest entries to admins only", async () => {
+      const admin = await createTestUser({ role: "admin" });
+      const member = await createTestUser();
+      for (let i = 0; i < 25; i++) {
+        recordAdminAction(admin, "backup_download");
+      }
+      const r = (await outcome(() =>
+        load(createTestEvent({ user: admin }) as never),
+      )) as { value: { audit: { action: string }[] } };
+      expect(r.value.audit).toHaveLength(20);
+      expect(r.value.audit[0].action).toBe("backup_download");
+
+      expect(
+        await outcome(() => load(createTestEvent({ user: member }) as never)),
+      ).toEqual({ type: "error", status: 403 });
+      expect(() => listAdminAuditLog(member)).toThrow(/Administrator/);
+    });
   });
 });

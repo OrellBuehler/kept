@@ -19,6 +19,7 @@
   import { Badge } from "$lib/components/ui/badge/index.js";
   import { Spinner } from "$lib/components/ui/spinner/index.js";
   import FormAlert from "$lib/components/app/form-alert.svelte";
+  import LocalTime from "$lib/components/app/local-time.svelte";
   import { fieldErrors, formError, hasError } from "$lib/form-errors";
   import type { PageProps } from "./$types";
 
@@ -31,6 +32,16 @@
   let deleteTarget = $state<(typeof data.users)[number] | null>(null);
   let deleting = $state(false);
   let lastTarget = $state<(typeof data.users)[number] | null>(null);
+  let resetTarget = $state<(typeof data.users)[number] | null>(null);
+  let resetting = $state(false);
+  let lastReset = $state<(typeof data.users)[number] | null>(null);
+  let confirmError = $state<string | undefined>();
+  const ACTION_LABELS: Record<string, string> = {
+    user_create: "Created user",
+    user_delete: "Deleted user",
+    user_reset_two_factor: "Reset two-factor",
+    backup_download: "Downloaded backup",
+  };
 
   const createFailure = $derived(form && "values" in form ? form : null);
   const formatDate = (d: Date) => d.toISOString().slice(0, 10);
@@ -57,32 +68,18 @@
 
 {#snippet resetButton(user: (typeof data.users)[number])}
   {#if user.twoFactor}
-    <form
-      method="POST"
-      action="?/resetTwoFactor"
-      class="contents"
-      use:enhance={() => {
-        return async ({ result, update }) => {
-          await update();
-          if (result.type === "success") {
-            toast.success(`Reset two-factor for ${user.username}`);
-          } else {
-            toast.error("Could not reset two-factor authentication.");
-          }
-        };
+    <Button
+      variant="ghost"
+      size="icon"
+      aria-label={`Reset two-factor for ${user.username}`}
+      title="Reset two-factor authentication"
+      onclick={() => {
+        confirmError = undefined;
+        resetTarget = lastReset = user;
       }}
     >
-      <input type="hidden" name="userId" value={user.id} />
-      <Button
-        type="submit"
-        variant="ghost"
-        size="icon"
-        aria-label={`Reset two-factor for ${user.username}`}
-        title="Reset two-factor authentication"
-      >
-        <ShieldOffIcon />
-      </Button>
-    </form>
+      <ShieldOffIcon />
+    </Button>
   {/if}
 {/snippet}
 
@@ -93,7 +90,10 @@
       size="icon"
       class="text-destructive hover:text-destructive"
       aria-label={`Delete ${user.username}`}
-      onclick={() => (deleteTarget = lastTarget = user)}
+      onclick={() => {
+        confirmError = undefined;
+        deleteTarget = lastTarget = user;
+      }}
     >
       <Trash2Icon />
     </Button>
@@ -165,6 +165,55 @@
     </li>
   {/each}
 </ul>
+
+<Card.Root class="mt-8">
+  <Card.Header>
+    <Card.Title>Recent admin activity</Card.Title>
+    <Card.Description>
+      The latest {data.audit.length === 1 ? "action" : "actions"} taken by administrators.
+    </Card.Description>
+  </Card.Header>
+  <Card.Content>
+    {#if data.audit.length === 0}
+      <p
+        class="text-muted-foreground rounded-md border border-dashed p-4 text-sm"
+      >
+        Nothing recorded yet.
+      </p>
+    {:else}
+      <Table.Root>
+        <Table.Header>
+          <Table.Row>
+            <Table.Head>When</Table.Head>
+            <Table.Head>Admin</Table.Head>
+            <Table.Head>Action</Table.Head>
+          </Table.Row>
+        </Table.Header>
+        <Table.Body>
+          {#each data.audit as entry (entry.id)}
+            <Table.Row>
+              <Table.Cell class="text-xs whitespace-nowrap">
+                <LocalTime ms={entry.createdAt.getTime()} />
+              </Table.Cell>
+              <Table.Cell>{entry.actorUsername}</Table.Cell>
+              <Table.Cell>
+                {ACTION_LABELS[entry.action] ?? entry.action}
+                {#if entry.targetUsername}
+                  <span class="font-medium">{entry.targetUsername}</span>
+                {/if}
+                {#if entry.details}
+                  <span class="text-muted-foreground text-xs">
+                    ({entry.details})
+                  </span>
+                {/if}
+              </Table.Cell>
+            </Table.Row>
+          {/each}
+        </Table.Body>
+      </Table.Root>
+    {/if}
+  </Card.Content>
+</Card.Root>
 
 <Dialog.Root bind:open={addOpen}>
   <Dialog.Content class="sm:max-w-md">
@@ -254,6 +303,23 @@
           </NativeSelect>
           <Field.Error errors={fieldErrors(createFailure?.errors, "role")} />
         </Field.Field>
+        <Field.Field>
+          <Field.Label for="new-adminPassword">Your password</Field.Label>
+          <Input
+            id="new-adminPassword"
+            name="adminPassword"
+            type="password"
+            autocomplete="current-password"
+            required
+            aria-invalid={hasError(createFailure?.errors, "adminPassword")}
+          />
+          <Field.Description>
+            Confirm it is you before creating an account.
+          </Field.Description>
+          <Field.Error
+            errors={fieldErrors(createFailure?.errors, "adminPassword")}
+          />
+        </Field.Field>
       </Field.Group>
       <Dialog.Footer>
         <Button
@@ -288,33 +354,117 @@
     <form
       method="POST"
       action="?/delete"
-      class="contents"
+      class="flex flex-col gap-4"
       use:enhance={() => {
         deleting = true;
+        confirmError = undefined;
         const name = lastTarget?.username;
         return async ({ result, update }) => {
           await update();
           deleting = false;
           if (result.type === "success") {
             toast.success(`Deleted user ${name ?? ""}`.trim());
+            deleteTarget = null;
           } else if (result.type === "failure") {
             const errors = result.data?.errors as
               Record<string, string[]> | undefined;
-            toast.error(errors?.form?.[0] ?? "Could not delete the user.");
+            confirmError =
+              errors?.adminPassword?.[0] ??
+              errors?.form?.[0] ??
+              "Could not delete the user.";
           } else if (result.type === "error") {
             toast.error("Could not delete the user. Please try again.");
+            deleteTarget = null;
           }
-          deleteTarget = null;
         };
       }}
     >
       <input type="hidden" name="userId" value={lastTarget?.id ?? ""} />
+      <FormAlert message={confirmError} />
+      <Field.Field>
+        <Field.Label for="delete-adminPassword">Your password</Field.Label>
+        <Input
+          id="delete-adminPassword"
+          name="adminPassword"
+          type="password"
+          autocomplete="current-password"
+          required
+        />
+      </Field.Field>
       <AlertDialog.Footer>
         <AlertDialog.Cancel type="button" disabled={deleting}
           >Cancel</AlertDialog.Cancel
         >
         <Button type="submit" variant="destructive" disabled={deleting}>
           {#if deleting}<Spinner />Deleting…{:else}Delete user{/if}
+        </Button>
+      </AlertDialog.Footer>
+    </form>
+  </AlertDialog.Content>
+</AlertDialog.Root>
+
+<AlertDialog.Root
+  open={resetTarget !== null}
+  onOpenChange={(o) => {
+    if (!o && !resetting) resetTarget = null;
+  }}
+>
+  <AlertDialog.Content>
+    <AlertDialog.Header>
+      <AlertDialog.Title>
+        Reset two-factor for {lastReset?.username}?
+      </AlertDialog.Title>
+      <AlertDialog.Description>
+        Removes their authenticator app and passkeys and signs them out
+        everywhere. Use it when they lost their device.
+      </AlertDialog.Description>
+    </AlertDialog.Header>
+    <form
+      method="POST"
+      action="?/resetTwoFactor"
+      class="flex flex-col gap-4"
+      use:enhance={() => {
+        resetting = true;
+        confirmError = undefined;
+        const name = lastReset?.username;
+        return async ({ result, update }) => {
+          await update();
+          resetting = false;
+          if (result.type === "success") {
+            toast.success(`Reset two-factor for ${name ?? ""}`.trim());
+            resetTarget = null;
+          } else if (result.type === "failure") {
+            const errors = result.data?.errors as
+              Record<string, string[]> | undefined;
+            confirmError =
+              errors?.adminPassword?.[0] ??
+              errors?.form?.[0] ??
+              "Could not reset two-factor authentication.";
+          } else if (result.type === "error") {
+            toast.error("Could not reset two-factor authentication.");
+            resetTarget = null;
+          }
+        };
+      }}
+    >
+      <input type="hidden" name="userId" value={lastReset?.id ?? ""} />
+      <FormAlert message={confirmError} />
+      <Field.Field>
+        <Field.Label for="reset-adminPassword">Your password</Field.Label>
+        <Input
+          id="reset-adminPassword"
+          name="adminPassword"
+          type="password"
+          autocomplete="current-password"
+          required
+        />
+      </Field.Field>
+      <AlertDialog.Footer>
+        <AlertDialog.Cancel type="button" disabled={resetting}
+          >Cancel</AlertDialog.Cancel
+        >
+        <Button type="submit" variant="destructive" disabled={resetting}>
+          {#if resetting}<Spinner />Resetting…{:else}Reset two-factor{/if}
         </Button>
       </AlertDialog.Footer>
     </form>

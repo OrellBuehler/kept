@@ -199,3 +199,12 @@ export const setupLimiter = new LoginRateLimiter(
   Infinity,
   Infinity,
 );
+
+/** Password confirmation for administrator actions, keyed by user id (ip "-"). */
+export const adminActionLimiter = new LoginRateLimiter(
+  Date.now,
+  WINDOW_MS,
+  MAX_FAILURES_PER_USER_IP,
+  Infinity,
+  Infinity,
+);
