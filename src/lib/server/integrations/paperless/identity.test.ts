@@ -74,6 +74,19 @@ describe("saveConnectionVerified", () => {
     expect(listBills(user.id)).toHaveLength(2);
   });
 
+  it("never contacts a private address the user may not use", async () => {
+    other.addDoc({ id: 95, original: pdfEnergy });
+    const before = getConnectionRow(user.id)!;
+
+    const err = await rejection(
+      move(user.id, other.baseUrl, { allowPrivateNetwork: false }),
+    );
+
+    expect(err.field).toBe("baseUrl");
+    expect(other.requests).toHaveLength(0);
+    expect(getConnectionRow(user.id)!.baseUrl).toBe(before.baseUrl);
+  });
+
   it("accepts the move when only some sampled documents still match", async () => {
     other.addDoc({ id: 96, original: pdfWater });
     await move(user.id, other.baseUrl);
