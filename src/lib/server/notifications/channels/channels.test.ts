@@ -38,6 +38,7 @@ describe("ntfy", () => {
     await ntfyChannel(
       { serverUrl: "https://ntfy.example.org", topic: "kept", token: "tk_x" },
       f,
+      true,
     ).send(message);
     const c = call(f);
     expect(c.url).toBe("https://ntfy.example.org");
@@ -56,6 +57,7 @@ describe("ntfy", () => {
     await ntfyChannel(
       { serverUrl: "https://ntfy.example.org", topic: "kept" },
       f,
+      true,
     ).send(message);
     expect(call(f).headers.authorization).toBeUndefined();
   });
@@ -69,6 +71,7 @@ describe("ntfy", () => {
     const channel = ntfyChannel(
       { serverUrl: "https://ntfy.example.org", topic: "kept" },
       mockFetch(status),
+      true,
     );
     await expect(channel.send(message)).rejects.toMatchObject({ code });
   });
@@ -79,6 +82,7 @@ describe("ntfy", () => {
       vi.fn<FetchFn>(async () => {
         throw new TypeError("fetch failed");
       }),
+      true,
     );
     await expect(net.send(message)).rejects.toMatchObject({ code: "network" });
     const slow = ntfyChannel(
@@ -86,6 +90,7 @@ describe("ntfy", () => {
       vi.fn<FetchFn>(async () => {
         throw new DOMException("timed out", "TimeoutError");
       }),
+      true,
     );
     await expect(slow.send(message)).rejects.toMatchObject({ code: "timeout" });
   });
@@ -96,7 +101,12 @@ describe("upstream responses", () => {
     const f = vi.fn<FetchFn>(
       async () => new Response("internal-secret-body", { status: 502 }),
     );
-    const err = await webhookChannel({ url: "https://hooks.example.org/k" }, f)
+    const err = await webhookChannel(
+      { url: "https://hooks.example.org/k" },
+      f,
+      undefined,
+      true,
+    )
       .send(message)
       .catch((e) => e);
     expect(err.reason).toContain("5xx");
@@ -107,9 +117,12 @@ describe("upstream responses", () => {
 
   it("passes a timeout signal and manual redirect handling", async () => {
     const f = mockFetch();
-    await webhookChannel({ url: "https://hooks.example.org/k" }, f).send(
-      message,
-    );
+    await webhookChannel(
+      { url: "https://hooks.example.org/k" },
+      f,
+      undefined,
+      true,
+    ).send(message);
     const init = call(f).init;
     expect(init.redirect).toBe("manual");
     expect(init.signal).toBeInstanceOf(AbortSignal);
@@ -125,6 +138,7 @@ describe("webhook", () => {
       { url: "https://hooks.example.org/k", secret: "s3cret" },
       f,
       now,
+      true,
     ).send(message);
     const c = call(f);
     expect(c.json).toEqual({
@@ -140,9 +154,12 @@ describe("webhook", () => {
 
   it("omits the signature without a secret", async () => {
     const f = mockFetch();
-    await webhookChannel({ url: "https://hooks.example.org/k" }, f, now).send(
-      message,
-    );
+    await webhookChannel(
+      { url: "https://hooks.example.org/k" },
+      f,
+      now,
+      true,
+    ).send(message);
     expect(call(f).headers[SIGNATURE_HEADER]).toBeUndefined();
   });
 
@@ -151,6 +168,7 @@ describe("webhook", () => {
       { url: "https://hooks.example.org/k" },
       mockFetch(404),
       now,
+      true,
     );
     const err = await channel.send(message).catch((e) => e);
     expect(err).toBeInstanceOf(ChannelError);

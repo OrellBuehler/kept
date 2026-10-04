@@ -1,5 +1,6 @@
 import { fail } from "@sveltejs/kit";
 import { desc, eq } from "drizzle-orm";
+import { privateNetworkAllowed } from "$lib/server/net/private-network";
 import { requireUser } from "$lib/server/auth/guards";
 import { BILL_STATUSES } from "$lib/bill-types";
 import { todayLocal } from "$lib/server/bills/dates";
@@ -207,10 +208,10 @@ export const actions: Actions = {
       return fail(400, { action: "save", errors: parsed.errors, values });
     }
     try {
-      const { webhookSecret } = await saveConnectionVerified(
-        user.id,
-        parsed.data,
-      );
+      const { webhookSecret } = await saveConnectionVerified(user.id, {
+        ...parsed.data,
+        allowPrivateNetwork: privateNetworkAllowed(user.role),
+      });
       // The connection is saved either way; the test only tells the user at once whether it works.
       let test:
         | { result: Awaited<ReturnType<typeof testConnection>> }

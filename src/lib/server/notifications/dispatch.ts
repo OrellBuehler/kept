@@ -1,3 +1,4 @@
+import { privateNetworkAllowedForUser } from "$lib/server/net/private-network";
 import type { ChannelKind } from "$lib/notification-types";
 import { emailChannel, type SendMail } from "./channels/email";
 import type { FetchFn } from "./channels/http";
@@ -30,9 +31,18 @@ function buildChannel(
   if (!config) throw new ChannelError("not_configured", "Not configured.");
   switch (kind) {
     case "ntfy":
-      return ntfyChannel(config as never, deps.fetch);
+      return ntfyChannel(
+        config as never,
+        deps.fetch,
+        privateNetworkAllowedForUser(userId),
+      );
     case "webhook":
-      return webhookChannel(config as never, deps.fetch);
+      return webhookChannel(
+        config as never,
+        deps.fetch,
+        undefined,
+        privateNetworkAllowedForUser(userId),
+      );
     case "email":
       if (!deps.smtp) {
         throw new ChannelError(

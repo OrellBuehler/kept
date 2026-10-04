@@ -14,6 +14,7 @@ export function webhookChannel(
   config: WebhookConfig,
   fetchFn: FetchFn = fetch,
   now: () => Date = () => new Date(),
+  allowPrivate = false,
 ): Channel {
   return {
     async send({ title, body }) {
@@ -30,6 +31,7 @@ export function webhookChannel(
         config.secret
           ? { [SIGNATURE_HEADER]: signBody(config.secret, payload) }
           : {},
+        allowPrivate,
       );
     },
   };

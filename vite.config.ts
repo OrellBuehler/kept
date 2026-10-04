@@ -21,6 +21,8 @@ export default defineConfig({
     include: ["src/**/*.test.ts", "scripts/**/*.test.ts"],
     environment: "node",
     testTimeout: 30000,
+    // Fake servers in tests listen on loopback; tests of the default policy unset this.
+    env: { KEPT_ALLOW_PRIVATE_NETWORK: "true" },
     coverage: {
       provider: "v8",
       include: ["src/lib/**/*.ts", "src/routes/**/*.ts"],

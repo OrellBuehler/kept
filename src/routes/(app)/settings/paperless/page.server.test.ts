@@ -1,5 +1,6 @@
 import {
   afterAll,
+  afterEach,
   beforeAll,
   beforeEach,
   describe,
@@ -17,6 +18,7 @@ import {
 import {
   getConnectionRow,
   secretMatches,
+  testConnection,
 } from "$lib/server/integrations/paperless/connection";
 import { startFakePaperless } from "$lib/server/integrations/paperless/fake-server";
 import {
@@ -104,6 +106,52 @@ describe("settings/paperless", () => {
 
   const connect = (over: Form = {}) =>
     act("save", user, { baseUrl: fake.baseUrl, token: "test-token", ...over });
+
+  describe("private network targets", () => {
+    beforeEach(() => vi.stubEnv("KEPT_ALLOW_PRIVATE_NETWORK", ""));
+    afterEach(() => vi.stubEnv("KEPT_ALLOW_PRIVATE_NETWORK", "true"));
+
+    it("are refused for members at save time and nothing is stored", async () => {
+      for (const baseUrl of [
+        fake.baseUrl,
+        "http://localhost:8000",
+        "http://169.254.169.254",
+        "http://[::ffff:10.0.0.1]:8000",
+      ]) {
+        const data = failure(await act("save", user, { baseUrl, token: "t" }));
+        expect(data.errors.baseUrl?.[0]).toContain("private network");
+      }
+      expect(getConnectionRow(user.id)).toBeNull();
+    });
+
+    it("are accepted for administrators", async () => {
+      const admin = await createTestUser({ role: "admin" });
+      const r = value(
+        await act("save", admin, {
+          baseUrl: fake.baseUrl,
+          token: "test-token",
+        }),
+      );
+      expect(r).toMatchObject({ success: true, action: "save" });
+      expect((r.test as { result: unknown }).result).toBeTruthy();
+    });
+
+    it("are accepted for members with KEPT_ALLOW_PRIVATE_NETWORK=true", async () => {
+      vi.stubEnv("KEPT_ALLOW_PRIVATE_NETWORK", "true");
+      const r = value(await connect());
+      expect(r).toMatchObject({ success: true, action: "save" });
+    });
+
+    it("are blocked again at request time for a stored member connection", async () => {
+      vi.stubEnv("KEPT_ALLOW_PRIVATE_NETWORK", "true");
+      value(await connect());
+      vi.stubEnv("KEPT_ALLOW_PRIVATE_NETWORK", "");
+      fake.requests = [];
+      const err = await testConnection(user.id).catch((e) => e);
+      expect(err).toMatchObject({ code: "blocked_address" });
+      expect(fake.requests).toHaveLength(0);
+    });
+  });
 
   it("load without a connection", async () => {
     const data = await loaded(user);

@@ -12,6 +12,12 @@ import {
   type PaperlessBillSource,
   type PaperlessFieldMapping,
 } from "$lib/server/db";
+import {
+  PrivateNetworkError,
+  assertHostAllowed,
+  isPrivateLiteralHost,
+  privateNetworkAllowedForUser,
+} from "$lib/server/net/private-network";
 import { LedgerError, notFound } from "$lib/server/ledger/errors";
 import {
   PaperlessClient,
@@ -234,6 +240,8 @@ export interface SaveConnectionInput {
    * links to the old server's documents and start over. Without it, an address change keeps them.
    */
   differentInstance?: boolean;
+  /** Whether this user may point Kept at private-network hosts; see `privateNetworkAllowed`. */
+  allowPrivateNetwork?: boolean;
 }
 
 export interface SaveConnectionResult {
@@ -255,6 +263,13 @@ export function saveConnection(
       throw new LedgerError("invalid", err.message, "baseUrl");
     }
     throw err;
+  }
+  if (input.allowPrivateNetwork === false && isPrivateLiteralHost(baseUrl)) {
+    throw new LedgerError(
+      "invalid",
+      new PaperlessError("blocked_address").message,
+      "baseUrl",
+    );
   }
   const token = input.token?.trim() ? input.token.trim() : null;
   if (token !== null) {
@@ -478,7 +493,25 @@ export function clientForRow(
     token: decryptSecret(row.tokenEncrypted),
     allowInsecureTls: row.allowInsecureTls,
     apiVersion: row.apiVersion,
+    guard: privateNetworkGuard(privateNetworkAllowedForUser(row.userId)),
   });
+}
+
+/** The request guard for a client: none when private hosts are allowed, else a resolve-and-check. */
+export function privateNetworkGuard(
+  allowPrivate: boolean,
+): ((url: string) => Promise<void>) | undefined {
+  if (allowPrivate) return undefined;
+  return async (url) => {
+    try {
+      await assertHostAllowed(url, { allowPrivate: false });
+    } catch (err) {
+      if (!(err instanceof PrivateNetworkError)) throw err;
+      throw new PaperlessError(
+        err.code === "dns" ? "network" : "blocked_address",
+      );
+    }
+  };
 }
 
 /** Stores what a call learned about the server (negotiated API version, release). */

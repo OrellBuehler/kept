@@ -16,6 +16,7 @@ export const PAPERLESS_ERROR_CODES = [
   "invalid_response",
   "wrong_type",
   "too_large",
+  "blocked_address",
 ] as const;
 export type PaperlessErrorCode = (typeof PAPERLESS_ERROR_CODES)[number];
 
@@ -36,6 +37,8 @@ const MESSAGES: Record<PaperlessErrorCode, string> = {
   invalid_response: "Paperless sent a response Kept could not understand.",
   wrong_type: "Paperless sent a file of an unexpected type.",
   too_large: "The file from Paperless is too large.",
+  blocked_address:
+    "This address is on a private network, which this server does not allow for your account. Ask an administrator.",
 };
 
 /** Typed failure of a Paperless call. Messages never contain response bodies or document content. */
@@ -183,6 +186,8 @@ export interface ClientOptions {
   downloadTimeoutMs?: number;
   maxDownloadBytes?: number;
   maxJsonBytes?: number;
+  /** Called with the full URL right before every request; throws to refuse it. */
+  guard?: (url: string) => Promise<void>;
 }
 
 export type Query =
@@ -244,6 +249,7 @@ export class PaperlessClient {
   private readonly downloadTimeoutMs: number;
   private readonly maxDownloadBytes: number;
   private readonly maxJsonBytes: number;
+  private readonly guard: ((url: string) => Promise<void>) | undefined;
 
   constructor(options: ClientOptions) {
     this.baseUrl = normalizeBaseUrl(options.baseUrl);
@@ -254,6 +260,7 @@ export class PaperlessClient {
     this.downloadTimeoutMs = options.downloadTimeoutMs ?? DOWNLOAD_TIMEOUT_MS;
     this.maxDownloadBytes = options.maxDownloadBytes ?? MAX_DOWNLOAD_BYTES;
     this.maxJsonBytes = options.maxJsonBytes ?? MAX_JSON_BYTES;
+    this.guard = options.guard;
   }
 
   /** `{base}/api/<path>/`, always with the trailing slash Paperless requires. */
@@ -283,6 +290,7 @@ export class PaperlessClient {
       Accept: init.accept,
     });
     if (init.contentType) headers.set("Content-Type", init.contentType);
+    await this.guard?.(url);
     let res: Response;
     try {
       res = await fetch(url, {

@@ -12,6 +12,7 @@ import {
 } from "./client";
 import {
   getConnectionRow,
+  privateNetworkGuard,
   saveConnection,
   type ConnectionRow,
   type SaveConnectionInput,
@@ -100,6 +101,8 @@ async function verifySameServer(
     apiVersion: null,
     timeoutMs: CHECK_TIMEOUT_MS,
     downloadTimeoutMs: CHECK_TIMEOUT_MS * 3,
+    // The new address is not saved yet, so it gets the same private-network check as saving it.
+    guard: privateNetworkGuard(input.allowPrivateNetwork !== false),
   });
   for (const sample of samples) {
     let matches: boolean;

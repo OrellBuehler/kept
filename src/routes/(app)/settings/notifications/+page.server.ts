@@ -1,6 +1,7 @@
 import { fail } from "@sveltejs/kit";
 import { CHANNEL_KINDS, type ChannelKind } from "$lib/notification-types";
 import { requireUser } from "$lib/server/auth/guards";
+import { privateNetworkAllowed } from "$lib/server/net/private-network";
 import { assertAllowedUrl } from "$lib/server/notifications/channels/guard";
 import { ChannelError } from "$lib/server/notifications/types";
 import { parseForm } from "$lib/server/forms";
@@ -88,7 +89,9 @@ export const actions: Actions = {
       "serverUrl" in data ? data.serverUrl : "url" in data ? data.url : null;
     if (target) {
       try {
-        await assertAllowedUrl(target);
+        await assertAllowedUrl(target, {
+          allowPrivate: privateNetworkAllowed(user.role),
+        });
       } catch (err) {
         if (!(err instanceof ChannelError)) throw err;
         const field = kind === "ntfy" ? "serverUrl" : "url";

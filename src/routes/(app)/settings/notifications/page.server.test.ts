@@ -138,14 +138,59 @@ describe("settings/notifications", () => {
     expect(listChannels(user.id)).toEqual([]);
   });
 
-  it("rejects private destinations at save time when blocking is on", async () => {
-    vi.stubEnv("KEPT_NOTIFY_BLOCK_PRIVATE", "true");
-    const res = await act("saveChannel", user, {
+  describe("private network targets", () => {
+    const privateHook = {
       kind: "webhook",
       url: "http://127.0.0.1:9000/hook",
+    };
+
+    it("are refused for members by default", async () => {
+      vi.stubEnv("KEPT_ALLOW_PRIVATE_NETWORK", "");
+      const res = await act("saveChannel", user, privateHook);
+      expect(res.type).toBe("fail");
+      expect(listChannels(user.id)).toEqual([]);
+      const meta = await act("saveChannel", user, {
+        kind: "ntfy",
+        serverUrl: "http://169.254.169.254",
+        topic: "kept",
+      });
+      expect(meta.type).toBe("fail");
     });
-    expect(res.type).toBe("fail");
-    expect(listChannels(user.id)).toEqual([]);
+
+    it("are accepted for administrators", async () => {
+      vi.stubEnv("KEPT_ALLOW_PRIVATE_NETWORK", "");
+      const admin = await createTestUser({ role: "admin" });
+      const res = await act("saveChannel", admin, privateHook);
+      expect(res.type).toBe("return");
+      expect(listChannels(admin.id)).toHaveLength(1);
+    });
+
+    it("are accepted for members with KEPT_ALLOW_PRIVATE_NETWORK=true", async () => {
+      vi.stubEnv("KEPT_ALLOW_PRIVATE_NETWORK", "true");
+      const res = await act("saveChannel", user, privateHook);
+      expect(res.type).toBe("return");
+    });
+
+    it("are refused for administrators when KEPT_NOTIFY_BLOCK_PRIVATE=true", async () => {
+      vi.stubEnv("KEPT_ALLOW_PRIVATE_NETWORK", "");
+      vi.stubEnv("KEPT_NOTIFY_BLOCK_PRIVATE", "true");
+      const admin = await createTestUser({ role: "admin" });
+      const res = await act("saveChannel", admin, privateHook);
+      expect(res.type).toBe("fail");
+    });
+
+    it("are refused again at send time if a member's channel already points inside", async () => {
+      vi.stubEnv("KEPT_ALLOW_PRIVATE_NETWORK", "true");
+      await act("saveChannel", user, privateHook);
+      vi.stubEnv("KEPT_ALLOW_PRIVATE_NETWORK", "");
+      const fetchMock = vi.fn(async () => new Response(null, { status: 200 }));
+      vi.stubGlobal("fetch", fetchMock);
+      const res = (await act("testChannel", user, { kind: "webhook" })) as {
+        value: { result: { ok: boolean } };
+      };
+      expect(res.value.result.ok).toBe(false);
+      expect(fetchMock).not.toHaveBeenCalled();
+    });
   });
 
   it("never touches another user's channels", async () => {
