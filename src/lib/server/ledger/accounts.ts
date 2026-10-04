@@ -289,11 +289,16 @@ export function updateAccount(
         .from(trades)
         .where(eq(trades.accountId, id))
         .get() ??
-      (portfolioRows.length > 0 ? true : undefined);
+      (portfolioRows.length > 0 ? true : undefined) ??
+      // The same non-zero opening balance would silently turn into another currency.
+      (current.openingBalance !== 0 &&
+      input.openingBalance === current.openingBalance
+        ? true
+        : undefined);
     if (used) {
       throw new LedgerError(
         "conflict",
-        "The currency cannot change while the account has transactions, balances, trades or portfolio values.",
+        "The currency cannot change while the account has transactions, balances, trades, portfolio values or an opening balance. Set the opening balance to zero first.",
         "currency",
       );
     }

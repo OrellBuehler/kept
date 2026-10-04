@@ -168,7 +168,7 @@
           for="{uid}-currency"
           errors={errors.currency}
           hint={currencyLocked
-            ? "Locked: this account already has transactions, balances, trades or portfolio values."
+            ? "Locked: this account already has transactions, balances, trades, portfolio values or an opening balance."
             : is3a
               ? "Pillar 3a accounts are held in CHF."
               : "3-letter ISO code, e.g. CHF."}

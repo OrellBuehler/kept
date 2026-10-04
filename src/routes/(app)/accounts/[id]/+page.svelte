@@ -41,6 +41,7 @@
   const account = $derived(data.account);
   const currencyLocked = $derived(
     account.lastBookingDate !== null ||
+      account.openingBalance !== 0 ||
       data.snapshots.length > 0 ||
       data.trades.length > 0 ||
       data.portfolios.some((p) => p.latestValue !== null),
