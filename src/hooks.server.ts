@@ -4,6 +4,7 @@ import { assertSecretKeyConfigured } from "$lib/server/crypto";
 import { registerBackups } from "$lib/server/backup";
 import { registerInbox } from "$lib/server/inbox";
 import { runMigrations } from "$lib/server/db";
+import { getStore } from "$lib/server/storage";
 import { registerNotifications } from "$lib/server/notifications";
 import { registerPaperless } from "$lib/server/integrations/paperless";
 import { registerMarketData } from "$lib/server/integrations/yahoo-finance";
@@ -20,6 +21,7 @@ import { countUsers } from "$lib/server/auth/users";
 
 export async function init() {
   assertSecretKeyConfigured();
+  getStore();
   runMigrations();
   registerBackups();
   registerInbox();
