@@ -90,7 +90,11 @@ const timestamps = {
     .$onUpdate(() => new Date()),
 };
 
-/** Insertion order; ties between rows with equal sort keys break on it, then on `id`. */
+/**
+ * Insertion order; ties between rows with equal sort keys break on it, then on `id`.
+ * The value comes from `nextSeq` in drizzle only: the column's database default is 0
+ * (migration 0029), so a raw SQL insert would sort before every existing row.
+ */
 const seq = () => integer("seq").notNull().$defaultFn(nextSeq);
 
 export const USER_ROLES = ["admin", "member"] as const;
