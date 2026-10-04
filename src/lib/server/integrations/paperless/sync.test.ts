@@ -101,6 +101,7 @@ describe("syncConnection", () => {
       listed: 1,
       imported: 1,
       failed: 0,
+      pending: 0,
       skipped: 0,
       error: null,
     });
@@ -310,7 +311,7 @@ describe("syncConnection", () => {
         modified: `2026-09-01T${hour}:00:00+00:00`,
       });
     }
-    fake.downloadStatuses.set(51, 500);
+    fake.downloadStatuses.set(51, 422);
     fake.downloadStatuses.set(52, 403);
     fake.downloadStatuses.set(53, 400);
     vi.spyOn(console, "error").mockImplementation(() => {});
@@ -320,7 +321,7 @@ describe("syncConnection", () => {
     expect(r).toMatchObject({ failed: 3, imported: 1, error: null });
     expect(linkOf(51)).toMatchObject({
       status: "failed",
-      error: "Paperless reported an error for this document.",
+      error: "Paperless sent an unreadable response for this document.",
     });
     expect(linkOf(52)!.error).toBe(
       "Paperless did not allow reading this document.",
@@ -330,6 +331,62 @@ describe("syncConnection", () => {
       Date.parse("2026-09-01T13:00:00+00:00"),
     );
     expect(getConnectionRow(user.id)!.lastError).toBeNull();
+  });
+
+  it.each([502, 503, 429, 408])(
+    "a transient %i leaves the document pending and retries it on the next run",
+    async (status) => {
+      fake.addDoc({
+        id: 41,
+        original: pdfEnergy,
+        modified: "2026-09-01T10:00:00+00:00",
+      });
+      fake.addDoc({
+        id: 42,
+        original: pdfWater,
+        modified: "2026-09-01T11:00:00+00:00",
+      });
+      fake.downloadStatuses.set(41, status);
+
+      const first = await syncConnection(user.id);
+
+      expect(first).toMatchObject({
+        imported: 1,
+        failed: 0,
+        pending: 1,
+        error: null,
+      });
+      expect(linkOf(41)).toBeUndefined();
+      expect(linkOf(42)).toMatchObject({ status: "imported" });
+      // The watermark must not move past the document that still needs a retry.
+      expect(getConnectionRow(user.id)!.lastSyncModified).toBeNull();
+
+      fake.downloadStatuses.delete(41);
+      const second = await syncConnection(user.id);
+
+      expect(second).toMatchObject({ imported: 1, failed: 0, pending: 0 });
+      expect(linkOf(41)).toMatchObject({ status: "imported" });
+      expect(getConnectionRow(user.id)!.lastSyncModified).toBe(
+        Date.parse("2026-09-01T11:00:00+00:00"),
+      );
+    },
+  );
+
+  it("keeps permanent client errors failed until the document changes", async () => {
+    fake.addDoc({ id: 43, original: pdfEnergy });
+    fake.downloadStatuses.set(43, 422);
+    vi.spyOn(console, "error").mockImplementation(() => {});
+
+    expect(await syncConnection(user.id)).toMatchObject({
+      failed: 1,
+      pending: 0,
+    });
+    expect(linkOf(43)).toMatchObject({ status: "failed" });
+    fake.downloadStatuses.delete(43);
+    expect(await syncConnection(user.id)).toMatchObject({
+      failed: 0,
+      imported: 0,
+    });
   });
 
   it("skips documents that are not PDFs, using the archive version of images", async () => {

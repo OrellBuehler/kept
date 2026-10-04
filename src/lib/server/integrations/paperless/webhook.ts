@@ -49,7 +49,7 @@ export function resetWebhookState(): void {
 export type WebhookOutcome =
   { status: 202; done: Promise<void> } | { status: 400 | 401 | 404 | 429 };
 
-const RETRYABLE_ERRORS = new Set(["network", "server", "tls"]);
+const RETRYABLE_ERRORS = new Set(["network", "server", "busy", "tls"]);
 
 async function runJob(userId: string, documentId: number): Promise<void> {
   const delays = webhookConfig.retryDelaysMs;

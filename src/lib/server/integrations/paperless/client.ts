@@ -12,6 +12,7 @@ export const PAPERLESS_ERROR_CODES = [
   "network",
   "tls",
   "server",
+  "busy",
   "invalid_response",
   "wrong_type",
   "too_large",
@@ -31,6 +32,7 @@ const MESSAGES: Record<PaperlessErrorCode, string> = {
   network: "Paperless could not be reached.",
   tls: "The TLS certificate of Paperless could not be verified. Fix the certificate or allow insecure TLS for this connection.",
   server: "Paperless reported a server error.",
+  busy: "Paperless is busy or timed out. Try again in a moment.",
   invalid_response: "Paperless sent a response Kept could not understand.",
   wrong_type: "Paperless sent a file of an unexpected type.",
   too_large: "The file from Paperless is too large.",
@@ -55,6 +57,17 @@ export class PaperlessError extends Error {
     this.code = code;
     this.status = options.status;
   }
+}
+
+/**
+ * Failures worth retrying on a later run: 5xx, 408/429, network errors and
+ * timeouts. Other 4xx responses and parse errors will not fix themselves.
+ */
+export function isTransientError(err: unknown): boolean {
+  return (
+    err instanceof PaperlessError &&
+    (err.code === "server" || err.code === "busy" || err.code === "network")
+  );
 }
 
 const EXTRA_MESSAGES: Record<string, string> = {
@@ -308,6 +321,9 @@ export class PaperlessClient {
     if (status === 404) throw new PaperlessError("not_found", { status });
     if (status === 406) throw new PaperlessError("version", { status });
     if (status === 400) throw new PaperlessError("bad_request", { status });
+    if (status === 408 || status === 429) {
+      throw new PaperlessError("busy", { status });
+    }
     if (status >= 500) throw new PaperlessError("server", { status });
     throw new PaperlessError("invalid_response", {
       status,

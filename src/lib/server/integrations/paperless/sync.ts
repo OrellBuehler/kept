@@ -23,7 +23,12 @@ import { billInputSchema, type BillInput } from "$lib/server/bills/schemas";
 import { bills, getDB, paperlessDocuments } from "$lib/server/db";
 import { LedgerError } from "$lib/server/ledger/errors";
 import type { PaperlessBillSource } from "$lib/server/db";
-import { PaperlessClient, PaperlessError, errorCode } from "./client";
+import {
+  PaperlessClient,
+  PaperlessError,
+  errorCode,
+  isTransientError,
+} from "./client";
 import {
   clientForRow,
   externalRef,
@@ -68,6 +73,8 @@ export interface SyncResult {
   unchanged: number;
   skipped: number;
   failed: number;
+  /** Documents Paperless could not serve right now (5xx, 429, timeout); retried on the next run. */
+  pending: number;
   /** Requested document ids Paperless does not (yet) show; the webhook retries these. */
   missing: number[];
   /** Connection-level failure (a short code), when the run was cut short. */
@@ -85,6 +92,7 @@ const emptyResult = (): SyncResult => ({
   unchanged: 0,
   skipped: 0,
   failed: 0,
+  pending: 0,
   missing: [],
   error: null,
 });
@@ -237,10 +245,15 @@ async function sync(
     ]);
   }
   let highWater = row.lastSyncModified;
+  let held = false;
   try {
     for await (const page of client.pages("documents", query, docSchema)) {
       for (const doc of page) {
+        const pendingBefore = result.pending;
         await handle(userId, row, client, doc, result);
+        // A document left pending keeps the watermark in front of it.
+        if (result.pending > pendingBefore) held = true;
+        if (held) continue;
         const ms = parseModified(doc);
         if (highWater === null || ms > highWater) highWater = ms;
       }
@@ -456,10 +469,6 @@ const DOCUMENT_REASONS: Partial<
     status: "failed",
     message: "Paperless rejected the request for this document.",
   },
-  server: {
-    status: "failed",
-    message: "Paperless reported an error for this document.",
-  },
   invalid_response: {
     status: "failed",
     message: "Paperless sent an unreadable response for this document.",
@@ -482,6 +491,13 @@ async function handle(
     // cannot serve is recorded and the run continues with the next one.
     if (err instanceof PaperlessError && RUN_LEVEL_ERRORS.has(err.code)) {
       throw err;
+    }
+    if (isTransientError(err)) {
+      // No link is saved: the document stays pending and the watermark holds
+      // (see sync), so the next run tries it again.
+      console.warn("paperless document will be retried", errorCode(err));
+      result.pending++;
+      return;
     }
     const reason =
       err instanceof PaperlessError ? DOCUMENT_REASONS[err.code] : undefined;
