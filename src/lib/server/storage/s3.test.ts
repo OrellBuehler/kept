@@ -2,7 +2,12 @@ import { randomUUID } from "node:crypto";
 import { describe, expect, it } from "vitest";
 import { blobStoreContract } from "./contract";
 import type { S3StorageConfig } from "./config";
-import { S3BlobStore, s3ClientEndpoint } from "./s3";
+import {
+  S3BlobStore,
+  S3_TIMEOUT_MS,
+  s3ClientEndpoint,
+  s3PutTimeoutMs,
+} from "./s3";
 
 const env = process.env;
 const live =
@@ -270,7 +275,7 @@ describe("S3BlobStore (fake client)", () => {
       }),
     });
     await expect(store.list("")[Symbol.asyncIterator]().next()).rejects.toThrow(
-      "S3 list failed",
+      "S3 list pagination did not advance",
     );
   });
 
@@ -380,6 +385,70 @@ describe("S3BlobStore (fake client)", () => {
     await expect(store.has("k")).rejects.toThrow("S3 has timed out");
   });
 
+  it("scales the put timeout with the body size, up to a cap", () => {
+    const MiB = 1024 * 1024;
+    expect(s3PutTimeoutMs(0)).toBe(S3_TIMEOUT_MS);
+    expect(s3PutTimeoutMs(1)).toBe(S3_TIMEOUT_MS + 10_000);
+    expect(s3PutTimeoutMs(10 * MiB)).toBe(S3_TIMEOUT_MS + 100_000);
+    expect(s3PutTimeoutMs(10 * MiB, 20)).toBe(100_020);
+    expect(s3PutTimeoutMs(100_000 * MiB)).toBe(15 * 60_000);
+  });
+
+  it("gives a large put more time than a small one", async () => {
+    const slow = (ms: number) => ({
+      write: () =>
+        new Promise<number>((resolve) => setTimeout(() => resolve(1), ms)),
+    });
+    const store = new S3BlobStore(baseConfig, {
+      timeoutMs: 20,
+      client: fakeClient({ file: () => slow(80) }),
+    });
+    await expect(store.put("small", new Uint8Array(0))).rejects.toThrow(
+      "S3 put timed out",
+    );
+    await expect(
+      store.put("big", new Uint8Array(1024 * 1024)),
+    ).resolves.toBeUndefined();
+  });
+
+  it("keeps the fixed messages of internal errors", async () => {
+    const noDate = new S3BlobStore(baseConfig, {
+      client: fakeClient({
+        list: async () => ({ contents: [{ key: "pre/fix/secret-name" }] }),
+      }),
+    });
+    const err = (await noDate
+      .list("")
+      [Symbol.asyncIterator]()
+      .next()
+      .catch((e: unknown) => e)) as Error;
+    expect(err.message).toBe("S3 list returned an object without a date");
+
+    const stuck = new S3BlobStore(baseConfig, {
+      client: fakeClient({
+        list: async () => ({ isTruncated: true, contents: [] }),
+      }),
+    });
+    await expect(stuck.list("")[Symbol.asyncIterator]().next()).rejects.toThrow(
+      "S3 list pagination did not advance",
+    );
+  });
+
+  it("never reports access denied as a missing key", async () => {
+    const denied = new S3BlobStore(baseConfig, {
+      client: fakeClient({
+        file: () => ({
+          exists: async () => {
+            throw new S3Error("AccessDenied");
+          },
+        }),
+      }),
+    });
+    await expect(denied.has("k")).rejects.toThrow(
+      "S3 has failed (S3Error [AccessDenied])",
+    );
+  });
+
   it("applies the shared key rules before any request", async () => {
     const store = new S3BlobStore(baseConfig, {
       client: fakeClient({
@@ -415,10 +484,20 @@ describe("s3ClientEndpoint", () => {
     expect(s3ClientEndpoint({ ...base, virtualHostedStyle: true })).toBe(
       "http://bkt.host:9000",
     );
+  });
+
+  it("always prepends the bucket, even when the host starts with it", () => {
     expect(
       s3ClientEndpoint({
         bucket: "bkt",
-        endpoint: "https://bkt.s3.eu-west-1.amazonaws.com",
+        endpoint: "https://bkt.example.net",
+        virtualHostedStyle: true,
+      }),
+    ).toBe("https://bkt.bkt.example.net");
+    expect(
+      s3ClientEndpoint({
+        bucket: "bkt",
+        endpoint: "https://s3.eu-west-1.amazonaws.com/",
         virtualHostedStyle: true,
       }),
     ).toBe("https://bkt.s3.eu-west-1.amazonaws.com");

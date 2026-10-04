@@ -2,6 +2,7 @@ import { describeError } from "$lib/server/errors";
 import {
   assertKey,
   assertPrefix,
+  compareKeys,
   type BlobInfo,
   type BlobStore,
 } from "./blob-store";
@@ -10,6 +11,28 @@ import type { S3StorageConfig } from "./config";
 const MAX_PAGE_SIZE = 1000;
 /** Bun's S3 client never gives up on an unreachable endpoint, so every call is bounded here. */
 export const S3_TIMEOUT_MS = 60_000;
+const PUT_MS_PER_MIB = 10_000;
+const PUT_TIMEOUT_CAP_MS = 15 * 60_000;
+
+/** The put timeout: the base plus 10 s per started MiB of body, capped at 15 minutes. */
+export function s3PutTimeoutMs(
+  bytes: number,
+  baseMs: number = S3_TIMEOUT_MS,
+): number {
+  const mib = Math.ceil(bytes / (1024 * 1024));
+  return Math.min(
+    Math.max(baseMs, PUT_TIMEOUT_CAP_MS),
+    baseMs + mib * PUT_MS_PER_MIB,
+  );
+}
+
+/** Thrown for failures Kept detects itself; the message is a fixed string with no keys or data. */
+class S3StoreError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "S3StoreError";
+  }
+}
 
 type ListedObject = { key: string; size?: number; lastModified?: unknown };
 
@@ -25,17 +48,15 @@ function isMissing(err: unknown): boolean {
 
 /**
  * The endpoint Bun needs. In virtual-hosted style Bun uses the endpoint host as given, so
- * the bucket is put in front of it unless the host already starts with it. Path-style
- * endpoints and the inferred AWS endpoint are passed through.
+ * the bucket is always put in front of it: `KEPT_S3_ENDPOINT` is the service endpoint
+ * without the bucket. Path-style endpoints and the inferred AWS endpoint are passed through.
  */
 export function s3ClientEndpoint(
   config: Pick<S3StorageConfig, "endpoint" | "bucket" | "virtualHostedStyle">,
 ): string | undefined {
   if (!config.endpoint || !config.virtualHostedStyle) return config.endpoint;
   const url = new URL(config.endpoint);
-  if (!url.hostname.startsWith(`${config.bucket}.`)) {
-    url.hostname = `${config.bucket}.${url.hostname}`;
-  }
+  url.hostname = `${config.bucket}.${url.hostname}`;
   return url.toString().replace(/\/+$/, "");
 }
 
@@ -74,12 +95,20 @@ export class S3BlobStore implements BlobStore {
       });
   }
 
-  private async run<T>(op: string, work: () => Promise<T>): Promise<T> {
+  /**
+   * A timed-out request is not cancelled and may still complete. That is harmless: keys
+   * are fresh ids, or the same bytes when a file is stored twice.
+   */
+  private async run<T>(
+    op: string,
+    work: () => Promise<T>,
+    timeoutMs: number = this.timeoutMs,
+  ): Promise<T> {
     let timer: ReturnType<typeof setTimeout> | undefined;
     const timeout = new Promise<never>((_, reject) => {
       timer = setTimeout(
-        () => reject(new Error(`S3 ${op} timed out`)),
-        this.timeoutMs,
+        () => reject(new S3StoreError(`S3 ${op} timed out`)),
+        timeoutMs,
       );
     });
     try {
@@ -90,9 +119,7 @@ export class S3BlobStore implements BlobStore {
   }
 
   private fail(op: string, err: unknown): Error {
-    if (err instanceof Error && err.message === `S3 ${op} timed out`) {
-      return err;
-    }
+    if (err instanceof S3StoreError) return err;
     return new Error(`S3 ${op} failed (${describeError(err)})`);
   }
 
@@ -103,16 +130,23 @@ export class S3BlobStore implements BlobStore {
   ): Promise<void> {
     assertKey(key);
     try {
-      await this.run("put", () =>
-        this.client.file(this.keyPrefix + key).write(bytes, {
-          type: contentType ?? "application/octet-stream",
-        }),
+      await this.run(
+        "put",
+        () =>
+          this.client.file(this.keyPrefix + key).write(bytes, {
+            type: contentType ?? "application/octet-stream",
+          }),
+        s3PutTimeoutMs(bytes.byteLength, this.timeoutMs),
       );
     } catch (err) {
       throw this.fail("put", err);
     }
   }
 
+  /**
+   * Only NoSuchKey/NotFound mean "missing". AccessDenied (S3 answers 403 instead of 404 for
+   * a missing key when the credentials lack `s3:ListBucket`) is an error, never `null`.
+   */
   async get(key: string): Promise<Uint8Array | null> {
     assertKey(key);
     try {
@@ -126,6 +160,7 @@ export class S3BlobStore implements BlobStore {
     }
   }
 
+  /** Like `get`: an access denied answer is an error, not `false`. */
   async has(key: string): Promise<boolean> {
     assertKey(key);
     try {
@@ -170,7 +205,7 @@ export class S3BlobStore implements BlobStore {
           if (object.key.endsWith("/")) continue;
           const modifiedAt = Date.parse(String(object.lastModified));
           if (Number.isNaN(modifiedAt)) {
-            throw new Error("S3 list returned an object without a date");
+            throw new S3StoreError("S3 list returned an object without a date");
           }
           found.push({
             key: object.key.slice(this.keyPrefix.length),
@@ -181,14 +216,14 @@ export class S3BlobStore implements BlobStore {
         const last = contents.at(-1)?.key;
         if (!page.isTruncated) break;
         if (last === undefined || last === startAfter) {
-          throw new Error("S3 list pagination did not advance");
+          throw new S3StoreError("S3 list pagination did not advance");
         }
         startAfter = last;
       }
     } catch (err) {
       throw this.fail("list", err);
     }
-    found.sort((a, b) => (a.key < b.key ? -1 : a.key > b.key ? 1 : 0));
+    found.sort((a, b) => compareKeys(a.key, b.key));
     yield* found;
   }
 }

@@ -58,6 +58,28 @@ describe("readStorageConfig", () => {
     );
   });
 
+  it("ignores malformed S3 variables unless KEPT_STORAGE is s3", () => {
+    const stale = {
+      KEPT_S3_ENDPOINT: "not a url",
+      KEPT_S3_PREFIX: "../x",
+      KEPT_S3_VIRTUAL_HOSTED_STYLE: "maybe",
+      KEPT_S3_REGION: "  ",
+    };
+    expect(
+      readStorageConfig({ ...stale, KEPT_STORAGE_DIR: "/srv/blobs" }),
+    ).toEqual({ kind: "fs", dir: "/srv/blobs" });
+    expect(
+      readStorageConfig({
+        ...stale,
+        KEPT_STORAGE: "fs",
+        KEPT_STORAGE_DIR: "/srv/blobs",
+      }).kind,
+    ).toBe("fs");
+    expect(() => readStorageConfig({ ...stale, KEPT_STORAGE: "s3" })).toThrow(
+      /KEPT_S3_ENDPOINT/,
+    );
+  });
+
   describe("s3", () => {
     const base = {
       KEPT_STORAGE: "s3",

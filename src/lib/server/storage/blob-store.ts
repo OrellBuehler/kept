@@ -16,8 +16,13 @@ export interface BlobStore {
   has(key: string): Promise<boolean>;
   /** Removing a key that does not exist is not an error. */
   delete(key: string): Promise<void>;
-  /** Every blob whose key starts with `prefix`, sorted by key. */
+  /** Every blob whose key starts with `prefix`, sorted by the UTF-8 bytes of the key (`compareKeys`). */
   list(prefix: string): AsyncIterable<BlobInfo>;
+}
+
+/** Orders keys by their UTF-8 bytes, as S3 lists them (not by UTF-16 code units). */
+export function compareKeys(a: string, b: string): number {
+  return Buffer.compare(Buffer.from(a, "utf8"), Buffer.from(b, "utf8"));
 }
 
 /** Rejects keys that could leave the store: absolute, empty or dot segments, backslashes, NUL. */

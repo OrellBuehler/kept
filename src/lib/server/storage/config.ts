@@ -20,17 +20,22 @@ const s3KeyPrefix = z
 const s3Endpoint = z
   .url({ protocol: /^https?$/ })
   .refine((v) => {
+    if (!URL.canParse(v)) return true;
     const u = new URL(v);
     return !u.username && !u.password;
   }, "must not contain credentials")
   .refine((v) => {
+    if (!URL.canParse(v)) return true;
     const u = new URL(v);
     return u.search === "" && u.hash === "";
   }, "must not contain a query or fragment");
 
-const configSchema = z.object({
+const baseSchema = z.object({
   KEPT_STORAGE: z.enum(["fs", "s3"]).default("fs"),
   KEPT_STORAGE_DIR: z.string().trim().min(1).optional(),
+});
+
+const s3Schema = z.object({
   KEPT_S3_BUCKET: z.string().trim().min(1).optional(),
   KEPT_S3_ENDPOINT: s3Endpoint.optional(),
   KEPT_S3_REGION: z.string().trim().min(1).default("us-east-1"),
@@ -90,16 +95,16 @@ export function readStorageConfig(
 ): StorageConfig {
   const raw: Record<string, string | undefined> = {};
   for (const key of ENV_KEYS) raw[key] = env[key] || undefined;
-  const parsed = configSchema.safeParse(raw);
-  if (!parsed.success) {
-    throw invalid(
-      parsed.error.issues
-        .map((i) => `${i.path.join(".")}: ${i.message}`)
-        .join("; "),
-    );
-  }
-  const c = parsed.data;
-  if (c.KEPT_STORAGE === "s3") {
+  const describeIssues = (error: z.ZodError) =>
+    error.issues.map((i) => `${i.path.join(".")}: ${i.message}`).join("; ");
+  const parsedBase = baseSchema.safeParse(raw);
+  if (!parsedBase.success) throw invalid(describeIssues(parsedBase.error));
+  const base = parsedBase.data;
+  // Stale KEPT_S3_* variables must not stop a local-files install from starting.
+  if (base.KEPT_STORAGE === "s3") {
+    const parsedS3 = s3Schema.safeParse(raw);
+    if (!parsedS3.success) throw invalid(describeIssues(parsedS3.error));
+    const c = parsedS3.data;
     const missing = (
       [
         ["KEPT_S3_BUCKET", c.KEPT_S3_BUCKET],
@@ -121,7 +126,7 @@ export function readStorageConfig(
       virtualHostedStyle: c.KEPT_S3_VIRTUAL_HOSTED_STYLE === "true",
     };
   }
-  const parsedDir = c.KEPT_STORAGE_DIR;
+  const parsedDir = base.KEPT_STORAGE_DIR;
   if (parsedDir) {
     return { kind: "fs", dir: resolve(parsedDir) };
   }

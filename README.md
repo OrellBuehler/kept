@@ -90,21 +90,30 @@ the watch folder and scheduled backups are always local.
 
 Invalid or missing values stop Kept at startup with a message that names the variable, never its value.
 Kept does not contact the bucket at startup; a wrong endpoint or credentials show up as errors when a file
-is first stored or opened (requests give up after 60 seconds).
+is first stored or opened (requests give up after 60 seconds, uploads get 10 more seconds per MiB, up to 15 minutes).
 
 **Path-style or virtual-hosted.** Path-style puts the bucket in the URL path (`http://host:9000/bucket/key`)
 and is the default because MinIO, Garage and SeaweedFS use it. AWS S3 and Cloudflare R2 use virtual-hosted
-style (`https://bucket.host/key`): set `KEPT_S3_VIRTUAL_HOSTED_STYLE=true`. Kept puts the bucket in front of
-`KEPT_S3_ENDPOINT` for you, or infers the AWS endpoint from the region when no endpoint is set.
+style (`https://bucket.host/key`): set `KEPT_S3_VIRTUAL_HOSTED_STYLE=true`. `KEPT_S3_ENDPOINT` is always the service endpoint without the bucket
+(`https://s3.eu-west-1.amazonaws.com`); Kept always puts `bucket.` in front of its host, or infers the AWS
+endpoint from the region when no endpoint is set.
 
 **Permissions.** The credentials need only these actions, and only for the bucket and the prefix:
-`s3:GetObject`, `s3:PutObject` and `s3:DeleteObject` on `arn:aws:s3:::BUCKET/PREFIX/*`, and `s3:ListBucket`
-on `arn:aws:s3:::BUCKET` (with the condition `s3:prefix` equal to `PREFIX/*`). Leave the bucket private; files are
-only ever served through Kept's own access checks, never by public or presigned URLs.
+`s3:GetObject`, `s3:PutObject` and `s3:DeleteObject` on `arn:aws:s3:::BUCKET/PREFIX/*`, plus
+`s3:AbortMultipartUpload` and `s3:ListMultipartUploadParts` on the same resource. Bun uploads bodies larger than
+its part size (5 MiB by default) as multipart uploads and aborts them on failure, so large files may need
+these two. Also grant `s3:ListBucket` on `arn:aws:s3:::BUCKET`, which Kept uses to list files.
+
+Recommended: give `s3:ListBucket` on the bucket **without a condition**. AWS decides between a 404 and a 403
+for a missing key by checking `s3:ListBucket`, and that check carries no prefix context, so a prefix condition
+can turn "file not found" into "access denied". You can restrict listing with a `StringLike` condition on
+`s3:prefix` (`PREFIX/*`, not "equal"), but then a missing file surfaces as an error (`S3 get failed
+(... [AccessDenied])`) instead of "no file". Kept never treats a 403 as "missing". Leave the bucket private;
+files are only ever served through Kept's own access checks, never by public or presigned URLs.
 
 **Existing files are not migrated.** Switching a running install from local files to S3 does not copy
 `documents/`: bills uploaded before the switch will show no file until you copy the folder into the bucket
-under the same keys (for example `aws s3 sync /data/documents s3://BUCKET/PREFIX/documents`) yourself.
+under the same keys (for example `aws s3 sync /data/documents s3://BUCKET/PREFIX/documents`; omit `PREFIX/` if unset) yourself.
 Back up the bucket with your storage provider; Kept's backups cover the database only.
 
 ### Watch-folder import

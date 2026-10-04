@@ -13,6 +13,7 @@ import { describeError } from "$lib/server/errors";
 import {
   assertKey,
   assertPrefix,
+  compareKeys,
   type BlobInfo,
   type BlobStore,
 } from "./blob-store";
@@ -104,7 +105,7 @@ export class FsBlobStore implements BlobStore {
     const start = dirKey === "" ? this.root : this.path(dirKey);
     const found: BlobInfo[] = [];
     await this.walk(start, dirKey === "" ? "" : `${dirKey}/`, prefix, found);
-    found.sort((a, b) => (a.key < b.key ? -1 : a.key > b.key ? 1 : 0));
+    found.sort((a, b) => compareKeys(a.key, b.key));
     yield* found;
   }
 

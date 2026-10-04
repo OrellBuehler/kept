@@ -124,9 +124,20 @@ jobs:
         env:
           AWS_DEFAULT_REGION: us-east-1
         run: |
-          AWS_ACCESS_KEY_ID="$KEPT_TEST_S3_ACCESS_KEY_ID" \
-          AWS_SECRET_ACCESS_KEY="$KEPT_TEST_S3_SECRET_ACCESS_KEY" \
-            aws --endpoint-url "$KEPT_TEST_S3_ENDPOINT" s3 mb "s3://$KEPT_TEST_S3_BUCKET"
+          if ! command -v aws >/dev/null; then
+            echo "the aws CLI is not installed on this runner" >&2
+            exit 1
+          fi
+          export AWS_ACCESS_KEY_ID="$KEPT_TEST_S3_ACCESS_KEY_ID"
+          export AWS_SECRET_ACCESS_KEY="$KEPT_TEST_S3_SECRET_ACCESS_KEY"
+          for attempt in 1 2 3 4 5; do
+            if aws --endpoint-url "$KEPT_TEST_S3_ENDPOINT" s3 mb "s3://$KEPT_TEST_S3_BUCKET"; then exit 0; fi
+            echo "bucket creation failed (attempt $attempt), retrying" >&2
+            sleep 3
+          done
+          echo "could not create the bucket" >&2
+          docker logs s3 | tail -n 30
+          exit 1
 
       - name: S3 storage tests
         run: bun run test src/lib/server/storage/s3.test.ts --reporter=verbose
