@@ -93,7 +93,7 @@ describe("market data scheduler", () => {
     await runRefresh();
 
     expect(calls).toBe(2);
-    expect(getMarketDataSettings(first.user.id).lastError).toMatch(/boom/);
+    expect(getMarketDataSettings(first.user.id).lastError).toBe("A.SW: Error");
     expect(listPrices(second.user.id, second.security.id)).toHaveLength(1);
   });
 

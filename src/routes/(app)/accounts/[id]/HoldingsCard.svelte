@@ -11,6 +11,7 @@
   import {
     PRICE_SOURCE_LABELS,
     TRADE_SIDE_LABELS,
+    splitTerms,
   } from "$lib/investment-labels";
   import { formatFixed } from "$lib/quantity";
   import ChartLineIcon from "@lucide/svelte/icons/chart-line";
@@ -64,12 +65,16 @@
     if (!deleting) return "";
     const what =
       deleting.side === "split"
-        ? `The split (ratio ${qty(deleting.quantity)}) of ${deleting.securityName}`
+        ? `The split (${ratio(deleting)}) of ${deleting.securityName}`
         : `The ${deleting.side === "sell" ? "sale" : "purchase"} of ${qty(deleting.quantity)} × ${deleting.securityName}`;
     return `${what} on ${prefs.date(deleting.date)} will be removed and the holdings recalculated. Your transactions are not affected.`;
   });
   const qty = (v: Parameters<typeof formatFixed>[0]) =>
     formatFixed(v, prefs.locale);
+  const ratio = (t: Trade) => {
+    const terms = splitTerms(t);
+    return terms ? `${terms.new} : ${terms.old}` : `×${qty(t.quantity)}`;
+  };
   const unit = (v: Parameters<typeof formatFixed>[0]) =>
     formatFixed(v, prefs.locale, 2);
 </script>
@@ -250,7 +255,7 @@
                     <div class="text-muted-foreground text-xs sm:hidden">
                       {prefs.date(t.date)} ·
                       {#if t.side === "split"}
-                        ratio {qty(t.quantity)}
+                        split {ratio(t)}
                       {:else}
                         {qty(t.quantity)} × {unit(t.price)}
                         {t.securityCurrency}
@@ -260,7 +265,11 @@
                   <Table.Cell
                     class="hidden text-end tabular-nums sm:table-cell"
                   >
-                    {t.side === "split" ? "×" : ""}{qty(t.quantity)}
+                    {#if t.side === "split"}
+                      {ratio(t)}
+                    {:else}
+                      {qty(t.quantity)}
+                    {/if}
                   </Table.Cell>
                   <Table.Cell
                     class="hidden text-end whitespace-nowrap tabular-nums md:table-cell"

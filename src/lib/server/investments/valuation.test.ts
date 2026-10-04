@@ -455,7 +455,12 @@ describe("stock splits", () => {
       input({
         trades: [buy10, split("2024-06-01", "2")],
         prices: [
-          { securityId: "s1", date: "2024-05-20", price: f("130") },
+          {
+            securityId: "s1",
+            date: "2024-05-20",
+            price: f("130"),
+            source: "manual",
+          },
           { securityId: "s1", date: "2024-06-10", price: f("70") },
         ],
       }),
@@ -464,7 +469,7 @@ describe("stock splits", () => {
       price: f("130"),
       value: 130000,
     });
-    // the 130 quote predates the split: fall back to the adjusted trade price
+    // the manual 130 predates the split: fall back to the adjusted trade price
     expect(at("2024-06-05").positions[0]).toMatchObject({
       price: f("50"),
       priceSource: "trade",
@@ -561,6 +566,220 @@ describe("stock splits", () => {
       at("2024-06-01").positions.map((p) => [p.securityId, p.quantity]),
     );
     expect(quantities).toEqual({ s1: f("20"), s3: f("10") });
+  });
+});
+
+describe("splits and split-adjusted provider prices", () => {
+  const split = (date: string, ratio: string, over = {}): HoldingTrade =>
+    trade({
+      date,
+      side: "split",
+      quantity: f(ratio),
+      price: f("0"),
+      amount: 0,
+      ...over,
+    });
+  const buy10 = trade({ date: "2024-01-01", amount: 100000 });
+  const provider = (date: string, price: string) => ({
+    securityId: "s1",
+    date,
+    price: f(price),
+    source: "provider",
+  });
+  const manual = (date: string, price: string) => ({
+    securityId: "s1",
+    date,
+    price: f(price),
+    source: "manual",
+  });
+
+  it("values pre-split dates at quantity times the later splits times the adjusted quote", () => {
+    const at = makeHoldingsValueAt(
+      input({
+        trades: [buy10, split("2024-06-01", "2")],
+        // adjusted for the 2:1 split: the 260 quoted on the day is stored as 130
+        prices: [provider("2024-05-20", "130"), provider("2024-06-10", "70")],
+      }),
+    );
+    expect(at("2024-05-25").positions[0]).toMatchObject({
+      quantity: f("10"),
+      price: f("130"),
+      priceSource: "provider",
+      value: 260000,
+    });
+    // after the split the old (adjusted) quote still applies to the new quantity
+    expect(at("2024-06-05").positions[0]).toMatchObject({
+      quantity: f("20"),
+      price: f("130"),
+      priceSource: "provider",
+      value: 260000,
+    });
+    expect(at("2024-06-10").positions[0]!.value).toBe(140000);
+  });
+
+  it("keeps manual and trade prices as recorded across a split", () => {
+    const at = makeHoldingsValueAt(
+      input({
+        trades: [buy10, split("2024-06-01", "2")],
+        prices: [manual("2024-05-20", "260")],
+      }),
+    );
+    expect(at("2024-05-25").positions[0]).toMatchObject({
+      quantity: f("10"),
+      priceSource: "manual",
+      value: 260000,
+    });
+    // before any quote the trade price applies, unadjusted
+    expect(at("2024-01-15").positions[0]).toMatchObject({
+      priceSource: "trade",
+      value: 100000,
+    });
+  });
+
+  it("mixes provider and manual prices by date", () => {
+    const at = makeHoldingsValueAt(
+      input({
+        trades: [buy10, split("2024-06-01", "2")],
+        prices: [
+          provider("2024-03-01", "60"),
+          manual("2024-04-01", "130"),
+          provider("2024-05-01", "70"),
+        ],
+      }),
+    );
+    expect(at("2024-03-15").positions[0]!.value).toBe(120000);
+    expect(at("2024-04-15").positions[0]!.value).toBe(130000);
+    expect(at("2024-05-15").positions[0]!.value).toBe(140000);
+  });
+
+  it("lets a manual price win over a provider one on the same date", () => {
+    const at = makeHoldingsValueAt(
+      input({
+        trades: [buy10, split("2024-06-01", "2")],
+        prices: [provider("2024-05-20", "130"), manual("2024-05-20", "250")],
+      }),
+    );
+    expect(at("2024-05-25").positions[0]).toMatchObject({
+      priceSource: "manual",
+      value: 250000,
+    });
+  });
+
+  it("compounds several later splits and handles a reverse split", () => {
+    const at = makeHoldingsValueAt(
+      input({
+        trades: [buy10, split("2024-03-01", "2"), split("2024-06-01", "3")],
+        prices: [provider("2024-01-15", "10")],
+      }),
+    );
+    expect(at("2024-02-01").positions[0]!.value).toBe(10 * 6 * 10 * 100);
+    expect(at("2024-04-01").positions[0]!.value).toBe(20 * 3 * 10 * 100);
+    expect(at("2024-06-01").positions[0]!.value).toBe(60 * 10 * 100);
+
+    const reverse = makeHoldingsValueAt(
+      input({
+        trades: [
+          trade({
+            date: "2024-01-01",
+            quantity: f("100"),
+            price: f("10"),
+            amount: 100000,
+          }),
+          split("2024-06-01", "0.1", { splitNew: 1, splitOld: 10 }),
+        ],
+        prices: [provider("2024-05-20", "100")],
+      }),
+    );
+    expect(reverse("2024-05-25").positions[0]).toMatchObject({
+      quantity: f("100"),
+      value: 100000,
+    });
+    expect(reverse("2024-06-01").positions[0]).toMatchObject({
+      quantity: f("10"),
+      value: 100000,
+    });
+  });
+
+  it("does not adjust a quote for a split on or before its own valuation date", () => {
+    const at = makeHoldingsValueAt(
+      input({
+        trades: [buy10, split("2024-06-01", "2")],
+        prices: [provider("2024-06-01", "70")],
+      }),
+    );
+    expect(at("2024-06-01").positions[0]!.value).toBe(140000);
+  });
+
+  it("still prefers a newer trade over an older provider quote", () => {
+    const at = makeHoldingsValueAt(
+      input({
+        trades: [
+          buy10,
+          split("2024-06-01", "2"),
+          trade({
+            date: "2024-07-01",
+            quantity: f("1"),
+            price: f("80"),
+            amount: 8000,
+          }),
+        ],
+        prices: [provider("2024-05-20", "130")],
+      }),
+    );
+    expect(at("2024-07-01").positions[0]).toMatchObject({
+      priceSource: "trade",
+      price: f("80"),
+    });
+  });
+
+  it("applies an exact reverse split with integer math", () => {
+    const three = trade({
+      date: "2024-01-01",
+      quantity: f("3"),
+      price: f("10"),
+      amount: 3000,
+    });
+    const reverse = split("2024-06-01", "0.33333333", {
+      splitNew: 1,
+      splitOld: 3,
+    });
+    const at = makeHoldingsValueAt(input({ trades: [three, reverse] }));
+    expect(at("2024-06-01").positions[0]).toMatchObject({
+      quantity: f("1"),
+      price: f("30"),
+      cost: 3000,
+    });
+    const sell = {
+      date: "2024-07-01",
+      side: "sell" as const,
+      quantity: f("1"),
+    };
+    expect(firstOversell([three, reverse, sell])).toBeNull();
+    expect(heldQuantity([three, reverse, sell])).toBe(0);
+    expect(
+      firstOversell([three, reverse, { ...sell, quantity: f("1.00000001") }]),
+    ).toBe("2024-07-01");
+  });
+
+  it("rounds a split of an uneven quantity half away from zero at 1e-8", () => {
+    const seven = trade({
+      date: "2024-01-01",
+      quantity: f("7"),
+      price: f("10"),
+      amount: 7000,
+    });
+    expect(
+      heldQuantity([
+        seven,
+        split("2024-06-01", "0.33333333", { splitNew: 1, splitOld: 3 }),
+      ]),
+    ).toBe(f("2.33333333"));
+    expect(
+      heldQuantity([
+        { ...seven, quantity: f("5") },
+        split("2024-06-01", "0.66666667", { splitNew: 2, splitOld: 3 }),
+      ]),
+    ).toBe(f("3.33333333"));
   });
 });
 

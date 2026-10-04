@@ -14,6 +14,7 @@ import {
   getQuoteProvider,
   listMarketDataUserIds,
   listPrices,
+  QuoteProviderError,
   refreshPrices,
   setMarketDataEnabled,
   setQuoteProvider,
@@ -146,6 +147,30 @@ describe("refreshPrices", () => {
     expect(calls.history).toEqual([["AAA.SW", "2024-01-25", "2024-02-01"]]);
   });
 
+  it("refetches the whole range after a split is recorded", async () => {
+    const { user, account, security } = await setup();
+    seedProviderPrice(user.id, security.id, "2024-01-10", "99");
+    seedProviderPrice(user.id, security.id, "2024-01-25", "100");
+    seedTrade(user.id, account.id, security.id, {
+      date: "2024-01-20",
+      side: "split",
+      price: "0",
+      amount: 0,
+      split: { new: 2, old: 1 },
+    });
+    const { provider, calls } = fakeProvider();
+    setQuoteProvider(provider);
+    await refreshPrices(user.id, "2024-02-01");
+    expect(calls.history).toEqual([["AAA.SW", "2024-01-10", "2024-02-01"]]);
+    // the old, unadjusted quotes are gone; the refetched ones replaced them
+    expect(
+      listPrices(user.id, security.id).map((p) => [p.date, p.price]),
+    ).toEqual([
+      ["2024-02-01", parseFixed("101")],
+      ["2024-01-10", parseFixed("100")],
+    ]);
+  });
+
   it("refetches from the first trade when the history starts much later", async () => {
     const { user, security } = await setup();
     seedProviderPrice(user.id, security.id, "2024-01-25", "100");
@@ -257,7 +282,7 @@ describe("refreshPrices", () => {
     });
     const { provider } = fakeProvider({
       async history(symbol, from, to) {
-        if (symbol === "AAA.SW") throw new Error("HTTP 503");
+        if (symbol === "AAA.SW") throw new QuoteProviderError("HTTP 503");
         return {
           currency: "CHF",
           points: [{ date: to, price: parseFixed("5") }],
@@ -275,12 +300,37 @@ describe("refreshPrices", () => {
     expect(getMarketDataSettings(user.id).lastRunAt).not.toBeNull();
   });
 
+  it("never stores the message of an unexpected error", async () => {
+    const { user } = await setup();
+    setQuoteProvider(
+      fakeProvider({
+        async history() {
+          throw Object.assign(
+            new Error("insert into trades (note) values (?) -- secret note"),
+            { name: "DrizzleQueryError", params: ["secret note"] },
+          );
+        },
+        async fx() {
+          throw new Error("secret fx failure");
+        },
+      }).provider,
+    );
+    const result = await refreshPrices(user.id, "2024-02-01");
+    const stored = getMarketDataSettings(user.id).lastError ?? "";
+    expect(result.errors.length).toBeGreaterThan(0);
+    for (const text of [stored, ...result.errors]) {
+      expect(text).not.toContain("secret");
+      expect(text).not.toContain("insert into");
+    }
+    expect(stored).toContain("AAA.SW: DrizzleQueryError");
+  });
+
   it("clears the last error after a clean run", async () => {
     const { user } = await setup();
     setQuoteProvider(
       fakeProvider({
         async history() {
-          throw new Error("boom");
+          throw new QuoteProviderError("boom");
         },
       }).provider,
     );

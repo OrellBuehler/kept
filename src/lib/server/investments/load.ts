@@ -40,6 +40,8 @@ export function loadHoldingsInputs(
       date: trades.date,
       side: trades.side,
       quantity: trades.quantity,
+      splitNew: trades.splitNew,
+      splitOld: trades.splitOld,
       price: trades.price,
       amount: trades.amount,
     })
@@ -132,6 +134,8 @@ export function loadHoldingsInputs(
         date: r.date,
         side: r.side,
         quantity: r.quantity,
+        splitNew: r.splitNew,
+        splitOld: r.splitOld,
         price: r.price,
         amount: r.amount,
       })),
@@ -168,6 +172,8 @@ export function latestHoldingsActivity(
       date: trades.date,
       side: trades.side,
       quantity: trades.quantity,
+      splitNew: trades.splitNew,
+      splitOld: trades.splitOld,
     })
     .from(trades)
     .where(

@@ -1,11 +1,21 @@
-import { and, desc, eq } from "drizzle-orm";
+import { and, desc, eq, inArray } from "drizzle-orm";
 import type { TradeSide } from "$lib/investment-types";
 import type { Minor } from "$lib/money";
 import type { Fixed8 } from "$lib/quantity";
-import { accounts, getDB, securities, trades } from "$lib/server/db";
+import {
+  accounts,
+  getDB,
+  securities,
+  securityPrices,
+  trades,
+} from "$lib/server/db";
 import { LedgerError, notFound } from "$lib/server/ledger/errors";
 import type { TradeInput } from "./schemas";
-import { firstEmptySplit, firstOversell } from "./valuation";
+import {
+  firstEmptySplit,
+  firstOversell,
+  type SequenceTrade,
+} from "./valuation";
 
 export interface TradeView {
   id: string;
@@ -15,7 +25,11 @@ export interface TradeView {
   securityCurrency: string;
   date: string;
   side: TradeSide;
+  /** For a split, the ratio of new to old shares (an approximation when `splitNew` is set). */
   quantity: Fixed8;
+  /** Split only: the exact integer ratio `splitNew : splitOld`, when it was entered that way. */
+  splitNew: number | null;
+  splitOld: number | null;
   /** Per unit, in the security's currency. */
   price: Fixed8;
   /** Account currency. */
@@ -34,6 +48,8 @@ const columns = {
   date: trades.date,
   side: trades.side,
   quantity: trades.quantity,
+  splitNew: trades.splitNew,
+  splitOld: trades.splitOld,
   price: trades.price,
   fees: trades.fees,
   amount: trades.amount,
@@ -87,7 +103,7 @@ interface SequenceChange {
   /** Existing trade that is replaced or removed. */
   excludeId?: string;
   /** Trade that is added or replaces `excludeId`. */
-  add?: { date: string; side: TradeSide; quantity: number };
+  add?: SequenceTrade;
 }
 
 /** Rejects a change after which the held quantity is negative on any date. */
@@ -98,6 +114,8 @@ function assertSequence(userId: string, change: SequenceChange) {
       date: trades.date,
       side: trades.side,
       quantity: trades.quantity,
+      splitNew: trades.splitNew,
+      splitOld: trades.splitOld,
     })
     .from(trades)
     .where(
@@ -109,7 +127,7 @@ function assertSequence(userId: string, change: SequenceChange) {
     )
     .all()
     .filter((t) => t.id !== change.excludeId);
-  const sequence: { date: string; side: TradeSide; quantity: number }[] = rows;
+  const sequence: SequenceTrade[] = rows;
   if (change.add) sequence.push(change.add);
   const field = change.add ? "quantity" : undefined;
   let date: string | null;
@@ -141,6 +159,24 @@ function assertSequence(userId: string, change: SequenceChange) {
   }
 }
 
+/**
+ * Provider prices are split-adjusted when they are fetched (see valuation.ts), so any change to
+ * a security's splits leaves the stored ones in the wrong units. Dropping them makes the next
+ * market data refresh backfill the whole range from the first trade.
+ */
+function discardProviderPrices(userId: string, securityIds: string[]) {
+  getDB()
+    .delete(securityPrices)
+    .where(
+      and(
+        eq(securityPrices.userId, userId),
+        eq(securityPrices.source, "provider"),
+        inArray(securityPrices.securityId, securityIds),
+      ),
+    )
+    .run();
+}
+
 export function createTrade(
   userId: string,
   accountId: string,
@@ -158,6 +194,7 @@ export function createTrade(
     .values({ ...input, userId, accountId })
     .returning({ id: trades.id })
     .get();
+  if (input.side === "split") discardProviderPrices(userId, [input.securityId]);
   return getTrade(userId, row.id);
 }
 
@@ -189,9 +226,13 @@ export function updateTrade(
   }
   getDB()
     .update(trades)
-    .set(input)
+    .set({ splitNew: null, splitOld: null, ...input })
     .where(and(eq(trades.userId, userId), eq(trades.id, id)))
     .run();
+  if (current.side === "split") {
+    discardProviderPrices(userId, [current.securityId]);
+  }
+  if (input.side === "split") discardProviderPrices(userId, [input.securityId]);
   return getTrade(userId, id);
 }
 
@@ -206,4 +247,7 @@ export function deleteTrade(userId: string, id: string): void {
     .delete(trades)
     .where(and(eq(trades.userId, userId), eq(trades.id, id)))
     .run();
+  if (current.side === "split") {
+    discardProviderPrices(userId, [current.securityId]);
+  }
 }

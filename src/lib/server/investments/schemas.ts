@@ -1,7 +1,7 @@
 import { z } from "zod";
-import { SECURITY_KINDS } from "$lib/investment-types";
-import { minor } from "$lib/money";
-import { fixed, parseFixed } from "$lib/quantity";
+import { SECURITY_KINDS, type TradeSide } from "$lib/investment-types";
+import { minor, type Minor } from "$lib/money";
+import { fixed, parseFixed, scaleFixed, type Fixed8 } from "$lib/quantity";
 import {
   amountField,
   currencySchema,
@@ -106,9 +106,52 @@ export type SecurityInput = z.output<typeof securityInputSchema>;
 
 // --- trades ---------------------------------------------------------------
 
+export interface TradeFields {
+  securityId: string;
+  date: string;
+  note: string | null;
+  side: TradeSide;
+  quantity: Fixed8;
+  price: Fixed8;
+  fees: Minor;
+  amount: Minor;
+  /** Split only: the exact integer ratio; absent or null for a buy, a sell or a plain-ratio split. */
+  splitNew?: number | null;
+  splitOld?: number | null;
+}
+
+/** Largest number in a split ratio; keeps the ratio's Fixed8 approximation above zero. */
+export const MAX_SPLIT_TERM = 1_000_000;
+
+function splitTerm(
+  raw: string | undefined,
+  field: "splitNew" | "splitOld",
+  label: string,
+  ctx: z.RefinementCtx,
+): number | null {
+  const text = (raw ?? "").trim();
+  if (
+    !/^\d+$/.test(text) ||
+    Number(text) < 1 ||
+    Number(text) > MAX_SPLIT_TERM
+  ) {
+    ctx.issues.push({
+      code: "custom",
+      message: `Enter ${label} as a whole number from 1 to ${MAX_SPLIT_TERM.toLocaleString("en")}.`,
+      input: raw,
+      path: [field],
+    });
+    return null;
+  }
+  return Number(text);
+}
+
 /**
  * `fees` and `amount` are in the account's currency; `price` in the security's.
- * A split carries only its ratio (in `quantity`): price, fees and amount are 0.
+ * A split carries only its ratio: price, fees and amount are 0. The ratio is entered as
+ * whole numbers `splitNew : splitOld` (2:1 split, 1:3 reverse split), stored exactly and
+ * mirrored into `quantity` as a Fixed8 approximation. A bare `quantity` ratio is still
+ * accepted and stored without the exact terms.
  */
 export function tradeInputSchema(accountCurrency: string) {
   const common = {
@@ -146,17 +189,66 @@ export function tradeInputSchema(accountCurrency: string) {
   const split = z.object({
     ...common,
     side: z.literal("split"),
-    quantity: positiveFixedField("Split ratio"),
+    splitNew: z.string().optional(),
+    splitOld: z.string().optional(),
+    quantity: z.string().optional(),
   });
+  const ratio = positiveFixedField("Split ratio");
   return z
     .discriminatedUnion("side", [cash, split], {
       error: "Choose buy, sell or split.",
     })
-    .transform((v) =>
-      v.side === "split"
-        ? { ...v, price: fixed(0), fees: minor(0), amount: minor(0) }
-        : v,
-    );
+    .transform((v, ctx): TradeFields => {
+      if (v.side !== "split") {
+        return { ...v, splitNew: null, splitOld: null };
+      }
+      const zero = { price: fixed(0), fees: minor(0), amount: minor(0) };
+      const {
+        splitNew: rawNew,
+        splitOld: rawOld,
+        quantity: rawQuantity,
+        ...rest
+      } = v;
+      if ((rawNew ?? "").trim() !== "" || (rawOld ?? "").trim() !== "") {
+        const splitNew = splitTerm(
+          rawNew,
+          "splitNew",
+          "the new share count",
+          ctx,
+        );
+        const splitOld = splitTerm(
+          rawOld,
+          "splitOld",
+          "the old share count",
+          ctx,
+        );
+        if (splitNew === null || splitOld === null) return z.NEVER;
+        return {
+          ...rest,
+          ...zero,
+          quantity: scaleFixed(fixed(100_000_000), splitNew, splitOld),
+          splitNew,
+          splitOld,
+        };
+      }
+      const parsed = ratio.safeParse(rawQuantity ?? "");
+      if (!parsed.success) {
+        ctx.issues.push({
+          code: "custom",
+          message: "Enter the split as new : old, e.g. 2 : 1.",
+          input: rawQuantity,
+          path: ["splitNew"],
+        });
+        return z.NEVER;
+      }
+      return {
+        ...rest,
+        ...zero,
+        quantity: parsed.data,
+        splitNew: null,
+        splitOld: null,
+      };
+    });
 }
 export type TradeInput = z.output<ReturnType<typeof tradeInputSchema>>;
 

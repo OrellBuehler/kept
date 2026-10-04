@@ -10,6 +10,7 @@ import {
   invertFixed,
   parseFixed,
   proportionOf,
+  scaleFixed,
   valueOf,
 } from "./quantity";
 
@@ -185,6 +186,29 @@ describe("proportionOf", () => {
       -67,
     );
     expect(() => proportionOf(minor(1), parseFixed("1"), fixed(0))).toThrow(
+      RangeError,
+    );
+  });
+});
+
+describe("scaleFixed", () => {
+  it("applies an integer ratio exactly", () => {
+    expect(scaleFixed(parseFixed("3"), 1, 3)).toBe(parseFixed("1"));
+    expect(scaleFixed(parseFixed("10"), 2n, 1n)).toBe(parseFixed("20"));
+    expect(scaleFixed(parseFixed("7"), 1, 3)).toBe(parseFixed("2.33333333"));
+  });
+
+  it("rounds half away from zero at 1e-8", () => {
+    expect(scaleFixed(fixed(5), 1, 2)).toBe(3);
+    expect(scaleFixed(fixed(-5), 1, 2)).toBe(-3);
+    expect(scaleFixed(fixed(4), 1, 3)).toBe(1);
+    expect(scaleFixed(fixed(5), 1, 3)).toBe(2);
+  });
+
+  it("throws for a bad ratio or an unsafe result", () => {
+    expect(() => scaleFixed(fixed(1), 1, 0)).toThrow(RangeError);
+    expect(() => scaleFixed(fixed(1), -1, 2)).toThrow(RangeError);
+    expect(() => scaleFixed(parseFixed("80000000"), 1000, 1)).toThrow(
       RangeError,
     );
   });

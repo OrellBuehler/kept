@@ -291,6 +291,56 @@ describe("trade form", () => {
     ).toBe(false);
   });
 
+  it("parses a split as whole numbers new : old and keeps them exact", () => {
+    const split = (over: Record<string, string>) =>
+      parseForm(
+        schema,
+        form({
+          securityId: "s",
+          date: "2024-05-01",
+          side: "split",
+          ...over,
+        }),
+      );
+    expect(split({ splitNew: "1", splitOld: "3" })).toMatchObject({
+      ok: true,
+      data: {
+        side: "split",
+        splitNew: 1,
+        splitOld: 3,
+        quantity: parseFixed("0.33333333"),
+        price: 0,
+        amount: 0,
+      },
+    });
+    expect(split({ splitNew: "2", splitOld: "1" })).toMatchObject({
+      ok: true,
+      data: { splitNew: 2, splitOld: 1, quantity: parseFixed("2") },
+    });
+    // a plain ratio stays possible, without exact terms
+    expect(split({ quantity: "0.1" })).toMatchObject({
+      ok: true,
+      data: { splitNew: null, splitOld: null, quantity: parseFixed("0.1") },
+    });
+    for (const bad of [
+      { splitNew: "0", splitOld: "3" },
+      { splitNew: "1", splitOld: "" },
+      { splitNew: "1.5", splitOld: "3" },
+      { splitNew: "-1", splitOld: "3" },
+      { splitNew: "1", splitOld: "10000000" },
+    ]) {
+      expect(split(bad).ok).toBe(false);
+    }
+    const missing = split({});
+    expect(missing.ok).toBe(false);
+    if (!missing.ok) expect(Object.keys(missing.errors)).toContain("splitNew");
+    // buys never carry split terms
+    expect(parseForm(schema, form(valid))).toMatchObject({
+      ok: true,
+      data: { splitNew: null, splitOld: null },
+    });
+  });
+
   it("rejects an unknown side", () => {
     const r = parseForm(schema, form({ ...valid, side: "gift" }));
     expect(r.ok).toBe(false);
@@ -479,6 +529,113 @@ describe("trades", () => {
         amount: 1500,
       });
       conflict(() => deleteTrade(user.id, s.id), /negative holding/);
+    });
+
+    it("applies a 1:3 reverse split exactly: 3 shares become 1 and selling 1 succeeds", async () => {
+      const { user, account, security } = await setup();
+      seedTrade(user.id, account.id, security.id, {
+        qty: "3",
+        amount: 3000,
+      });
+      const s = seedTrade(user.id, account.id, security.id, {
+        date: "2024-02-01",
+        side: "split",
+        price: "0",
+        amount: 0,
+        split: { new: 1, old: 3 },
+      });
+      expect(getTrade(user.id, s.id)).toMatchObject({
+        splitNew: 1,
+        splitOld: 3,
+      });
+      conflict(
+        () =>
+          seedTrade(user.id, account.id, security.id, {
+            date: "2024-03-01",
+            side: "sell",
+            qty: "1.00000001",
+            amount: 1000,
+          }),
+        /negative holding/,
+      );
+      seedTrade(user.id, account.id, security.id, {
+        date: "2024-03-01",
+        side: "sell",
+        qty: "1",
+        amount: 1000,
+      });
+      expect(
+        listTrades(user.id, account.id).filter((t) => t.side === "sell"),
+      ).toHaveLength(1);
+    });
+
+    describe("provider prices after a split change", () => {
+      const prices = (userId: string, securityId: string) =>
+        listPrices(userId, securityId).map((p) => `${p.source}:${p.date}`);
+      const prepare = async () => {
+        const { user, account, security } = await setup();
+        const other = seedSecurity(user.id, { name: "Other Fund" });
+        seedTrade(user.id, account.id, security.id, { amount: 1000 });
+        for (const id of [security.id, other.id]) {
+          seedProviderPrice(user.id, id, "2024-01-20", "100");
+          seedProviderPrice(user.id, id, "2024-03-20", "50");
+        }
+        seedManualPrice(user.id, security.id, "2024-01-25", "101");
+        return { user, account, security, other };
+      };
+      const kept = (security: string, other: string, user: string) => ({
+        manual: prices(user, security),
+        other: prices(user, other),
+      });
+
+      it("discards them when a split is recorded, changed or deleted", async () => {
+        const { user, account, security, other } = await prepare();
+        expect(prices(user.id, security.id)).toHaveLength(3);
+
+        const s = splitOf(user.id, account.id, security.id, "2024-02-01", "2");
+        expect(kept(security.id, other.id, user.id)).toEqual({
+          manual: ["manual:2024-01-25"],
+          other: ["provider:2024-03-20", "provider:2024-01-20"],
+        });
+
+        seedProviderPrice(user.id, security.id, "2024-03-20", "50");
+        updateTrade(user.id, s.id, {
+          securityId: security.id,
+          date: "2024-02-02",
+          side: "split",
+          quantity: parseFixed("3"),
+          splitNew: 3,
+          splitOld: 1,
+          price: fixed(0),
+          fees: minor(0),
+          amount: minor(0),
+          note: null,
+        });
+        expect(prices(user.id, security.id)).toEqual(["manual:2024-01-25"]);
+
+        seedProviderPrice(user.id, security.id, "2024-03-20", "50");
+        deleteTrade(user.id, s.id);
+        expect(prices(user.id, security.id)).toEqual(["manual:2024-01-25"]);
+        expect(prices(user.id, other.id)).toHaveLength(2);
+      });
+
+      it("leaves them alone for buys and sells, and for another user", async () => {
+        const { user, account, security } = await prepare();
+        const stranger = await createTestUser();
+        const strangerSecurity = seedSecurity(stranger.id);
+        seedProviderPrice(stranger.id, strangerSecurity.id, "2024-01-20", "9");
+        seedTrade(user.id, account.id, security.id, {
+          date: "2024-02-01",
+          side: "sell",
+          qty: "1",
+          amount: 100,
+        });
+        expect(prices(user.id, security.id)).toHaveLength(3);
+        splitOf(user.id, account.id, security.id, "2024-02-15", "2");
+        expect(prices(stranger.id, strangerSecurity.id)).toEqual([
+          "provider:2024-01-20",
+        ]);
+      });
     });
 
     it("rejects a ratio that overflows the quantity", async () => {

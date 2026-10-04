@@ -106,6 +106,8 @@ const tradeFields = [
   "date",
   "side",
   "quantity",
+  "splitNew",
+  "splitOld",
   "price",
   "fees",
   "amount",

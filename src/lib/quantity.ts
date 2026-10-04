@@ -156,6 +156,24 @@ function fixedFromBigInt(value: bigint, negative: boolean): Fixed8 {
   return fixed(negative && n !== 0 ? -n : n);
 }
 
+/**
+ * `value * numerator / denominator` for integer ratios such as a split of 1:3, rounded half
+ * away from zero in one step (no intermediate rounding). Throws RangeError for a zero or
+ * negative denominator, a negative numerator, or a result that is not a safe integer.
+ */
+export function scaleFixed(
+  value: Fixed8,
+  numerator: bigint | number,
+  denominator: bigint | number,
+): Fixed8 {
+  const num = BigInt(numerator);
+  const den = BigInt(denominator);
+  if (den <= 0n) throw new RangeError("Denominator must be positive");
+  if (num < 0n) throw new RangeError("Numerator must not be negative");
+  const rounded = divRound(BigInt(Math.abs(value)) * num, den);
+  return fixedFromBigInt(rounded, value < 0);
+}
+
 /** `a * b` of two Fixed8 numbers, rounded half away from zero. Throws RangeError when too large. */
 export function multiplyFixed(a: Fixed8, b: Fixed8): Fixed8 {
   const rounded = divRound(BigInt(Math.abs(a)) * BigInt(Math.abs(b)), SCALE);

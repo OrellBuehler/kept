@@ -13,7 +13,7 @@
   import { todayIso } from "$lib/format";
   import type { FormErrors } from "$lib/form-errors";
   import { submitHandler } from "$lib/form-submit";
-  import { TRADE_SIDE_LABELS } from "$lib/investment-labels";
+  import { TRADE_SIDE_LABELS, splitTerms } from "$lib/investment-labels";
   import { TRADE_SIDES, type TradeSide } from "$lib/investment-types";
   import { currencyExponent, parseAmount } from "$lib/money";
   import { fixed, fixedToInput, parseFixed, valueOf } from "$lib/quantity";
@@ -43,6 +43,8 @@
   let securityId = $state("");
   let side = $state<TradeSide>("buy");
   let quantity = $state("");
+  let splitNew = $state("");
+  let splitOld = $state("");
   let price = $state("");
   let fees = $state("");
   let amount = $state("");
@@ -55,6 +57,9 @@
       securityId = trade?.securityId ?? securities[0]?.id ?? "";
       side = trade?.side ?? "buy";
       quantity = trade ? fixedToInput(trade.quantity) : "";
+      const terms = trade?.side === "split" ? splitTerms(trade) : null;
+      splitNew = terms ? String(terms.new) : "";
+      splitOld = terms ? String(terms.old) : "";
       price = trade ? fixedToInput(trade.price) : "";
       fees =
         trade && trade.fees !== 0 ? minorToInput(trade.fees, currency) : "";
@@ -133,6 +138,8 @@
             "date",
             "side",
             "quantity",
+            "splitNew",
+            "splitOld",
             "price",
             "fees",
             "amount",
@@ -205,26 +212,61 @@
         </div>
 
         <div class="grid gap-4 sm:grid-cols-2">
-          <FormField
-            label={isSplit ? "Split ratio" : "Quantity"}
-            for="{uid}-quantity"
-            errors={errors.quantity}
-            hint={isSplit
-              ? "New shares per old share: 2 for a 2:1 split, 0.1 for a 1:10 reverse split. Applies from this date."
-              : "Units, up to 8 decimals."}
-          >
-            <Input
-              id="{uid}-quantity"
-              name="quantity"
-              inputmode="decimal"
-              autocomplete="off"
-              required
-              class="text-end tabular-nums"
-              placeholder="0"
-              bind:value={quantity}
-              aria-invalid={!!errors.quantity}
-            />
-          </FormField>
+          {#if isSplit}
+            <FormField
+              label="Split (new : old)"
+              for="{uid}-split-new"
+              errors={errors.splitNew ?? errors.splitOld ?? errors.quantity}
+              hint="Whole numbers: 2 : 1 for a 2-for-1 split, 1 : 3 for a 1-for-3 reverse split. Applies from this date."
+            >
+              <div class="flex items-center gap-2">
+                <Input
+                  id="{uid}-split-new"
+                  name="splitNew"
+                  inputmode="numeric"
+                  autocomplete="off"
+                  required
+                  class="text-end tabular-nums"
+                  placeholder="2"
+                  aria-label="New shares"
+                  bind:value={splitNew}
+                  aria-invalid={!!(errors.splitNew ?? errors.quantity)}
+                />
+                <span aria-hidden="true">:</span>
+                <Input
+                  id="{uid}-split-old"
+                  name="splitOld"
+                  inputmode="numeric"
+                  autocomplete="off"
+                  required
+                  class="text-end tabular-nums"
+                  placeholder="1"
+                  aria-label="Old shares"
+                  bind:value={splitOld}
+                  aria-invalid={!!errors.splitOld}
+                />
+              </div>
+            </FormField>
+          {:else}
+            <FormField
+              label="Quantity"
+              for="{uid}-quantity"
+              errors={errors.quantity}
+              hint="Units, up to 8 decimals."
+            >
+              <Input
+                id="{uid}-quantity"
+                name="quantity"
+                inputmode="decimal"
+                autocomplete="off"
+                required
+                class="text-end tabular-nums"
+                placeholder="0"
+                bind:value={quantity}
+                aria-invalid={!!errors.quantity}
+              />
+            </FormField>
+          {/if}
           {#if !isSplit}
             <FormField
               label="Price per unit{security ? ` (${security.currency})` : ''}"

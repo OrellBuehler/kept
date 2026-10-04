@@ -1,11 +1,10 @@
 import type { PriceSource, TradeSide } from "$lib/investment-types";
 import { minor, type Minor } from "$lib/money";
 import {
-  divideFixed,
   fixed,
   invertFixed,
-  multiplyFixed,
   proportionOf,
+  scaleFixed,
   valueOf,
   type Fixed8,
 } from "$lib/quantity";
@@ -18,16 +17,33 @@ import {
  *   trade dated D counts in the holdings of D (end-of-day, like transactions);
  *   a split dated D is the ex-date, so that day's buys and sells are already
  *   in post-split shares.
- * - A split (`quantity` is the ratio of new to old shares) multiplies the held
- *   quantity, keeps the total cost basis (so the average cost per share is
- *   divided) and adjusts the trade-price fallback by the same ratio. Recorded
- *   prices dated before the split stay as they are.
+ * - A split multiplies the held quantity by new / old, keeps the total cost
+ *   basis (so the average cost per share is divided) and adjusts the
+ *   trade-price fallback by the same ratio. The ratio is exact when the trade
+ *   carries `splitNew` and `splitOld` (integer math, so 3 shares after a 1:3
+ *   reverse split are exactly 1); otherwise `quantity` (Fixed8) is the ratio.
+ *   Rounding is half away from zero at 1e-8.
+ * - Split-adjusted provider prices: a provider's daily close is adjusted
+ *   retroactively for every split, so a quote is in post-split terms of the
+ *   latest split the provider knew about. Valuing a date D therefore uses
+ *   `quantity at D * (ratio of every split dated after D) * provider price`,
+ *   i.e. the quantity restated in the units the quote is in. Splits dated on
+ *   or before D are already in the quantity, so a provider quote dated before
+ *   a split still applies after it, to the larger quantity. This only holds
+ *   for quotes fetched after the split was recorded, which is why recording,
+ *   changing or deleting a split discards the security's provider prices (see
+ *   `trades.ts`); the next refresh backfills them.
+ * - Manual prices and trade prices stay as recorded (in the units of their own
+ *   date) and always use `quantity at D`. A manual price dated before a split
+ *   is stale after it, as is a trade price, and falls back to the adjusted
+ *   trade price; a provider price is not stale because of a split.
  * - Cost basis uses the average-cost method: a sell removes basis in
  *   proportion to the quantity sold. A buy adds its `amount` (cash paid
  *   including fees, in the account currency).
  * - Price on D: the latest price dated <= D (a manual price wins over a
- *   fetched one on the same date), or the latest trade price when a trade is
- *   newer than every price (or there is no price at all).
+ *   fetched one on the same date), or the latest trade price when a buy or
+ *   sell (or, for a manual price, a split) is newer than every price (or there
+ *   is no price at all).
  * - FX from the security's currency to the account currency: 1 for the same
  *   currency, otherwise the latest rate dated <= D, direct or inverse pair.
  *   Without any rate the position is valued at its cost basis and flagged
@@ -49,6 +65,9 @@ export interface HoldingTrade {
   price: Fixed8;
   /** Account currency, positive; 0 for a split. */
   amount: number;
+  /** Split only: the exact integer ratio `splitNew : splitOld`; `quantity` is used without it. */
+  splitNew?: number | null;
+  splitOld?: number | null;
 }
 
 export interface HoldingPrice {
@@ -160,9 +179,32 @@ function compareTrades(
 
 interface Step {
   date: string;
+  /** Date of the latest buy or sell; splits do not count. */
+  tradeDate: string;
   quantity: number;
   cost: number;
   tradePrice: Fixed8;
+}
+
+interface SplitLike {
+  quantity: number;
+  splitNew?: number | null;
+  splitOld?: number | null;
+}
+
+const FIXED_SCALE = 100_000_000n;
+
+/** A split as an exact fraction: `new / old`, else the Fixed8 `quantity` over 1e8. */
+function ratioOf(t: SplitLike): { num: bigint; den: bigint } {
+  if (t.splitNew && t.splitOld && t.splitNew > 0 && t.splitOld > 0) {
+    return { num: BigInt(t.splitNew), den: BigInt(t.splitOld) };
+  }
+  return { num: BigInt(t.quantity), den: FIXED_SCALE };
+}
+
+function applySplit(value: number, t: SplitLike): number {
+  const { num, den } = ratioOf(t);
+  return scaleFixed(fixed(value), num, den);
 }
 
 function timeline(trades: readonly HoldingTrade[]): Step[] {
@@ -171,15 +213,18 @@ function timeline(trades: readonly HoldingTrade[]): Step[] {
   let quantity = 0;
   let cost = 0;
   let tradePrice = fixed(0);
+  let tradeDate = "";
   for (const t of sorted) {
     if (t.side === "split") {
       if (quantity > 0) {
-        quantity = multiplyFixed(fixed(quantity), t.quantity);
-        tradePrice = divideFixed(tradePrice, t.quantity);
+        const { num, den } = ratioOf(t);
+        quantity = applySplit(quantity, t);
+        tradePrice = scaleFixed(tradePrice, den, num);
       }
-      steps.push({ date: t.date, quantity, cost, tradePrice });
+      steps.push({ date: t.date, tradeDate, quantity, cost, tradePrice });
       continue;
     }
+    tradeDate = t.date;
     tradePrice = t.price;
     if (t.side === "buy") {
       quantity += t.quantity;
@@ -191,9 +236,29 @@ function timeline(trades: readonly HoldingTrade[]): Step[] {
       cost -= proportionOf(minor(cost), t.quantity, fixed(quantity));
       quantity -= t.quantity;
     }
-    steps.push({ date: t.date, quantity, cost, tradePrice });
+    steps.push({ date: t.date, tradeDate, quantity, cost, tradePrice });
   }
   return steps;
+}
+
+/** Splits of one security by date, with the product of all ratios from each split onwards. */
+interface SplitTail {
+  dates: { date: string }[];
+  /** `tails[i]` is the product of the ratios of splits i.. ; the last entry is 1 / 1. */
+  tails: { num: bigint; den: bigint }[];
+}
+
+function splitTail(trades: readonly HoldingTrade[]): SplitTail {
+  const splits = [...trades]
+    .filter((t) => t.side === "split")
+    .sort(compareTrades);
+  const tails = [{ num: 1n, den: 1n }];
+  for (let i = splits.length - 1; i >= 0; i--) {
+    const { num, den } = ratioOf(splits[i]!);
+    const next = tails[0]!;
+    tails.unshift({ num: next.num * num, den: next.den * den });
+  }
+  return { dates: splits.map((t) => ({ date: t.date })), tails };
 }
 
 /**
@@ -210,6 +275,9 @@ export function makeHoldingsValueAt(input: HoldingsInput): HoldingsValueAt {
   }
   const steps = new Map(
     [...tradesBySecurity].map(([id, list]) => [id, timeline(list)]),
+  );
+  const splitTails = new Map(
+    [...tradesBySecurity].map(([id, list]) => [id, splitTail(list)]),
   );
 
   const pricesBySecurity = new Map<string, HoldingPrice[]>();
@@ -265,18 +333,31 @@ export function makeHoldingsValueAt(input: HoldingsInput): HoldingsValueAt {
       const cost = minor(step.cost);
 
       const market = latestAt(prices.get(id) ?? [], date);
-      const useTrade = !market || market.date < step.date;
+      const manual = market?.source === "manual";
+      // A manual quote is in the units of its own date, so any later step, a split
+      // included, makes it stale. A provider quote is split-adjusted: only a later
+      // buy or sell does.
+      const useTrade =
+        !market || market.date < (manual ? step.date : step.tradeDate);
       const price = useTrade ? step.tradePrice : market.price;
       const priceDate = useTrade ? step.date : market.date;
       const priceSource: Position["priceSource"] = useTrade
         ? "trade"
-        : market.source === "manual"
+        : manual
           ? "manual"
           : "provider";
 
+      // A provider quote is in the units after every split, so restate the quantity in them.
+      let priced = quantity;
+      if (!useTrade && !manual) {
+        const tail = splitTails.get(id)!;
+        const { num, den } = tail.tails[upperBound(tail.dates, date)]!;
+        if (num !== den) priced = scaleFixed(quantity, num, den);
+      }
+
       const fx = fxAt(security.currency, date);
       const value = fx
-        ? valueOf(quantity, price, fx.rate, input.accountCurrency, fx.inverse)
+        ? valueOf(priced, price, fx.rate, input.accountCurrency, fx.inverse)
         : cost;
       positions.push({
         securityId: id,
@@ -318,9 +399,23 @@ export function holdingsValueAt(
   return makeHoldingsValueAt(input)(date);
 }
 
+export interface SequenceTrade {
+  date: string;
+  side: TradeSide;
+  quantity: number;
+  splitNew?: number | null;
+  splitOld?: number | null;
+}
+
 /** Quantity held after each trade in order (splits first, buys before sells on a date). */
 function* runningHeld<
-  T extends { date: string; side: TradeSide; quantity: number },
+  T extends {
+    date: string;
+    side: TradeSide;
+    quantity: number;
+    splitNew?: number | null;
+    splitOld?: number | null;
+  },
 >(
   trades: readonly T[],
 ): Generator<{ trade: T; before: number; after: number }> {
@@ -328,7 +423,7 @@ function* runningHeld<
   for (const trade of [...trades].sort(compareTrades)) {
     const before = held;
     if (trade.side === "split") {
-      held = multiplyFixed(fixed(held), fixed(trade.quantity));
+      held = applySplit(held, trade);
     } else {
       held += trade.side === "buy" ? trade.quantity : -trade.quantity;
     }
@@ -341,9 +436,7 @@ function* runningHeld<
  * negative, or null. Splits apply first and buys before sells on the same
  * date. Throws a RangeError when a split makes the quantity unrepresentable.
  */
-export function firstOversell(
-  trades: readonly { date: string; side: TradeSide; quantity: number }[],
-): string | null {
+export function firstOversell(trades: readonly SequenceTrade[]): string | null {
   for (const { trade, after } of runningHeld(trades)) {
     if (after < 0) return trade.date;
   }
@@ -352,7 +445,7 @@ export function firstOversell(
 
 /** First date of a split that finds no shares to split, or null. */
 export function firstEmptySplit(
-  trades: readonly { date: string; side: TradeSide; quantity: number }[],
+  trades: readonly SequenceTrade[],
 ): string | null {
   for (const { trade, before } of runningHeld(trades)) {
     if (trade.side === "split" && before <= 0) return trade.date;
@@ -361,9 +454,7 @@ export function firstEmptySplit(
 }
 
 /** Quantity held after all of a security's trades. */
-export function heldQuantity(
-  trades: readonly { date: string; side: TradeSide; quantity: number }[],
-): number {
+export function heldQuantity(trades: readonly SequenceTrade[]): number {
   let held = 0;
   for (const step of runningHeld(trades)) held = step.after;
   return held;
