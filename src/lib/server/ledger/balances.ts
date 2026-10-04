@@ -6,6 +6,12 @@ import {
   getDB,
   transactions,
 } from "$lib/server/db";
+import { loadHoldingsInputs } from "$lib/server/investments/load";
+import {
+  makeHoldingsValueAt,
+  type HoldingsInput,
+  type Position,
+} from "$lib/server/investments/valuation";
 import { LedgerError, notFound } from "./errors";
 
 /**
@@ -20,7 +26,12 @@ import { LedgerError, notFound } from "./errors";
  *   null). The opening balance is a START-OF-DAY value on openingDate. For D
  *   before openingDate no transactions count and the opening balance is returned.
  * - If a manual and an imported snapshot share a date, the manual one wins.
- * - Amounts are in the account's currency; there is no FX conversion.
+ * - Holdings (securities bought through trades, see investments/valuation.ts)
+ *   come on top: the balance of an account with `holdings` is the cash balance
+ *   above plus the value of its holdings on D, already converted into the
+ *   account's currency. Trades never change the cash balance.
+ * - Amounts are in the account's currency; securities in other currencies are
+ *   converted inside the holdings valuation, nowhere else.
  */
 
 export interface BalanceInput {
@@ -28,6 +39,7 @@ export interface BalanceInput {
   openingDate: string | null;
   snapshots: readonly { date: string; amount: number; source?: string }[];
   transactions: readonly { bookingDate: string; amount: number }[];
+  holdings?: HoldingsInput;
 }
 
 export type BalanceAt = (date: string) => Minor;
@@ -83,7 +95,7 @@ export function makeBalanceAt(input: BalanceInput): BalanceAt {
   const sumBetween = (from: number, to: number) =>
     cumulative[to]! - cumulative[from]!;
 
-  return (date) => {
+  const cash = (date: string): Minor => {
     const upto = upperBound(dates, date);
     const snapIdx = upperBound(snapshotDates, date) - 1;
     if (snapIdx >= 0) {
@@ -100,6 +112,15 @@ export function makeBalanceAt(input: BalanceInput): BalanceAt {
       input.openingBalance + sumBetween(start, Math.max(start, upto)),
     );
   };
+
+  if (!input.holdings) return cash;
+  const holdings = makeHoldingsValueAt(input.holdings);
+  return (date) => minor(cash(date) + holdings(date).value);
+}
+
+/** Balance without the value of holdings. */
+export function cashBalanceAt(input: BalanceInput, date: string): Minor {
+  return makeBalanceAt({ ...input, holdings: undefined })(date);
 }
 
 export function balanceAt(input: BalanceInput, date: string): Minor {
@@ -187,6 +208,7 @@ function loadInput(
   userId: string,
   accountId: string,
   upTo: string | null,
+  withHoldings: boolean,
 ): BalanceInput {
   const db = getDB();
   const account = db
@@ -211,9 +233,15 @@ function loadInput(
     txWhere.push(lte(transactions.bookingDate, upTo));
     snapWhere.push(lte(balanceSnapshots.date, upTo));
   }
+  const holdings = withHoldings
+    ? loadHoldingsInputs(userId, [accountId], upTo ?? "9999-12-31").get(
+        accountId,
+      )
+    : undefined;
   return {
     openingBalance: account.openingBalance,
     openingDate: account.openingDate,
+    holdings,
     transactions: db
       .select({
         bookingDate: transactions.bookingDate,
@@ -234,13 +262,16 @@ function loadInput(
   };
 }
 
-/** Balance at the end of `date` (see the model above). */
+/**
+ * Cash balance at the end of `date` (see the model above), without holdings:
+ * statements reconcile opening balance, transactions and closing balance.
+ */
 export function accountBalanceAt(
   userId: string,
   accountId: string,
   date: string,
 ): Minor {
-  return balanceAt(loadInput(userId, accountId, date), date);
+  return balanceAt(loadInput(userId, accountId, date, false), date);
 }
 
 export function localToday(now = new Date()): string {
@@ -249,18 +280,48 @@ export function localToday(now = new Date()): string {
 }
 
 /**
- * Balance as of `today` (YYYY-MM-DD, default local today): future-dated
- * transactions and snapshots do not count.
+ * Balance (cash plus holdings) as of `today` (YYYY-MM-DD, default local
+ * today): future-dated transactions, snapshots and trades do not count.
  */
 export function currentBalance(
   userId: string,
   accountId: string,
   today: string = localToday(),
 ): Minor {
-  return balanceAt(loadInput(userId, accountId, today), today);
+  return balanceAt(loadInput(userId, accountId, today, true), today);
 }
 
-/** Current balances of several accounts with two queries in total. */
+export interface AccountValue {
+  cash: Minor;
+  holdings: Minor;
+  total: Minor;
+  positions: Position[];
+  /** At least one position is valued at cost because an FX rate is missing. */
+  estimated: boolean;
+}
+
+/** Cash and holdings of an account as of `today`; `total` is their sum. */
+export function accountValue(
+  userId: string,
+  accountId: string,
+  today: string = localToday(),
+): AccountValue {
+  const input = loadInput(userId, accountId, today, true);
+  const cash = cashBalanceAt(input, today);
+  const held = input.holdings
+    ? makeHoldingsValueAt(input.holdings)(today)
+    : null;
+  const holdings = held?.value ?? minor(0);
+  return {
+    cash,
+    holdings,
+    total: minor(cash + holdings),
+    positions: held?.positions ?? [],
+    estimated: held?.estimated ?? false,
+  };
+}
+
+/** Current balances (cash plus holdings) of several accounts with a handful of queries in total. */
 export function currentBalances(
   userId: string,
   accountRows: readonly {
@@ -310,6 +371,11 @@ export function currentBalances(
     list.push(s);
     snapByAccount.set(s.accountId, list);
   }
+  const holdings = loadHoldingsInputs(
+    userId,
+    accountRows.map((a) => a.id),
+    today,
+  );
   return new Map(
     accountRows.map((a) => [
       a.id,
@@ -319,6 +385,7 @@ export function currentBalances(
           openingDate: a.openingDate,
           transactions: txByAccount.get(a.id) ?? [],
           snapshots: snapByAccount.get(a.id) ?? [],
+          holdings: holdings.get(a.id),
         },
         today,
       ),
@@ -333,5 +400,10 @@ export function balanceSeries(
   to: string,
   step: SeriesStep,
 ): BalancePoint[] {
-  return balanceSeriesOf(loadInput(userId, accountId, to), from, to, step);
+  return balanceSeriesOf(
+    loadInput(userId, accountId, to, true),
+    from,
+    to,
+    step,
+  );
 }

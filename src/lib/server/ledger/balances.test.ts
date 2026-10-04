@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { minor } from "$lib/money";
+import { parseFixed } from "$lib/quantity";
 import { createTestUser } from "$lib/testing/auth";
 import { useTestDB } from "$lib/testing/db";
 import { seedAccount, seedImportedTransaction } from "$lib/testing/ledger";
@@ -292,5 +293,42 @@ describe("current balance cap", () => {
     const m = currentBalances(user.id, [a, b], "2024-12-31");
     expect(m.get(a.id)).toBe(1);
     expect(m.get(b.id)).toBe(7);
+  });
+});
+
+describe("balanceAt with holdings", () => {
+  const f = parseFixed;
+  const input: BalanceInput = {
+    openingBalance: 1000,
+    openingDate: null,
+    snapshots: [],
+    transactions: [{ bookingDate: "2024-01-05", amount: -100 }],
+    holdings: {
+      accountCurrency: "CHF",
+      securities: [{ id: "s", name: "Alpha", currency: "CHF" }],
+      trades: [
+        {
+          securityId: "s",
+          date: "2024-01-10",
+          side: "buy",
+          quantity: f("2"),
+          price: f("50"),
+          amount: 10000,
+        },
+      ],
+      prices: [],
+      fx: [],
+    },
+  };
+
+  it("adds the holdings value to the cash balance", () => {
+    expect(balanceAt(input, "2024-01-09")).toBe(900);
+    expect(balanceAt(input, "2024-01-10")).toBe(900 + 10000);
+  });
+
+  it("is the plain cash balance without holdings", () => {
+    expect(balanceAt({ ...input, holdings: undefined }, "2024-01-10")).toBe(
+      900,
+    );
   });
 });
