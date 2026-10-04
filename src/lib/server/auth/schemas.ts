@@ -60,3 +60,77 @@ export const changePasswordSchema = z.object({
     .max(PASSWORD_MAX),
   newPassword: passwordSchema,
 });
+
+const codeSchema = z
+  .string()
+  .trim()
+  .min(1, "Enter a code.")
+  .max(64, "That code is too long.");
+
+export const secondFactorSchema = z.object({
+  code: codeSchema,
+  redirectTo: z.string().optional(),
+});
+
+export const totpConfirmSchema = z.object({ code: codeSchema });
+
+export const twoFactorReauthSchema = z.object({
+  password: z.string().min(1, "Enter your password.").max(PASSWORD_MAX),
+  code: codeSchema,
+});
+
+export const passkeyNameSchema = z
+  .string()
+  .trim()
+  .min(1, "Enter a name.")
+  .max(64, "Name must be at most 64 characters.");
+
+export const renamePasskeySchema = z.object({
+  id: z.string().min(1, "Missing passkey."),
+  name: passkeyNameSchema,
+});
+
+export const passkeyIdSchema = z.object({
+  id: z.string().min(1, "Missing passkey."),
+});
+
+export const resetTwoFactorSchema = z.object({
+  userId: z.string().min(1, "Missing user."),
+});
+
+const webauthnCredential = z.object({
+  id: z.string().min(1).max(1024),
+  rawId: z.string().min(1).max(1024),
+  type: z.literal("public-key"),
+  response: z.record(z.string(), z.unknown()),
+  clientExtensionResults: z.record(z.string(), z.unknown()),
+  authenticatorAttachment: z.enum(["platform", "cross-platform"]).optional(),
+});
+
+export const passkeyRegisterVerifySchema = z.object({
+  challengeId: z.string().min(1).max(128),
+  name: passkeyNameSchema,
+  credential: webauthnCredential,
+});
+
+export const passkeyLoginVerifySchema = z.object({
+  /** Absent for the second step of a password login (the pending cookie identifies the ceremony). */
+  challengeId: z.string().min(1).max(128).optional(),
+  credential: webauthnCredential,
+  redirectTo: z.string().optional(),
+});
+
+export const passkeyLoginOptionsSchema = z.object({
+  mode: z.enum(["passwordless", "second_factor"]),
+});
+
+export const stepUpSchema = z.object({
+  password: z.string().min(1, "Enter your password.").max(PASSWORD_MAX),
+  code: z.string().trim().max(64).optional().default(""),
+});
+
+export const passkeyStepUpVerifySchema = z.object({
+  challengeId: z.string().min(1).max(128),
+  password: z.string().min(1).max(PASSWORD_MAX),
+  credential: webauthnCredential,
+});

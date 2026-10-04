@@ -11,6 +11,8 @@ import { addDays } from "$lib/server/dashboard/dates";
 import type { BillsReportInput } from "./bills-report";
 import { reconcileYear } from "$lib/server/tax/tax";
 import type { NetWorthReportInput } from "./net-worth-report";
+import { deductionSummary } from "$lib/server/tax/deductions";
+import type { TaxDeductionsReportInput } from "./tax-deductions-report";
 import type { TaxReportInput } from "./tax-report";
 import type { AccountStatementInput } from "./statement";
 
@@ -102,4 +104,12 @@ export function loadTaxReport(
   const reconciliation = reconcileYear(userId, year);
   if (!reconciliation) throw notFound("Tax year");
   return { reconciliation, asOf: today };
+}
+
+export function loadTaxDeductionsReport(
+  userId: string,
+  year: number,
+  today: string = localToday(),
+): TaxDeductionsReportInput {
+  return { summary: deductionSummary(userId, year), asOf: today };
 }

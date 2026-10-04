@@ -1,14 +1,28 @@
 import { fail } from "@sveltejs/kit";
 import { requireAdmin } from "$lib/server/auth/guards";
-import { createUserSchema, deleteUserSchema } from "$lib/server/auth/schemas";
+import {
+  createUserSchema,
+  deleteUserSchema,
+  resetTwoFactorSchema,
+} from "$lib/server/auth/schemas";
 import { AuthError } from "$lib/server/auth/types";
+import {
+  resetTwoFactor,
+  usersWithTwoFactor,
+} from "$lib/server/auth/two-factor";
 import { createUser, deleteUser, listUsers } from "$lib/server/auth/users";
 import { parseForm, safeValues } from "$lib/server/forms";
 import type { Actions, PageServerLoad } from "./$types";
 
 export const load: PageServerLoad = ({ locals }) => {
   requireAdmin(locals);
-  return { users: listUsers() };
+  const withTwoFactor = usersWithTwoFactor();
+  return {
+    users: listUsers().map((u) => ({
+      ...u,
+      twoFactor: withTwoFactor.has(u.id),
+    })),
+  };
 };
 
 export const actions: Actions = {
@@ -44,5 +58,21 @@ export const actions: Actions = {
       throw err;
     }
     return { deleted: true as const };
+  },
+
+  resetTwoFactor: async ({ locals, request }) => {
+    const admin = requireAdmin(locals);
+    const parsed = parseForm(resetTwoFactorSchema, await request.formData());
+    if (!parsed.ok) return fail(400, { errors: parsed.errors });
+
+    try {
+      resetTwoFactor(admin.id, parsed.data.userId, locals.session?.id);
+    } catch (err) {
+      if (err instanceof AuthError) {
+        return fail(400, { errors: { form: [err.message] } });
+      }
+      throw err;
+    }
+    return { twoFactorReset: true as const };
   },
 };

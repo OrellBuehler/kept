@@ -173,3 +173,7 @@ export function deleteUser(actorId: string, targetId: string): void {
 export function findUserByUsername(username: string) {
   return getDB().select().from(users).where(eq(users.username, username)).get();
 }
+
+export function findUserById(id: string) {
+  return getDB().select().from(users).where(eq(users.id, id)).get();
+}
