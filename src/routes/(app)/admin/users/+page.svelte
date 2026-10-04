@@ -4,6 +4,7 @@
   import { toast } from "svelte-sonner";
   import UserPlusIcon from "@lucide/svelte/icons/user-plus";
   import Trash2Icon from "@lucide/svelte/icons/trash-2";
+  import ShieldOffIcon from "@lucide/svelte/icons/shield-off";
   import * as Table from "$lib/components/ui/table/index.js";
   import * as Dialog from "$lib/components/ui/dialog/index.js";
   import * as AlertDialog from "$lib/components/ui/alert-dialog/index.js";
@@ -54,6 +55,37 @@
   </Badge>
 {/snippet}
 
+{#snippet resetButton(user: (typeof data.users)[number])}
+  {#if user.twoFactor}
+    <form
+      method="POST"
+      action="?/resetTwoFactor"
+      class="contents"
+      use:enhance={() => {
+        return async ({ result, update }) => {
+          await update();
+          if (result.type === "success") {
+            toast.success(`Reset two-factor for ${user.username}`);
+          } else {
+            toast.error("Could not reset two-factor authentication.");
+          }
+        };
+      }}
+    >
+      <input type="hidden" name="userId" value={user.id} />
+      <Button
+        type="submit"
+        variant="ghost"
+        size="icon"
+        aria-label={`Reset two-factor for ${user.username}`}
+        title="Reset two-factor authentication"
+      >
+        <ShieldOffIcon />
+      </Button>
+    </form>
+  {/if}
+{/snippet}
+
 {#snippet deleteButton(user: (typeof data.users)[number])}
   {#if user.id !== me}
     <Button
@@ -77,7 +109,7 @@
           <Table.Head>Display name</Table.Head>
           <Table.Head>Role</Table.Head>
           <Table.Head>Created</Table.Head>
-          <Table.Head class="w-12"
+          <Table.Head class="w-24"
             ><span class="sr-only">Actions</span></Table.Head
           >
         </Table.Row>
@@ -95,8 +127,10 @@
             <Table.Cell class="tabular-nums"
               >{formatDate(user.createdAt)}</Table.Cell
             >
-            <Table.Cell class="text-end"
-              >{@render deleteButton(user)}</Table.Cell
+            <Table.Cell class="text-end whitespace-nowrap"
+              >{@render resetButton(user)}{@render deleteButton(
+                user,
+              )}</Table.Cell
             >
           </Table.Row>
         {/each}
@@ -124,6 +158,7 @@
               >
             </div>
           </div>
+          {@render resetButton(user)}
           {@render deleteButton(user)}
         </Card.Content>
       </Card.Root>

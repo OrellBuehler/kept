@@ -1,5 +1,10 @@
-const PUBLIC_EXACT = new Set(["/login", "/setup", "/api/health"]);
-const PUBLIC_PREFIXES = ["/api/public/"];
+const PUBLIC_EXACT = new Set([
+  "/login",
+  "/login/verify",
+  "/setup",
+  "/api/health",
+]);
+const PUBLIC_PREFIXES = ["/api/public/", "/api/auth/passkey/login/"];
 
 export function isPublicPath(pathname: string): boolean {
   return (

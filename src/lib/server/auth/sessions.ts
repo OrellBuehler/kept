@@ -106,7 +106,8 @@ export function purgeExpiredSessions(now: number = Date.now()): void {
     .run();
 }
 
-function cookieSecureOverride(): { secure: false } | Record<string, never> {
+export function cookieSecureOverride():
+  { secure: false } | Record<string, never> {
   return process.env.KEPT_COOKIE_SECURE === "false" ? { secure: false } : {};
 }
 
