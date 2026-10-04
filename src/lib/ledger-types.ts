@@ -5,6 +5,7 @@ export const ACCOUNT_TYPES = [
   "credit_card",
   "investment",
   "pension",
+  "pillar_3a",
   "cash",
   "other",
 ] as const;

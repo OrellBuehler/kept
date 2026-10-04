@@ -127,6 +127,13 @@
       "when": 1791113964895,
       "tag": "0017_purple_roland_deschain",
       "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "6",
+      "when": 1791115509862,
+      "tag": "0018_typical_warhawk",
+      "breakpoints": true
     }
   ]
 }

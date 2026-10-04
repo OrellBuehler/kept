@@ -29,6 +29,8 @@ const accountFields = [
   "type",
   "currency",
   "iban",
+  "contractNumber",
+  "depositIban",
   "openingBalance",
   "openingDate",
   "share",

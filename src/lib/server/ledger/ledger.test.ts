@@ -324,6 +324,8 @@ function accountToInput(a: ReturnType<typeof getAccount>) {
     type: a.type,
     currency: a.currency,
     iban: a.iban,
+    contractNumber: a.contractNumber,
+    depositIban: a.depositIban,
     openingBalance: a.openingBalance,
     openingDate: a.openingDate,
     shareBps: a.shareBps,

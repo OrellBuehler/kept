@@ -7,6 +7,8 @@ import {
   getDB,
   imports,
   institutions,
+  portfolios,
+  portfolioValues,
   trades,
   transactions,
 } from "$lib/server/db";
@@ -27,6 +29,10 @@ export interface AccountView {
   type: AccountType;
   currency: string;
   iban: string | null;
+  /** Pillar 3a: the provider's contract number. */
+  contractNumber: string | null;
+  /** Pillar 3a: the IBAN (usually a QR-IBAN) payments go to. */
+  depositIban: string | null;
   openingBalance: Minor;
   openingDate: string | null;
   archived: boolean;
@@ -54,6 +60,8 @@ function baseRows(userId: string, accountId?: string) {
       type: accounts.type,
       currency: accounts.currency,
       iban: accounts.iban,
+      contractNumber: accounts.contractNumber,
+      depositIban: accounts.depositIban,
       openingBalance: accounts.openingBalance,
       openingDate: accounts.openingDate,
       archived: accounts.archived,
@@ -125,6 +133,8 @@ function toViews(
     type: r.type,
     currency: r.currency,
     iban: r.iban,
+    contractNumber: r.contractNumber,
+    depositIban: r.depositIban,
     openingBalance: r.openingBalance,
     openingDate: r.openingDate,
     archived: r.archived,
@@ -249,11 +259,17 @@ export function updateAccount(
         .select({ id: trades.id })
         .from(trades)
         .where(eq(trades.accountId, id))
+        .get() ??
+      db
+        .select({ id: portfolioValues.id })
+        .from(portfolioValues)
+        .innerJoin(portfolios, eq(portfolios.id, portfolioValues.portfolioId))
+        .where(eq(portfolios.accountId, id))
         .get();
     if (used) {
       throw new LedgerError(
         "conflict",
-        "The currency cannot change while the account has transactions, balances or trades.",
+        "The currency cannot change while the account has transactions, balances, trades or portfolio values.",
         "currency",
       );
     }
