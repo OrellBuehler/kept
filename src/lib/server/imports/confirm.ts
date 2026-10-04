@@ -5,7 +5,7 @@ import { categorize, loadRules } from "$lib/server/categories/rules";
 import { getAccount } from "$lib/server/ledger/accounts";
 import { LedgerError } from "$lib/server/ledger/errors";
 import { deletePending, getPendingMeta } from "./pending";
-import { buildPreview } from "./preview";
+import { balanceWarningText, buildPreview } from "./preview";
 
 export interface ConfirmResult {
   importId: string;
@@ -62,7 +62,10 @@ export function confirmImport(
         closingBalanceDate: statement.closingBalance?.date ?? null,
         newCount: newRows.length,
         duplicateCount: preview.counts.duplicate,
-        warnings: JSON.stringify(preview.warnings),
+        warnings: JSON.stringify([
+          ...preview.warnings,
+          ...preview.balanceWarnings.map(balanceWarningText),
+        ]),
       })
       .returning({ id: imports.id })
       .get();

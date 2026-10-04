@@ -1,4 +1,5 @@
 <script lang="ts">
+  import InstitutionLogo from "$lib/components/InstitutionLogo.svelte";
   import { resolve } from "$app/paths";
   import { cn } from "$lib/utils";
   import * as Card from "$lib/components/ui/card";
@@ -11,10 +12,9 @@
   import CategoryBadge from "$lib/components/CategoryBadge.svelte";
   import ShareBadge from "$lib/components/ShareBadge.svelte";
   import NetWorthChart from "$lib/components/dashboard/NetWorthChart.svelte";
-  import { formatDate } from "$lib/format";
+
   import {
     FULL_SHARE_BPS,
-    formatAmount,
     minor,
     type Minor,
     type ShareBasis,
@@ -25,6 +25,9 @@
   import ArrowDownIcon from "@lucide/svelte/icons/arrow-down";
   import MinusIcon from "@lucide/svelte/icons/minus";
   import type { PageProps } from "./$types";
+  import { usePreferences } from "$lib/preferences.svelte";
+
+  const prefs = usePreferences();
 
   let { data }: PageProps = $props();
   const d = $derived(data.dashboard);
@@ -53,20 +56,11 @@
     { value: "all", label: "All" },
   ] as const;
 
-  const monthFormat = new Intl.DateTimeFormat("en", {
-    month: "long",
-    year: "numeric",
-    timeZone: "UTC",
-  });
   function monthLabel(month: string) {
-    return monthFormat.format(new Date(`${month}-01T00:00:00Z`));
+    return prefs.month(month);
   }
-  const monthShort = new Intl.DateTimeFormat("en", {
-    month: "long",
-    timeZone: "UTC",
-  });
   function monthName(month: string) {
-    return monthShort.format(new Date(`${month}-01T00:00:00Z`));
+    return prefs.month(month, "long", false);
   }
 
   function plural(n: number, one: string, many = `${one}s`) {
@@ -122,12 +116,8 @@
     d.netWorth.totals.filter((t) => t.shareBalance !== t.balance),
   );
 
-  function delta(cur: number, prev: number, currency: string) {
-    const diff = cur - prev;
-    return {
-      diff,
-      text: formatAmount(minor(Math.abs(diff)), currency),
-    };
+  function delta(cur: number, prev: number) {
+    return { diff: cur - prev };
   }
 
   const bucketRows = $derived([
@@ -168,7 +158,7 @@
 
 <PageHeader
   title="Dashboard"
-  description={`Where things stand on ${formatDate(d.today)}.`}
+  description={`Where things stand on ${prefs.date(d.today)}.`}
   class="mb-6"
 />
 
@@ -377,6 +367,36 @@
       </Card.Root>
     {/if}
 
+    {#if data.forecastAlerts.length > 0}
+      <Card.Root class="border-destructive/50 lg:col-span-2">
+        <Card.Header>
+          <Card.Title class="text-destructive flex items-center gap-2">
+            <TriangleAlertIcon class="size-4" aria-hidden="true" />
+            Balance forecast
+          </Card.Title>
+          <Card.Description>
+            Expected to go below zero within 30 days.
+          </Card.Description>
+          <Card.Action>
+            <Button variant="outline" size="sm" href={resolve("/forecast")}>
+              View forecast
+            </Button>
+          </Card.Action>
+        </Card.Header>
+        <Card.Content>
+          <ul class="space-y-1.5 text-sm">
+            {#each data.forecastAlerts as alert (alert.accountId)}
+              <li>
+                <span class="font-medium">{alert.name}</span>
+                on {prefs.date(alert.date)}, to
+                <Amount value={alert.balance} currency={alert.currency} />
+              </li>
+            {/each}
+          </ul>
+        </Card.Content>
+      </Card.Root>
+    {/if}
+
     <Card.Root>
       <Card.Header>
         <Card.Title>This month</Card.Title>
@@ -416,7 +436,7 @@
             {/if}
             <dl class="space-y-2">
               {#each lines as line (line.label)}
-                {@const dl = delta(line.cur, line.prev, row.currency)}
+                {@const dl = delta(line.cur, line.prev)}
                 <div
                   class={cn(
                     "flex items-baseline justify-between gap-3",
@@ -459,7 +479,10 @@
                         {:else}
                           <ArrowDownIcon class="size-3" aria-hidden="true" />
                         {/if}
-                        {dl.text}
+                        <Amount
+                          value={minor(Math.abs(dl.diff))}
+                          currency={row.currency}
+                        />
                         {dl.diff > 0 ? "more" : "less"} than last month
                       {/if}
                     </span>
@@ -551,7 +574,7 @@
                       {:else}
                         Due in {plural(bill.dueInDays, "day")}
                         <span class="hidden sm:inline">
-                          ({formatDate(bill.dueDate)})
+                          ({prefs.date(bill.dueDate)})
                         </span>
                       {/if}
                     </p>
@@ -727,6 +750,7 @@
                     class="text-muted-foreground mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs"
                   >
                     {#if a.institution}
+                      <InstitutionLogo institution={a.institution} size="sm" />
                       <span class="truncate">{a.institution.name}</span>
                     {/if}
                     <AccountTypeBadge type={a.type} />

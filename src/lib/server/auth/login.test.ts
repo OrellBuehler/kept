@@ -12,8 +12,9 @@ describe("authenticate", () => {
     const u = await createTestUser({ username: "alice" });
     const limiter = new LoginRateLimiter();
     const r = await authenticate("alice", u.password, "1.1.1.1", limiter);
-    expect(r?.user.id).toBe(u.id);
-    expect(validateSessionToken(r!.token)?.user.id).toBe(u.id);
+    if (!r || !("user" in r)) throw new Error("expected a full login");
+    expect(r.user.id).toBe(u.id);
+    expect(validateSessionToken(r.token)?.user.id).toBe(u.id);
   });
 
   it("returns null for a wrong password and for an unknown user alike", async () => {

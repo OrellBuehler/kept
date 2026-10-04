@@ -1,4 +1,5 @@
 <script lang="ts">
+  import InstitutionLogo from "$lib/components/InstitutionLogo.svelte";
   import { enhance } from "$app/forms";
   import { afterNavigate, replaceState } from "$app/navigation";
   import { resolve } from "$app/paths";
@@ -29,6 +30,9 @@
   import TransactionSheet from "./TransactionSheet.svelte";
   import TransactionsCard from "./TransactionsCard.svelte";
   import type { PageProps } from "./$types";
+  import { usePreferences } from "$lib/preferences.svelte";
+
+  const prefs = usePreferences();
 
   let { data }: PageProps = $props();
 
@@ -115,17 +119,13 @@
         >
           {#if account.institution}
             <span class="flex items-center gap-1.5">
-              <span
-                class="bg-muted-foreground/40 size-2.5 rounded-full"
-                style:background-color={account.institution.color}
-                aria-hidden="true"
-              ></span>
+              <InstitutionLogo institution={account.institution} size="sm" />
               {account.institution.name}
             </span>
           {/if}
-          {#if account.ibanMasked}
+          {#if account.iban && prefs.ibanDisplay !== "hidden"}
             <span class="flex items-center gap-1">
-              <span class="font-mono">{account.ibanMasked}</span>
+              <span class="font-mono">{prefs.iban(account.iban)}</span>
               <Button
                 variant="ghost"
                 size="icon-sm"

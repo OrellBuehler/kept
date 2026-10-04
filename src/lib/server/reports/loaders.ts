@@ -1,5 +1,6 @@
 import { and, asc, eq, gte, lte, sql } from "drizzle-orm";
 import type { ShareBasis } from "$lib/money";
+import { maskIban } from "$lib/iban";
 import { getDB, transactions } from "$lib/server/db";
 import { billViews } from "$lib/server/bills/status";
 import { accountBalances } from "$lib/server/dashboard/accounts";
@@ -11,6 +12,8 @@ import { addDays } from "$lib/server/dashboard/dates";
 import type { BillsReportInput } from "./bills-report";
 import { reconcileYear } from "$lib/server/tax/tax";
 import type { NetWorthReportInput } from "./net-worth-report";
+import { deductionSummary } from "$lib/server/tax/deductions";
+import type { TaxDeductionsReportInput } from "./tax-deductions-report";
 import type { TaxReportInput } from "./tax-report";
 import type { AccountStatementInput } from "./statement";
 
@@ -61,7 +64,7 @@ export function loadAccountStatement(
     account: {
       name: account.name,
       institutionName: account.institution?.name ?? null,
-      ibanMasked: account.ibanMasked,
+      ibanMasked: account.iban ? maskIban(account.iban) : null,
       currency: account.currency,
     },
     from,
@@ -87,7 +90,10 @@ export function loadNetWorthReport(
 ): NetWorthReportInput {
   return {
     series: netWorthSeries(userId, { today, basis }),
-    balances: accountBalances(userId, today),
+    balances: accountBalances(userId, today).map(({ iban, ...balance }) => ({
+      ...balance,
+      ibanMasked: iban ? maskIban(iban) : null,
+    })),
     asOf: today,
     basis,
   };
@@ -101,4 +107,12 @@ export function loadTaxReport(
   const reconciliation = reconcileYear(userId, year);
   if (!reconciliation) throw notFound("Tax year");
   return { reconciliation, asOf: today };
+}
+
+export function loadTaxDeductionsReport(
+  userId: string,
+  year: number,
+  today: string = localToday(),
+): TaxDeductionsReportInput {
+  return { summary: deductionSummary(userId, year), asOf: today };
 }

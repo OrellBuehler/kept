@@ -250,8 +250,7 @@ describe("accountBalances", () => {
       stale: false,
       staleDays: 5,
     });
-    expect(by.Fresh!.ibanMasked).toContain("•");
-    expect(by.Fresh!.ibanMasked).not.toContain("62011623");
+    expect(by.Fresh!.iban).toBe(EXAMPLE_IBAN);
     expect(by["Old import"]).toMatchObject({ stale: true, staleDays: 75 });
     // exactly 45 days is not yet stale
     expect(by.Boundary).toMatchObject({ stale: false, staleDays: 45 });

@@ -1,6 +1,7 @@
 import { sql } from "drizzle-orm";
 import {
   type AnySQLiteColumn,
+  blob,
   index,
   integer,
   sqliteTable,
@@ -20,7 +21,11 @@ import {
   DOCUMENT_SOURCES,
 } from "$lib/bill-types";
 import { AMOUNT_SIGNS, CATEGORY_KINDS } from "$lib/category-types";
+import { DEDUCTION_TYPES } from "$lib/tax-deductions";
+import { CHANNEL_KINDS } from "$lib/notification-types";
+import { CADENCES, SERIES_STATUSES } from "$lib/recurring-types";
 import type { Minor } from "$lib/money";
+import { IBAN_DISPLAY, LOCALES } from "$lib/preferences";
 
 export { ACCOUNT_TYPES, IMPORT_FORMATS, REFERENCE_TYPES, ROW_SOURCES };
 export type { AccountType, ImportFormat, RowSource } from "$lib/ledger-types";
@@ -63,9 +68,122 @@ export const sessions = sqliteTable(
       .notNull()
       .references(() => users.id, { onDelete: "cascade" }),
     expiresAt: integer("expires_at", { mode: "timestamp_ms" }).notNull(),
+    /** Last step-up authentication (password [+ code]); gates sensitive changes such as passkeys. */
+    reauthAt: integer("reauth_at", { mode: "timestamp_ms" }),
     ...timestamps,
   },
   (t) => [index("sessions_user_id_idx").on(t.userId)],
+);
+
+export const totpCredentials = sqliteTable("totp_credentials", {
+  userId: text("user_id")
+    .primaryKey()
+    .references(() => users.id, { onDelete: "cascade" }),
+  /** AES-GCM encrypted base32 secret (see crypto.ts). */
+  secret: text("secret").notNull(),
+  /** Null until the user confirmed a code; unconfirmed rows do not protect the login. */
+  confirmedAt: integer("confirmed_at", { mode: "timestamp_ms" }),
+  /** Highest accepted time step; codes at or below it are rejected (replay protection). */
+  lastStep: integer("last_step").notNull().default(0),
+  ...timestamps,
+});
+
+export const recoveryCodes = sqliteTable(
+  "recovery_codes",
+  {
+    id: text("id")
+      .primaryKey()
+      .$defaultFn(() => crypto.randomUUID()),
+    userId: text("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    codeHash: text("code_hash").notNull(),
+    usedAt: integer("used_at", { mode: "timestamp_ms" }),
+    ...timestamps,
+  },
+  (t) => [
+    index("recovery_codes_user_id_idx").on(t.userId),
+    uniqueIndex("recovery_codes_hash_uq").on(t.userId, t.codeHash),
+  ],
+);
+
+export const passkeys = sqliteTable(
+  "passkeys",
+  {
+    id: text("id")
+      .primaryKey()
+      .$defaultFn(() => crypto.randomUUID()),
+    userId: text("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    name: text("name").notNull(),
+    credentialId: text("credential_id").notNull().unique(),
+    /** base64url COSE public key. */
+    publicKey: text("public_key").notNull(),
+    counter: integer("counter").notNull().default(0),
+    /** JSON array of AuthenticatorTransport values. */
+    transports: text("transports"),
+    deviceType: text("device_type").notNull(),
+    backedUp: integer("backed_up", { mode: "boolean" }).notNull(),
+    lastUsedAt: integer("last_used_at", { mode: "timestamp_ms" }),
+    ...timestamps,
+  },
+  (t) => [index("passkeys_user_id_idx").on(t.userId)],
+);
+
+export const AUTH_CHALLENGE_KINDS = [
+  "login",
+  "passkey_register",
+  "passkey_login",
+  "passkey_stepup",
+] as const;
+export type AuthChallengeKind = (typeof AUTH_CHALLENGE_KINDS)[number];
+
+/**
+ * Short-lived server state of a half-finished authentication: the pending
+ * second-factor login ("login", keyed by the hash of a cookie token) and
+ * WebAuthn challenges. Never grants access on its own.
+ */
+export const authChallenges = sqliteTable(
+  "auth_challenges",
+  {
+    id: text("id").primaryKey(),
+    userId: text("user_id").references(() => users.id, {
+      onDelete: "cascade",
+    }),
+    kind: text("kind", { enum: AUTH_CHALLENGE_KINDS }).notNull(),
+    challenge: text("challenge"),
+    attempts: integer("attempts").notNull().default(0),
+    expiresAt: integer("expires_at", { mode: "timestamp_ms" }).notNull(),
+    ...timestamps,
+  },
+  (t) => [index("auth_challenges_user_id_idx").on(t.userId)],
+);
+
+export const AUTH_EVENT_TYPES = [
+  "totp_enabled",
+  "totp_disabled",
+  "recovery_codes_regenerated",
+  "recovery_code_used",
+  "passkey_added",
+  "passkey_removed",
+  "two_factor_reset",
+] as const;
+export type AuthEventType = (typeof AUTH_EVENT_TYPES)[number];
+
+/** Audit trail of security-relevant changes. Never stores secrets, codes or credentials. */
+export const authEvents = sqliteTable(
+  "auth_events",
+  {
+    id: text("id")
+      .primaryKey()
+      .$defaultFn(() => crypto.randomUUID()),
+    userId: text("user_id").notNull(),
+    actorId: text("actor_id").notNull(),
+    type: text("type", { enum: AUTH_EVENT_TYPES }).notNull(),
+    ...timestamps,
+  },
+  (t) => [index("auth_events_user_id_idx").on(t.userId)],
 );
 
 const id = () =>
@@ -88,6 +206,9 @@ export const institutions = sqliteTable(
     name: text("name").notNull(),
     bic: text("bic"),
     color: text("color"),
+    logo: blob("logo", { mode: "buffer" }),
+    logoMime: text("logo_mime"),
+    logoVersion: text("logo_version"),
     ...timestamps,
   },
   (t) => [
@@ -153,6 +274,42 @@ export const imports = sqliteTable(
   (t) => [
     index("imports_user_id_idx").on(t.userId),
     index("imports_account_id_idx").on(t.accountId),
+  ],
+);
+
+export const INBOX_STATUSES = [
+  "imported",
+  "review",
+  "failed",
+  "duplicate",
+] as const;
+export type InboxStatus = (typeof INBOX_STATUSES)[number];
+
+export const inboxFiles = sqliteTable(
+  "inbox_files",
+  {
+    id: id(),
+    userId: userId(),
+    fileName: text("file_name").notNull(),
+    sha256: text("sha256").notNull(),
+    status: text("status", { enum: INBOX_STATUSES }).notNull(),
+    /** Why a file needs review or failed; never contains transaction data. */
+    reason: text("reason"),
+    accountId: text("account_id").references(() => accounts.id, {
+      onDelete: "set null",
+    }),
+    importId: text("import_id").references(() => imports.id, {
+      onDelete: "set null",
+    }),
+    newCount: integer("new_count"),
+    duplicateCount: integer("duplicate_count"),
+    /** File name inside the user's review/ folder while the file awaits review. */
+    reviewFile: text("review_file"),
+    ...timestamps,
+  },
+  (t) => [
+    uniqueIndex("inbox_files_user_sha_uq").on(t.userId, t.sha256),
+    index("inbox_files_user_created_idx").on(t.userId, t.createdAt),
   ],
 );
 
@@ -232,6 +389,63 @@ export const budgets = sqliteTable(
   ],
 );
 
+/** Maps one of the user's categories to a code-defined deduction type; subcategories inherit it. */
+export const deductionMappings = sqliteTable(
+  "deduction_mappings",
+  {
+    id: id(),
+    userId: userId(),
+    categoryId: text("category_id")
+      .notNull()
+      .references(() => categories.id, { onDelete: "cascade" }),
+    deductionType: text("deduction_type", { enum: DEDUCTION_TYPES }).notNull(),
+    ...timestamps,
+  },
+  (t) => [
+    uniqueIndex("deduction_mappings_user_category_uq").on(
+      t.userId,
+      t.categoryId,
+    ),
+    index("deduction_mappings_category_id_idx").on(t.categoryId),
+  ],
+);
+
+/**
+ * A recurring payment (subscription, rent, salary ...) found in the
+ * transactions. Detection refreshes the statistics; the status and any edited
+ * fields are the user's decision and survive re-detection.
+ */
+export const recurringSeries = sqliteTable(
+  "recurring_series",
+  {
+    id: id(),
+    userId: userId(),
+    /** Detection identity: counterparty (IBAN or name), currency and direction. */
+    key: text("key").notNull(),
+    status: text("status", { enum: SERIES_STATUSES })
+      .notNull()
+      .default("suggested"),
+    /** Name, cadence or amount was edited by hand; detection no longer overwrites them. */
+    edited: integer("edited", { mode: "boolean" }).notNull().default(false),
+    name: text("name").notNull(),
+    counterpartyIban: text("counterparty_iban"),
+    cadence: text("cadence", { enum: CADENCES }).notNull(),
+    currency: text("currency").notNull(),
+    /** Signed typical amount: negative for payments, positive for income. */
+    amount: minor("amount").notNull(),
+    firstDate: text("first_date").notNull(),
+    lastDate: text("last_date").notNull(),
+    lastAmount: minor("last_amount").notNull(),
+    previousAmount: minor("previous_amount"),
+    occurrences: integer("occurrences").notNull(),
+    ...timestamps,
+  },
+  (t) => [
+    uniqueIndex("recurring_series_user_key_uq").on(t.userId, t.key),
+    index("recurring_series_user_id_idx").on(t.userId),
+  ],
+);
+
 export const transactions = sqliteTable(
   "transactions",
   {
@@ -265,6 +479,10 @@ export const transactions = sqliteTable(
     }),
     /** Counts as a payment to the tax office for this tax year. */
     taxYear: integer("tax_year"),
+    /** Left out of the tax deductions summary. */
+    deductionExcluded: integer("deduction_excluded", { mode: "boolean" })
+      .notNull()
+      .default(false),
     ...timestamps,
   },
   (t) => [
@@ -616,4 +834,123 @@ export const paperlessReportUploads = sqliteTable(
     ),
     index("paperless_report_uploads_user_id_idx").on(t.userId),
   ],
+);
+
+/** Which notification triggers a user has switched on, with their parameters. */
+export const notificationSettings = sqliteTable("notification_settings", {
+  id: id(),
+  userId: userId().unique(),
+  billDueEnabled: integer("bill_due_enabled", { mode: "boolean" })
+    .notNull()
+    .default(false),
+  billDueDays: integer("bill_due_days").notNull().default(3),
+  billOverdueEnabled: integer("bill_overdue_enabled", { mode: "boolean" })
+    .notNull()
+    .default(false),
+  budgetEnabled: integer("budget_enabled", { mode: "boolean" })
+    .notNull()
+    .default(false),
+  /** Notify once spending reaches this share of a monthly budget. */
+  budgetPercent: integer("budget_percent").notNull().default(100),
+  staleImportEnabled: integer("stale_import_enabled", { mode: "boolean" })
+    .notNull()
+    .default(false),
+  staleImportDays: integer("stale_import_days").notNull().default(14),
+  ...timestamps,
+});
+
+/** One delivery channel per kind and user. */
+export const notificationChannels = sqliteTable(
+  "notification_channels",
+  {
+    id: id(),
+    userId: userId(),
+    kind: text("kind", { enum: CHANNEL_KINDS }).notNull(),
+    /** JSON, encrypted with `encryptSecret`; never returned to the client. */
+    configEncrypted: text("config_encrypted").notNull(),
+    enabled: integer("enabled", { mode: "boolean" }).notNull().default(true),
+    lastSuccessAt: integer("last_success_at", { mode: "timestamp_ms" }),
+    /** Short reason, never message content. */
+    lastError: text("last_error"),
+    lastErrorAt: integer("last_error_at", { mode: "timestamp_ms" }),
+    ...timestamps,
+  },
+  (t) => [
+    uniqueIndex("notification_channels_user_kind_uq").on(t.userId, t.kind),
+  ],
+);
+
+/** Events already notified, so each one is sent once. */
+export const notificationsSent = sqliteTable(
+  "notifications_sent",
+  {
+    id: id(),
+    userId: userId(),
+    /** e.g. `bill-overdue:<billId>:<dueDate>`. */
+    eventKey: text("event_key").notNull(),
+    ...timestamps,
+  },
+  (t) => [
+    uniqueIndex("notifications_sent_user_key_uq").on(t.userId, t.eventKey),
+  ],
+);
+
+/** One-off expected income or expense used by the cash-flow forecast. */
+export const plannedItems = sqliteTable(
+  "planned_items",
+  {
+    id: id(),
+    userId: userId(),
+    accountId: text("account_id").references(() => accounts.id, {
+      onDelete: "set null",
+    }),
+    date: text("date").notNull(),
+    /** Signed minor units: positive is income, negative is an expense; never 0. */
+    amount: minor("amount").notNull(),
+    currency: text("currency").notNull(),
+    label: text("label").notNull(),
+    ...timestamps,
+  },
+  (t) => [
+    index("planned_items_user_date_idx").on(t.userId, t.date),
+    index("planned_items_account_id_idx").on(t.accountId),
+  ],
+);
+
+/** Per-account forecast preferences: low-balance threshold and default payment account. */
+export const forecastAccountSettings = sqliteTable(
+  "forecast_account_settings",
+  {
+    id: id(),
+    userId: userId(),
+    accountId: text("account_id")
+      .notNull()
+      .references(() => accounts.id, { onDelete: "cascade" }),
+    /** Warn when the projected balance falls below this (minor units); null means 0. */
+    threshold: minor("threshold"),
+    /** Bills without a paying account are projected on this account (one per currency). */
+    isDefaultPayment: integer("is_default_payment", { mode: "boolean" })
+      .notNull()
+      .default(false),
+    ...timestamps,
+  },
+  (t) => [
+    uniqueIndex("forecast_account_settings_account_uq").on(t.accountId),
+    index("forecast_account_settings_user_id_idx").on(t.userId),
+  ],
+);
+
+export const userPreferences = sqliteTable(
+  "user_preferences",
+  {
+    id: id(),
+    userId: userId(),
+    ibanDisplay: text("iban_display", { enum: IBAN_DISPLAY }).notNull(),
+    blurAmounts: integer("blur_amounts", { mode: "boolean" }).notNull(),
+    locale: text("locale", { enum: LOCALES }).notNull(),
+    defaultCurrency: text("default_currency").notNull(),
+    pageSize: integer("page_size").notNull(),
+    ...timestamps,
+  },
+  (t) => [uniqueIndex("user_preferences_user_id_uq").on(t.userId)],
 );

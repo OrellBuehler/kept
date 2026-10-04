@@ -259,6 +259,7 @@ export interface ParsedListQuery {
 export function parseListQuery(
   params: URLSearchParams,
   currency: string,
+  defaultPageSize: number = DEFAULT_PAGE_SIZE,
 ): ParsedListQuery {
   const get = (k: string) => params.get(k)?.trim() ?? "";
   const raw = {
@@ -295,7 +296,7 @@ export function parseListQuery(
   const page = Math.max(1, int("page", 1));
   const pageSize = Math.min(
     MAX_PAGE_SIZE,
-    Math.max(1, int("pageSize", DEFAULT_PAGE_SIZE)),
+    Math.max(1, int("pageSize", defaultPageSize)),
   );
   return { filters, raw, errors, page, pageSize };
 }

@@ -1,7 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { createTestUser } from "$lib/testing/auth";
 import { useTestDB } from "$lib/testing/db";
-import { maskIban } from "$lib/iban";
 import { LEDGER_IBAN_A } from "$lib/testing/fixtures/ledger";
 import { createTestEvent, outcome } from "$lib/testing/event";
 import { seedAccount, seedInstitution } from "$lib/testing/ledger";
@@ -33,15 +32,27 @@ describe("accounts page", () => {
       r as { value: { institutions: unknown[]; accounts: unknown[] } }
     ).value;
     expect(data.institutions).toEqual([
-      { id: inst.id, name: "Inst A", bic: null, color: null, accountCount: 1 },
+      {
+        id: inst.id,
+        name: "Inst A",
+        bic: null,
+        color: null,
+        logoVersion: null,
+        accountCount: 1,
+      },
     ]);
     expect(data.accounts).toEqual([
       expect.objectContaining({
         name: "Main",
         balance: 0,
-        ibanMasked: maskIban(LEDGER_IBAN_A),
+        iban: LEDGER_IBAN_A,
         archived: false,
-        institution: { id: inst.id, name: "Inst A", color: null },
+        institution: {
+          id: inst.id,
+          name: "Inst A",
+          color: null,
+          logoVersion: null,
+        },
         lastBookingDate: null,
         lastImportAt: null,
       }),

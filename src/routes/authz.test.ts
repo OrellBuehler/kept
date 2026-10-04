@@ -42,6 +42,52 @@ const matrix: Record<string, Entry> = {
   "/src/routes/setup/+page.server.ts": { access: "public" },
   "/src/routes/login/+page.server.ts": { access: "public" },
   "/src/routes/logout/+page.server.ts": { access: "public" },
+  "/src/routes/login/verify/+page.server.ts": { access: "public" },
+  "/src/routes/api/auth/passkey/login/options/+server.ts": {
+    access: "public",
+  },
+  "/src/routes/api/auth/passkey/login/verify/+server.ts": {
+    access: "public",
+  },
+  "/src/routes/api/auth/passkey/register/options/+server.ts": {
+    access: "user",
+    handlers: {
+      POST: (m, e) => (m as never as { POST: (e: never) => unknown }).POST(e),
+    },
+  },
+  "/src/routes/api/auth/passkey/register/verify/+server.ts": {
+    access: "user",
+    handlers: {
+      POST: (m, e) => (m as never as { POST: (e: never) => unknown }).POST(e),
+    },
+  },
+  "/src/routes/api/auth/passkey/stepup/options/+server.ts": {
+    access: "user",
+    handlers: {
+      POST: (m, e) => (m as never as { POST: (e: never) => unknown }).POST(e),
+    },
+  },
+  "/src/routes/api/auth/passkey/stepup/verify/+server.ts": {
+    access: "user",
+    handlers: {
+      POST: (m, e) => (m as never as { POST: (e: never) => unknown }).POST(e),
+    },
+  },
+  "/src/routes/(app)/settings/security/+page.server.ts": {
+    access: "user",
+    handlers: {
+      load: (m, e) => m.load(e),
+      "actions.startTotp": (m, e) => m.actions.startTotp(e),
+      "actions.cancelTotp": (m, e) => m.actions.cancelTotp(e),
+      "actions.confirmTotp": (m, e) => m.actions.confirmTotp(e),
+      "actions.disableTotp": (m, e) => m.actions.disableTotp(e),
+      "actions.regenerateRecoveryCodes": (m, e) =>
+        m.actions.regenerateRecoveryCodes(e),
+      "actions.stepUp": (m, e) => m.actions.stepUp(e),
+      "actions.renamePasskey": (m, e) => m.actions.renamePasskey(e),
+      "actions.deletePasskey": (m, e) => m.actions.deletePasskey(e),
+    },
+  },
   "/src/routes/(app)/+layout.server.ts": {
     access: "user",
     handlers: { load: (m, e) => m.load(e) },
@@ -69,6 +115,25 @@ const matrix: Record<string, Entry> = {
     handlers: {
       load: (m, e) => m.load(e),
       "actions.changePassword": (m, e) => m.actions.changePassword(e),
+    },
+  },
+  "/src/routes/(app)/settings/notifications/+page.server.ts": {
+    access: "user",
+    handlers: {
+      load: (m, e) => m.load(e),
+      "actions.saveSettings": (m, e) => m.actions.saveSettings(e),
+      "actions.saveChannel": (m, e) => m.actions.saveChannel(e),
+      "actions.toggleChannel": (m, e) => m.actions.toggleChannel(e),
+      "actions.deleteChannel": (m, e) => m.actions.deleteChannel(e),
+      "actions.testChannel": (m, e) => m.actions.testChannel(e),
+    },
+  },
+  "/src/routes/(app)/settings/preferences/+page.server.ts": {
+    access: "user",
+    handlers: {
+      load: (m, e) => m.load(e),
+      "actions.save": (m, e) => m.actions.save(e),
+      "actions.setBlur": (m, e) => m.actions.setBlur(e),
     },
   },
   "/src/routes/(app)/settings/paperless/+page.server.ts": {
@@ -135,6 +200,32 @@ const matrix: Record<string, Entry> = {
       "actions.deleteBudget": (m, e) => m.actions.deleteBudget(e),
     },
   },
+  "/src/routes/(app)/forecast/+page.server.ts": {
+    access: "user",
+    handlers: {
+      load: (m, e) => m.load(e),
+      "actions.createPlanned": (m, e) => m.actions.createPlanned(e),
+      "actions.updatePlanned": (m, e) => m.actions.updatePlanned(e),
+      "actions.deletePlanned": (m, e) => m.actions.deletePlanned(e),
+      "actions.saveSettings": (m, e) => m.actions.saveSettings(e),
+    },
+  },
+  "/src/routes/(app)/recurring/+page.server.ts": {
+    access: "user",
+    handlers: {
+      load: (m, e) => m.load(e),
+      "actions.confirm": (m, e) => m.actions.confirm(e),
+      "actions.dismiss": (m, e) => m.actions.dismiss(e),
+      "actions.restore": (m, e) => m.actions.restore(e),
+      "actions.edit": (m, e) => m.actions.edit(e),
+    },
+  },
+  "/src/routes/(app)/review/+page.server.ts": {
+    access: "user",
+    handlers: {
+      load: (m, e) => m.load(e),
+    },
+  },
   "/src/routes/(app)/bills/+page.server.ts": {
     access: "user",
     handlers: {
@@ -168,6 +259,12 @@ const matrix: Record<string, Entry> = {
     },
   },
   "/src/routes/(app)/bills/[id]/document/+server.ts": {
+    access: "user",
+    handlers: {
+      GET: (m, e) => (m as never as { GET: (e: never) => unknown }).GET(e),
+    },
+  },
+  "/src/routes/(app)/institutions/[id]/logo/+server.ts": {
     access: "user",
     handlers: {
       GET: (m, e) => (m as never as { GET: (e: never) => unknown }).GET(e),
@@ -244,6 +341,7 @@ const matrix: Record<string, Entry> = {
       load: (m, e) => m.load(e),
       "actions.create": (m, e) => m.actions.create(e),
       "actions.delete": (m, e) => m.actions.delete(e),
+      "actions.resetTwoFactor": (m, e) => m.actions.resetTwoFactor(e),
     },
   },
 };

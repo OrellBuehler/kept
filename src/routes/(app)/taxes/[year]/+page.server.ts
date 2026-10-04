@@ -12,6 +12,14 @@ import {
   taxYearInputSchema,
 } from "$lib/server/tax/schemas";
 import {
+  deductionExcludeSchema,
+  deductionMappingSchema,
+  deductionSummary,
+  listDeductionMappings,
+  setCategoryDeduction,
+  setTransactionDeductionExcluded,
+} from "$lib/server/tax/deductions";
+import {
   addTaxCredit,
   deleteTaxCredit,
   deleteTaxYear,
@@ -31,7 +39,11 @@ export const load: PageServerLoad = ({ locals, params }) => {
   const user = requireUser(locals);
   const reconciliation = reconcileYear(user.id, yearOf(params));
   if (!reconciliation) error(404, "Tax year not found.");
-  return { reconciliation };
+  return {
+    reconciliation,
+    deductions: deductionSummary(user.id, reconciliation.year.year),
+    deductionMappings: listDeductionMappings(user.id),
+  };
 };
 
 export const actions: Actions = {
@@ -135,6 +147,74 @@ export const actions: Actions = {
       return { success: true as const, action: "untag" as const };
     } catch (err) {
       return ledgerFailure("untag", err, values);
+    }
+  },
+
+  setDeduction: async ({ locals, request }) => {
+    const user = requireUser(locals);
+    const form = await request.formData();
+    const values = safeValues(form, ["categoryId", "deductionType"]);
+    const parsed = parseForm(deductionMappingSchema, form);
+    if (!parsed.ok) {
+      return fail(400, {
+        action: "setDeduction",
+        errors: parsed.errors,
+        values,
+      });
+    }
+    try {
+      setCategoryDeduction(
+        user.id,
+        parsed.data.categoryId,
+        parsed.data.deductionType === "" ? null : parsed.data.deductionType,
+      );
+      return { success: true as const, action: "setDeduction" as const };
+    } catch (err) {
+      return ledgerFailure("setDeduction", err, values);
+    }
+  },
+
+  excludeDeduction: async ({ locals, request }) => {
+    const user = requireUser(locals);
+    const form = await request.formData();
+    const values = safeValues(form, ["transactionId"]);
+    const parsed = parseForm(deductionExcludeSchema, form);
+    if (!parsed.ok) {
+      return fail(400, {
+        action: "excludeDeduction",
+        errors: parsed.errors,
+        values,
+      });
+    }
+    try {
+      setTransactionDeductionExcluded(user.id, parsed.data.transactionId, true);
+      return { success: true as const, action: "excludeDeduction" as const };
+    } catch (err) {
+      return ledgerFailure("excludeDeduction", err, values);
+    }
+  },
+
+  includeDeduction: async ({ locals, request }) => {
+    const user = requireUser(locals);
+    const form = await request.formData();
+    const values = safeValues(form, ["transactionId"]);
+    const parsed = parseForm(deductionExcludeSchema, form);
+    if (!parsed.ok) {
+      return fail(400, {
+        action: "includeDeduction",
+        errors: parsed.errors,
+        values,
+      });
+    }
+    try {
+      setTransactionDeductionExcluded(
+        user.id,
+        parsed.data.transactionId,
+        false,
+      );
+      return { success: true as const, action: "includeDeduction" as const };
+    } catch (err) {
+      return ledgerFailure("includeDeduction", err, values);
     }
   },
 };

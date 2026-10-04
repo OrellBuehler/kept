@@ -36,12 +36,15 @@
   import { formatReference } from "$lib/references";
   import type { FormErrors } from "$lib/form-errors";
   import { submitHandler } from "$lib/form-submit";
-  import { formatDate } from "$lib/format";
-  import { formatIban, maskIban } from "$lib/iban";
+
+  import { formatIban } from "$lib/iban";
   import AllocationRow from "./AllocationRow.svelte";
   import CandidateRow from "./CandidateRow.svelte";
   import DismissedRow from "./DismissedRow.svelte";
   import type { PageProps } from "./$types";
+  import { usePreferences } from "$lib/preferences.svelte";
+
+  const prefs = usePreferences();
 
   let { data }: PageProps = $props();
 
@@ -95,7 +98,7 @@
 
   const hasDetails = $derived(
     !!(
-      bill.creditorIban ||
+      (bill.creditorIban && prefs.ibanDisplay !== "hidden") ||
       bill.reference ||
       bill.message ||
       bill.issueDate ||
@@ -152,7 +155,7 @@
         {#if bill.invoiceNumber}No. {bill.invoiceNumber} ·
         {/if}
         {#if bill.dueDate}
-          Due {formatDate(bill.dueDate)}
+          Due {prefs.date(bill.dueDate)}
           {#if hint}
             <span
               class={bill.overdue
@@ -289,23 +292,25 @@
       </Card.Header>
       <Card.Content>
         <dl class="grid grid-cols-[auto_1fr] gap-x-4 gap-y-2 text-sm">
-          {#if bill.creditorIban}
+          {#if bill.creditorIban && prefs.ibanDisplay !== "hidden"}
             <dt class="text-muted-foreground">IBAN</dt>
             <dd class="flex flex-wrap items-center gap-2">
               <span class="font-mono break-all">
                 {showIban
                   ? formatIban(bill.creditorIban)
-                  : maskIban(bill.creditorIban)}
+                  : prefs.iban(bill.creditorIban)}
               </span>
-              <button
-                type="button"
-                class="text-muted-foreground text-xs underline"
-                aria-pressed={showIban}
-                aria-label={showIban ? "Hide full IBAN" : "Show full IBAN"}
-                onclick={() => (showIban = !showIban)}
-              >
-                {showIban ? "hide" : "show"}
-              </button>
+              {#if prefs.ibanDisplay === "masked"}
+                <button
+                  type="button"
+                  class="text-muted-foreground text-xs underline"
+                  aria-pressed={showIban}
+                  aria-label={showIban ? "Hide full IBAN" : "Show full IBAN"}
+                  onclick={() => (showIban = !showIban)}
+                >
+                  {showIban ? "hide" : "show"}
+                </button>
+              {/if}
             </dd>
           {/if}
           {#if bill.reference}
@@ -325,7 +330,7 @@
           {/if}
           {#if bill.issueDate}
             <dt class="text-muted-foreground">Issued</dt>
-            <dd>{formatDate(bill.issueDate)}</dd>
+            <dd>{prefs.date(bill.issueDate)}</dd>
           {/if}
           {#if expectedAccount}
             <dt class="text-muted-foreground">Pays from</dt>

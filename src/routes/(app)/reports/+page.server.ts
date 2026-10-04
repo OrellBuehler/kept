@@ -14,7 +14,7 @@ export const load: PageServerLoad = ({ locals }) => {
       id: a.id,
       name: a.name,
       currency: a.currency,
-      ibanMasked: a.ibanMasked,
+      iban: a.iban,
       archived: a.archived,
     })),
   };

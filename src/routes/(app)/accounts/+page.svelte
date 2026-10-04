@@ -13,8 +13,9 @@
   import Amount from "$lib/components/Amount.svelte";
   import ConfirmActionDialog from "$lib/components/ConfirmActionDialog.svelte";
   import ShareBadge from "$lib/components/ShareBadge.svelte";
+  import InstitutionLogo from "$lib/components/InstitutionLogo.svelte";
   import InstitutionFormDialog from "$lib/components/InstitutionFormDialog.svelte";
-  import { daysSince, formatAgo, formatDate } from "$lib/format";
+  import { daysSince, formatAgo } from "$lib/format";
   import { FULL_SHARE_BPS, minor, type Minor } from "$lib/money";
   import LandmarkIcon from "@lucide/svelte/icons/landmark";
   import MoreHorizontalIcon from "@lucide/svelte/icons/ellipsis";
@@ -23,6 +24,9 @@
   import Trash2Icon from "@lucide/svelte/icons/trash-2";
   import TriangleAlertIcon from "@lucide/svelte/icons/triangle-alert";
   import type { PageData, PageProps } from "./$types";
+  import { usePreferences } from "$lib/preferences.svelte";
+
+  const prefs = usePreferences();
 
   type Account = PageData["accounts"][number];
   type Institution = PageData["institutions"][number];
@@ -187,11 +191,9 @@
       >
         <div class="flex items-center justify-between gap-2">
           <h2 class="flex min-w-0 items-center gap-2 text-sm font-medium">
-            <span
-              class="bg-muted-foreground/30 size-3 shrink-0 rounded-full"
-              style:background-color={group.institution?.color}
-              aria-hidden="true"
-            ></span>
+            {#if group.institution}
+              <InstitutionLogo institution={group.institution} />
+            {/if}
             <span class="truncate">{group.institution?.name ?? "Other"}</span>
             {#if group.institution?.bic}
               <span class="text-muted-foreground font-mono text-xs font-normal">
@@ -253,38 +255,47 @@
                   href={resolve("/(app)/accounts/[id]", { id: account.id })}
                   class="hover:bg-muted/50 focus-visible:ring-ring/50 flex items-start justify-between gap-4 p-4 outline-none focus-visible:ring-[3px]"
                 >
-                  <div class="grid min-w-0 gap-1">
-                    <div class="flex flex-wrap items-center gap-2">
-                      <span class="truncate font-medium">{account.name}</span>
-                      <AccountTypeBadge type={account.type} />
-                      <ShareBadge
-                        shareBps={account.shareBps}
-                        sharedWith={account.sharedWith}
+                  <div class="flex min-w-0 items-start gap-3">
+                    {#if account.institution}
+                      <InstitutionLogo
+                        institution={account.institution}
+                        size="sm"
+                        class="mt-0.5"
                       />
-                      {#if account.archived}
-                        <Badge variant="outline">Archived</Badge>
+                    {/if}
+                    <div class="grid min-w-0 gap-1">
+                      <div class="flex flex-wrap items-center gap-2">
+                        <span class="truncate font-medium">{account.name}</span>
+                        <AccountTypeBadge type={account.type} />
+                        <ShareBadge
+                          shareBps={account.shareBps}
+                          sharedWith={account.sharedWith}
+                        />
+                        {#if account.archived}
+                          <Badge variant="outline">Archived</Badge>
+                        {/if}
+                      </div>
+                      {#if account.iban && prefs.ibanDisplay !== "hidden"}
+                        <span class="text-muted-foreground font-mono text-xs">
+                          {prefs.iban(account.iban)}
+                        </span>
+                      {/if}
+                      <span class="text-muted-foreground text-xs">
+                        {#if account.lastBookingDate}
+                          Last booking {prefs.date(account.lastBookingDate)}
+                        {:else}
+                          No transactions yet
+                        {/if}
+                      </span>
+                      {#if ago}
+                        <span
+                          class="flex items-center gap-1 text-xs text-amber-600 dark:text-amber-400"
+                        >
+                          <TriangleAlertIcon class="size-3.5" />
+                          Last import {ago}
+                        </span>
                       {/if}
                     </div>
-                    {#if account.ibanMasked}
-                      <span class="text-muted-foreground font-mono text-xs">
-                        {account.ibanMasked}
-                      </span>
-                    {/if}
-                    <span class="text-muted-foreground text-xs">
-                      {#if account.lastBookingDate}
-                        Last booking {formatDate(account.lastBookingDate)}
-                      {:else}
-                        No transactions yet
-                      {/if}
-                    </span>
-                    {#if ago}
-                      <span
-                        class="flex items-center gap-1 text-xs text-amber-600 dark:text-amber-400"
-                      >
-                        <TriangleAlertIcon class="size-3.5" />
-                        Last import {ago}
-                      </span>
-                    {/if}
                   </div>
                   <div class="shrink-0 text-end">
                     <Amount

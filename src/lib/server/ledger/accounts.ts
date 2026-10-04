@@ -11,8 +11,14 @@ import {
 } from "$lib/server/db";
 import { currentBalances } from "./balances";
 import { LedgerError, notFound } from "./errors";
-import { maskIban } from "$lib/iban";
 import type { AccountInput } from "./schemas";
+
+export interface InstitutionRef {
+  id: string;
+  name: string;
+  color: string | null;
+  logoVersion: string | null;
+}
 
 export interface AccountView {
   id: string;
@@ -20,7 +26,6 @@ export interface AccountView {
   type: AccountType;
   currency: string;
   iban: string | null;
-  ibanMasked: string | null;
   openingBalance: Minor;
   openingDate: string | null;
   archived: boolean;
@@ -28,7 +33,7 @@ export interface AccountView {
   /** Ownership share in basis points (10000 = 100%); stored amounts are always 100%. */
   shareBps: number;
   sharedWith: string | null;
-  institution: { id: string; name: string; color: string | null } | null;
+  institution: InstitutionRef | null;
   /** Latest known balance in the account currency (see balances.ts). */
   balance: Minor;
   /** `balance` at the ownership share. */
@@ -55,6 +60,7 @@ function baseRows(userId: string, accountId?: string) {
       institutionId: institutions.id,
       institutionName: institutions.name,
       institutionColor: institutions.color,
+      institutionLogoVersion: institutions.logoVersion,
     })
     .from(accounts)
     .leftJoin(institutions, eq(institutions.id, accounts.institutionId))
@@ -116,7 +122,6 @@ function toViews(
     type: r.type,
     currency: r.currency,
     iban: r.iban,
-    ibanMasked: r.iban ? maskIban(r.iban) : null,
     openingBalance: r.openingBalance,
     openingDate: r.openingDate,
     archived: r.archived,
@@ -128,6 +133,7 @@ function toViews(
           id: r.institutionId,
           name: r.institutionName!,
           color: r.institutionColor,
+          logoVersion: r.institutionLogoVersion,
         }
       : null,
     balance: balances.get(r.id)!,

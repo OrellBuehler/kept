@@ -36,6 +36,7 @@ import {
   listTransactions,
   updateTransaction,
 } from "$lib/server/ledger/transactions";
+import { getPreferences } from "$lib/server/preferences";
 import { taxTagSchema } from "$lib/server/tax/schemas";
 import { setTransactionTaxYear } from "$lib/server/tax/tax";
 import type { Actions, PageServerLoad } from "./$types";
@@ -67,7 +68,11 @@ const snapshotFields = ["date", "amount", "note"] as const;
 export const load: PageServerLoad = ({ locals, params, url }) => {
   const user = requireUser(locals);
   const account = orNotFound(() => getAccount(user.id, params.id));
-  const query = parseListQuery(url.searchParams, account.currency);
+  const query = parseListQuery(
+    url.searchParams,
+    account.currency,
+    getPreferences(user.id).pageSize,
+  );
   return {
     account,
     balance: account.balance,

@@ -13,13 +13,15 @@
   import FormField from "$lib/components/FormField.svelte";
   import { FULL_SHARE_BPS, formatShare, shareOf } from "$lib/money";
   import UsersIcon from "@lucide/svelte/icons/users";
-  import { formatDate } from "$lib/format";
   import ArrowLeftRightIcon from "@lucide/svelte/icons/arrow-left-right";
   import FilterIcon from "@lucide/svelte/icons/filter";
   import PlusIcon from "@lucide/svelte/icons/plus";
   import UploadIcon from "@lucide/svelte/icons/upload";
   import StickyNoteIcon from "@lucide/svelte/icons/sticky-note";
   import type { PageData } from "./$types";
+  import { usePreferences } from "$lib/preferences.svelte";
+
+  const prefs = usePreferences();
 
   type Tx = PageData["transactions"]["items"][number];
 
@@ -215,7 +217,7 @@
                       onSelect(tx);
                     }}
                   >
-                    {formatDate(tx.bookingDate)}
+                    {prefs.date(tx.bookingDate)}
                   </button>
                 </Table.Cell>
                 <Table.Cell class="max-w-0 align-top whitespace-normal">
@@ -326,7 +328,7 @@
               <span
                 class="text-muted-foreground flex items-center justify-between gap-2 text-xs"
               >
-                <span>{formatDate(tx.bookingDate)}</span>
+                <span>{prefs.date(tx.bookingDate)}</span>
                 <span class="flex min-w-0 items-center gap-2">
                   {#if tx.reference}
                     <span class="truncate font-mono">{tx.reference}</span>

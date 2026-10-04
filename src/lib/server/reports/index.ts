@@ -7,9 +7,14 @@ import {
   loadAccountStatement,
   loadBillsReport,
   loadNetWorthReport,
+  loadTaxDeductionsReport,
   loadTaxReport,
 } from "./loaders";
 import { netWorthReport, netWorthReportTitle } from "./net-worth-report";
+import {
+  taxDeductionsReport,
+  taxDeductionsReportTitle,
+} from "./tax-deductions-report";
 import { taxReport, taxReportTitle } from "./tax-report";
 import { accountStatementReport, accountStatementTitle } from "./statement";
 
@@ -17,9 +22,16 @@ export * from "./bills-report";
 export * from "./loaders";
 export * from "./net-worth-report";
 export * from "./statement";
+export * from "./tax-deductions-report";
 export * from "./tax-report";
 
-export const REPORT_KINDS = ["statement", "bills", "net-worth", "tax"] as const;
+export const REPORT_KINDS = [
+  "statement",
+  "bills",
+  "net-worth",
+  "tax",
+  "tax-deductions",
+] as const;
 export type ReportKind = (typeof REPORT_KINDS)[number];
 
 const isoDate = z
@@ -121,6 +133,18 @@ export async function buildReport(
       bytes: await taxReport(input),
       fileName: `kept-tax-${parsed.data.year}-${today}.pdf`,
       title: taxReportTitle(input),
+    };
+  }
+  if (kind === "tax-deductions") {
+    const parsed = taxParams.safeParse({ year: params.year ?? undefined });
+    if (!parsed.success) {
+      throw new LedgerError("invalid", parsed.error.issues[0]!.message, "year");
+    }
+    const input = loadTaxDeductionsReport(userId, parsed.data.year, today);
+    return {
+      bytes: await taxDeductionsReport(input),
+      fileName: `kept-tax-deductions-${parsed.data.year}-${today}.pdf`,
+      title: taxDeductionsReportTitle(input),
     };
   }
   const parsed = netWorthParams.safeParse({

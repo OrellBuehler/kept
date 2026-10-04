@@ -1,4 +1,5 @@
 <script lang="ts">
+  import InstitutionLogo from "$lib/components/InstitutionLogo.svelte";
   import { enhance } from "$app/forms";
   import { resolve } from "$app/paths";
   import { untrack } from "svelte";
@@ -28,6 +29,9 @@
   } from "$lib/import-ui";
   import { cn } from "$lib/utils";
   import type { PageProps } from "./$types";
+  import { usePreferences } from "$lib/preferences.svelte";
+
+  const prefs = usePreferences();
 
   let { data, form }: PageProps = $props();
 
@@ -148,24 +152,32 @@
             errors={errors.accountId}
             class="max-w-md"
           >
-            <NativeSelect
-              id="import-account"
-              name="accountId"
-              bind:value={accountId}
-              class="w-full"
-              required
-              disabled={pending}
-              aria-invalid={!!errors.accountId?.length}
-            >
-              <option value="" disabled>Choose an account</option>
-              {#each data.accounts as account (account.id)}
-                <option value={account.id}>
-                  {account.name} ({account.currency}){account.institutionName
-                    ? ` · ${account.institutionName}`
-                    : ""}
-                </option>
-              {/each}
-            </NativeSelect>
+            <div class="flex items-center gap-2">
+              {#if selectedAccount?.institution}
+                <InstitutionLogo
+                  institution={selectedAccount.institution}
+                  size="md"
+                />
+              {/if}
+              <NativeSelect
+                id="import-account"
+                name="accountId"
+                bind:value={accountId}
+                class="w-full"
+                required
+                disabled={pending}
+                aria-invalid={!!errors.accountId?.length}
+              >
+                <option value="" disabled>Choose an account</option>
+                {#each data.accounts as account (account.id)}
+                  <option value={account.id}>
+                    {account.name} ({account.currency}){account.institutionName
+                      ? ` · ${account.institutionName}`
+                      : ""}
+                  </option>
+                {/each}
+              </NativeSelect>
+            </div>
           </FormField>
 
           <FormField
@@ -251,6 +263,86 @@
     </Card.Root>
   {/if}
 
+  {#if data.inbox.enabled}
+    <section class="grid gap-3" aria-labelledby="inbox-heading">
+      <h2 id="inbox-heading" class="text-lg font-semibold">Watch folder</h2>
+      <p class="text-muted-foreground text-sm">
+        Files dropped into your inbox folder are imported automatically when
+        they match one of your accounts and the preview has no warnings.
+        {#if data.inbox.lastScan}
+          Last scan: <LocalTime
+            ms={data.inbox.lastScan.at}
+            class="text-foreground"
+          />.
+        {:else}
+          No scan has run yet.
+        {/if}
+      </p>
+      {#if data.inbox.entries.length === 0}
+        <p
+          class="text-muted-foreground rounded-lg border border-dashed p-6 text-center text-sm"
+        >
+          Nothing picked up from the inbox yet.
+        </p>
+      {:else}
+        <ul class="divide-y rounded-lg border">
+          {#each data.inbox.entries as entry (entry.id)}
+            <li class="grid gap-1 px-4 py-3 text-sm">
+              <div
+                class="flex flex-wrap items-center justify-between gap-x-4 gap-y-1"
+              >
+                <div class="flex min-w-0 items-center gap-2">
+                  <span class="truncate font-medium">{entry.fileName}</span>
+                  <Badge
+                    variant="outline"
+                    class={cn(
+                      entry.status === "failed" &&
+                        "border-destructive/50 text-destructive",
+                      entry.status === "review" &&
+                        "border-amber-500/50 text-amber-700 dark:text-amber-400",
+                    )}
+                  >
+                    {entry.status === "imported"
+                      ? "Imported"
+                      : entry.status === "review"
+                        ? "Needs review"
+                        : entry.status === "failed"
+                          ? "Failed"
+                          : "Already imported"}
+                  </Badge>
+                </div>
+                <LocalTime
+                  ms={entry.updatedAt}
+                  class="text-muted-foreground text-xs"
+                />
+              </div>
+              <div
+                class="text-muted-foreground flex flex-wrap items-center gap-x-4 gap-y-1"
+              >
+                {#if entry.accountName}<span>{entry.accountName}</span>{/if}
+                {#if entry.status === "imported"}
+                  <span class="tabular-nums"
+                    >{entry.newCount ?? 0} new · {entry.duplicateCount ?? 0} duplicate</span
+                  >
+                {:else if entry.reason}
+                  <span>{entry.reason}</span>
+                {/if}
+                {#if entry.status === "review"}
+                  <form method="POST" action="?/reviewInbox" class="sm:ms-auto">
+                    <input type="hidden" name="entryId" value={entry.id} />
+                    <Button type="submit" size="sm" variant="outline"
+                      >Review</Button
+                    >
+                  </form>
+                {/if}
+              </div>
+            </li>
+          {/each}
+        </ul>
+      {/if}
+    </section>
+  {/if}
+
   <section class="grid gap-3" aria-labelledby="recent-heading">
     <h2 id="recent-heading" class="text-lg font-semibold">Recent imports</h2>
     {#if data.recentImports.length === 0}
@@ -290,7 +382,13 @@
               class="text-muted-foreground flex flex-wrap items-center gap-x-4 gap-y-1"
             >
               <span>{imp.accountName}</span>
-              <span>{formatPeriod(imp.statementFrom, imp.statementTo)}</span>
+              <span
+                >{formatPeriod(
+                  imp.statementFrom,
+                  imp.statementTo,
+                  prefs.locale,
+                )}</span
+              >
               <span class="tabular-nums"
                 >{imp.newCount} new · {imp.duplicateCount} duplicate</span
               >
