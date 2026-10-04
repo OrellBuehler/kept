@@ -426,7 +426,7 @@ describe("tax deductions", () => {
     expect(
       s.totals[0]!.lines.find((l) => l.transactionId === tx.id),
     ).toMatchObject({
-      source: "category",
+      source: "pillar_3a",
     });
   });
 

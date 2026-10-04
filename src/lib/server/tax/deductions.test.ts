@@ -8,6 +8,12 @@ import { createTestUser } from "$lib/testing/auth";
 import { useTestDB } from "$lib/testing/db";
 import { seedAccount, seedImportedTransaction } from "$lib/testing/ledger";
 import {
+  makeQrr,
+  seedPillar3aAccount,
+  seedPortfolio,
+} from "$lib/testing/pillar3a";
+import { updateDetectedContribution } from "$lib/server/pillar3a";
+import {
   deductionSummary,
   listDeductionMappings,
   setCategoryDeduction,
@@ -195,5 +201,79 @@ describe("deduction summary", () => {
       (e) => e,
     );
     expect(err).toBeInstanceOf(LedgerError);
+  });
+});
+
+describe("deduction summary with detected pillar 3a payments", () => {
+  useTestDB();
+
+  const setup3a = async () => {
+    const base = await setup();
+    const threeA = seedPillar3aAccount(base.user.id);
+    seedPortfolio(base.user.id, threeA.id, { depositReference: makeQrr(1) });
+    const cat = base.cat("Retirement");
+    setCategoryDeduction(base.user.id, cat.id, "pillar_3a");
+    return { ...base, cat };
+  };
+  const credit = (userId: string, transactionId: string, date: string) =>
+    updateDetectedContribution(userId, transactionId, {
+      date,
+      kind: "ordinary",
+      gapYears: [],
+      note: null,
+    });
+  const total = (userId: string, year: number) =>
+    deductionSummary(userId, year).totals.find((t) => t.type === "pillar_3a")
+      ?.total ?? 0;
+
+  it("counts a category-mapped payment once, in its credit-date year", async () => {
+    const { user, cat, tx } = await setup3a();
+    const t = tx(-50000, "2025-12-28", {
+      categoryId: cat.id,
+      reference: makeQrr(1),
+    });
+    credit(user.id, t.id, "2026-01-05");
+    expect(total(user.id, 2025)).toBe(0);
+    const y2026 = deductionSummary(user.id, 2026);
+    expect(y2026.totals[0]!.lines).toHaveLength(1);
+    expect(y2026.totals[0]!.lines[0]!.source).toBe("pillar_3a");
+    expect(total(user.id, 2026)).toBe(50000);
+  });
+
+  it("ignores an explicit tax-year marking on a detected payment", async () => {
+    const { user, cat, tx } = await setup3a();
+    const t = tx(-50000, "2025-12-28", {
+      categoryId: cat.id,
+      reference: makeQrr(1),
+      taxYear: 2025,
+    });
+    credit(user.id, t.id, "2026-01-05");
+    expect(total(user.id, 2025)).toBe(0);
+    expect(total(user.id, 2026)).toBe(50000);
+  });
+
+  it("still lists a detected payment of another deduction type by category", async () => {
+    const { user, cat, tx } = await setup3a();
+    setCategoryDeduction(user.id, cat.id, "donations");
+    tx(-50000, "2025-12-28", { categoryId: cat.id, reference: makeQrr(1) });
+    const donations = deductionSummary(user.id, 2025).totals.find(
+      (t) => t.type === "donations",
+    );
+    expect(donations).toMatchObject({
+      type: "donations",
+      total: 50000,
+    });
+  });
+
+  it("leaves an excluded contribution out of the deductible total only", async () => {
+    const { user, tx } = await setup3a();
+    const t = tx(-50000, "2026-02-01", { reference: makeQrr(1) });
+    tx(-20000, "2026-03-01", { reference: makeQrr(1) });
+    setTransactionDeductionExcluded(user.id, t.id, true);
+    const s = deductionSummary(user.id, 2026);
+    expect(total(user.id, 2026)).toBe(20000);
+    expect(s.excluded.map((l) => [l.transactionId, l.amount])).toEqual([
+      [t.id, 50000],
+    ]);
   });
 });

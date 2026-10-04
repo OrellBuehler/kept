@@ -50,6 +50,9 @@ export const load: PageServerLoad = ({ locals, params }) => {
     deductions.totals.find(
       (t) => t.type === "pillar_3a" && t.currency === PILLAR_3A_CURRENCY,
     )?.total ?? minor(0);
+  const excluded = deductions.excluded
+    .filter((l) => l.type === "pillar_3a" && l.currency === PILLAR_3A_CURRENCY)
+    .reduce((sum, l) => sum + l.amount, 0);
   const row = overview.years.find((y) => y.year === taxYear) ?? null;
   return {
     reconciliation,
@@ -64,6 +67,7 @@ export const load: PageServerLoad = ({ locals, params }) => {
             ordinary: row?.ordinary ?? minor(0),
             buyIn: row?.buyIn ?? minor(0),
             deductible,
+            excluded: minor(excluded),
           }
         : null,
   };

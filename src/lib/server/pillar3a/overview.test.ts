@@ -8,6 +8,7 @@ import {
   seedPillar3aAccount,
   seedPortfolio,
 } from "$lib/testing/pillar3a";
+import { archiveAccount } from "$lib/server/ledger";
 import { addManualContribution } from "./contributions";
 import { pillar3aOverview } from "./overview";
 import { closePortfolio } from "./portfolios";
@@ -230,5 +231,36 @@ describe("pillar3aOverview", () => {
       accountsValue: 0,
     });
     expect(o.years.every((y) => y.ordinary === 0)).toBe(true);
+  });
+
+  it("leaves archived accounts out of the totals but keeps their contributions", async () => {
+    const { user, acc, a } = await setup();
+    const other = seedPillar3aAccount(user.id, { name: "Other 3a" });
+    const c = seedPortfolio(user.id, other.id, { name: "C" });
+    setValues(user.id, acc.id, "2027-01-01", [
+      { portfolioId: a.id, amount: minor(100_000) },
+    ]);
+    setValues(user.id, other.id, "2027-01-01", [
+      { portfolioId: c.id, amount: minor(50_000) },
+    ]);
+    addManualContribution(user.id, manual(a.id, "2027-01-10", 60_000), TODAY);
+    addManualContribution(user.id, manual(c.id, "2027-01-11", 40_000), TODAY);
+    archiveAccount(user.id, other.id);
+
+    const o = pillar3aOverview(user.id, TODAY);
+    expect(o.portfolios.find((p) => p.portfolioId === c.id)).toMatchObject({
+      archived: true,
+      latestValue: 50_000,
+    });
+    expect(o.portfolios.find((p) => p.portfolioId === a.id)?.archived).toBe(
+      false,
+    );
+    expect(o.totals).toMatchObject({
+      value: 100_000,
+      contributed: 60_000,
+      gain: 40_000,
+      accountsValue: 100_000,
+    });
+    expect(o.years[0]!.ordinary).toBe(100_000);
   });
 });

@@ -35,6 +35,7 @@ import type {
   ContributionDetailsInput,
   ManualContributionInput,
 } from "./schemas";
+import { matchReferenceSql } from "./reference-match";
 import { listYearSettings } from "./years";
 
 export interface DetectedContribution {
@@ -85,8 +86,8 @@ export interface ContributionSaved {
   warnings: string[];
 }
 
-/** Whitespace-free, upper-case SQL form of `transactions.reference` (see `normalizeReference`). */
-const normalizedReference = sql`replace(replace(replace(replace(upper(${transactions.reference}), ' ', ''), char(9), ''), char(10), ''), char(13), '')`;
+/** Whitespace-free, upper-case SQL form of `transactions.reference` (see `matchReference`). */
+const normalizedReference = matchReferenceSql(transactions.reference);
 
 /**
  * Outgoing CHF payments on any of the user's accounts whose reference equals

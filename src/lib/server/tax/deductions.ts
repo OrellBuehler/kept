@@ -10,7 +10,10 @@ import {
 } from "$lib/server/db";
 import { LedgerError, notFound } from "$lib/server/ledger/errors";
 import { PILLAR_3A_CURRENCY } from "$lib/pillar-3a";
-import { listContributions } from "$lib/server/pillar3a/contributions";
+import {
+  detectedContributions,
+  listContributions,
+} from "$lib/server/pillar3a/contributions";
 import { idSchema } from "$lib/server/ledger/schemas";
 
 export const deductionTypeSchema = z.enum(DEDUCTION_TYPES);
@@ -184,8 +187,9 @@ export function setTransactionDeductionExcluded(
  *
  * The `pillar_3a` type additionally contains the year's pillar 3a
  * contributions (detected payments and manual entries, ordinary and buy-in),
- * counted for the year of their credit date. A payment that already appears
- * as a category-mapped line is not counted twice.
+ * counted for the year of their credit date. A detected payment is only ever
+ * counted as a contribution, never as a category-mapped line, so it cannot
+ * land in two tax years.
  */
 export function deductionSummary(
   userId: string,
@@ -197,7 +201,6 @@ export function deductionSummary(
   const own = ownMappings(userId);
   const groups = new Map<string, DeductionTotal>();
   const excluded: DeductionSummary["excluded"] = [];
-  const seenTransactions = new Set<string>();
   const add = (type: DeductionType, line: DeductionLine) => {
     if (line.excluded) {
       excluded.push({ ...line, type });
@@ -214,6 +217,10 @@ export function deductionSummary(
   };
 
   if (own.size > 0) {
+    // A detected 3a payment belongs to its contribution (and credit-date year).
+    const detected = new Set(
+      detectedContributions(userId).map((d) => d.transactionId),
+    );
     const parents = new Map(
       getDB()
         .select({ id: categories.id, parentId: categories.parentId })
@@ -264,7 +271,7 @@ export function deductionSummary(
     for (const r of rows) {
       const type = typeOf(r.categoryId!);
       if (!type) continue;
-      seenTransactions.add(r.id);
+      if (type === "pillar_3a" && detected.has(r.id)) continue;
       add(type, {
         key: `tx:${r.id}`,
         transactionId: r.id,
@@ -281,9 +288,7 @@ export function deductionSummary(
     }
   }
 
-  const contributions = listContributions(userId, { year }).filter(
-    (c) => c.transactionId === null || !seenTransactions.has(c.transactionId),
-  );
+  const contributions = listContributions(userId, { year });
   if (contributions.length > 0) {
     const flagged = new Set(
       getDB()

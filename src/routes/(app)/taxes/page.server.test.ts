@@ -3,7 +3,11 @@ import { minor } from "$lib/money";
 import { addTaxCredit, setTransactionTaxYear } from "$lib/server/tax/tax";
 import { taxCreditInputSchema } from "$lib/server/tax/schemas";
 import { addManualContribution } from "$lib/server/pillar3a";
-import { seedPillar3aAccount, seedPortfolio } from "$lib/testing/pillar3a";
+import {
+  makeQrr,
+  seedPillar3aAccount,
+  seedPortfolio,
+} from "$lib/testing/pillar3a";
 import { createTestUser } from "$lib/testing/auth";
 import { useTestDB } from "$lib/testing/db";
 import { createTestEvent, outcome } from "$lib/testing/event";
@@ -205,6 +209,7 @@ describe("taxes routes", () => {
       ordinary: 100_000,
       buyIn: 0,
       deductible: 100_000,
+      excluded: 0,
     });
 
     const other = await createTestUser();
@@ -212,5 +217,29 @@ describe("taxes routes", () => {
     expect(
       (await loadDetail(other, "2025")) as { value: { pillar3a: unknown } },
     ).toMatchObject({ value: { pillar3a: null } });
+  });
+
+  it("keeps an excluded 3a payment in the limit figures but not in deductible", async () => {
+    const u = await createTestUser();
+    await runList(u, yearForm({ year: "2025" }));
+    const acc = seedPillar3aAccount(u.id);
+    seedPortfolio(u.id, acc.id, { depositReference: makeQrr(1) });
+    const current = seedAccount(u.id);
+    seedImportedTransaction(u.id, current.id, {
+      bookingDate: "2025-05-01",
+      amount: minor(-100_000),
+      currency: "CHF",
+      reference: makeQrr(1),
+      deductionExcluded: true,
+    });
+    const res = await loadDetail(u, "2025");
+    expect((res as { value: { pillar3a: unknown } }).value.pillar3a).toEqual({
+      limit: 725_800,
+      limitUnconfirmed: false,
+      ordinary: 100_000,
+      buyIn: 0,
+      deductible: 0,
+      excluded: 100_000,
+    });
   });
 });

@@ -143,6 +143,30 @@ export function getPortfolio(userId: string, id: string): PortfolioView {
   return withLatest(userId, [row])[0]!;
 }
 
+/** A QR-IBAN takes only QR references, any other IBAN anything but. */
+export function assertReferenceFits(
+  depositIban: string | null,
+  reference: string | null,
+) {
+  if (reference === null || depositIban === null) return;
+  const qrIban = isQrIban(depositIban);
+  const qrr = isValidQrr(reference);
+  if (qrIban && !qrr) {
+    throw new LedgerError(
+      "invalid",
+      "A QR-IBAN requires a QR reference (27 digits with a check digit).",
+      "depositReference",
+    );
+  }
+  if (!qrIban && qrr) {
+    throw new LedgerError(
+      "invalid",
+      "A QR reference requires a QR-IBAN as the account's deposit IBAN.",
+      "depositReference",
+    );
+  }
+}
+
 function assertReference(
   userId: string,
   depositIban: string | null,
@@ -150,24 +174,7 @@ function assertReference(
   exceptId?: string,
 ) {
   if (reference === null) return;
-  if (depositIban !== null) {
-    const qrIban = isQrIban(depositIban);
-    const qrr = isValidQrr(reference);
-    if (qrIban && !qrr) {
-      throw new LedgerError(
-        "invalid",
-        "A QR-IBAN requires a QR reference (27 digits with a check digit).",
-        "depositReference",
-      );
-    }
-    if (!qrIban && qrr) {
-      throw new LedgerError(
-        "invalid",
-        "A QR reference requires a QR-IBAN as the account's deposit IBAN.",
-        "depositReference",
-      );
-    }
-  }
+  assertReferenceFits(depositIban, reference);
   const clash = getDB()
     .select({ id: portfolios.id })
     .from(portfolios)

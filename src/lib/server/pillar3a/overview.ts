@@ -45,6 +45,8 @@ export interface Pillar3aPortfolioOverview {
   portfolioId: string;
   accountId: string;
   accountName: string;
+  /** The account is archived: listed, but left out of the totals. */
+  archived: boolean;
   name: string;
   strategy: string | null;
   depositReference: string | null;
@@ -67,7 +69,7 @@ export interface Pillar3aOverview {
   gaps: GapYear[];
   portfolios: Pillar3aPortfolioOverview[];
   totals: {
-    /** Latest values of the portfolios that are open today. */
+    /** Latest values of the portfolios that are open today, on accounts that are not archived. */
     value: Minor;
     /** Contributions to those portfolios. */
     contributed: Minor;
@@ -157,6 +159,7 @@ export function pillar3aOverview(
       id: portfolios.id,
       accountId: portfolios.accountId,
       accountName: accounts.name,
+      archived: accounts.archived,
       name: portfolios.name,
       strategy: portfolios.strategy,
       depositReference: portfolios.depositReference,
@@ -180,7 +183,7 @@ export function pillar3aOverview(
   const portfolioRows = rows.map((r): Pillar3aPortfolioOverview => {
     const v = latest.get(r.id) ?? null;
     const contributed = contributedBy.get(r.id) ?? 0;
-    if (r.closedOn === null || today < r.closedOn) {
+    if (!r.archived && (r.closedOn === null || today < r.closedOn)) {
       value += v?.amount ?? 0;
       contributedOpen += contributed;
     }
@@ -188,6 +191,7 @@ export function pillar3aOverview(
       portfolioId: r.id,
       accountId: r.accountId,
       accountName: r.accountName,
+      archived: r.archived,
       name: r.name,
       strategy: r.strategy,
       depositReference: r.depositReference,
@@ -201,7 +205,7 @@ export function pillar3aOverview(
   });
 
   const accountsValue = listAccounts(userId, today)
-    .filter((a) => a.type === "pillar_3a")
+    .filter((a) => a.type === "pillar_3a" && !a.archived)
     .reduce((s, a) => s + a.balance, 0);
 
   return {

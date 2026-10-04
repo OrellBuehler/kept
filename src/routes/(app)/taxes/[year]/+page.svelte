@@ -574,6 +574,11 @@
                 <dd class="text-lg font-semibold">
                   <Amount value={p3a.deductible} currency="CHF" />
                 </dd>
+                {#if p3a.excluded !== 0}
+                  <dd class="text-muted-foreground text-xs">
+                    <Amount value={p3a.excluded} currency="CHF" /> excluded
+                  </dd>
+                {/if}
               </div>
             </dl>
           </Card.Content>

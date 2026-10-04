@@ -8,10 +8,10 @@ import {
   imports,
   institutions,
   portfolios,
-  portfolioValues,
   trades,
   transactions,
 } from "$lib/server/db";
+import { assertReferenceFits } from "$lib/server/pillar3a/portfolios";
 import { currentBalanceParts } from "./balances";
 import { LedgerError, notFound } from "./errors";
 import type { AccountInput } from "./schemas";
@@ -242,8 +242,37 @@ export function updateAccount(
   assertInstitutionOwned(userId, input.institutionId);
   assertIbanFree(userId, input.iban, id);
 
+  const db = getDB();
+  const portfolioRows = db
+    .select({ reference: portfolios.depositReference })
+    .from(portfolios)
+    .where(and(eq(portfolios.userId, userId), eq(portfolios.accountId, id)))
+    .all();
+  if (input.type !== "pillar_3a" && portfolioRows.length > 0) {
+    throw new LedgerError(
+      "conflict",
+      "The type cannot change while the account has portfolios.",
+      "type",
+    );
+  }
+  if (input.depositIban !== current.depositIban) {
+    for (const p of portfolioRows) {
+      try {
+        assertReferenceFits(input.depositIban, p.reference);
+      } catch (err) {
+        if (err instanceof LedgerError) {
+          throw new LedgerError(
+            "invalid",
+            "A portfolio reference no longer fits the new deposit IBAN.",
+            "depositIban",
+          );
+        }
+        throw err;
+      }
+    }
+  }
+
   if (input.currency !== current.currency) {
-    const db = getDB();
     const used =
       db
         .select({ id: transactions.id })
@@ -260,12 +289,7 @@ export function updateAccount(
         .from(trades)
         .where(eq(trades.accountId, id))
         .get() ??
-      db
-        .select({ id: portfolioValues.id })
-        .from(portfolioValues)
-        .innerJoin(portfolios, eq(portfolios.id, portfolioValues.portfolioId))
-        .where(eq(portfolios.accountId, id))
-        .get();
+      (portfolioRows.length > 0 ? true : undefined);
     if (used) {
       throw new LedgerError(
         "conflict",

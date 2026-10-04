@@ -1,7 +1,7 @@
 import { and, eq, isNotNull } from "drizzle-orm";
 import { PILLAR_3A_CURRENCY } from "$lib/pillar-3a";
-import { normalizeReference } from "$lib/references";
 import { getDB, portfolios } from "$lib/server/db";
+import { matchReference } from "./reference-match";
 
 /**
  * Normalized deposit references of the user's portfolios. Used to treat
@@ -33,6 +33,6 @@ export function isContributionPayment(
     tx.amount < 0 &&
     tx.currency === PILLAR_3A_CURRENCY &&
     tx.reference !== null &&
-    references.has(normalizeReference(tx.reference))
+    references.has(matchReference(tx.reference))
   );
 }
