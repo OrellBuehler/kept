@@ -22,6 +22,7 @@ function mayImportIntegrations(path: string): boolean {
     path.startsWith("lib/server/integrations/") ||
     path.startsWith("routes/api/public/paperless/") ||
     path.startsWith("routes/(app)/settings/paperless/") ||
+    path.startsWith("routes/(app)/settings/market-data/") ||
     path === "hooks.server.ts"
   );
 }
@@ -47,7 +48,10 @@ describe("integration boundary", () => {
     const imports = [
       ...hook.text.matchAll(/from\s+["']([^"']*\/integrations\/[^"']*)["']/g),
     ].map((m) => m[1]);
-    expect(imports).toEqual(["$lib/server/integrations/paperless"]);
+    expect(imports).toEqual([
+      "$lib/server/integrations/paperless",
+      "$lib/server/integrations/yahoo-finance",
+    ]);
   });
 
   it("the core does not name Paperless in code outside the schema", () => {
