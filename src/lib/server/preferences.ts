@@ -30,6 +30,10 @@ export function getPreferences(userId: string): Preferences {
     locale: pick("locale", row.locale),
     defaultCurrency: pick("defaultCurrency", row.defaultCurrency),
     pageSize: pick("pageSize", row.pageSize),
+    investmentCashLiquid: pick(
+      "investmentCashLiquid",
+      row.investmentCashLiquid,
+    ),
   };
 }
 

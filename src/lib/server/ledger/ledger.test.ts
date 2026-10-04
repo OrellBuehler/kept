@@ -204,6 +204,32 @@ describe("accounts", () => {
     expect(listAccounts(u.id).map((a) => a.name)).toEqual(["Z", "A", "B"]);
   });
 
+  it("stores notice fields and clears them on update", async () => {
+    const u = await createTestUser();
+    const a = seedAccount(u.id, {
+      type: "savings",
+      noticeMonths: 6,
+      freeWithdrawal: minor(2500000),
+      freeWithdrawalPeriod: "year",
+    });
+    expect(getAccount(u.id, a.id)).toMatchObject({
+      noticeMonths: 6,
+      freeWithdrawal: 2500000,
+      freeWithdrawalPeriod: "year",
+    });
+    const cleared = updateAccount(u.id, a.id, {
+      ...accountToInput(a),
+      noticeMonths: null,
+      freeWithdrawal: null,
+      freeWithdrawalPeriod: null,
+    });
+    expect(cleared).toMatchObject({
+      noticeMonths: null,
+      freeWithdrawal: null,
+      freeWithdrawalPeriod: null,
+    });
+  });
+
   it("enforces a unique IBAN per user, but allows several without one", async () => {
     const a = await createTestUser();
     const b = await createTestUser();
@@ -352,6 +378,9 @@ function accountToInput(a: ReturnType<typeof getAccount>) {
     depositIban: a.depositIban,
     openingBalance: a.openingBalance,
     openingDate: a.openingDate,
+    noticeMonths: a.noticeMonths,
+    freeWithdrawal: a.freeWithdrawal,
+    freeWithdrawalPeriod: a.freeWithdrawalPeriod,
     shareBps: a.shareBps,
     sharedWith: a.sharedWith,
     sortOrder: a.sortOrder,

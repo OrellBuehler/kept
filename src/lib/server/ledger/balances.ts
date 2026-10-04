@@ -10,6 +10,7 @@ import { loadHoldingsInputs } from "$lib/server/investments/load";
 import {
   makeHoldingsValueAt,
   type HoldingsInput,
+  type HoldingsValue,
   type Position,
 } from "$lib/server/investments/valuation";
 import { loadPortfolioInputs } from "$lib/server/pillar3a/load";
@@ -365,15 +366,26 @@ export function currentBalances(
   today: string = localToday(),
 ): Map<string, Minor> {
   return new Map(
-    [...currentBalanceParts(userId, accountRows, today)].map(([id, v]) => [
+    [...currentValues(userId, accountRows, today)].map(([id, v]) => [
       id,
       v.total,
     ]),
   );
 }
 
-/** Per account: the cash balance and the total (cash plus holdings) as of `today`. */
-export function currentBalanceParts(
+export interface CurrentValue {
+  /** Cash balance, without holdings and portfolios. */
+  cash: Minor;
+  /** Securities held through trades; null when the account has no trades. */
+  holdings: HoldingsValue | null;
+  /** Pillar 3a portfolios, valued by hand. */
+  portfolios: Minor;
+  /** Cash plus holdings plus portfolios. */
+  total: Minor;
+}
+
+/** Per account: the cash balance, holdings and total as of `today`, with a handful of queries in total. */
+export function currentValues(
   userId: string,
   accountRows: readonly {
     id: string;
@@ -381,7 +393,7 @@ export function currentBalanceParts(
     openingDate: string | null;
   }[],
   today: string = localToday(),
-): Map<string, { cash: Minor; total: Minor }> {
+): Map<string, CurrentValue> {
   const db = getDB();
   const txByAccount = new Map<string, BalanceInput["transactions"][number][]>();
   for (const t of db
@@ -442,11 +454,20 @@ export function currentBalanceParts(
         holdings: holdings.get(a.id),
         portfolios: portfolios.get(a.id),
       };
+      const cash = cashBalanceAt(input, today);
+      const held = input.holdings
+        ? makeHoldingsValueAt(input.holdings)(today)
+        : null;
+      const portfolioValue = input.portfolios
+        ? makePortfoliosValueAt(input.portfolios)(today)
+        : minor(0);
       return [
         a.id,
         {
-          cash: cashBalanceAt(input, today),
-          total: balanceAt(input, today),
+          cash,
+          holdings: held,
+          portfolios: portfolioValue,
+          total: minor(cash + (held?.value ?? 0) + portfolioValue),
         },
       ];
     }),

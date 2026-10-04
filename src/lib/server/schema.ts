@@ -13,6 +13,7 @@ import {
   IMPORT_FORMATS,
   REFERENCE_TYPES,
   ROW_SOURCES,
+  WITHDRAWAL_PERIODS,
 } from "$lib/ledger-types";
 import {
   ALLOCATION_ORIGINS,
@@ -275,6 +276,13 @@ export const accounts = sqliteTable(
     contractNumber: text("contract_number"),
     /** IBAN to pay into when the account itself has none (a pillar 3a QR-IBAN); not unique, providers share it. */
     depositIban: text("deposit_iban"),
+    /** Months of notice before the balance can be withdrawn; null means available now. */
+    noticeMonths: integer("notice_months"),
+    /** Amount that can be withdrawn without notice per period, account currency. Needs noticeMonths. */
+    freeWithdrawal: minor("free_withdrawal"),
+    freeWithdrawalPeriod: text("free_withdrawal_period", {
+      enum: WITHDRAWAL_PERIODS,
+    }),
     ...timestamps,
   },
   (t) => [
@@ -1037,6 +1045,10 @@ export const userPreferences = sqliteTable(
     locale: text("locale", { enum: LOCALES }).notNull(),
     defaultCurrency: text("default_currency").notNull(),
     pageSize: integer("page_size").notNull(),
+    /** Count the cash part of investment accounts as liquid. */
+    investmentCashLiquid: integer("investment_cash_liquid", { mode: "boolean" })
+      .notNull()
+      .default(false),
     ...timestamps,
   },
   (t) => [uniqueIndex("user_preferences_user_id_uq").on(t.userId)],

@@ -1,5 +1,5 @@
 import { and, eq, lte, max } from "drizzle-orm";
-import type { AccountType } from "$lib/ledger-types";
+import type { AccountType, WithdrawalPeriod } from "$lib/ledger-types";
 import { minor, type Minor } from "$lib/money";
 import { balanceSnapshots, getDB } from "$lib/server/db";
 import { latestHoldingsActivity } from "$lib/server/investments/load";
@@ -25,6 +25,11 @@ export interface AccountBalanceView {
   balance: Minor;
   /** `balance` without the value of holdings and portfolios. */
   cashBalance: Minor;
+  /** Securities held through trades (account currency); null without trades. */
+  holdings: { value: Minor; cost: Minor; estimated: boolean } | null;
+  noticeMonths: number | null;
+  freeWithdrawal: Minor | null;
+  freeWithdrawalPeriod: WithdrawalPeriod | null;
   shareBps: number;
   sharedWith: string | null;
   /** `balance` at the ownership share. */
@@ -133,6 +138,10 @@ export function accountBalances(
       institution: a.institution,
       balance: a.balance,
       cashBalance: a.cashBalance,
+      holdings: a.holdings,
+      noticeMonths: a.noticeMonths,
+      freeWithdrawal: a.freeWithdrawal,
+      freeWithdrawalPeriod: a.freeWithdrawalPeriod,
       shareBps: a.shareBps,
       sharedWith: a.sharedWith,
       shareBalance: a.shareBalance,

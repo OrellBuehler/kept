@@ -1,5 +1,5 @@
 import { and, asc, eq, ne, sql } from "drizzle-orm";
-import type { AccountType } from "$lib/ledger-types";
+import type { AccountType, WithdrawalPeriod } from "$lib/ledger-types";
 import { shareOf, type Minor } from "$lib/money";
 import {
   accounts,
@@ -12,7 +12,7 @@ import {
   transactions,
 } from "$lib/server/db";
 import { assertReferenceFits } from "$lib/server/pillar3a/portfolios";
-import { currentBalanceParts } from "./balances";
+import { currentValues, type CurrentValue } from "./balances";
 import { LedgerError, notFound } from "./errors";
 import type { AccountInput } from "./schemas";
 
@@ -35,6 +35,11 @@ export interface AccountView {
   depositIban: string | null;
   openingBalance: Minor;
   openingDate: string | null;
+  /** Months of notice before the balance can be withdrawn; null means available now. */
+  noticeMonths: number | null;
+  /** Amount withdrawable without notice per period, account currency; needs `noticeMonths`. */
+  freeWithdrawal: Minor | null;
+  freeWithdrawalPeriod: WithdrawalPeriod | null;
   archived: boolean;
   sortOrder: number;
   /** Ownership share in basis points (10000 = 100%); stored amounts are always 100%. */
@@ -45,6 +50,8 @@ export interface AccountView {
   balance: Minor;
   /** `balance` without the value of holdings. */
   cashBalance: Minor;
+  /** Securities held through trades (account currency); null without trades. */
+  holdings: { value: Minor; cost: Minor; estimated: boolean } | null;
   /** `balance` at the ownership share. */
   shareBalance: Minor;
   lastBookingDate: string | null;
@@ -64,6 +71,9 @@ function baseRows(userId: string, accountId?: string) {
       depositIban: accounts.depositIban,
       openingBalance: accounts.openingBalance,
       openingDate: accounts.openingDate,
+      noticeMonths: accounts.noticeMonths,
+      freeWithdrawal: accounts.freeWithdrawal,
+      freeWithdrawalPeriod: accounts.freeWithdrawalPeriod,
       archived: accounts.archived,
       sortOrder: accounts.sortOrder,
       shareBps: accounts.shareBps,
@@ -83,6 +93,12 @@ function baseRows(userId: string, accountId?: string) {
     )
     .orderBy(asc(accounts.sortOrder), asc(accounts.name), asc(accounts.id))
     .all();
+}
+
+function holdingsOf(held: CurrentValue["holdings"]): AccountView["holdings"] {
+  return held
+    ? { value: held.value, cost: held.cost, estimated: held.estimated }
+    : null;
 }
 
 function toViews(
@@ -126,7 +142,7 @@ function toViews(
       .map((r) => [r.id, r.t]),
   );
   const rows = baseRows(userId, accountId);
-  const balances = currentBalanceParts(userId, rows, today);
+  const values = currentValues(userId, rows, today);
   return rows.map((r) => ({
     id: r.id,
     name: r.name,
@@ -137,6 +153,9 @@ function toViews(
     depositIban: r.depositIban,
     openingBalance: r.openingBalance,
     openingDate: r.openingDate,
+    noticeMonths: r.noticeMonths,
+    freeWithdrawal: r.freeWithdrawal,
+    freeWithdrawalPeriod: r.freeWithdrawalPeriod,
     archived: r.archived,
     sortOrder: r.sortOrder,
     shareBps: r.shareBps,
@@ -149,9 +168,10 @@ function toViews(
           logoVersion: r.institutionLogoVersion,
         }
       : null,
-    balance: balances.get(r.id)!.total,
-    cashBalance: balances.get(r.id)!.cash,
-    shareBalance: shareOf(balances.get(r.id)!.total, r.shareBps),
+    balance: values.get(r.id)!.total,
+    cashBalance: values.get(r.id)!.cash,
+    holdings: holdingsOf(values.get(r.id)!.holdings),
+    shareBalance: shareOf(values.get(r.id)!.total, r.shareBps),
     lastBookingDate: lastBooking.get(r.id) ?? null,
     lastImportAt: lastImport.get(r.id) ?? null,
   }));
