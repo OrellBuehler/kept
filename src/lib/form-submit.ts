@@ -32,6 +32,8 @@ interface Options {
   /** Fields the form renders; other error keys are folded into `form`. */
   knownFields?: readonly string[];
   onSuccess?: () => void;
+  /** Called with the data an action returned on success, e.g. warnings to show. */
+  onSuccessData?: (data: Record<string, unknown> | undefined) => void;
   /** Toast shown after a successful submit. */
   successMessage?: string;
 }
@@ -51,6 +53,7 @@ export function submitHandler(opts: Options): SubmitFunction {
       if (result.type === "success") {
         if (opts.successMessage) toast.success(opts.successMessage);
         opts.onSuccess?.();
+        opts.onSuccessData?.(result.data);
         await update({ reset: false });
       } else if (result.type === "failure") {
         const errors = foldErrors(

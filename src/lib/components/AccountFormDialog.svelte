@@ -21,6 +21,8 @@
     type: AccountType;
     currency: string;
     iban: string | null;
+    contractNumber?: string | null;
+    depositIban?: string | null;
     openingBalance: Minor;
     openingDate: string | null;
     shareBps: number;
@@ -64,6 +66,8 @@
     });
   });
 
+  const is3a = $derived(type === "pillar_3a");
+
   const institutionLabel = $derived(
     institutions.find((i) => i.id === institutionId)?.name ?? "None",
   );
@@ -92,6 +96,8 @@
           "institutionId",
           "currency",
           "iban",
+          "contractNumber",
+          "depositIban",
           "openingBalance",
           "openingDate",
           "share",
@@ -162,8 +168,10 @@
           for="{uid}-currency"
           errors={errors.currency}
           hint={currencyLocked
-            ? "Locked: this account already has transactions, balances or trades."
-            : "3-letter ISO code, e.g. CHF."}
+            ? "Locked: this account already has transactions, balances, trades or portfolio values."
+            : is3a
+              ? "Pillar 3a accounts are held in CHF."
+              : "3-letter ISO code, e.g. CHF."}
         >
           {#if currencyLocked}
             <input type="hidden" name="currency" value={account?.currency} />
@@ -205,6 +213,41 @@
         </FormField>
       </div>
 
+      {#if is3a}
+        <div class="grid gap-4 sm:grid-cols-2">
+          <FormField
+            label="Contract number (optional)"
+            for="{uid}-contract"
+            errors={errors.contractNumber}
+          >
+            <Input
+              id="{uid}-contract"
+              name="contractNumber"
+              class="font-mono"
+              maxlength={60}
+              autocomplete="off"
+              value={account?.contractNumber ?? ""}
+              aria-invalid={!!errors.contractNumber}
+            />
+          </FormField>
+          <FormField
+            label="Deposit IBAN (QR-IBAN)"
+            for="{uid}-deposit-iban"
+            errors={errors.depositIban}
+            hint="The IBAN you pay contributions into. Spaces are fine."
+          >
+            <Input
+              id="{uid}-deposit-iban"
+              name="depositIban"
+              class="font-mono"
+              autocomplete="off"
+              value={account?.depositIban ?? ""}
+              aria-invalid={!!errors.depositIban}
+            />
+          </FormField>
+        </div>
+      {/if}
+
       <div class="grid gap-4 sm:grid-cols-2">
         <FormField
           label="Opening balance"
@@ -241,40 +284,42 @@
         </FormField>
       </div>
 
-      <div class="grid gap-4 sm:grid-cols-2">
-        <FormField
-          label="My share (%)"
-          for="{uid}-share"
-          errors={errors.share}
-          hint="Your ownership share if you co-own this account, e.g. 50 or 33.33. Leave at 100 otherwise. Imported amounts stay at 100%."
-        >
-          <Input
-            id="{uid}-share"
-            name="share"
-            inputmode="decimal"
-            autocomplete="off"
-            class="tabular-nums"
-            placeholder="100"
-            value={account ? shareToInput(account.shareBps) : "100"}
-            aria-invalid={!!errors.share}
-          />
-        </FormField>
-        <FormField
-          label="Shared with (optional)"
-          for="{uid}-shared-with"
-          errors={errors.sharedWith}
-          hint="A label only, e.g. a first name."
-        >
-          <Input
-            id="{uid}-shared-with"
-            name="sharedWith"
-            maxlength={80}
-            autocomplete="off"
-            value={account?.sharedWith ?? ""}
-            aria-invalid={!!errors.sharedWith}
-          />
-        </FormField>
-      </div>
+      {#if !is3a}
+        <div class="grid gap-4 sm:grid-cols-2">
+          <FormField
+            label="My share (%)"
+            for="{uid}-share"
+            errors={errors.share}
+            hint="Your ownership share if you co-own this account, e.g. 50 or 33.33. Leave at 100 otherwise. Imported amounts stay at 100%."
+          >
+            <Input
+              id="{uid}-share"
+              name="share"
+              inputmode="decimal"
+              autocomplete="off"
+              class="tabular-nums"
+              placeholder="100"
+              value={account ? shareToInput(account.shareBps) : "100"}
+              aria-invalid={!!errors.share}
+            />
+          </FormField>
+          <FormField
+            label="Shared with (optional)"
+            for="{uid}-shared-with"
+            errors={errors.sharedWith}
+            hint="A label only, e.g. a first name."
+          >
+            <Input
+              id="{uid}-shared-with"
+              name="sharedWith"
+              maxlength={80}
+              autocomplete="off"
+              value={account?.sharedWith ?? ""}
+              aria-invalid={!!errors.sharedWith}
+            />
+          </FormField>
+        </div>
+      {/if}
 
       {#if errors.form?.length}
         <p class="text-destructive text-sm" role="alert">

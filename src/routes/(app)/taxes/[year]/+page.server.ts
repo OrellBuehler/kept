@@ -1,6 +1,10 @@
 import { error, fail, redirect } from "@sveltejs/kit";
 import { requireUser } from "$lib/server/auth/guards";
+import { minor } from "$lib/money";
+import { PILLAR_3A_CURRENCY } from "$lib/pillar-3a";
 import { parseForm, safeValues } from "$lib/server/forms";
+import { localToday } from "$lib/server/ledger";
+import { pillar3aOverview } from "$lib/server/pillar3a";
 import { ledgerFailure } from "$lib/server/ledger/http";
 import { idFormSchema } from "$lib/server/ledger/schemas";
 import {
@@ -39,10 +43,29 @@ export const load: PageServerLoad = ({ locals, params }) => {
   const user = requireUser(locals);
   const reconciliation = reconcileYear(user.id, yearOf(params));
   if (!reconciliation) error(404, "Tax year not found.");
+  const taxYear = reconciliation.year.year;
+  const deductions = deductionSummary(user.id, taxYear);
+  const overview = pillar3aOverview(user.id, localToday());
+  const deductible =
+    deductions.totals.find(
+      (t) => t.type === "pillar_3a" && t.currency === PILLAR_3A_CURRENCY,
+    )?.total ?? minor(0);
+  const row = overview.years.find((y) => y.year === taxYear) ?? null;
   return {
     reconciliation,
-    deductions: deductionSummary(user.id, reconciliation.year.year),
+    deductions,
     deductionMappings: listDeductionMappings(user.id),
+    // Only worth a card when the user tracks 3a at all.
+    pillar3a:
+      overview.portfolios.length > 0 || deductible !== 0
+        ? {
+            limit: row?.limit ?? null,
+            limitUnconfirmed: row?.limitUnconfirmed ?? false,
+            ordinary: row?.ordinary ?? minor(0),
+            buyIn: row?.buyIn ?? minor(0),
+            deductible,
+          }
+        : null,
   };
 };
 

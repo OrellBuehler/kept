@@ -10,6 +10,7 @@
   import LandmarkIcon from "@lucide/svelte/icons/landmark";
   import UploadIcon from "@lucide/svelte/icons/upload";
   import PiggyBankIcon from "@lucide/svelte/icons/piggy-bank";
+  import VaultIcon from "@lucide/svelte/icons/vault";
   import RepeatIcon from "@lucide/svelte/icons/repeat";
   import ReceiptIcon from "@lucide/svelte/icons/receipt";
   import TrendingUpIcon from "@lucide/svelte/icons/trending-up";
@@ -73,6 +74,7 @@
     { href: "/", label: "Dashboard", icon: LayoutDashboardIcon },
     { href: "/accounts", label: "Accounts", icon: LandmarkIcon },
     { href: "/investments", label: "Investments", icon: ChartLineIcon },
+    { href: "/pillar-3a", label: "Pillar 3a", icon: VaultIcon },
     { href: "/import", label: "Import", icon: UploadIcon },
     {
       href: "/bills",

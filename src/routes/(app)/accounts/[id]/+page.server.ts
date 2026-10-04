@@ -46,6 +46,22 @@ import {
   listTransactions,
   updateTransaction,
 } from "$lib/server/ledger/transactions";
+import {
+  closePortfolio,
+  createPortfolio,
+  deletePortfolio,
+  deleteValue,
+  getPortfolio,
+  listPortfolios,
+  listValues,
+  parsePortfolioValuesForm,
+  portfolioCloseSchema,
+  portfolioInputSchema,
+  reopenPortfolio,
+  setValues,
+  updatePortfolio,
+  type PortfolioValueView,
+} from "$lib/server/pillar3a";
 import { getPreferences } from "$lib/server/preferences";
 import { taxTagSchema } from "$lib/server/tax/schemas";
 import { setTransactionTaxYear } from "$lib/server/tax/tax";
@@ -76,6 +92,14 @@ const transactionFields = [
   "note",
 ] as const;
 const snapshotFields = ["date", "amount", "note"] as const;
+const portfolioFields = [
+  "name",
+  "number",
+  "strategy",
+  "depositReference",
+  "openedOn",
+  "sortOrder",
+] as const;
 const tradeFields = [
   "securityId",
   "date",
@@ -96,14 +120,25 @@ export const load: PageServerLoad = ({ locals, params, url }) => {
     getPreferences(user.id).pageSize,
   );
   const trades = listTrades(user.id, account.id);
+  const portfolios = listPortfolios(user.id, account.id);
+  const hasHoldings = account.type === "investment" || trades.length > 0;
+  const showPortfolios = account.type === "pillar_3a" || portfolios.length > 0;
+  const portfolioValues: Record<string, PortfolioValueView[]> = {};
+  for (const p of portfolios) {
+    portfolioValues[p.id] = listValues(user.id, p.id);
+  }
   return {
     account,
     balance: account.balance,
-    // Cash and holdings are only broken out where holdings are in play.
+    // Cash, holdings and portfolios are only broken out where they are in play.
     value:
-      account.type === "investment" || trades.length > 0
+      hasHoldings || showPortfolios
         ? accountValue(user.id, account.id, localToday())
         : null,
+    hasHoldings,
+    showPortfolios,
+    portfolios,
+    portfolioValues,
     trades,
     securities: listSecurities(user.id),
     institutions: listInstitutions(user.id).map((i) => ({
@@ -132,6 +167,12 @@ function ownedTrade(userId: string, accountId: string, id: string) {
   const trade = orNotFound(() => getTrade(userId, id));
   if (trade.accountId !== accountId) error(404, "Trade not found.");
   return trade;
+}
+
+function ownedPortfolio(userId: string, accountId: string, id: string) {
+  const portfolio = orNotFound(() => getPortfolio(userId, id));
+  if (portfolio.accountId !== accountId) error(404, "Portfolio not found.");
+  return portfolio;
 }
 
 export const actions: Actions = {
@@ -458,6 +499,237 @@ export const actions: Actions = {
       };
     } catch (err) {
       return ledgerFailure("deleteTrade", err, values);
+    }
+  },
+
+  addPortfolio: async ({ locals, params, request }) => {
+    const user = requireUser(locals);
+    const account = orNotFound(() => getAccount(user.id, params.id));
+    const form = await request.formData();
+    const values = safeValues(form, portfolioFields);
+    const parsed = parseForm(portfolioInputSchema, form);
+    if (!parsed.ok) {
+      return fail(400, {
+        action: "addPortfolio",
+        errors: parsed.errors,
+        values,
+      });
+    }
+    try {
+      const created = createPortfolio(user.id, account.id, parsed.data);
+      return {
+        success: true as const,
+        action: "addPortfolio" as const,
+        id: created.id,
+      };
+    } catch (err) {
+      return ledgerFailure("addPortfolio", err, values);
+    }
+  },
+
+  updatePortfolio: async ({ locals, params, request }) => {
+    const user = requireUser(locals);
+    const account = orNotFound(() => getAccount(user.id, params.id));
+    const form = await request.formData();
+    const values = safeValues(form, ["portfolioId", ...portfolioFields]);
+    const idParsed = parseForm(idFormSchema("portfolioId"), form);
+    if (!idParsed.ok) {
+      return fail(400, {
+        action: "updatePortfolio",
+        errors: idParsed.errors,
+        values,
+      });
+    }
+    const existing = ownedPortfolio(
+      user.id,
+      account.id,
+      idParsed.data.portfolioId,
+    );
+    const parsed = parseForm(portfolioInputSchema, form);
+    if (!parsed.ok) {
+      return fail(400, {
+        action: "updatePortfolio",
+        errors: parsed.errors,
+        values,
+      });
+    }
+    try {
+      updatePortfolio(user.id, existing.id, parsed.data);
+      return {
+        success: true as const,
+        action: "updatePortfolio" as const,
+        id: existing.id,
+      };
+    } catch (err) {
+      return ledgerFailure("updatePortfolio", err, values);
+    }
+  },
+
+  closePortfolio: async ({ locals, params, request }) => {
+    const user = requireUser(locals);
+    const account = orNotFound(() => getAccount(user.id, params.id));
+    const form = await request.formData();
+    const values = safeValues(form, ["portfolioId", "closedOn", "closeReason"]);
+    const idParsed = parseForm(idFormSchema("portfolioId"), form);
+    if (!idParsed.ok) {
+      return fail(400, {
+        action: "closePortfolio",
+        errors: idParsed.errors,
+        values,
+      });
+    }
+    const existing = ownedPortfolio(
+      user.id,
+      account.id,
+      idParsed.data.portfolioId,
+    );
+    const parsed = parseForm(portfolioCloseSchema, form);
+    if (!parsed.ok) {
+      return fail(400, {
+        action: "closePortfolio",
+        errors: parsed.errors,
+        values,
+      });
+    }
+    try {
+      closePortfolio(user.id, existing.id, parsed.data);
+      return {
+        success: true as const,
+        action: "closePortfolio" as const,
+        id: existing.id,
+      };
+    } catch (err) {
+      return ledgerFailure("closePortfolio", err, values);
+    }
+  },
+
+  reopenPortfolio: async ({ locals, params, request }) => {
+    const user = requireUser(locals);
+    const account = orNotFound(() => getAccount(user.id, params.id));
+    const form = await request.formData();
+    const values = safeValues(form, ["portfolioId"]);
+    const parsed = parseForm(idFormSchema("portfolioId"), form);
+    if (!parsed.ok) {
+      return fail(400, {
+        action: "reopenPortfolio",
+        errors: parsed.errors,
+        values,
+      });
+    }
+    const existing = ownedPortfolio(
+      user.id,
+      account.id,
+      parsed.data.portfolioId,
+    );
+    try {
+      reopenPortfolio(user.id, existing.id);
+      return {
+        success: true as const,
+        action: "reopenPortfolio" as const,
+        id: existing.id,
+      };
+    } catch (err) {
+      return ledgerFailure("reopenPortfolio", err, values);
+    }
+  },
+
+  deletePortfolio: async ({ locals, params, request }) => {
+    const user = requireUser(locals);
+    const account = orNotFound(() => getAccount(user.id, params.id));
+    const form = await request.formData();
+    const values = safeValues(form, ["portfolioId"]);
+    const parsed = parseForm(idFormSchema("portfolioId"), form);
+    if (!parsed.ok) {
+      return fail(400, {
+        action: "deletePortfolio",
+        errors: parsed.errors,
+        values,
+      });
+    }
+    const existing = ownedPortfolio(
+      user.id,
+      account.id,
+      parsed.data.portfolioId,
+    );
+    try {
+      deletePortfolio(user.id, existing.id);
+      return {
+        success: true as const,
+        action: "deletePortfolio" as const,
+        id: existing.id,
+      };
+    } catch (err) {
+      return ledgerFailure("deletePortfolio", err, values);
+    }
+  },
+
+  setPortfolioValues: async ({ locals, params, request }) => {
+    const user = requireUser(locals);
+    const account = orNotFound(() => getAccount(user.id, params.id));
+    const form = await request.formData();
+    const values: Record<string, string> = {};
+    for (const [key, value] of form.entries()) {
+      if (typeof value === "string") values[key] = value;
+    }
+    const parsed = parsePortfolioValuesForm(form);
+    if (!parsed.ok) {
+      return fail(400, {
+        action: "setPortfolioValues",
+        errors: parsed.errors,
+        values,
+      });
+    }
+    // setValues rejects portfolios of another account as not found.
+    try {
+      setValues(
+        user.id,
+        account.id,
+        parsed.data.date,
+        parsed.data.entries,
+        parsed.data.note,
+      );
+      return {
+        success: true as const,
+        action: "setPortfolioValues" as const,
+      };
+    } catch (err) {
+      return ledgerFailure("setPortfolioValues", err, values);
+    }
+  },
+
+  deletePortfolioValue: async ({ locals, params, request }) => {
+    const user = requireUser(locals);
+    const account = orNotFound(() => getAccount(user.id, params.id));
+    const form = await request.formData();
+    const values = safeValues(form, ["portfolioId", "valueId"]);
+    const parsed = parseForm(
+      idFormSchema("portfolioId").and(idFormSchema("valueId")),
+      form,
+    );
+    if (!parsed.ok) {
+      return fail(400, {
+        action: "deletePortfolioValue",
+        errors: parsed.errors,
+        values,
+      });
+    }
+    const portfolio = ownedPortfolio(
+      user.id,
+      account.id,
+      parsed.data.portfolioId,
+    );
+    const belongs = orNotFound(() => listValues(user.id, portfolio.id)).some(
+      (v) => v.id === parsed.data.valueId,
+    );
+    if (!belongs) error(404, "Value not found.");
+    try {
+      deleteValue(user.id, parsed.data.valueId);
+      return {
+        success: true as const,
+        action: "deletePortfolioValue" as const,
+      };
+    } catch (err) {
+      return ledgerFailure("deletePortfolioValue", err, values);
     }
   },
 };

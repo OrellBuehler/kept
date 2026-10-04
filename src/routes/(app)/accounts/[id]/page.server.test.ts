@@ -18,6 +18,17 @@ import {
   getTransaction,
   listTransactions,
 } from "$lib/server/ledger/transactions";
+import {
+  getPortfolio,
+  listPortfolios,
+  listValues,
+  setValues,
+} from "$lib/server/pillar3a";
+import {
+  makeQrr,
+  seedPillar3aAccount,
+  seedPortfolio,
+} from "$lib/testing/pillar3a";
 import { updatePreferences } from "$lib/server/preferences";
 import { actions, load } from "./+page.server";
 
@@ -205,8 +216,12 @@ describe("account detail page", () => {
       "categories",
       "filterErrors",
       "filters",
+      "hasHoldings",
       "institutions",
+      "portfolioValues",
+      "portfolios",
       "securities",
+      "showPortfolios",
       "snapshots",
       "trades",
       "transactions",
@@ -613,5 +628,254 @@ describe("account detail page", () => {
     ).toMatchObject({ type: "fail", status: 400 });
     await run("setTaxYear", u, acc.id, { transactionId: tx.id, taxYear: "" });
     expect(getTransaction(u.id, tx.id).taxYear).toBeNull();
+  });
+
+  describe("portfolios", () => {
+    const pf = (over: Record<string, string> = {}) => ({
+      name: "Portfolio 1",
+      strategy: "Example strategy",
+      depositReference: makeQrr(11),
+      ...over,
+    });
+
+    it("loads portfolios, values and the portfolio breakdown", async () => {
+      const u = await createTestUser();
+      const acc = seedPillar3aAccount(u.id);
+      const p = seedPortfolio(u.id, acc.id, { name: "P1" });
+      setValues(u.id, acc.id, "2025-01-01", [
+        { portfolioId: p.id, amount: minor(123_400) },
+      ]);
+      const data = ((await loadAs(u, acc.id)) as { value: LoadData }).value;
+      expect(data.showPortfolios).toBe(true);
+      expect(data.hasHoldings).toBe(false);
+      expect(data.portfolios.map((x: { id: string }) => x.id)).toEqual([p.id]);
+      expect(data.portfolioValues[p.id]).toHaveLength(1);
+      expect(data.value).toMatchObject({ portfolios: 123_400, total: 123_400 });
+      expect(data.balance).toBe(123_400);
+    });
+
+    it("does not show portfolios on a plain account", async () => {
+      const u = await createTestUser();
+      const acc = seedAccount(u.id);
+      const data = ((await loadAs(u, acc.id)) as { value: LoadData }).value;
+      expect(data.showPortfolios).toBe(false);
+      expect(data.value).toBeNull();
+    });
+
+    it("adds, edits, closes, reopens and deletes a portfolio", async () => {
+      const u = await createTestUser();
+      const acc = seedPillar3aAccount(u.id);
+      expect(await run("addPortfolio", u, acc.id, pf())).toMatchObject({
+        type: "return",
+        value: { success: true, action: "addPortfolio" },
+      });
+      const [p] = listPortfolios(u.id, acc.id);
+      expect(p).toMatchObject({ name: "Portfolio 1", closedOn: null });
+
+      expect(
+        await run("updatePortfolio", u, acc.id, {
+          portfolioId: p!.id,
+          ...pf({ name: "Renamed" }),
+        }),
+      ).toMatchObject({ type: "return", value: { success: true } });
+      expect(getPortfolio(u.id, p!.id).name).toBe("Renamed");
+
+      expect(
+        await run("closePortfolio", u, acc.id, {
+          portfolioId: p!.id,
+          closedOn: "2030-01-31",
+          closeReason: "age",
+        }),
+      ).toMatchObject({ type: "return", value: { success: true } });
+      expect(getPortfolio(u.id, p!.id)).toMatchObject({
+        closedOn: "2030-01-31",
+        closeReason: "age",
+      });
+
+      expect(
+        await run("reopenPortfolio", u, acc.id, { portfolioId: p!.id }),
+      ).toMatchObject({ type: "return", value: { success: true } });
+      expect(getPortfolio(u.id, p!.id).closedOn).toBeNull();
+
+      expect(
+        await run("deletePortfolio", u, acc.id, { portfolioId: p!.id }),
+      ).toMatchObject({ type: "return", value: { success: true } });
+      expect(listPortfolios(u.id, acc.id)).toEqual([]);
+    });
+
+    it("validates portfolio input and echoes the values", async () => {
+      const u = await createTestUser();
+      const acc = seedPillar3aAccount(u.id);
+      const r = await run(
+        "addPortfolio",
+        u,
+        acc.id,
+        pf({ name: "", depositReference: "123" }),
+      );
+      expect(r).toMatchObject({
+        type: "fail",
+        status: 400,
+        data: {
+          action: "addPortfolio",
+          errors: {
+            name: expect.any(Array),
+            depositReference: expect.any(Array),
+          },
+          values: { depositReference: "123" },
+        },
+      });
+      const close = await run("closePortfolio", u, acc.id, {
+        portfolioId: seedPortfolio(u.id, acc.id).id,
+        closedOn: "nope",
+        closeReason: "age",
+      });
+      expect(close).toMatchObject({ type: "fail", status: 400 });
+    });
+
+    it("refuses portfolios on a non-3a account with a field error", async () => {
+      const u = await createTestUser();
+      const acc = seedAccount(u.id);
+      expect(await run("addPortfolio", u, acc.id, pf())).toMatchObject({
+        type: "fail",
+        status: 400,
+      });
+    });
+
+    it("sets values for several portfolios at once and deletes one", async () => {
+      const u = await createTestUser();
+      const acc = seedPillar3aAccount(u.id);
+      const p1 = seedPortfolio(u.id, acc.id, { name: "P1" });
+      const p2 = seedPortfolio(u.id, acc.id, { name: "P2" });
+      expect(
+        await run("setPortfolioValues", u, acc.id, {
+          date: "2025-06-30",
+          [`value:${p1.id}`]: "1000.50",
+          [`value:${p2.id}`]: "",
+        }),
+      ).toMatchObject({ type: "return", value: { success: true } });
+      const values = listValues(u.id, p1.id);
+      expect(values).toMatchObject([{ date: "2025-06-30", amount: 100_050 }]);
+      expect(listValues(u.id, p2.id)).toEqual([]);
+
+      expect(
+        await run("setPortfolioValues", u, acc.id, {
+          date: "2025-06-30",
+          [`value:${p1.id}`]: "abc",
+        }),
+      ).toMatchObject({ type: "fail", status: 400 });
+      expect(
+        await run("setPortfolioValues", u, acc.id, { date: "2025-06-30" }),
+      ).toMatchObject({ type: "fail", status: 400 });
+
+      expect(
+        await run("deletePortfolioValue", u, acc.id, {
+          portfolioId: p1.id,
+          valueId: values[0]!.id,
+        }),
+      ).toMatchObject({ type: "return", value: { success: true } });
+      expect(listValues(u.id, p1.id)).toEqual([]);
+    });
+
+    it("refuses a portfolio of another account of the same user", async () => {
+      const u = await createTestUser();
+      const acc = seedPillar3aAccount(u.id);
+      const other = seedPillar3aAccount(u.id, { name: "Other 3a" });
+      const p = seedPortfolio(u.id, other.id, { name: "Elsewhere" });
+      setValues(u.id, other.id, "2025-01-01", [
+        { portfolioId: p.id, amount: minor(500) },
+      ]);
+      const [v] = listValues(u.id, p.id);
+      const attempts: [keyof typeof actions, Record<string, string>][] = [
+        ["updatePortfolio", { portfolioId: p.id, ...pf() }],
+        [
+          "closePortfolio",
+          { portfolioId: p.id, closedOn: "2030-01-01", closeReason: "age" },
+        ],
+        ["reopenPortfolio", { portfolioId: p.id }],
+        ["deletePortfolio", { portfolioId: p.id }],
+        ["setPortfolioValues", { date: "2025-02-01", [`value:${p.id}`]: "1" }],
+        ["deletePortfolioValue", { portfolioId: p.id, valueId: v!.id }],
+      ];
+      for (const [name, form] of attempts) {
+        expect(await run(name, u, acc.id, form), name).toEqual({
+          type: "error",
+          status: 404,
+        });
+      }
+      expect(getPortfolio(u.id, p.id)).toMatchObject({
+        name: "Elsewhere",
+        closedOn: null,
+      });
+      expect(listValues(u.id, p.id)).toHaveLength(1);
+    });
+
+    it("refuses a value id of another portfolio of the same account", async () => {
+      const u = await createTestUser();
+      const acc = seedPillar3aAccount(u.id);
+      const p1 = seedPortfolio(u.id, acc.id, { name: "P1" });
+      const p2 = seedPortfolio(u.id, acc.id, { name: "P2" });
+      setValues(u.id, acc.id, "2025-01-01", [
+        { portfolioId: p1.id, amount: minor(500) },
+      ]);
+      const [v] = listValues(u.id, p1.id);
+      expect(
+        await run("deletePortfolioValue", u, acc.id, {
+          portfolioId: p2.id,
+          valueId: v!.id,
+        }),
+      ).toEqual({ type: "error", status: 404 });
+      expect(listValues(u.id, p1.id)).toHaveLength(1);
+    });
+
+    it("refuses another user's account, portfolios and values", async () => {
+      const a = await createTestUser();
+      const b = await createTestUser();
+      const acc = seedPillar3aAccount(a.id);
+      const p = seedPortfolio(a.id, acc.id, { name: "A's portfolio" });
+      setValues(a.id, acc.id, "2025-01-01", [
+        { portfolioId: p.id, amount: minor(500) },
+      ]);
+      const [v] = listValues(a.id, p.id);
+      const bAcc = seedPillar3aAccount(b.id);
+
+      const attempts: [keyof typeof actions, Record<string, string>][] = [
+        ["addPortfolio", pf()],
+        ["updatePortfolio", { portfolioId: p.id, ...pf() }],
+        [
+          "closePortfolio",
+          { portfolioId: p.id, closedOn: "2030-01-01", closeReason: "age" },
+        ],
+        ["reopenPortfolio", { portfolioId: p.id }],
+        ["deletePortfolio", { portfolioId: p.id }],
+        ["setPortfolioValues", { date: "2025-02-01", [`value:${p.id}`]: "1" }],
+        ["deletePortfolioValue", { portfolioId: p.id, valueId: v!.id }],
+      ];
+      for (const [name, form] of attempts) {
+        expect(
+          await run(name, b, acc.id, form),
+          `${name} on A's account`,
+        ).toEqual({
+          type: "error",
+          status: 404,
+        });
+      }
+      // A's ids through B's own account are 404 as well.
+      for (const [name, form] of attempts.slice(1)) {
+        expect(
+          await run(name, b, bAcc.id, form),
+          `${name} via B's account`,
+        ).toEqual({
+          type: "error",
+          status: 404,
+        });
+      }
+      expect(getPortfolio(a.id, p.id)).toMatchObject({
+        name: "A's portfolio",
+        closedOn: null,
+      });
+      expect(listPortfolios(a.id, acc.id)).toHaveLength(1);
+      expect(listValues(a.id, p.id)).toHaveLength(1);
+      expect(listPortfolios(b.id, bAcc.id)).toEqual([]);
+    });
   });
 });

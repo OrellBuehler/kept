@@ -28,11 +28,14 @@
     snapshots,
     currency,
     holdings = false,
+    portfolios = false,
   }: {
     snapshots: Snapshot[];
     currency: string;
     /** The account has holdings: snapshots then record the cash balance only. */
     holdings?: boolean;
+    /** The account has portfolios: their values are tracked separately. */
+    portfolios?: boolean;
   } = $props();
 
   const uid = $props.id();
@@ -56,7 +59,11 @@
   <Card.Header>
     <Card.Title>Balance snapshots</Card.Title>
     <Card.Description>
-      {#if holdings}
+      {#if portfolios}
+        Snapshots record the cash balance of this account. The value of your
+        portfolios is added on top, so leave it out and update it under
+        Portfolios.
+      {:else if holdings}
         Snapshots record the cash balance of this account. The value of your
         holdings is added on top, so leave it out.
       {:else}

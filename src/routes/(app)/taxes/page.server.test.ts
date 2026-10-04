@@ -2,6 +2,8 @@ import { describe, expect, it } from "vitest";
 import { minor } from "$lib/money";
 import { addTaxCredit, setTransactionTaxYear } from "$lib/server/tax/tax";
 import { taxCreditInputSchema } from "$lib/server/tax/schemas";
+import { addManualContribution } from "$lib/server/pillar3a";
+import { seedPillar3aAccount, seedPortfolio } from "$lib/testing/pillar3a";
 import { createTestUser } from "$lib/testing/auth";
 import { useTestDB } from "$lib/testing/db";
 import { createTestEvent, outcome } from "$lib/testing/event";
@@ -172,5 +174,43 @@ describe("taxes routes", () => {
       (stillThere as { value: { reconciliation: { balance: object } } }).value
         .reconciliation.balance,
     ).toMatchObject({ paidByMe: 1000, creditedByOffice: 1000 });
+  });
+
+  it("adds a pillar 3a summary only for users who track pillar 3a", async () => {
+    const u = await createTestUser();
+    await runList(u, yearForm({ year: "2025" }));
+    const none = await loadDetail(u, "2025");
+    expect(
+      (none as { value: { pillar3a: unknown } }).value.pillar3a,
+    ).toBeNull();
+
+    const acc = seedPillar3aAccount(u.id);
+    const p = seedPortfolio(u.id, acc.id);
+    addManualContribution(
+      u.id,
+      {
+        portfolioId: p.id,
+        date: "2025-05-01",
+        amount: minor(100_000),
+        kind: "ordinary",
+        gapYears: [],
+        note: null,
+      },
+      "2026-10-04",
+    );
+    const some = await loadDetail(u, "2025");
+    expect((some as { value: { pillar3a: unknown } }).value.pillar3a).toEqual({
+      limit: 725_800,
+      limitUnconfirmed: false,
+      ordinary: 100_000,
+      buyIn: 0,
+      deductible: 100_000,
+    });
+
+    const other = await createTestUser();
+    await runList(other, yearForm({ year: "2025" }));
+    expect(
+      (await loadDetail(other, "2025")) as { value: { pillar3a: unknown } },
+    ).toMatchObject({ value: { pillar3a: null } });
   });
 });
