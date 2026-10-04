@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { and, eq } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 import { z } from "zod";
 import {
   attachDocument,
@@ -20,7 +20,12 @@ import {
   type BillExtraction,
 } from "$lib/server/bills/pdf-extract";
 import { billInputSchema, type BillInput } from "$lib/server/bills/schemas";
-import { bills, getDB, paperlessDocuments } from "$lib/server/db";
+import {
+  bills,
+  getDB,
+  paperlessDocuments,
+  paperlessPending,
+} from "$lib/server/db";
 import { LedgerError } from "$lib/server/ledger/errors";
 import type { PaperlessBillSource } from "$lib/server/db";
 import {
@@ -48,6 +53,11 @@ export const EXTERNAL_SOURCE = "paperless";
 export const REVIEW_NOTE = "Imported from Paperless — please check.";
 /** Documents modified within this window before the watermark are looked at again. */
 export const WATERMARK_OVERLAP_MS = 5 * 60 * 1000;
+/** A document Paperless cannot serve is retried this many times, or for this long, before it is marked failed. */
+export const MAX_DOCUMENT_ATTEMPTS = 5;
+export const MAX_DOCUMENT_RETRY_MS = 24 * 60 * 60 * 1000;
+/** This many downloads in a row failing to connect, without any success in between, mean the connection is down. */
+const NETWORK_STREAK_LIMIT = 3;
 const PAGE_SIZE = 100;
 const FIELDS = "id,modified,mime_type,original_file_name,archived_file_name";
 
@@ -201,6 +211,7 @@ async function sync(
   if (!row.billSource) throw new SourceError("no_source");
   const base = await sourceQuery(client, row.billSource);
 
+  const state: RunState = { networkStreak: 0 };
   if (options.documentIds) {
     const ids = [...new Set(options.documentIds)];
     const visible: number[] = [];
@@ -227,7 +238,9 @@ async function sync(
       ["fields", FIELDS],
     ];
     for await (const page of client.pages("documents", query, docSchema)) {
-      for (const doc of page) await handle(userId, row, client, doc, result);
+      for (const doc of page) {
+        await handle(userId, row, client, doc, result, state);
+      }
     }
     return;
   }
@@ -250,7 +263,7 @@ async function sync(
     for await (const page of client.pages("documents", query, docSchema)) {
       for (const doc of page) {
         const pendingBefore = result.pending;
-        await handle(userId, row, client, doc, result);
+        await handle(userId, row, client, doc, result, state);
         // A document left pending keeps the watermark in front of it.
         if (result.pending > pendingBefore) held = true;
         if (held) continue;
@@ -475,30 +488,100 @@ const DOCUMENT_REASONS: Partial<
   },
 };
 
+interface RunState {
+  /** Downloads in a row that failed to connect or timed out. */
+  networkStreak: number;
+}
+
+const GAVE_UP_MESSAGE =
+  "Paperless repeatedly failed to serve this document; it is retried when the document changes.";
+
+/** Counts a failed attempt; true once the document has used up its attempts or its time. */
+function recordAttempt(row: ConnectionRow, paperlessId: number): boolean {
+  const now = new Date();
+  const saved = getDB()
+    .insert(paperlessPending)
+    .values({
+      userId: row.userId,
+      connectionId: row.id,
+      paperlessId,
+      attempts: 1,
+      firstFailedAt: now,
+    })
+    .onConflictDoUpdate({
+      target: [paperlessPending.connectionId, paperlessPending.paperlessId],
+      set: { attempts: sql`${paperlessPending.attempts} + 1` },
+    })
+    .returning()
+    .get();
+  return (
+    saved.attempts >= MAX_DOCUMENT_ATTEMPTS ||
+    now.getTime() - saved.firstFailedAt.getTime() >= MAX_DOCUMENT_RETRY_MS
+  );
+}
+
+function clearAttempts(row: ConnectionRow, paperlessId: number): void {
+  getDB()
+    .delete(paperlessPending)
+    .where(
+      and(
+        eq(paperlessPending.userId, row.userId),
+        eq(paperlessPending.connectionId, row.id),
+        eq(paperlessPending.paperlessId, paperlessId),
+      ),
+    )
+    .run();
+}
+
 async function handle(
   userId: string,
   row: ConnectionRow,
   client: PaperlessClient,
   doc: PaperlessDoc,
   result: SyncResult,
+  state: RunState,
 ): Promise<void> {
   result.listed++;
   let outcome: Outcome;
   try {
     outcome = await processDocument(userId, row, client, doc);
+    if (outcome !== "unchanged") state.networkStreak = 0;
+    clearAttempts(row, doc.id);
   } catch (err) {
     // Only problems with the connection itself stop the run; a document Paperless
-    // cannot serve is recorded and the run continues with the next one.
-    if (err instanceof PaperlessError && RUN_LEVEL_ERRORS.has(err.code)) {
-      throw err;
+    // cannot serve is recorded and the run continues with the next one. The list
+    // request already succeeded, so a single download that times out or fails to
+    // connect belongs to its document; only a streak of them means the connection is down.
+    if (err instanceof PaperlessError && err.code === "network") {
+      state.networkStreak++;
+      if (state.networkStreak >= NETWORK_STREAK_LIMIT) throw err;
+    } else {
+      state.networkStreak = 0;
+      if (err instanceof PaperlessError && RUN_LEVEL_ERRORS.has(err.code)) {
+        throw err;
+      }
     }
     if (isTransientError(err)) {
-      // No link is saved: the document stays pending and the watermark holds
-      // (see sync), so the next run tries it again.
-      console.warn("paperless document will be retried", errorCode(err));
-      result.pending++;
+      if (!recordAttempt(row, doc.id)) {
+        // No link is saved: the document stays pending and the watermark holds
+        // (see sync), so the next run tries it again.
+        console.warn("paperless document will be retried", errorCode(err));
+        result.pending++;
+        return;
+      }
+      // Out of attempts: fail it like any other document Paperless cannot serve,
+      // which also lets the watermark move on.
+      console.error("paperless document gave up", errorCode(err));
+      clearAttempts(row, doc.id);
+      saveLink(row, doc.id, {
+        modified: parseModified(doc),
+        status: "failed",
+        error: GAVE_UP_MESSAGE,
+      });
+      result.failed++;
       return;
     }
+    clearAttempts(row, doc.id);
     const reason =
       err instanceof PaperlessError ? DOCUMENT_REASONS[err.code] : undefined;
     if (reason === undefined) {

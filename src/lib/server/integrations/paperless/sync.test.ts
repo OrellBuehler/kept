@@ -16,6 +16,7 @@ import {
   getDB,
   paperlessConnections,
   paperlessDocuments,
+  paperlessPending,
 } from "$lib/server/db";
 import { createTestUser, type TestUser } from "$lib/testing/auth";
 import { useTestDB } from "$lib/testing/db";
@@ -28,9 +29,11 @@ import {
   saveConnection,
   setBillSourceRow,
 } from "./connection";
+import { PaperlessClient, classifyFetchError } from "./client";
 import { startFakePaperless } from "./fake-server";
 import {
   EXTERNAL_SOURCE,
+  MAX_DOCUMENT_ATTEMPTS,
   REVIEW_NOTE,
   externalRef,
   syncConnection,
@@ -371,6 +374,152 @@ describe("syncConnection", () => {
       );
     },
   );
+
+  const timeoutOn = (...ids: number[]) => {
+    const original = PaperlessClient.prototype.download;
+    return vi
+      .spyOn(PaperlessClient.prototype, "download")
+      .mockImplementation(function (this: PaperlessClient, path, ...rest) {
+        if (ids.some((id) => path.startsWith(`documents/${id}/`))) {
+          return Promise.reject(
+            classifyFetchError(new DOMException("timed out", "TimeoutError")),
+          );
+        }
+        return original.call(this, path, ...rest);
+      });
+  };
+
+  it("a download that times out leaves that document pending while later ones still sync", async () => {
+    fake.addDoc({
+      id: 141,
+      original: pdfEnergy,
+      modified: "2026-09-01T10:00:00+00:00",
+    });
+    fake.addDoc({
+      id: 142,
+      original: pdfWater,
+      modified: "2026-09-01T11:00:00+00:00",
+    });
+    fake.addDoc({
+      id: 143,
+      original: pdfOpen,
+      modified: "2026-09-01T12:00:00+00:00",
+    });
+    const spy = timeoutOn(141);
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+
+    const first = await syncConnection(user.id);
+
+    expect(first).toMatchObject({
+      imported: 2,
+      pending: 1,
+      failed: 0,
+      error: null,
+    });
+    expect(linkOf(141)).toBeUndefined();
+    expect(linkOf(142)).toMatchObject({ status: "imported" });
+    expect(linkOf(143)).toMatchObject({ status: "imported" });
+    expect(getConnectionRow(user.id)!.lastSyncModified).toBeNull();
+    expect(getConnectionRow(user.id)!.lastError).toBeNull();
+
+    spy.mockRestore();
+    const second = await syncConnection(user.id);
+    expect(second).toMatchObject({ imported: 1, pending: 0, error: null });
+    expect(getDB().select().from(paperlessPending).all()).toHaveLength(0);
+    expect(getConnectionRow(user.id)!.lastSyncModified).toBe(
+      Date.parse("2026-09-01T12:00:00+00:00"),
+    );
+  });
+
+  it("still stops the run when every download fails to connect", async () => {
+    for (const [id, hour] of [
+      [151, "10"],
+      [152, "11"],
+      [153, "12"],
+      [154, "13"],
+    ] as const) {
+      fake.addDoc({
+        id,
+        original: pdfEnergy,
+        modified: `2026-09-01T${hour}:00:00+00:00`,
+      });
+    }
+    timeoutOn(151, 152, 153, 154);
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+    vi.spyOn(console, "error").mockImplementation(() => {});
+
+    const r = await syncConnection(user.id);
+
+    expect(r.error).toBe("network");
+    expect(r.pending).toBeLessThan(4);
+    expect(getConnectionRow(user.id)!.lastSyncModified).toBeNull();
+  });
+
+  it("gives up on a document that keeps failing after the attempt cap and releases the watermark", async () => {
+    fake.addDoc({
+      id: 161,
+      original: pdfEnergy,
+      modified: "2026-09-01T10:00:00+00:00",
+    });
+    fake.addDoc({
+      id: 162,
+      original: pdfWater,
+      modified: "2026-09-01T11:00:00+00:00",
+    });
+    fake.downloadStatuses.set(161, 500);
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+    vi.spyOn(console, "error").mockImplementation(() => {});
+
+    for (let run = 1; run < MAX_DOCUMENT_ATTEMPTS; run++) {
+      const r = await syncConnection(user.id);
+      expect(r).toMatchObject({ pending: 1, failed: 0 });
+      expect(getConnectionRow(user.id)!.lastSyncModified).toBeNull();
+      expect(getDB().select().from(paperlessPending).get()!.attempts).toBe(run);
+    }
+
+    const last = await syncConnection(user.id);
+
+    expect(last).toMatchObject({ pending: 0, failed: 1 });
+    expect(linkOf(161)).toMatchObject({ status: "failed" });
+    expect(linkOf(161)!.error).toMatch(/repeatedly|several/i);
+    expect(getDB().select().from(paperlessPending).all()).toHaveLength(0);
+    expect(getConnectionRow(user.id)!.lastSyncModified).toBe(
+      Date.parse("2026-09-01T11:00:00+00:00"),
+    );
+    // Failed documents are left alone until they change.
+    fake.downloadStatuses.delete(161);
+    expect(await syncConnection(user.id)).toMatchObject({
+      imported: 0,
+      failed: 0,
+      pending: 0,
+    });
+  });
+
+  it("gives up on a document that has been failing for a day", async () => {
+    fake.addDoc({
+      id: 171,
+      original: pdfEnergy,
+      modified: "2026-09-01T10:00:00+00:00",
+    });
+    fake.downloadStatuses.set(171, 503);
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+    vi.spyOn(console, "error").mockImplementation(() => {});
+
+    expect(await syncConnection(user.id)).toMatchObject({ pending: 1 });
+    getDB()
+      .update(paperlessPending)
+      .set({ firstFailedAt: new Date(Date.now() - 25 * 60 * 60 * 1000) })
+      .run();
+
+    expect(await syncConnection(user.id)).toMatchObject({
+      pending: 0,
+      failed: 1,
+    });
+    expect(linkOf(171)).toMatchObject({ status: "failed" });
+    expect(getConnectionRow(user.id)!.lastSyncModified).toBe(
+      Date.parse("2026-09-01T10:00:00+00:00"),
+    );
+  });
 
   it("keeps permanent client errors failed until the document changes", async () => {
     fake.addDoc({ id: 43, original: pdfEnergy });
