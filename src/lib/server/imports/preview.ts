@@ -19,12 +19,24 @@ import {
   type NormalizedTransaction,
 } from "$lib/server/importers/types";
 import { getAccount, type AccountView } from "$lib/server/ledger/accounts";
-import { balanceAt, type BalanceInput } from "$lib/server/ledger/balances";
+import { findReplacements } from "$lib/server/transfers/replace";
+import {
+  balanceAt,
+  cashMovesOf,
+  ledgerMoves,
+  type BalanceInput,
+} from "$lib/server/ledger/balances";
+import { loadHoldingsInputs } from "$lib/server/investments/load";
 import { getCsvProfile } from "./profiles";
 import { cachedParse } from "./cache";
 import { getPendingMeta, readPending, type PendingMeta } from "./pending";
 
-export type RowStatus = "new" | "duplicate" | "duplicate_in_file";
+/**
+ * `replaces_mirror`: a new row that takes over a mirrored transaction Kept created from a
+ * transfer on another account (same amount, within five days); it is imported like a new row.
+ */
+export type RowStatus =
+  "new" | "replaces_mirror" | "duplicate" | "duplicate_in_file";
 
 export interface PreviewRowView {
   /** 1-based position in the file's transaction list. */
@@ -32,6 +44,8 @@ export interface PreviewRowView {
   status: RowStatus;
   /** Why a `duplicate` row counts as imported: its current id, or only an id earlier versions derived. */
   matchedBy: "id" | "legacy_id" | null;
+  /** `replaces_mirror` only: the mirrored transaction this row takes over. */
+  mirrorId: string | null;
   tx: NormalizedTransaction;
 }
 
@@ -56,7 +70,13 @@ export interface ImportPreview {
   fileName: string;
   statement: StatementSummary | null;
   rows: PreviewRowView[];
-  counts: { new: number; duplicate: number; total: number };
+  /** `new` counts every row that will be imported, replacements included. */
+  counts: {
+    new: number;
+    replacesMirror: number;
+    duplicate: number;
+    total: number;
+  };
   warnings: string[];
   /** Balance mismatches; amounts are rendered client-side so display preferences apply. */
   balanceWarnings: BalanceWarning[];
@@ -170,12 +190,17 @@ function previousDay(date: string): string {
   return d.toISOString().slice(0, 10);
 }
 
-function loadLedger(userId: string, accountId: string): BalanceInput {
+function loadLedger(
+  userId: string,
+  accountId: string,
+  excludeIds: ReadonlySet<string> = new Set(),
+): BalanceInput {
   const db = getDB();
   const account = db
     .select({
       openingBalance: accounts.openingBalance,
       openingDate: accounts.openingDate,
+      tradesMoveCash: accounts.tradesMoveCash,
     })
     .from(accounts)
     .where(and(eq(accounts.userId, userId), eq(accounts.id, accountId)))
@@ -183,8 +208,14 @@ function loadLedger(userId: string, accountId: string): BalanceInput {
   return {
     openingBalance: account.openingBalance,
     openingDate: account.openingDate,
+    cashMoves: account.tradesMoveCash
+      ? cashMovesOf(
+          loadHoldingsInputs(userId, [accountId], "9999-12-31").get(accountId),
+        )
+      : undefined,
     transactions: db
       .select({
+        id: transactions.id,
         bookingDate: transactions.bookingDate,
         amount: transactions.amount,
       })
@@ -195,7 +226,8 @@ function loadLedger(userId: string, accountId: string): BalanceInput {
           eq(transactions.accountId, accountId),
         ),
       )
-      .all(),
+      .all()
+      .filter((t) => !excludeIds.has(t.id)),
     snapshots: db
       .select({
         date: balanceSnapshots.date,
@@ -217,7 +249,7 @@ function hasDataBefore(input: BalanceInput, date: string): boolean {
   return (
     (input.openingDate !== null && input.openingDate < date) ||
     input.snapshots.some((s) => s.date < date) ||
-    input.transactions.some((t) => t.bookingDate < date)
+    ledgerMoves(input).some((t) => t.bookingDate < date)
   );
 }
 
@@ -244,7 +276,7 @@ export function anchoredBalanceAt(
         Number(b.source === "manual") - Number(a.source === "manual"),
     )[0];
   if (!later) return null;
-  const between = input.transactions
+  const between = ledgerMoves(input)
     .filter((t) => t.bookingDate > date && t.bookingDate <= later.date)
     .reduce((sum, t) => sum + t.amount, 0);
   return minor(later.amount - between);
@@ -449,7 +481,7 @@ export function buildPreview(
       ...base,
       statement: null,
       rows: [],
-      counts: { new: 0, duplicate: 0, total: 0 },
+      counts: { new: 0, replacesMirror: 0, duplicate: 0, total: 0 },
       warnings,
       errors,
       alreadyImportedAt,
@@ -489,10 +521,33 @@ export function buildPreview(
     } else if (seen.has(tx.externalId)) status = "duplicate_in_file";
     else status = "new";
     seen.add(tx.externalId);
-    return { index: i + 1, status, matchedBy, tx };
+    return { index: i + 1, status, matchedBy, mirrorId: null, tx };
   });
-  const newRows = rows.filter((r) => r.status === "new");
 
+  // New rows that take over a mirror: the mirror goes, so it leaves the continuity check.
+  const replacements = findReplacements(
+    userId,
+    account.id,
+    rows
+      .filter((r) => r.status === "new")
+      .map((r) => ({
+        key: String(r.index),
+        bookingDate: r.tx.bookingDate,
+        amount: r.tx.amount,
+        counterpartyIban: r.tx.counterpartyIban,
+        reference: r.tx.reference,
+        description: r.tx.description,
+      })),
+  );
+  for (const r of rows) {
+    const mirrorId = replacements.get(String(r.index));
+    if (mirrorId === undefined) continue;
+    r.status = "replaces_mirror";
+    r.mirrorId = mirrorId;
+  }
+  const newRows = rows.filter(
+    (r) => r.status === "new" || r.status === "replaces_mirror",
+  );
   if (statement.transactions.length === 0) {
     warnings.push("The file contains no transactions.");
   }
@@ -500,7 +555,7 @@ export function buildPreview(
   if (errors.length === 0) {
     balanceWarnings.push(
       ...continuityWarnings(
-        loadLedger(userId, account.id),
+        loadLedger(userId, account.id, new Set(replacements.values())),
         statement,
         newRows.map((r) => r.tx),
         account.currency,
@@ -520,6 +575,7 @@ export function buildPreview(
     rows,
     counts: {
       new: newRows.length,
+      replacesMirror: replacements.size,
       duplicate: rows.length - newRows.length,
       total: rows.length,
     },

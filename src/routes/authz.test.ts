@@ -180,6 +180,13 @@ const matrix: Record<string, Entry> = {
       "actions.updateTrade": (m, e) => m.actions.updateTrade(e),
       "actions.deleteTrade": (m, e) => m.actions.deleteTrade(e),
       "actions.setCategory": (m, e) => m.actions.setCategory(e),
+      "actions.unlinkTransfer": (m, e) => m.actions.unlinkTransfer(e),
+      "actions.linkTransfer": (m, e) => m.actions.linkTransfer(e),
+      "actions.transferCandidates": (m, e) => m.actions.transferCandidates(e),
+      "actions.resolveNeedsAmount": (m, e) => m.actions.resolveNeedsAmount(e),
+      "actions.linkNeedsAmount": (m, e) => m.actions.linkNeedsAmount(e),
+      "actions.enableFillFromTransfers": (m, e) =>
+        m.actions.enableFillFromTransfers(e),
       "actions.addPortfolio": (m, e) => m.actions.addPortfolio(e),
       "actions.updatePortfolio": (m, e) => m.actions.updatePortfolio(e),
       "actions.closePortfolio": (m, e) => m.actions.closePortfolio(e),

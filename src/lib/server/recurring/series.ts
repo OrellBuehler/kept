@@ -1,4 +1,4 @@
-import { and, eq, inArray } from "drizzle-orm";
+import { and, eq, inArray, ne } from "drizzle-orm";
 import { minor, type Minor } from "$lib/money";
 import type { Cadence, SeriesStatus } from "$lib/recurring-types";
 import { getDB, recurringSeries, transactions } from "$lib/server/db";
@@ -111,7 +111,9 @@ function loadTransactions(userId: string): DetectInput[] {
       reversal: transactions.reversal,
     })
     .from(transactions)
-    .where(eq(transactions.userId, userId))
+    .where(
+      and(eq(transactions.userId, userId), ne(transactions.source, "mirror")),
+    )
     .all();
 }
 

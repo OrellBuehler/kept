@@ -1,4 +1,4 @@
-import { and, asc, eq, inArray, isNull, or, sql } from "drizzle-orm";
+import { and, asc, eq, inArray, isNull, ne, or, sql } from "drizzle-orm";
 import { z } from "zod";
 import { minor, type Minor } from "$lib/money";
 import { DEDUCTION_TYPES, type DeductionType } from "$lib/tax-deductions";
@@ -9,6 +9,7 @@ import {
   transactions,
 } from "$lib/server/db";
 import { LedgerError, notFound } from "$lib/server/ledger/errors";
+import { assertNotMirror } from "$lib/server/transfers/guard";
 import { PILLAR_3A_CURRENCY } from "$lib/pillar-3a";
 import {
   detectedContributions,
@@ -167,6 +168,7 @@ export function setTransactionDeductionExcluded(
   transactionId: string,
   excluded: boolean,
 ): void {
+  assertNotMirror(userId, transactionId, "left out of the deductions");
   const updated = getDB()
     .update(transactions)
     .set({ deductionExcluded: excluded })
@@ -254,6 +256,7 @@ export function deductionSummary(
       .where(
         and(
           eq(transactions.userId, userId),
+          ne(transactions.source, "mirror"),
           sql`${transactions.categoryId} is not null`,
           or(
             eq(transactions.deductionYear, year),
@@ -347,6 +350,7 @@ export function setTransactionDeductionYear(
   transactionId: string,
   year: number | null,
 ): void {
+  assertNotMirror(userId, transactionId, "deducted in another year");
   const updated = getDB()
     .update(transactions)
     .set({ deductionYear: year })

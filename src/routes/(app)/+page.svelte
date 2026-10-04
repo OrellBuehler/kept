@@ -2,6 +2,7 @@
   import InstitutionLogo from "$lib/components/InstitutionLogo.svelte";
   import { resolve } from "$app/paths";
   import { cn } from "$lib/utils";
+  import * as Alert from "$lib/components/ui/alert";
   import * as Card from "$lib/components/ui/card";
   import * as Empty from "$lib/components/ui/empty";
   import { Badge } from "$lib/components/ui/badge";
@@ -24,6 +25,7 @@
   import ArrowUpIcon from "@lucide/svelte/icons/arrow-up";
   import ArrowDownIcon from "@lucide/svelte/icons/arrow-down";
   import MinusIcon from "@lucide/svelte/icons/minus";
+  import ArrowLeftRightIcon from "@lucide/svelte/icons/arrow-left-right";
   import type { PageProps } from "./$types";
   import { usePreferences } from "$lib/preferences.svelte";
 
@@ -76,6 +78,21 @@
     "var(--color-chart-3)",
     "var(--color-chart-4)",
   ];
+
+  const needsAmountTargets = $derived.by(() => {
+    const targets: { id: string; name: string; count: number }[] = [];
+    for (const n of data.needsAmount) {
+      const t = targets.find((x) => x.id === n.targetAccountId);
+      if (t) t.count += 1;
+      else
+        targets.push({
+          id: n.targetAccountId,
+          name: n.targetAccountName,
+          count: 1,
+        });
+    }
+    return targets;
+  });
 
   const sortedAccounts = $derived(
     [...d.accounts].sort(
@@ -197,6 +214,29 @@
   </Empty.Root>
 {:else}
   <div class="grid gap-4 lg:grid-cols-2">
+    {#if data.needsAmount.length > 0}
+      <Alert.Root class="lg:col-span-2">
+        <ArrowLeftRightIcon />
+        <Alert.Title>
+          {plural(data.needsAmount.length, "transfer")}
+          {data.needsAmount.length === 1 ? "needs" : "need"} an amount
+        </Alert.Title>
+        <Alert.Description>
+          <p>
+            A transfer in another currency is waiting for the amount the other
+            account booked:
+            {#each needsAmountTargets as t, i (t.id)}
+              {i > 0 ? ", " : ""}<a
+                href={resolve("/(app)/accounts/[id]", { id: t.id })}
+                class="text-foreground font-medium underline underline-offset-2"
+                >{t.name}</a
+              >{#if t.count > 1}
+                ({t.count}){/if}
+            {/each}.
+          </p>
+        </Alert.Description>
+      </Alert.Root>
+    {/if}
     <Card.Root class="surface-hero shadow-raised overflow-hidden lg:col-span-2">
       <Card.Header>
         <Card.Title>Net worth</Card.Title>

@@ -1,4 +1,5 @@
 import { error, fail, redirect } from "@sveltejs/kit";
+import { z } from "zod";
 import { requireUser } from "$lib/server/auth/guards";
 import {
   assignCategory,
@@ -27,6 +28,7 @@ import { ledgerFailure, orNotFound } from "$lib/server/ledger/http";
 import { listInstitutions } from "$lib/server/ledger/institutions";
 import {
   accountInputSchema,
+  amountField,
   idFormSchema,
   parseListQuery,
   snapshotInputSchema,
@@ -63,6 +65,17 @@ import {
   type PortfolioValueView,
 } from "$lib/server/pillar3a";
 import { getPreferences } from "$lib/server/preferences";
+import {
+  countMirrors,
+  enableFill,
+  fillSuggestion,
+  linkManually,
+  linkNeedsAmountTo,
+  listNeedsAmount,
+  resolveNeedsAmount,
+  transferCandidates,
+  unlink,
+} from "$lib/server/transfers";
 import { deductionYearTagSchema, taxTagSchema } from "$lib/server/tax/schemas";
 import { setTransactionDeductionYear } from "$lib/server/tax/deductions";
 import { setTransactionTaxYear } from "$lib/server/tax/tax";
@@ -84,6 +97,8 @@ const accountFields = [
   "share",
   "sharedWith",
   "sortOrder",
+  "fillFromTransfers",
+  "tradesMoveCash",
 ] as const;
 const transactionFields = [
   "bookingDate",
@@ -157,6 +172,14 @@ export const load: PageServerLoad = ({ locals, params, url }) => {
       pageSize: query.pageSize,
     }),
     snapshots: listSnapshots(user.id, account.id),
+    transfers: {
+      /** Mirrored transactions on this account (for the confirm dialog when filling is turned off). */
+      mirrorCount: countMirrors(user.id, account.id),
+      /** Never-imported account that is not filled yet: transfers other accounts show to its IBAN. */
+      fillSuggestion: fillSuggestion(user.id, account.id),
+      /** FX transfers waiting for the amount this account received or paid. */
+      needsAmount: listNeedsAmount(user.id, account.id),
+    },
     categories: listCategories(user.id),
     filters: query.raw,
     filterErrors: query.errors,
@@ -265,7 +288,7 @@ export const actions: Actions = {
       idParsed.data.transactionId,
     );
     const parsed =
-      existing.source === "import"
+      existing.source !== "manual"
         ? parseForm(transactionNoteSchema, form)
         : parseForm(transactionInputSchema(account.currency), form);
     if (!parsed.ok) {
@@ -373,6 +396,193 @@ export const actions: Actions = {
       };
     } catch (err) {
       return ledgerFailure("deleteTransaction", err, values);
+    }
+  },
+
+  unlinkTransfer: async ({ locals, params, request }) => {
+    const user = requireUser(locals);
+    const account = orNotFound(() => getAccount(user.id, params.id));
+    const form = await request.formData();
+    const values = safeValues(form, ["transactionId"]);
+    const parsed = parseForm(idFormSchema("transactionId"), form);
+    if (!parsed.ok) {
+      return fail(400, {
+        action: "unlinkTransfer",
+        errors: parsed.errors,
+        values,
+      });
+    }
+    const existing = ownedTransaction(
+      user.id,
+      account.id,
+      parsed.data.transactionId,
+    );
+    if (!existing.transfer) error(404, "Transfer not found.");
+    try {
+      unlink(user.id, existing.transfer.id);
+      return {
+        success: true as const,
+        action: "unlinkTransfer" as const,
+        id: existing.id,
+      };
+    } catch (err) {
+      return ledgerFailure("unlinkTransfer", err, values);
+    }
+  },
+
+  linkTransfer: async ({ locals, params, request }) => {
+    const user = requireUser(locals);
+    const account = orNotFound(() => getAccount(user.id, params.id));
+    const form = await request.formData();
+    const values = safeValues(form, ["transactionId", "peerId"]);
+    const parsed = parseForm(
+      idFormSchema("transactionId").and(idFormSchema("peerId")),
+      form,
+    );
+    if (!parsed.ok) {
+      return fail(400, {
+        action: "linkTransfer",
+        errors: parsed.errors,
+        values,
+      });
+    }
+    const existing = ownedTransaction(
+      user.id,
+      account.id,
+      parsed.data.transactionId,
+    );
+    const peer = orNotFound(() => getTransaction(user.id, parsed.data.peerId));
+    try {
+      const transferId =
+        existing.amount < 0
+          ? linkManually(user.id, existing.id, peer.id)
+          : linkManually(user.id, peer.id, existing.id);
+      return {
+        success: true as const,
+        action: "linkTransfer" as const,
+        id: existing.id,
+        transferId,
+      };
+    } catch (err) {
+      return ledgerFailure("linkTransfer", err, values);
+    }
+  },
+
+  /** Suggestions for the "Link as transfer" picker: `candidates` in the action result. */
+  transferCandidates: async ({ locals, params, request }) => {
+    const user = requireUser(locals);
+    const account = orNotFound(() => getAccount(user.id, params.id));
+    const form = await request.formData();
+    const values = safeValues(form, ["transactionId"]);
+    const parsed = parseForm(idFormSchema("transactionId"), form);
+    if (!parsed.ok) {
+      return fail(400, {
+        action: "transferCandidates",
+        errors: parsed.errors,
+        values,
+      });
+    }
+    const existing = ownedTransaction(
+      user.id,
+      account.id,
+      parsed.data.transactionId,
+    );
+    return {
+      success: true as const,
+      action: "transferCandidates" as const,
+      transactionId: existing.id,
+      candidates: transferCandidates(user.id, existing.id),
+    };
+  },
+
+  resolveNeedsAmount: async ({ locals, params, request }) => {
+    const user = requireUser(locals);
+    const account = orNotFound(() => getAccount(user.id, params.id));
+    const form = await request.formData();
+    const values = safeValues(form, ["transferId", "amount"]);
+    const idParsed = parseForm(idFormSchema("transferId"), form);
+    if (!idParsed.ok) {
+      return fail(400, {
+        action: "resolveNeedsAmount",
+        errors: idParsed.errors,
+        values,
+      });
+    }
+    const pending = listNeedsAmount(user.id, account.id).find(
+      (n) => n.transferId === idParsed.data.transferId,
+    );
+    if (!pending) error(404, "Transfer not found.");
+    const parsed = parseForm(
+      z.object({
+        amount: amountField(pending.targetCurrency, { nonZero: true }),
+      }),
+      form,
+    );
+    if (!parsed.ok) {
+      return fail(400, {
+        action: "resolveNeedsAmount",
+        errors: parsed.errors,
+        values,
+      });
+    }
+    try {
+      resolveNeedsAmount(user.id, pending.transferId, parsed.data.amount);
+      return {
+        success: true as const,
+        action: "resolveNeedsAmount" as const,
+        id: pending.transferId,
+      };
+    } catch (err) {
+      return ledgerFailure("resolveNeedsAmount", err, values);
+    }
+  },
+
+  /** "Link instead": ties the source of a needs-amount transfer to a booked row of this account. */
+  linkNeedsAmount: async ({ locals, params, request }) => {
+    const user = requireUser(locals);
+    const account = orNotFound(() => getAccount(user.id, params.id));
+    const form = await request.formData();
+    const values = safeValues(form, ["transferId", "peerId"]);
+    const parsed = parseForm(
+      idFormSchema("transferId").and(idFormSchema("peerId")),
+      form,
+    );
+    if (!parsed.ok) {
+      return fail(400, {
+        action: "linkNeedsAmount",
+        errors: parsed.errors,
+        values,
+      });
+    }
+    const pending = listNeedsAmount(user.id, account.id).find(
+      (n) => n.transferId === parsed.data.transferId,
+    );
+    if (!pending) error(404, "Transfer not found.");
+    try {
+      linkNeedsAmountTo(user.id, pending.transferId, parsed.data.peerId);
+      return {
+        success: true as const,
+        action: "linkNeedsAmount" as const,
+        id: pending.transferId,
+      };
+    } catch (err) {
+      return ledgerFailure("linkNeedsAmount", err, values);
+    }
+  },
+
+  /** Turns on "fill from transfers" and creates the mirrors for the account's whole history. */
+  enableFillFromTransfers: ({ locals, params }) => {
+    const user = requireUser(locals);
+    const account = orNotFound(() => getAccount(user.id, params.id));
+    try {
+      const result = enableFill(user.id, account.id);
+      return {
+        success: true as const,
+        action: "enableFillFromTransfers" as const,
+        ...result,
+      };
+    } catch (err) {
+      return ledgerFailure("enableFillFromTransfers", err);
     }
   },
 

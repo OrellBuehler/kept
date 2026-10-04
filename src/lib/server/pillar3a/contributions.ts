@@ -6,6 +6,7 @@ import {
   isNotNull,
   isNull,
   lt,
+  ne,
   sql,
 } from "drizzle-orm";
 import { minor, type Minor } from "$lib/money";
@@ -114,6 +115,8 @@ export function detectedContributions(userId: string): DetectedContribution[] {
     .where(
       and(
         eq(transactions.userId, userId),
+        // Only the paying side; a mirror copies its source's reference.
+        ne(transactions.source, "mirror"),
         isNotNull(transactions.reference),
         lt(transactions.amount, minor(0)),
         eq(transactions.currency, PILLAR_3A_CURRENCY),

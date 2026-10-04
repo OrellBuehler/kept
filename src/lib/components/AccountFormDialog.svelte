@@ -1,10 +1,13 @@
 <script lang="ts">
   import { enhance } from "$app/forms";
-  import { untrack } from "svelte";
+  import { tick, untrack } from "svelte";
   import * as Dialog from "$lib/components/ui/dialog";
+  import * as AlertDialog from "$lib/components/ui/alert-dialog";
   import * as Select from "$lib/components/ui/select";
-  import { Button } from "$lib/components/ui/button";
+  import { Button, buttonVariants } from "$lib/components/ui/button";
+  import { Checkbox } from "$lib/components/ui/checkbox";
   import { Input } from "$lib/components/ui/input";
+  import { Label } from "$lib/components/ui/label";
   import { Spinner } from "$lib/components/ui/spinner";
   import FormField from "$lib/components/FormField.svelte";
   import {
@@ -36,6 +39,8 @@
     noticeMonths: number | null;
     freeWithdrawal: Minor | null;
     freeWithdrawalPeriod: WithdrawalPeriod | null;
+    fillFromTransfers?: boolean;
+    tradesMoveCash?: boolean;
   }
 
   const prefs = usePreferences();
@@ -47,6 +52,9 @@
     account = null,
     currencyLocked = false,
     defaultInstitutionId = "",
+    mirrorCount = null,
+    hasPortfolios = false,
+    hasTrades = false,
   }: {
     open?: boolean;
     action: string;
@@ -55,6 +63,12 @@
     /** The account already has data, so its currency can no longer change. */
     currencyLocked?: boolean;
     defaultInstitutionId?: string;
+    /** Mirrored transactions on the account, for the confirm when filling is turned off; null when unknown. */
+    mirrorCount?: number | null;
+    /** Accounts with portfolios cannot be filled from transfers. */
+    hasPortfolios?: boolean;
+    /** Accounts with trades can make trades move cash whatever their type. */
+    hasTrades?: boolean;
   } = $props();
 
   const uid = $props.id();
@@ -64,6 +78,12 @@
   let institutionId = $state("");
   let type = $state<AccountType>("current");
   let period = $state<WithdrawalPeriod | "">("");
+  let fill = $state(false);
+  let tradesCash = $state(false);
+  let form = $state<HTMLFormElement | null>(null);
+  let confirmOffOpen = $state(false);
+  /** The user agreed that saving deletes the mirrors; posted so the server accepts it. */
+  let confirmedOff = $state(false);
 
   $effect(() => {
     if (!open) return;
@@ -74,11 +94,27 @@
         : defaultInstitutionId;
       type = account?.type ?? "current";
       period = account?.freeWithdrawalPeriod ?? "";
+      fill = account?.fillFromTransfers ?? false;
+      tradesCash = account?.tradesMoveCash ?? false;
+      confirmOffOpen = false;
+      confirmedOff = false;
     });
   });
 
   const is3a = $derived(type === "pillar_3a");
   const hasNotice = $derived(NOTICE_ACCOUNT_TYPES.includes(type));
+
+  const showFill = $derived(!is3a && !hasPortfolios);
+  const showTradesCash = $derived(type === "investment" || hasTrades);
+  const fillOn = $derived(showFill && fill);
+  const tradesCashOn = $derived(showTradesCash && tradesCash);
+  /** Saving would delete the account's mirrors. */
+  const turningOff = $derived(
+    editing &&
+      account?.fillFromTransfers === true &&
+      !fillOn &&
+      mirrorCount !== 0,
+  );
 
   const institutionLabel = $derived(
     institutions.find((i) => i.id === institutionId)?.name ?? "None",
@@ -99,8 +135,12 @@
       method="POST"
       {action}
       class="grid gap-4"
+      bind:this={form}
       use:enhance={submitHandler({
-        setPending: (v) => (pending = v),
+        setPending: (v) => {
+          pending = v;
+          if (!v) confirmedOff = false;
+        },
         setErrors: (e) => (errors = e),
         knownFields: [
           "name",
@@ -117,6 +157,8 @@
           "noticeMonths",
           "freeWithdrawal",
           "freeWithdrawalPeriod",
+          "fillFromTransfers",
+          "tradesMoveCash",
         ],
         successMessage: editing ? "Account updated" : "Account added",
         onSuccess: () => (open = false),
@@ -124,6 +166,10 @@
     >
       <input type="hidden" name="institutionId" value={institutionId} />
       <input type="hidden" name="type" value={type} />
+      <input type="hidden" name="fillFromTransfersField" value="1" />
+      {#if turningOff && confirmedOff}
+        <input type="hidden" name="confirmRemoveMirrors" value="1" />
+      {/if}
       {#if hasNotice}
         <input type="hidden" name="freeWithdrawalPeriod" value={period} />
       {/if}
@@ -421,6 +467,71 @@
         </div>
       {/if}
 
+      {#if showFill || showTradesCash}
+        <div role="group" aria-labelledby="{uid}-statements" class="grid gap-4">
+          <p id="{uid}-statements" class="text-sm font-medium">Statements</p>
+          {#if showFill}
+            {#if fillOn}
+              <input type="hidden" name="fillFromTransfers" value="on" />
+            {/if}
+            <div class="flex items-start gap-3">
+              <Checkbox
+                id="{uid}-fill"
+                class="mt-0.5"
+                bind:checked={fill}
+                aria-describedby="{uid}-fill-hint"
+              />
+              <div class="grid gap-1">
+                <Label for="{uid}-fill" class="leading-snug">
+                  Fill from transfers in my other accounts
+                </Label>
+                <p id="{uid}-fill-hint" class="text-muted-foreground text-xs">
+                  For accounts without statement exports. Kept creates the
+                  counter-transaction when an imported account shows a transfer
+                  to or from this IBAN.
+                </p>
+                {#if errors.fillFromTransfers?.length}
+                  <p class="text-destructive text-sm" role="alert">
+                    {errors.fillFromTransfers[0]}
+                  </p>
+                {/if}
+              </div>
+            </div>
+          {/if}
+          {#if showTradesCash}
+            {#if tradesCashOn}
+              <input type="hidden" name="tradesMoveCash" value="on" />
+            {/if}
+            <div class="flex items-start gap-3">
+              <Checkbox
+                id="{uid}-trades-cash"
+                class="mt-0.5"
+                bind:checked={tradesCash}
+                aria-describedby="{uid}-trades-cash-hint"
+              />
+              <div class="grid gap-1">
+                <Label for="{uid}-trades-cash" class="leading-snug">
+                  Trades move cash
+                </Label>
+                <p
+                  id="{uid}-trades-cash-hint"
+                  class="text-muted-foreground text-xs"
+                >
+                  A buy lowers the cash balance and a sell raises it by the
+                  trade amount. Use it when you have no broker statements, so
+                  cash and holdings are not counted twice.
+                </p>
+                {#if errors.tradesMoveCash?.length}
+                  <p class="text-destructive text-sm" role="alert">
+                    {errors.tradesMoveCash[0]}
+                  </p>
+                {/if}
+              </div>
+            </div>
+          {/if}
+        </div>
+      {/if}
+
       {#if errors.form?.length}
         <p class="text-destructive text-sm" role="alert">
           {errors.form.join(" ")}
@@ -433,7 +544,11 @@
           onclick={() => (open = false)}
           disabled={pending}>Cancel</Button
         >
-        <Button type="submit" disabled={pending}>
+        <Button
+          type={turningOff ? "button" : "submit"}
+          disabled={pending}
+          onclick={turningOff ? () => (confirmOffOpen = true) : undefined}
+        >
           {#if pending}<Spinner />{/if}
           {editing ? "Save" : "Add account"}
         </Button>
@@ -441,3 +556,39 @@
     </form>
   </Dialog.Content>
 </Dialog.Root>
+
+<AlertDialog.Root bind:open={confirmOffOpen}>
+  <AlertDialog.Content>
+    <AlertDialog.Header>
+      <AlertDialog.Title>Stop filling this account?</AlertDialog.Title>
+      <AlertDialog.Description>
+        {#if mirrorCount === null}
+          The transactions Kept created from transfers in your other accounts
+          are deleted, and the balance is recalculated.
+        {:else}
+          The {mirrorCount === 1
+            ? "transaction"
+            : `${mirrorCount} transactions`} Kept created from transfers in your other
+          accounts {mirrorCount === 1 ? "is" : "are"} deleted, and the balance is
+          recalculated.
+        {/if}
+        Imported and manual transactions stay. Turn the setting on again to recreate
+        them.
+      </AlertDialog.Description>
+    </AlertDialog.Header>
+    <AlertDialog.Footer>
+      <AlertDialog.Cancel type="button">Keep filling</AlertDialog.Cancel>
+      <AlertDialog.Action
+        class={buttonVariants({ variant: "destructive" })}
+        onclick={async () => {
+          confirmOffOpen = false;
+          confirmedOff = true;
+          await tick();
+          form?.requestSubmit();
+        }}
+      >
+        Delete mirrors and save
+      </AlertDialog.Action>
+    </AlertDialog.Footer>
+  </AlertDialog.Content>
+</AlertDialog.Root>

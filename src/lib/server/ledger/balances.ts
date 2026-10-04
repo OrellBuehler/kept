@@ -36,6 +36,12 @@ import { LedgerError, notFound } from "./errors";
  *   come on top: the balance of an account with `holdings` is the cash balance
  *   above plus the value of its holdings on D, already converted into the
  *   account's currency. Trades never change the cash balance.
+ * - With the account's "trades move cash" setting on, every buy lowers and
+ *   every sell raises the cash balance by the trade's `amount` (account
+ *   currency, fees included) on the trade date, exactly like a transaction:
+ *   only trades dated after the latest snapshot (and not before the opening
+ *   date) count, splits move no cash. Holdings are unchanged, so cash plus
+ *   holdings does not count the same money twice.
  * - Pillar 3a portfolios (values entered by hand, see pillar3a/valuation.ts)
  *   come on top as well: per portfolio the latest value dated <= D, and 0 from
  *   the portfolio's closing date on.
@@ -48,11 +54,45 @@ export interface BalanceInput {
   openingDate: string | null;
   snapshots: readonly { date: string; amount: number; source?: string }[];
   transactions: readonly { bookingDate: string; amount: number }[];
+  /** Signed cash movements of trades (buy negative, sell positive); see `cashMovesOf`. */
+  cashMoves?: readonly CashMove[];
   holdings?: HoldingsInput;
   portfolios?: PortfoliosInput;
 }
 
+export interface CashMove {
+  date: string;
+  amount: number;
+}
+
 export type BalanceAt = (date: string) => Minor;
+
+/**
+ * The cash a position's trades moved: a buy pays its `amount`, a sell receives
+ * it, a split moves nothing. Use it for accounts with "trades move cash" on.
+ */
+export function cashMovesOf(holdings: HoldingsInput | undefined): CashMove[] {
+  return (holdings?.trades ?? []).flatMap((t) =>
+    t.side === "buy"
+      ? [{ date: t.date, amount: -t.amount }]
+      : t.side === "sell"
+        ? [{ date: t.date, amount: t.amount }]
+        : [],
+  );
+}
+
+/** Transactions and trade cash movements as one dated list. */
+export function ledgerMoves(
+  input: Pick<BalanceInput, "transactions" | "cashMoves">,
+): { bookingDate: string; amount: number }[] {
+  return [
+    ...input.transactions,
+    ...(input.cashMoves ?? []).map((m) => ({
+      bookingDate: m.date,
+      amount: m.amount,
+    })),
+  ];
+}
 
 /** First index whose value is > target (i.e. count of values <= target). */
 function upperBound(sorted: readonly string[], target: string): number {
@@ -82,7 +122,7 @@ function lowerBound(sorted: readonly string[], target: string): number {
  * Builds a balance lookup from prefix sums: O(n log n) once, O(log n) per date.
  */
 export function makeBalanceAt(input: BalanceInput): BalanceAt {
-  const txs = [...input.transactions].sort((a, b) =>
+  const txs = ledgerMoves(input).sort((a, b) =>
     a.bookingDate < b.bookingDate ? -1 : a.bookingDate > b.bookingDate ? 1 : 0,
   );
   const dates = txs.map((t) => t.bookingDate);
@@ -237,6 +277,7 @@ function loadInput(
     .select({
       openingBalance: accounts.openingBalance,
       openingDate: accounts.openingDate,
+      tradesMoveCash: accounts.tradesMoveCash,
     })
     .from(accounts)
     .where(and(eq(accounts.userId, userId), eq(accounts.id, accountId)))
@@ -255,11 +296,14 @@ function loadInput(
     txWhere.push(lte(transactions.bookingDate, upTo));
     snapWhere.push(lte(balanceSnapshots.date, upTo));
   }
-  const holdings = withValues
-    ? loadHoldingsInputs(userId, [accountId], upTo ?? "9999-12-31").get(
-        accountId,
-      )
-    : undefined;
+  // Trades are needed for the cash part too when they move cash.
+  const loaded =
+    withValues || account.tradesMoveCash
+      ? loadHoldingsInputs(userId, [accountId], upTo ?? "9999-12-31").get(
+          accountId,
+        )
+      : undefined;
+  const holdings = withValues ? loaded : undefined;
   const portfolios = withValues
     ? loadPortfolioInputs(userId, [accountId], upTo ?? "9999-12-31").get(
         accountId,
@@ -269,6 +313,7 @@ function loadInput(
     openingBalance: account.openingBalance,
     openingDate: account.openingDate,
     holdings,
+    cashMoves: account.tradesMoveCash ? cashMovesOf(loaded) : undefined,
     portfolios,
     transactions: db
       .select({
@@ -362,6 +407,7 @@ export function currentBalances(
     id: string;
     openingBalance: number;
     openingDate: string | null;
+    tradesMoveCash: boolean;
   }[],
   today: string = localToday(),
 ): Map<string, Minor> {
@@ -391,6 +437,7 @@ export function currentValues(
     id: string;
     openingBalance: number;
     openingDate: string | null;
+    tradesMoveCash: boolean;
   }[],
   today: string = localToday(),
 ): Map<string, CurrentValue> {
@@ -450,6 +497,9 @@ export function currentValues(
         openingBalance: a.openingBalance,
         openingDate: a.openingDate,
         transactions: txByAccount.get(a.id) ?? [],
+        cashMoves: a.tradesMoveCash
+          ? cashMovesOf(holdings.get(a.id))
+          : undefined,
         snapshots: snapByAccount.get(a.id) ?? [],
         holdings: holdings.get(a.id),
         portfolios: portfolios.get(a.id),

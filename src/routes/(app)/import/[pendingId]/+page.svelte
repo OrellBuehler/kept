@@ -1,6 +1,7 @@
 <script lang="ts">
   import { enhance } from "$app/forms";
   import { resolve } from "$app/paths";
+  import ArrowLeftRightIcon from "@lucide/svelte/icons/arrow-left-right";
   import ChevronLeftIcon from "@lucide/svelte/icons/chevron-left";
   import ChevronRightIcon from "@lucide/svelte/icons/chevron-right";
   import CircleAlertIcon from "@lucide/svelte/icons/circle-alert";
@@ -45,6 +46,7 @@
     }),
   );
   const nothingNew = $derived(data.counts.new === 0);
+  const brandNew = $derived(data.counts.new - data.counts.replacesMirror);
   const otherErrors = $derived(
     data.errors.filter((e) => e !== "mapping_required"),
   );
@@ -69,12 +71,22 @@
 
   const filters = $derived([
     { value: "all", label: "All", count: data.counts.total },
-    { value: "new", label: "New", count: data.counts.new },
+    { value: "new", label: "New", count: brandNew },
+    ...(data.counts.replacesMirror > 0
+      ? [
+          {
+            value: "replaces_mirror",
+            label: "Replaces mirror",
+            count: data.counts.replacesMirror,
+          },
+        ]
+      : []),
     { value: "duplicate", label: "Duplicates", count: data.counts.duplicate },
   ]);
 
   const statusLabel = {
     new: "New",
+    replaces_mirror: "Replaces mirror",
     duplicate: "Duplicate",
     duplicate_in_file: "Duplicate in file",
   } as const;
@@ -90,6 +102,16 @@
       class="border-emerald-500/50 text-emerald-700 dark:text-emerald-400"
       >{statusLabel[status]}</Badge
     >
+  {:else if status === "replaces_mirror"}
+    <Badge
+      variant="outline"
+      class="border-sky-500/50 text-sky-700 dark:text-sky-400"
+    >
+      <ArrowLeftRightIcon aria-hidden="true" />{statusLabel[status]}</Badge
+    >
+    <div class="text-muted-foreground mt-1 text-xs">
+      Takes over a transaction Kept created from a transfer.
+    </div>
   {:else}
     <Badge variant="secondary">{statusLabel[status]}</Badge>
     {#if matchedBy === "legacy_id"}
@@ -174,11 +196,26 @@
           </dd>
         </div>
       </dl>
-      <dl class="grid grid-cols-3 gap-3 text-center">
+      <dl
+        class={cn(
+          "grid gap-3 text-center",
+          data.counts.replacesMirror > 0
+            ? "grid-cols-2 sm:grid-cols-4"
+            : "grid-cols-3",
+        )}
+      >
         <div class="rounded-lg border p-3">
           <dt class="text-muted-foreground text-xs">New</dt>
-          <dd class="text-xl font-semibold tabular-nums">{data.counts.new}</dd>
+          <dd class="text-xl font-semibold tabular-nums">{brandNew}</dd>
         </div>
+        {#if data.counts.replacesMirror > 0}
+          <div class="rounded-lg border p-3">
+            <dt class="text-muted-foreground text-xs">Replaces mirror</dt>
+            <dd class="text-xl font-semibold tabular-nums">
+              {data.counts.replacesMirror}
+            </dd>
+          </div>
+        {/if}
         <div class="rounded-lg border p-3">
           <dt class="text-muted-foreground text-xs">Duplicates</dt>
           <dd class="text-xl font-semibold tabular-nums">
@@ -277,11 +314,14 @@
     </div>
   {/if}
 
-  <section class="grid gap-3" aria-labelledby="rows-heading">
+  <section
+    class="grid grid-cols-[minmax(0,1fr)] gap-3"
+    aria-labelledby="rows-heading"
+  >
     <div class="flex flex-wrap items-center justify-between gap-3">
       <h2 id="rows-heading" class="text-lg font-semibold">Transactions</h2>
       <nav
-        class="bg-muted text-muted-foreground inline-flex h-9 items-center rounded-lg p-[3px]"
+        class="bg-muted text-muted-foreground inline-flex h-9 max-w-full items-center overflow-x-auto rounded-lg p-[3px]"
         aria-label="Filter transactions"
       >
         {#each filters as tab (tab.value)}
@@ -310,7 +350,11 @@
         {#if data.counts.total === 0}
           No transactions could be read from this file.
         {:else}
-          No {data.filter === "new" ? "new transactions" : "duplicates"} in this file.
+          No {data.filter === "new"
+            ? "new transactions"
+            : data.filter === "replaces_mirror"
+              ? "transactions that replace a mirror"
+              : "duplicates"} in this file.
         {/if}
       </p>
     {:else}
@@ -387,11 +431,11 @@
                 {row.tx.reference}
               </div>
             {/if}
-            <div class="flex items-center justify-between gap-2">
+            <div class="grid justify-items-start gap-1">
               <span class="text-muted-foreground text-xs">
                 {prefs.date(row.tx.bookingDate)}
               </span>
-              {@render statusBadge(row.status, row.matchedBy)}
+              <div>{@render statusBadge(row.status, row.matchedBy)}</div>
             </div>
           </li>
         {/each}

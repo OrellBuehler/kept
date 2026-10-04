@@ -4,6 +4,10 @@ export interface CamtEntry {
   amount: string;
   sign: "CRDT" | "DBIT";
   ref: string;
+  /** IBAN of the other party (creditor for DBIT, debtor for CRDT). */
+  counterpartyIban?: string;
+  /** The amount in another currency, unsigned. */
+  original?: { amount: string; currency: string };
 }
 
 export interface CamtOptions {
@@ -30,7 +34,15 @@ function buildStmt(o: CamtOptions, n: number): string {
   const ccy = o.currency ?? "CHF";
   const bal = (code: string, b: { amount: string; date: string }) =>
     `<Bal><Tp><CdOrPrtry><Cd>${code}</Cd></CdOrPrtry></Tp><Amt Ccy="${ccy}">${b.amount}</Amt><CdtDbtInd>CRDT</CdtDbtInd><Dt><Dt>${b.date}</Dt></Dt></Bal>`;
-  const entry = (e: CamtEntry, i: number) =>
-    `<Ntry><NtryRef>${i + 1}</NtryRef><Amt Ccy="${ccy}">${e.amount}</Amt><CdtDbtInd>${e.sign}</CdtDbtInd><Sts>BOOK</Sts><BookgDt><Dt>${e.date}</Dt></BookgDt><AcctSvcrRef>${e.ref}</AcctSvcrRef><NtryDtls><TxDtls><RmtInf><Ustrd>Example booking</Ustrd></RmtInf></TxDtls></NtryDtls></Ntry>`;
+  const entry = (e: CamtEntry, i: number) => {
+    const role = e.sign === "DBIT" ? "Cdtr" : "Dbtr";
+    const parties = e.counterpartyIban
+      ? `<RltdPties><${role}><Nm>Example Party</Nm></${role}><${role}Acct><Id><IBAN>${e.counterpartyIban}</IBAN></Id></${role}Acct></RltdPties>`
+      : "";
+    const original = e.original
+      ? `<AmtDtls><InstdAmt><Amt Ccy="${e.original.currency}">${e.original.amount}</Amt></InstdAmt></AmtDtls>`
+      : "";
+    return `<Ntry><NtryRef>${i + 1}</NtryRef><Amt Ccy="${ccy}">${e.amount}</Amt><CdtDbtInd>${e.sign}</CdtDbtInd><Sts>BOOK</Sts><BookgDt><Dt>${e.date}</Dt></BookgDt><AcctSvcrRef>${e.ref}</AcctSvcrRef>${original}<NtryDtls><TxDtls>${parties}<RmtInf><Ustrd>Example booking</Ustrd></RmtInf></TxDtls></NtryDtls></Ntry>`;
+  };
   return `<Stmt><Id>BUILT-${n}</Id><Acct><Id><IBAN>${o.iban}</IBAN></Id><Ccy>${ccy}</Ccy></Acct>${o.opening ? bal("OPBD", o.opening) : ""}${o.closing ? bal("CLBD", o.closing) : ""}${o.entries.map(entry).join("")}</Stmt>`;
 }

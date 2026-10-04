@@ -1,4 +1,4 @@
-import { and, desc, eq, or, sql } from "drizzle-orm";
+import { and, desc, eq, ne, or, sql } from "drizzle-orm";
 import { minor, type Minor } from "$lib/money";
 import { accounts, billAllocations, getDB, transactions } from "$lib/server/db";
 import { parseMoneyInput } from "$lib/server/ledger/schemas";
@@ -97,6 +97,7 @@ export function candidateTransactions(
 
   const where = and(
     eq(transactions.userId, userId),
+    ne(transactions.source, "mirror"),
     sql`upper(${transactions.currency}) = ${bill.currency.toUpperCase()}`,
     direction,
     sql`${used} < abs(${transactions.amount})`,

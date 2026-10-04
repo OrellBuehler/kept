@@ -76,6 +76,13 @@ export function allocate(
 ): { id: string } {
   const bill = getBill(userId, billId);
   const tx = getTransaction(userId, transactionId);
+  if (tx.source === "mirror") {
+    throw new LedgerError(
+      "invalid",
+      "A mirrored transfer cannot be allocated to a bill.",
+      "transactionId",
+    );
+  }
   const related: Allocation[] = getDB()
     .select({
       billId: billAllocations.billId,

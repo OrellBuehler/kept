@@ -1,4 +1,4 @@
-import { and, asc, between, eq, isNotNull, isNull, sql } from "drizzle-orm";
+import { and, asc, between, eq, isNotNull, isNull, ne, sql } from "drizzle-orm";
 import { minor, type Minor } from "$lib/money";
 import {
   billAllocations,
@@ -9,6 +9,7 @@ import {
   transactions,
 } from "$lib/server/db";
 import { notFound } from "$lib/server/ledger/errors";
+import { assertNotMirror } from "$lib/server/transfers/guard";
 import {
   computeBalance,
   dayDistance,
@@ -236,6 +237,7 @@ export function setTransactionTaxYear(
   transactionId: string,
   year: number | null,
 ): void {
+  assertNotMirror(userId, transactionId, "tagged as a tax payment");
   const updated = getDB()
     .update(transactions)
     .set({ taxYear: year })
@@ -364,6 +366,7 @@ function suggestionsFor(
       .where(
         and(
           eq(transactions.userId, userId),
+          ne(transactions.source, "mirror"),
           isNull(transactions.taxYear),
           eq(transactions.currency, currency),
           eq(transactions.amount, minor(-credit.amount)),

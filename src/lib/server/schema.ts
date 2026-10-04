@@ -13,6 +13,8 @@ import {
   IMPORT_FORMATS,
   REFERENCE_TYPES,
   ROW_SOURCES,
+  TRANSFER_METHODS,
+  TRANSFER_STATUSES,
   WITHDRAWAL_PERIODS,
 } from "$lib/ledger-types";
 import {
@@ -39,8 +41,21 @@ import type { Minor } from "$lib/money";
 import type { Fixed8 } from "$lib/quantity";
 import { IBAN_DISPLAY, LOCALES } from "$lib/preferences";
 
-export { ACCOUNT_TYPES, IMPORT_FORMATS, REFERENCE_TYPES, ROW_SOURCES };
-export type { AccountType, ImportFormat, RowSource } from "$lib/ledger-types";
+export {
+  ACCOUNT_TYPES,
+  IMPORT_FORMATS,
+  REFERENCE_TYPES,
+  ROW_SOURCES,
+  TRANSFER_METHODS,
+  TRANSFER_STATUSES,
+};
+export type {
+  AccountType,
+  ImportFormat,
+  RowSource,
+  TransferMethod,
+  TransferStatus,
+} from "$lib/ledger-types";
 export { PRICE_SOURCES, SECURITY_KINDS, TRADE_SIDES };
 export type {
   PriceSource,
@@ -283,6 +298,14 @@ export const accounts = sqliteTable(
     freeWithdrawalPeriod: text("free_withdrawal_period", {
       enum: WITHDRAWAL_PERIODS,
     }),
+    /** Create the counter-transaction here when another account shows a transfer to this IBAN. */
+    fillFromTransfers: integer("fill_from_transfers", { mode: "boolean" })
+      .notNull()
+      .default(false),
+    /** Trades reduce (buys) or increase (sells) the cash balance, for accounts without statements. */
+    tradesMoveCash: integer("trades_move_cash", { mode: "boolean" })
+      .notNull()
+      .default(false),
     ...timestamps,
   },
   (t) => [
@@ -502,8 +525,13 @@ export const transactions = sqliteTable(
       onDelete: "cascade",
     }),
     source: text("source", { enum: ROW_SOURCES }).notNull(),
-    /** Dedupe key per account; manual rows use `manual:<uuid>`. */
+    /** Dedupe key per account; manual rows use `manual:<uuid>`, mirrors `mirror:<source id>`. */
     externalId: text("external_id").notNull(),
+    /** Mirrors only: the transaction this row was created from; the mirror goes when it does. */
+    mirrorOfId: text("mirror_of_id").references(
+      (): AnySQLiteColumn => transactions.id,
+      { onDelete: "cascade" },
+    ),
     bookingDate: text("booking_date").notNull(),
     valueDate: text("value_date"),
     amount: minor("amount").notNull(),
@@ -541,6 +569,46 @@ export const transactions = sqliteTable(
     index("transactions_user_id_idx").on(t.userId),
     index("transactions_import_id_idx").on(t.importId),
     index("transactions_category_id_idx").on(t.categoryId),
+    index("transactions_mirror_of_id_idx").on(t.mirrorOfId),
+  ],
+);
+
+/**
+ * A payment between two of the user's own accounts. `linked` ties the two
+ * booked sides together (out = the debit, in = the credit); `needs_amount` has
+ * only the source side because the other account's currency differs and the
+ * received amount is unknown; `dismissed` remembers an unlink so the engine
+ * never recreates that pair or mirror.
+ */
+export const transfers = sqliteTable(
+  "transfers",
+  {
+    id: id(),
+    userId: userId(),
+    outTransactionId: text("out_transaction_id").references(
+      () => transactions.id,
+      { onDelete: "cascade" },
+    ),
+    inTransactionId: text("in_transaction_id").references(
+      () => transactions.id,
+      { onDelete: "cascade" },
+    ),
+    status: text("status", { enum: TRANSFER_STATUSES }).notNull(),
+    method: text("method", { enum: TRANSFER_METHODS }).notNull(),
+    fromAccountId: text("from_account_id")
+      .notNull()
+      .references(() => accounts.id, { onDelete: "cascade" }),
+    toAccountId: text("to_account_id")
+      .notNull()
+      .references(() => accounts.id, { onDelete: "cascade" }),
+    ...timestamps,
+  },
+  (t) => [
+    uniqueIndex("transfers_out_transaction_uq").on(t.outTransactionId),
+    uniqueIndex("transfers_in_transaction_uq").on(t.inTransactionId),
+    index("transfers_user_status_idx").on(t.userId, t.status),
+    index("transfers_from_account_idx").on(t.fromAccountId),
+    index("transfers_to_account_idx").on(t.toAccountId),
   ],
 );
 

@@ -5,10 +5,13 @@
   import Amount from "$lib/components/Amount.svelte";
 
   import { formatIban } from "$lib/iban";
+  import { resolve } from "$app/paths";
+  import ArrowLeftRightIcon from "@lucide/svelte/icons/arrow-left-right";
   import Trash2Icon from "@lucide/svelte/icons/trash-2";
   import TaxYearTag from "./TaxYearTag.svelte";
   import DeductionYearTag from "./DeductionYearTag.svelte";
   import TransactionForm from "./TransactionForm.svelte";
+  import TransferSection from "./TransferSection.svelte";
   import type { PageData } from "./$types";
   import { usePreferences } from "$lib/preferences.svelte";
 
@@ -36,6 +39,9 @@
   });
 
   const imported = $derived(transaction?.source === "import");
+  const mirror = $derived(transaction?.source === "mirror");
+  /** Imported rows and mirrors can only have their note changed. */
+  const locked = $derived(imported || mirror);
 </script>
 
 <Sheet.Root bind:open>
@@ -44,9 +50,24 @@
       <Sheet.Header>
         <Sheet.Title class="flex flex-wrap items-center gap-2">
           Transaction
-          <Badge variant={imported ? "outline" : "secondary"}>
-            {imported ? "imported" : "manual"}
-          </Badge>
+          {#if mirror && transaction.mirrorOf}
+            <Badge
+              variant="outline"
+              href={resolve("/(app)/accounts/[id]", {
+                id: transaction.mirrorOf.accountId,
+              })}
+            >
+              <ArrowLeftRightIcon aria-hidden="true" />
+              mirrored
+              <span class="sr-only"
+                >from {transaction.mirrorOf.accountName}</span
+              >
+            </Badge>
+          {:else}
+            <Badge variant={imported ? "outline" : "secondary"}>
+              {imported ? "imported" : "manual"}
+            </Badge>
+          {/if}
           {#if transaction.reversal}
             <Badge variant="outline">reversal</Badge>
           {/if}
@@ -63,7 +84,7 @@
       </Sheet.Header>
 
       <div class="grid gap-4 px-4 pb-4">
-        {#if imported}
+        {#if locked}
           <dl class="grid grid-cols-[auto_1fr] gap-x-4 gap-y-2 text-sm">
             {#if transaction.valueDate}
               <dt class="text-muted-foreground">Value date</dt>
@@ -117,10 +138,27 @@
               </dd>
             {/if}
           </dl>
-          <p class="text-muted-foreground text-xs">
-            Imported transactions can only have their note changed. Delete the
-            import to remove them.
-          </p>
+          {#if mirror}
+            <p class="text-muted-foreground text-xs">
+              Kept created this transaction from a transfer{transaction.mirrorOf
+                ? ` in ${transaction.mirrorOf.accountName}`
+                : ""}. Only the note can be changed. It follows the source and
+              is replaced when you import a statement that contains it.
+            </p>
+            {#if transaction.mirrorOf?.noBankCounterpart}
+              <p
+                class="rounded-md border border-amber-500/50 bg-amber-500/10 p-2 text-xs text-amber-900 dark:text-amber-200"
+              >
+                An imported statement covers this date, but none of its rows
+                matches this transaction. Check it against your bank.
+              </p>
+            {/if}
+          {:else}
+            <p class="text-muted-foreground text-xs">
+              Imported transactions can only have their note changed. Delete the
+              import to remove them.
+            </p>
+          {/if}
         {/if}
 
         {#key transaction.id}
@@ -128,7 +166,7 @@
             action="?/updateTransaction"
             {currency}
             {transaction}
-            noteOnly={imported}
+            noteOnly={locked}
             submitLabel="Save"
             successMessage="Transaction updated"
             onSuccess={() => (open = false)}
@@ -150,6 +188,10 @@
           />
         {/key}
 
+        {#key transaction.id + ":" + (transaction.transfer?.id ?? "")}
+          <TransferSection {transaction} />
+        {/key}
+
         {#if !imported}
           <Button
             type="button"
@@ -157,7 +199,8 @@
             class="text-destructive"
             onclick={() => transaction && onDelete(transaction)}
           >
-            <Trash2Icon /> Delete transaction
+            <Trash2Icon />
+            {mirror ? "Remove mirror" : "Delete transaction"}
           </Button>
         {/if}
       </div>

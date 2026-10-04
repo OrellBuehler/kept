@@ -15,6 +15,11 @@ import {
 import { isValidIban, normalizeIban } from "$lib/iban";
 import { PILLAR_3A_CURRENCY } from "$lib/pillar-3a";
 
+const checkbox = z
+  .string()
+  .optional()
+  .transform((v) => v === "on" || v === "true" || v === "1");
+
 /** Blank or missing form fields become null; everything else goes through `schema`. */
 export function optionalOf<S extends z.ZodType>(schema: S) {
   return z.preprocess(
@@ -184,6 +189,21 @@ export const accountInputSchema = z
         .regex(/^-?\d{1,6}$/, "Enter a whole number.")
         .transform(Number),
     ),
+    /** Create the counter-transaction here when another account shows a transfer to this IBAN. */
+    fillFromTransfers: z.string().optional(),
+    /**
+     * Posted (as "1") by forms that show the toggle: an unchecked checkbox sends
+     * nothing, so only with this marker does a missing `fillFromTransfers` mean off.
+     * Without it the field is left alone: the stored value stays, a new account gets off.
+     */
+    fillFromTransfersField: z.string().optional(),
+    /** Trades reduce (buys) or increase (sells) the cash balance. Investment accounts, or accounts with trades. */
+    tradesMoveCash: checkbox,
+    /**
+     * Posted (as "1") after the user confirmed that turning `fillFromTransfers`
+     * off deletes the account's mirrors; the server refuses the change without it.
+     */
+    confirmRemoveMirrors: checkbox,
   })
   .transform((v, ctx) => {
     const raw = v.openingBalance?.trim() ?? "";
@@ -202,7 +222,13 @@ export const accountInputSchema = z
       openingBalance = r.value;
     }
     let shareBps = FULL_SHARE_BPS;
-    const { share, ...rest } = v;
+    const { share, fillFromTransfers, fillFromTransfersField, ...rest } = v;
+    const fillRequested =
+      fillFromTransfers !== undefined
+        ? ["on", "true", "1"].includes(fillFromTransfers)
+        : fillFromTransfersField !== undefined
+          ? false
+          : undefined;
     const pillar3a = v.type === "pillar_3a";
     if (pillar3a && v.currency !== PILLAR_3A_CURRENCY) {
       ctx.issues.push({
@@ -289,11 +315,15 @@ export const accountInputSchema = z
       contractNumber: pillar3a ? rest.contractNumber : null,
       depositIban: pillar3a ? rest.depositIban : null,
       sharedWith: pillar3a ? null : rest.sharedWith,
+      fillFromTransfers: pillar3a ? false : fillRequested,
+      tradesMoveCash: pillar3a ? false : rest.tradesMoveCash,
       openingBalance,
       shareBps,
     };
   });
-export type AccountInput = z.output<typeof accountInputSchema>;
+export type ParsedAccountInput = z.output<typeof accountInputSchema>;
+/** What the ledger takes to create or update an account; `confirmRemoveMirrors` only matters to updates. */
+export type AccountInput = Omit<ParsedAccountInput, "confirmRemoveMirrors">;
 
 // --- transactions ---------------------------------------------------------
 
