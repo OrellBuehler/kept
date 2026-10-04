@@ -104,7 +104,7 @@ describe("bill detail page", () => {
     expect(await statusOf(u, bill.id)).toBe("paid");
   });
 
-  it("a failing auto-match never fails update or load", async () => {
+  it("a failing auto-match never fails update", async () => {
     const u = await createTestUser();
     const bill = seedBill(u.id);
     failMatching();
@@ -119,11 +119,9 @@ describe("bill detail page", () => {
         ),
       ),
     ).toMatchObject({ type: "return" });
-    failMatching();
-    expect((await loadAs(u, bill.id)).type).toBe("return");
   });
 
-  it("the detail load auto-matches a payment that arrived after the bill was saved", async () => {
+  it("the detail load never writes: a payment that arrived after the bill was saved stays a suggestion", async () => {
     const u = await createTestUser();
     const account = seedAccount(u.id);
     const bill = seedBill(u.id, {
@@ -135,7 +133,12 @@ describe("bill detail page", () => {
       bookingDate: "2026-09-10",
       reference: EXAMPLE_QRR,
     });
-    expect(await statusOf(u, bill.id)).toBe("paid");
+    expect(await statusOf(u, bill.id)).toBe("open");
+    expect(listBillAllocations(u.id, bill.id)).toEqual([]);
+    const v = (await loadAs(u, bill.id)) as unknown as {
+      value: { suggestions: { auto: boolean }[] };
+    };
+    expect(v.value.suggestions).toMatchObject([{ auto: true }]);
   });
 
   it("does not match another user's transactions", async () => {

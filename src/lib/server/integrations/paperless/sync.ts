@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import { and, eq, sql } from "drizzle-orm";
 import { z } from "zod";
+import { autoMatchQuietly } from "$lib/server/bills/auto-match";
 import {
   attachDocument,
   createBill,
@@ -193,6 +194,8 @@ async function runSync(
     console.error("paperless sync stopped", code);
     result.error = code;
   }
+  // New or changed bills may match payments that are already booked.
+  if (result.imported + result.updated > 0) autoMatchQuietly(userId);
   rememberServerInfo(row, client);
   recordConnectionState(row, {
     lastError: result.error,

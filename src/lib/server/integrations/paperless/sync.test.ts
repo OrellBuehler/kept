@@ -9,6 +9,10 @@ import {
   it,
   vi,
 } from "vitest";
+import { minor } from "$lib/money";
+import { listBillAllocations } from "$lib/server/bills/allocations";
+import { seedAccount, seedImportedTransaction } from "$lib/testing/ledger";
+import { QRR } from "$lib/testing/fixtures/bills/payloads";
 import { deleteBill, getBill, listBills } from "$lib/server/bills/bills";
 import {
   bills,
@@ -143,6 +147,21 @@ describe("syncConnection", () => {
     expect(download.query.get("original")).toBe("true");
     expect(getConnectionRow(user.id)).toMatchObject({ lastError: null });
     expect(getConnectionRow(user.id)!.lastSyncAt).toBeInstanceOf(Date);
+  });
+
+  it("auto-matches an imported bill against a payment that is already booked", async () => {
+    const account = seedAccount(user.id);
+    seedImportedTransaction(user.id, account.id, {
+      amount: minor(-194975),
+      bookingDate: "2026-09-10",
+      reference: QRR,
+    });
+    fake.addDoc({ id: 11, original: pdfEnergy, tags: [1] });
+
+    await syncConnection(user.id);
+
+    const [bill] = listBills(user.id);
+    expect(listBillAllocations(user.id, bill!.id)).toHaveLength(1);
   });
 
   it("does not duplicate on re-sync and does not download unchanged documents again", async () => {
