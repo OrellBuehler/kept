@@ -308,18 +308,36 @@ async function checkPassword(
   limiter: LoginRateLimiter,
 ): Promise<() => void> {
   const release = limiter.acquireOrThrow(userId, "-");
-  const row = await first(
-    getDB()
-      .select({ passwordHash: users.passwordHash })
-      .from(users)
-      .where(eq(users.id, userId))
-      .limit(1),
-  );
-  if (!row) throw new AuthError("user_not_found", "User not found.");
-  if (!(await verifyPassword(password, row.passwordHash))) {
-    throw new AuthError("invalid_credentials", "Password is incorrect.");
+  return refundOnFault(release, async () => {
+    const row = await first(
+      getDB()
+        .select({ passwordHash: users.passwordHash })
+        .from(users)
+        .where(eq(users.id, userId))
+        .limit(1),
+    );
+    if (!row) throw new AuthError("user_not_found", "User not found.");
+    if (!(await verifyPassword(password, row.passwordHash))) {
+      throw new AuthError("invalid_credentials", "Password is incorrect.");
+    }
+    return release;
+  });
+}
+
+/**
+ * Runs `fn` with a limiter attempt held: a wrong credential (an `AuthError`) keeps the
+ * attempt counted, any other failure (a database error) gives it back.
+ */
+async function refundOnFault<T>(
+  release: () => void,
+  fn: () => Promise<T>,
+): Promise<T> {
+  try {
+    return await fn();
+  } catch (err) {
+    if (!(err instanceof AuthError)) release();
+    throw err;
   }
-  return release;
 }
 
 /**
@@ -353,12 +371,14 @@ export async function reauthenticate(
     );
   }
   const release = await checkPassword(userId, password, limiter);
-  if (
-    status.totpEnabled &&
-    !(await verifySecondFactorCode(userId, code, now))
-  ) {
-    throw new AuthError("invalid_code", "That code is not valid.");
-  }
+  await refundOnFault(release, async () => {
+    if (
+      status.totpEnabled &&
+      !(await verifySecondFactorCode(userId, code, now))
+    ) {
+      throw new AuthError("invalid_code", "That code is not valid.");
+    }
+  });
   release();
 }
 
