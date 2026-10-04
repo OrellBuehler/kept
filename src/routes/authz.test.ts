@@ -287,6 +287,7 @@ const matrix: Record<string, Entry> = {
       load: (m, e) => m.load(e),
       "actions.confirmSuggestion": (m, e) => m.actions.confirmSuggestion(e),
       "actions.dismissSuggestion": (m, e) => m.actions.dismissSuggestion(e),
+      "actions.matchNow": (m, e) => m.actions.matchNow(e),
     },
   },
   "/src/routes/(app)/bills/new/+page.server.ts": {

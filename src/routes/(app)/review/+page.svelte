@@ -7,8 +7,8 @@
   import PageHeader from "$lib/components/app/page-header.svelte";
   import Amount from "$lib/components/Amount.svelte";
   import SankeyChart from "$lib/components/review/SankeyChart.svelte";
-  import { formatDate } from "$lib/format";
-  import { formatAmount, minor } from "$lib/money";
+  import { minor } from "$lib/money";
+  import { usePreferences } from "$lib/preferences.svelte";
   import CalendarRangeIcon from "@lucide/svelte/icons/calendar-range";
   import ChevronLeftIcon from "@lucide/svelte/icons/chevron-left";
   import ChevronRightIcon from "@lucide/svelte/icons/chevron-right";
@@ -17,17 +17,15 @@
   let { data }: PageProps = $props();
   const review = $derived(data.review);
 
-  const monthFormat = new Intl.DateTimeFormat("en", {
-    month: "short",
-    timeZone: "UTC",
-  });
-  const monthLabel = (month: string) =>
-    monthFormat.format(new Date(`${month}-01T00:00:00Z`));
+  const prefs = usePreferences();
+  const monthLabel = (month: string) => prefs.month(month, "short", false);
 
-  const percent = new Intl.NumberFormat("en", {
-    style: "percent",
-    maximumFractionDigits: 0,
-  });
+  const percent = $derived(
+    new Intl.NumberFormat(prefs.locale, {
+      style: "percent",
+      maximumFractionDigits: 0,
+    }),
+  );
 
   function barHeight(value: number, max: number) {
     return max > 0 ? Math.max(2, Math.round((value / max) * 100)) : 0;
@@ -41,7 +39,7 @@
 <PageHeader
   title="Year in review"
   description={review.partial
-    ? `${data.year} so far, up to ${formatDate(review.to)}.`
+    ? `${data.year} so far, up to ${prefs.date(review.to)}.`
     : `January to December ${data.year}.`}
   class="mb-6"
 >
@@ -208,8 +206,8 @@
                     {monthLabel(m.month)}
                   </span>
                   <span class="sr-only">
-                    {m.month}: income {formatAmount(m.income, c.currency)},
-                    expenses {formatAmount(m.expenses, c.currency)}
+                    {m.month}: income {prefs.amount(m.income, c.currency)},
+                    expenses {prefs.amount(m.expenses, c.currency)}
                   </span>
                 </li>
               {/each}
@@ -313,7 +311,7 @@
                             {t.counterparty ?? "No counterparty"}
                           </p>
                           <p class="text-muted-foreground text-xs">
-                            {formatDate(t.bookingDate)}{t.categoryName
+                            {prefs.date(t.bookingDate)}{t.categoryName
                               ? ` · ${t.categoryName}`
                               : ""}
                           </p>

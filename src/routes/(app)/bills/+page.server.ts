@@ -14,6 +14,7 @@ import {
 import { billViews, countBills, groupBills } from "$lib/server/bills/status";
 import {
   dismissSuggestion,
+  previewMatching,
   runAutoMatching,
   type SuggestionView,
 } from "$lib/server/bills/suggestions";
@@ -25,18 +26,19 @@ import { describeError } from "$lib/server/errors";
 export const load: PageServerLoad = ({ locals, url }) => {
   const user = requireUser(locals);
   const today = todayLocal();
-  let autoMatched = 0;
+  let autoMatchPending = 0;
   let suggestions: SuggestionView[] = [];
   let suggestionsTruncated = false;
   let matchingFailed = false;
   try {
-    const result = runAutoMatching(user.id);
-    autoMatched = result.matched;
+    // Viewing the page never writes; matches are confirmed by "Match now" or on save paths.
+    const result = previewMatching(user.id);
+    autoMatchPending = result.autoPending;
     suggestions = result.suggestions;
     suggestionsTruncated = result.truncated;
   } catch (err) {
     // The overview must still render; the flag tells the UI matching did not run.
-    console.warn("auto-matching failed", describeError(err));
+    console.warn("matching preview failed", describeError(err));
     matchingFailed = true;
   }
   const views = billViews(user.id, { today });
@@ -53,7 +55,7 @@ export const load: PageServerLoad = ({ locals, url }) => {
     suggestionsTruncated,
     matchingFailed,
     counts: countBills(views, all),
-    autoMatched,
+    autoMatchPending,
     query,
     list: paginateBills(filterBills(views, query), query.page),
   };
@@ -62,6 +64,20 @@ export const load: PageServerLoad = ({ locals, url }) => {
 const confirmFields = ["billId", "transactionId", "amount"] as const;
 
 export const actions: Actions = {
+  matchNow: ({ locals }) => {
+    const user = requireUser(locals);
+    try {
+      const result = runAutoMatching(user.id);
+      return {
+        success: true as const,
+        action: "matchNow" as const,
+        matched: result.matched,
+      };
+    } catch (err) {
+      return ledgerFailure("matchNow", err);
+    }
+  },
+
   confirmSuggestion: async ({ locals, request }) => {
     const user = requireUser(locals);
     const form = await request.formData();

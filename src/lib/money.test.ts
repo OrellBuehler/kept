@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   currencyExponent,
   formatAmount,
+  formatCompactAmount,
   minor,
   parseAmount,
   toDecimalString,
@@ -79,5 +80,16 @@ describe("formatAmount by currency exponent", () => {
     expect(fmt(123450, "CHF")).toBe("CHF 1,234.50");
     expect(fmt(1234, "JPY")).toBe("¥1,234");
     expect(fmt(1234567, "KWD")).toBe("KWD 1,234.567");
+  });
+});
+
+describe("formatCompactAmount", () => {
+  it("shortens by the currency exponent and follows the locale", () => {
+    expect(formatCompactAmount(minor(123450), "EUR", "en")).toBe("€1.2K");
+    expect(formatCompactAmount(minor(150000), "JPY", "en")).toBe("¥150K");
+    expect(formatCompactAmount(minor(150000), "EUR", "en")).toBe("€1.5K");
+    expect(formatCompactAmount(minor(123450), "EUR", "de-DE")).not.toBe(
+      formatCompactAmount(minor(123450), "EUR", "en"),
+    );
   });
 });

@@ -83,8 +83,9 @@ export interface BackupDownload {
 export function createBackupDownload(
   db: DB,
   now: Date = new Date(),
+  tmpRoot: string = tmpdir(),
 ): BackupDownload {
-  const dir = mkdtempSync(join(tmpdir(), "kept-backup-"));
+  const dir = mkdtempSync(join(tmpRoot, "kept-backup-"));
   const cleanup = () => rmSync(dir, { recursive: true, force: true });
   try {
     const fileName = backupFileName(now);

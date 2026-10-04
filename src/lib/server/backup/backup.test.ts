@@ -108,7 +108,12 @@ describe("writeBackup", () => {
 describe("createBackupDownload", () => {
   it("streams a valid database and removes the temp directory afterwards", async () => {
     await createTestUser();
-    const download = createBackupDownload(ctx.db, at("2026-01-02T03:04:05Z"));
+    const tmpRoot = mkdtempSync(join(dir, "tmp-"));
+    const download = createBackupDownload(
+      ctx.db,
+      at("2026-01-02T03:04:05Z"),
+      tmpRoot,
+    );
     expect(download.fileName).toBe("kept-backup-20260102-030405.db");
 
     const bytes = await readAll(download.stream);
@@ -125,27 +130,15 @@ describe("createBackupDownload", () => {
     });
     copy.close();
 
-    await vi.waitFor(() =>
-      expect(
-        readdirSync(tmpdir()).filter(
-          (n) =>
-            n.startsWith("kept-backup-") && !n.startsWith("kept-backup-test-"),
-        ),
-      ).toEqual([]),
-    );
+    await vi.waitFor(() => expect(readdirSync(tmpRoot)).toEqual([]));
   });
 
   it("removes the temp directory when the client cancels", async () => {
-    const before = readdirSync(tmpdir()).filter((n) =>
-      n.startsWith("kept-backup-"),
-    );
-    const download = createBackupDownload(ctx.db);
+    const tmpRoot = mkdtempSync(join(dir, "tmp-"));
+    const download = createBackupDownload(ctx.db, new Date(), tmpRoot);
+    expect(readdirSync(tmpRoot)).toHaveLength(1);
     await download.stream.cancel();
-    await vi.waitFor(() =>
-      expect(
-        readdirSync(tmpdir()).filter((n) => n.startsWith("kept-backup-")),
-      ).toEqual(before),
-    );
+    await vi.waitFor(() => expect(readdirSync(tmpRoot)).toEqual([]));
   });
 });
 

@@ -14,6 +14,7 @@ export const saveFormSchema = z.object({
     .min(1, "Enter the address of your Paperless server."),
   token: z.string().optional(),
   allowInsecureTls: checkbox,
+  differentInstance: checkbox,
 });
 
 const positiveId = z

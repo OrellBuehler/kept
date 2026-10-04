@@ -206,6 +206,23 @@ export function getSuggestions(
   return compute(userId, options.billId).suggestions;
 }
 
+/**
+ * What automatic matching would do and what is left to decide, without writing
+ * anything. Use this where a page is merely viewed; `runAutoMatching` writes.
+ */
+export function previewMatching(userId: string): {
+  suggestions: SuggestionView[];
+  truncated: boolean;
+  autoPending: number;
+} {
+  const { suggestions, truncated } = compute(userId);
+  return {
+    suggestions,
+    truncated,
+    autoPending: suggestions.filter((s) => s.auto).length,
+  };
+}
+
 /** Whether the pair would be confirmed automatically if it were not dismissed. */
 export function wouldAutoConfirm(
   userId: string,

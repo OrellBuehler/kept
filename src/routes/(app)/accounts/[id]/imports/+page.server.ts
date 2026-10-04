@@ -1,6 +1,6 @@
 import { requireUser } from "$lib/server/auth/guards";
 import { parseForm } from "$lib/server/forms";
-import { listImports, undoImport } from "$lib/server/imports";
+import { getImportImpacts, listImports, undoImport } from "$lib/server/imports";
 import { getAccount } from "$lib/server/ledger/accounts";
 import { ledgerFailure, orNotFound } from "$lib/server/ledger/http";
 import { idFormSchema } from "$lib/server/ledger/schemas";
@@ -9,10 +9,19 @@ import type { Actions, PageServerLoad } from "./$types";
 
 export const load: PageServerLoad = ({ locals, params }) => {
   const user = requireUser(locals);
-  return orNotFound(() => ({
-    account: getAccount(user.id, params.id),
-    imports: listImports(user.id, params.id),
-  }));
+  return orNotFound(() => {
+    const imports = listImports(user.id, params.id);
+    return {
+      account: getAccount(user.id, params.id),
+      imports,
+      impacts: Object.fromEntries(
+        getImportImpacts(
+          user.id,
+          imports.map((i) => i.id),
+        ),
+      ),
+    };
+  });
 };
 
 export const actions: Actions = {

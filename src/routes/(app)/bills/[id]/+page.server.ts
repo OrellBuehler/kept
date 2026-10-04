@@ -48,7 +48,6 @@ function positiveInt(value: string | null): number {
 
 export const load: PageServerLoad = ({ locals, params, url }) => {
   const user = requireUser(locals);
-  const matched = autoMatchQuietly(user.id);
   const bill = orNotFound(() =>
     billView(user.id, params.id, { today: todayLocal() }),
   );
@@ -56,9 +55,7 @@ export const load: PageServerLoad = ({ locals, params, url }) => {
   return {
     bill,
     allocations: listBillAllocations(user.id, bill.id),
-    suggestions: matched
-      ? matched.suggestions.filter((s) => s.billId === bill.id)
-      : getSuggestions(user.id, { billId: bill.id }),
+    suggestions: getSuggestions(user.id, { billId: bill.id }),
     dismissed: listDismissed(user.id, bill.id),
     candidates: candidateTransactions(user.id, bill.id, {
       q,

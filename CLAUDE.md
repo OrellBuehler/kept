@@ -93,12 +93,13 @@ no `$:`, no `<slot />`, no stores for component state. Use Tailwind classes and 
 
 ## Subagents (`.claude/agents/`)
 
-| Agent      | Scope                                                                                     |
-| ---------- | ----------------------------------------------------------------------------------------- |
-| `backend`  | schema, migrations, auth, ledger, bills, matching, reports, API routes, Paperless adapter |
-| `importer` | file-format parsers + their synthetic fixtures and tests                                  |
-| `frontend` | Svelte pages and components, forms, tables, charts                                        |
-| `reviewer` | read-only review of a change against these invariants and the privacy rules               |
+| Agent        | Scope                                                                                     |
+| ------------ | ----------------------------------------------------------------------------------------- |
+| `backend`    | schema, migrations, auth, ledger, bills, matching, reports, API routes, Paperless adapter |
+| `importer`   | file-format parsers + their synthetic fixtures and tests                                  |
+| `frontend`   | Svelte pages and components, forms, tables, charts                                        |
+| `reviewer`   | read-only review of a change against these invariants and the privacy rules               |
+| `researcher` | read-only research on external systems, standards and APIs; returns a cited report        |
 
 Split a feature by layer: backend first (with tests), then frontend, then `reviewer`.
 

@@ -11,6 +11,7 @@
  *   bun scripts/leak-guard.ts --all        check every tracked or unignored file
  */
 import { existsSync, readFileSync } from "node:fs";
+import { scanFile, termRegex } from "./leak-guard-lib";
 
 const TERMS_FILE = ".private-terms";
 
@@ -23,10 +24,6 @@ function loadTerms(): string[] {
     .flatMap((s) => s.split("\n"))
     .map((line) => line.trim())
     .filter((line) => line.length > 0 && !line.startsWith("#"));
-}
-
-function escapeRegex(value: string): string {
-  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
 function trackedFiles(): string[] {
@@ -55,28 +52,26 @@ if (terms.length === 0) {
 }
 
 // Never print the term itself: CI logs of a public repository are public.
-const patterns: { label: string; regex: RegExp }[] = terms.map(
-  (term, index) => ({
-    label: `private term #${index + 1}`,
-    regex: new RegExp(`\\b${escapeRegex(term)}\\b`, "i"),
-  }),
-);
+const patterns = terms.map(termRegex);
 
 const findings: string[] = [];
 for (const file of files) {
-  const buffer = readFileSync(file);
-  if (buffer.includes(0)) continue;
-  const lines = buffer.toString("utf8").split("\n");
-  lines.forEach((line, index) => {
-    for (const { label, regex } of patterns) {
-      if (regex.test(line)) findings.push(`${file}:${index + 1}: ${label}`);
-    }
-  });
+  for (const { location, patternIndex, problem } of scanFile(
+    file,
+    readFileSync(file),
+    patterns,
+  )) {
+    findings.push(
+      problem
+        ? `${location}: ${problem}`
+        : `${location}: private term #${patternIndex + 1}`,
+    );
+  }
 }
 
 if (findings.length > 0) {
   console.error(
-    "leak-guard: private data found — remove it before committing:\n",
+    "leak-guard: private data found or files could not be scanned — fix before committing:\n",
   );
   for (const finding of findings) console.error(`  ${finding}`);
   process.exit(1);

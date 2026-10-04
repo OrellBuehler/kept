@@ -1,5 +1,7 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { minor } from "$lib/money";
+import { onBillChanged } from "$lib/server/events";
+import { billAllocations, bills, getDB, matchDismissals } from "$lib/server/db";
 import { listBillAllocations } from "$lib/server/bills/allocations";
 import { todayLocal } from "$lib/server/bills/dates";
 import { createTestUser } from "$lib/testing/auth";
@@ -38,7 +40,7 @@ const daysFromToday = (n: number) => {
 describe("bills overview", () => {
   useTestDB();
 
-  it("groups bills, reports counts and auto-matches exact references", async () => {
+  it("groups bills and reports counts; the exact reference match waits for the user", async () => {
     const u = await createTestUser();
     const account = seedAccount(u.id);
     const overdue = seedBill(u.id, { dueDate: daysFromToday(-3) });
@@ -63,7 +65,7 @@ describe("bills overview", () => {
       groups: Record<string, { id: string }[]>;
       suggestions: unknown[];
       counts: Record<string, number>;
-      autoMatched: number;
+      autoMatchPending: number;
       query: unknown;
       list: { items: { id: string }[]; total: number };
     };
@@ -72,25 +74,92 @@ describe("bills overview", () => {
       "dueSoon",
       "overdue",
     ]);
-    expect(v.autoMatched).toBe(1);
+    expect(v.autoMatchPending).toBe(1);
+    expect(listBillAllocations(u.id, paid.id)).toEqual([]);
     expect(v.groups.overdue!.map((b) => b.id)).toEqual([overdue.id]);
-    expect(v.groups.dueSoon!.map((b) => b.id)).toEqual([soon.id]);
+    expect(v.groups.dueSoon!.map((b) => b.id).sort()).toEqual(
+      [soon.id, paid.id].sort(),
+    );
     expect(v.counts).toMatchObject({
       overdue: 1,
-      dueSoon: 1,
-      recentlyPaid: 1,
-      paid: 1,
+      dueSoon: 2,
+      recentlyPaid: 0,
+      paid: 0,
       total: 3,
     });
-    expect(v.suggestions).toEqual([]);
+    expect(v.suggestions).toHaveLength(1);
     expect(v.query).toEqual({ q: "", status: "all", page: 1 });
     expect(v.list.total).toBe(3);
     expect(v.list.items.map((b) => b.id).sort()).toEqual(
       [overdue.id, soon.id, paid.id].sort(),
     );
 
-    const again = (await loadAs(u)) as { value: { autoMatched: number } };
-    expect(again.value.autoMatched).toBe(0);
+    // Loading again changes nothing either.
+    const again = (await loadAs(u)) as { value: { autoMatchPending: number } };
+    expect(again.value.autoMatchPending).toBe(1);
+    expect(listBillAllocations(u.id, paid.id)).toEqual([]);
+
+    const matched = await run("matchNow", u, {});
+    expect(matched).toEqual({
+      type: "return",
+      value: { success: true, action: "matchNow", matched: 1 },
+    });
+    expect(listBillAllocations(u.id, paid.id)).toHaveLength(1);
+    const after = (await loadAs(u)) as {
+      value: { autoMatchPending: number; suggestions: unknown[] };
+    };
+    expect(after.value.autoMatchPending).toBe(0);
+    expect(after.value.suggestions).toEqual([]);
+  });
+
+  it("load writes nothing", async () => {
+    const u = await createTestUser();
+    const account = seedAccount(u.id);
+    seedBill(u.id, {
+      creditorIban: EXAMPLE_IBAN_OTHER,
+      reference: EXAMPLE_QRR,
+      referenceType: "QRR",
+      dueDate: daysFromToday(2),
+      issueDate: daysFromToday(-20),
+    });
+    seedImportedTransaction(u.id, account.id, {
+      amount: minor(-10000),
+      bookingDate: daysFromToday(-1),
+      reference: EXAMPLE_QRR,
+    });
+    const db = getDB();
+    const emitted = vi.fn();
+    const off = onBillChanged(emitted);
+    const counts = () => ({
+      allocations: db.select().from(billAllocations).all().length,
+      dismissals: db.select().from(matchDismissals).all().length,
+      bills: db.select().from(bills).all(),
+    });
+    const before = counts();
+    await loadAs(u);
+    await loadAs(u, "?status=overdue");
+    expect(counts()).toEqual(before);
+    expect(emitted).not.toHaveBeenCalled();
+    off();
+  });
+
+  it("matchNow only touches the current user's bills", async () => {
+    const u = await createTestUser();
+    const other = await createTestUser();
+    const account = seedAccount(other.id);
+    const bill = seedBill(other.id, {
+      reference: EXAMPLE_QRR,
+      referenceType: "QRR",
+    });
+    seedImportedTransaction(other.id, account.id, {
+      amount: minor(-10000),
+      bookingDate: daysFromToday(-1),
+      reference: EXAMPLE_QRR,
+    });
+    expect(await run("matchNow", u, {})).toMatchObject({
+      value: { matched: 0 },
+    });
+    expect(listBillAllocations(other.id, bill.id)).toEqual([]);
   });
 
   it("filters and paginates the list from the query string", async () => {

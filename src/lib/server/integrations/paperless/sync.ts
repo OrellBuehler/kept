@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import { and, eq, sql } from "drizzle-orm";
 import { z } from "zod";
+import { autoMatchQuietly } from "$lib/server/bills/auto-match";
 import {
   attachDocument,
   createBill,
@@ -36,7 +37,7 @@ import {
 } from "./client";
 import {
   clientForRow,
-  externalRef,
+  rowExternalRef,
   getConnectionRow,
   isDismissed,
   recordConnectionState,
@@ -193,6 +194,8 @@ async function runSync(
     console.error("paperless sync stopped", code);
     result.error = code;
   }
+  // New or changed bills may match payments that are already booked.
+  if (result.imported + result.updated > 0) autoMatchQuietly(userId);
   rememberServerInfo(row, client);
   recordConnectionState(row, {
     lastError: result.error,
@@ -440,9 +443,9 @@ function buildBillInput(draft: Record<string, string>): Built {
   return { ok: false, reason: "The document data is not a valid bill." };
 }
 
-async function fetchPdf(
+export async function fetchPdf(
   client: PaperlessClient,
-  doc: PaperlessDoc,
+  doc: Pick<PaperlessDoc, "id" | "mime_type" | "archived_file_name">,
 ): Promise<Uint8Array | null> {
   const mime = (doc.mime_type ?? "").toLowerCase();
   if (mime === "application/pdf") {
@@ -635,7 +638,7 @@ async function processDocument(
     return "unchanged";
   }
 
-  const ref = externalRef(row.baseUrl, doc.id);
+  const ref = rowExternalRef(row, doc.id);
   if (!link && isDismissed(userId, ref)) {
     saveLink(row, doc.id, { modified, status: "imported", billId: null });
     return "unchanged";

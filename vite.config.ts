@@ -18,12 +18,12 @@ export default defineConfig({
     },
   },
   test: {
-    include: ["src/**/*.test.ts"],
+    include: ["src/**/*.test.ts", "scripts/**/*.test.ts"],
     environment: "node",
     testTimeout: 30000,
     coverage: {
       provider: "v8",
-      include: ["src/lib/**/*.ts"],
+      include: ["src/lib/**/*.ts", "src/routes/**/*.ts"],
       exclude: ["src/lib/components/ui/**"],
       reporter: ["text", "json-summary"],
     },

@@ -1,7 +1,12 @@
 <script lang="ts">
   import PageHeader from "$lib/components/app/page-header.svelte";
   import { resolve } from "$app/paths";
+  import { enhance } from "$app/forms";
   import { page } from "$app/state";
+  import { toast } from "svelte-sonner";
+  import { Spinner } from "$lib/components/ui/spinner";
+  import type { FormErrors } from "$lib/form-errors";
+  import { submitHandler } from "$lib/form-submit";
   import { SvelteURLSearchParams } from "svelte/reactivity";
   import PlusIcon from "@lucide/svelte/icons/plus";
   import ReceiptIcon from "@lucide/svelte/icons/receipt";
@@ -18,6 +23,9 @@
   import type { PageProps } from "./$types";
 
   let { data }: PageProps = $props();
+
+  let matching = $state(false);
+  let matchErrors = $state<NonNullable<FormErrors>>({});
 
   const statusOptions = [
     { value: "all", label: "All" },
@@ -79,14 +87,39 @@
     {/snippet}
   </PageHeader>
 
-  {#if data.autoMatched > 0}
+  {#if data.autoMatchPending > 0}
     <Alert.Root>
       <CircleCheckIcon />
-      <Alert.Description>
-        {data.autoMatched}
-        {data.autoMatched === 1 ? "payment" : "payments"} matched automatically.
+      <Alert.Description class="flex flex-wrap items-center gap-3">
+        <span>
+          {data.autoMatchPending}
+          {data.autoMatchPending === 1 ? "payment" : "payments"} match a bill's reference
+          exactly.
+        </span>
+        <form
+          method="POST"
+          action="?/matchNow"
+          use:enhance={submitHandler({
+            setPending: (v) => (matching = v),
+            setErrors: (e) => (matchErrors = e),
+            onSuccessData: (d) => {
+              const n = typeof d?.matched === "number" ? d.matched : 0;
+              toast.success(
+                `${n} ${n === 1 ? "payment" : "payments"} matched.`,
+              );
+            },
+          })}
+        >
+          <Button type="submit" size="sm" disabled={matching}>
+            {#if matching}<Spinner />{/if}
+            Match now
+          </Button>
+        </form>
       </Alert.Description>
     </Alert.Root>
+    {#each Object.values(matchErrors).flat() as message (message)}
+      <p class="text-destructive text-sm" role="alert">{message}</p>
+    {/each}
   {/if}
 
   {#if data.matchingFailed}

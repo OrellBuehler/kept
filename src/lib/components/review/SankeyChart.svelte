@@ -1,6 +1,10 @@
 <script lang="ts">
-  import { currencyExponent, formatAmount, minor } from "$lib/money";
+  import { formatCompactAmount, minor } from "$lib/money";
+  import { cn } from "$lib/utils";
+  import { usePreferences } from "$lib/preferences.svelte";
   import { layoutSankey, type LaidNode, type SankeyGraph } from "$lib/sankey";
+
+  const prefs = usePreferences();
 
   let { graph, currency }: { graph: SankeyGraph; currency: string } = $props();
 
@@ -17,15 +21,10 @@
     }),
   );
 
-  const compact = $derived(
-    new Intl.NumberFormat("en", {
-      style: "currency",
-      currency,
-      notation: "compact",
-      maximumFractionDigits: 1,
-    }),
-  );
-  const exponent = $derived(currencyExponent(currency));
+  const blurred = $derived(prefs.blur);
+  const compact = (value: number) =>
+    formatCompactAmount(minor(value), currency, prefs.locale);
+  const blurClass = $derived(blurred && "blur-sm select-none hover:blur-none");
 
   function color(n: LaidNode) {
     if (n.kind === "income") return "var(--color-chart-1)";
@@ -36,7 +35,7 @@
   }
 
   function money(value: number) {
-    return formatAmount(minor(value), currency);
+    return prefs.amount(minor(value), currency);
   }
 
   function short(label: string) {
@@ -67,7 +66,9 @@
           stroke-opacity="0.3"
         >
           <title>
-            {link.colorNode.label}: {money(link.value)}
+            {blurred
+              ? link.colorNode.label
+              : `${link.colorNode.label}: ${money(link.value)}`}
           </title>
         </path>
       {/each}
@@ -80,16 +81,16 @@
           rx="2"
           fill={color(n)}
         >
-          <title>{n.label}: {money(n.value)}</title>
+          <title>{blurred ? n.label : `${n.label}: ${money(n.value)}`}</title>
         </rect>
         {#if n.column === 1}
           <text
             x={n.x + n.width / 2}
             y={n.y - 4}
             text-anchor="middle"
-            class="fill-foreground text-[11px] font-medium"
+            class={cn("fill-foreground text-[11px] font-medium", blurClass)}
           >
-            {compact.format(n.value / 10 ** exponent)}
+            {compact(n.value)}
           </text>
         {:else}
           <text
@@ -100,8 +101,8 @@
             class="fill-foreground text-[11px]"
           >
             {short(n.label)}
-            <tspan class="fill-muted-foreground">
-              {compact.format(n.value / 10 ** exponent)}
+            <tspan class={cn("fill-muted-foreground", blurClass)}>
+              {compact(n.value)}
             </tspan>
           </text>
         {/if}

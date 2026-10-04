@@ -7,5 +7,11 @@ case "$file" in
   *) exit 0 ;;
 esac
 [ -f "$file" ] || exit 0
-cd "$CLAUDE_PROJECT_DIR"
-bunx prettier --write --ignore-unknown --log-level warn "$file"
+root=$(realpath "$CLAUDE_PROJECT_DIR")
+resolved=$(realpath "$file")
+case "$resolved" in
+  "$root"/*) ;;
+  *) exit 0 ;;
+esac
+cd "$root"
+bunx prettier --write --ignore-unknown --log-level warn "$resolved"

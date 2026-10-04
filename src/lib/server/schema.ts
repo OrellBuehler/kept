@@ -867,6 +867,12 @@ export const paperlessConnections = sqliteTable(
     id: id(),
     userId: userId(),
     baseUrl: text("base_url").notNull(),
+    /**
+     * Identity of the Paperless server behind this connection; part of every bill's external
+     * reference. Survives address changes. Null on rows created before this column existed:
+     * their bills carry the hash of the address they were created with.
+     */
+    instanceKey: text("instance_key"),
     /** Encrypted with `encryptSecret`; never returned to the client. */
     tokenEncrypted: text("token_encrypted").notNull(),
     apiVersion: integer("api_version"),
@@ -971,6 +977,24 @@ export const paperlessDismissed = sqliteTable(
   },
   (t) => [
     uniqueIndex("paperless_dismissed_user_ref_uq").on(t.userId, t.externalRef),
+  ],
+);
+
+/**
+ * The instance key a user's connection had at an address, kept after the connection is gone so
+ * reconnecting to that address reuses it (bills and dismissed refs carry the key).
+ */
+export const paperlessInstances = sqliteTable(
+  "paperless_instances",
+  {
+    id: id(),
+    userId: userId(),
+    baseUrl: text("base_url").notNull(),
+    instanceKey: text("instance_key").notNull(),
+    ...timestamps,
+  },
+  (t) => [
+    uniqueIndex("paperless_instances_user_url_uq").on(t.userId, t.baseUrl),
   ],
 );
 

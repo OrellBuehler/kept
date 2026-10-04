@@ -8,9 +8,9 @@
   import { Button } from "$lib/components/ui/button";
   import PageHeader from "$lib/components/app/page-header.svelte";
   import Amount from "$lib/components/Amount.svelte";
+  import { usePreferences } from "$lib/preferences.svelte";
   import ConfirmActionDialog from "$lib/components/ConfirmActionDialog.svelte";
   import NetWorthChart from "$lib/components/dashboard/NetWorthChart.svelte";
-  import { formatDate } from "$lib/format";
   import MoreHorizontalIcon from "@lucide/svelte/icons/ellipsis";
   import PencilIcon from "@lucide/svelte/icons/pencil";
   import PlusIcon from "@lucide/svelte/icons/plus";
@@ -23,6 +23,8 @@
   import PlannedItemDialog from "./PlannedItemDialog.svelte";
 
   type Planned = PageData["planned"][number];
+
+  const prefs = usePreferences();
 
   let { data }: PageProps = $props();
   const f = $derived(data.forecast);
@@ -88,7 +90,7 @@
 
 <PageHeader
   title="Forecast"
-  description={`Expected balances until ${formatDate(f.to)}, per account and currency.`}
+  description={`Expected balances until ${prefs.date(f.to)}, per account and currency.`}
   class="mb-6"
 >
   {#snippet actions()}
@@ -150,7 +152,7 @@
                 {#if !w.negative}
                   <Amount value={w.limit} currency={a.currency} />
                 {/if}
-                on {formatDate(w.date)}, to
+                on {prefs.date(w.date)}, to
                 <Amount value={w.balance} currency={a.currency} />.
               </li>
             {/each}
@@ -167,9 +169,9 @@
             {#if a.hasBalance}
               <Amount value={a.startBalance} currency={a.currency} /> now,
               <Amount value={a.endBalance} currency={a.currency} /> on
-              {formatDate(f.to)}, lowest
+              {prefs.date(f.to)}, lowest
               <Amount value={a.lowest.balance} currency={a.currency} /> on
-              {formatDate(a.lowest.date)}
+              {prefs.date(a.lowest.date)}
             {:else}
               No balance data yet. The chart shows the change from zero.
             {/if}
@@ -249,7 +251,7 @@
                 <div class="min-w-0">
                   <p class="truncate font-medium">{item.label}</p>
                   <p class="text-muted-foreground text-xs">
-                    {formatDate(item.date)} ·
+                    {prefs.date(item.date)} ·
                     {item.accountId
                       ? (accountNames.get(item.accountId) ?? "Account")
                       : "No account"}
@@ -287,7 +289,7 @@
                 <div class="min-w-0">
                   <p class="truncate font-medium">{p.label}</p>
                   <p class="text-muted-foreground text-xs">
-                    {formatDate(p.date)} ·
+                    {prefs.date(p.date)} ·
                     {p.accountId
                       ? (accountNames.get(p.accountId) ?? "Account")
                       : "No account"}
