@@ -9,11 +9,11 @@ const store = new Map<string, unknown>();
  * large file each time. Keys carry user id, pending id and content hash;
  * only successful results are stored.
  */
-export function cachedParse<T>(
+export async function cachedParse<T>(
   meta: PendingMeta,
   variant: string,
-  compute: () => T,
-): T {
+  compute: () => T | Promise<T>,
+): Promise<T> {
   const key = `${meta.userId}:${meta.id}:${meta.sha256}:${variant}`;
   if (store.has(key)) {
     const hit = store.get(key) as T;
@@ -21,7 +21,7 @@ export function cachedParse<T>(
     store.set(key, hit);
     return hit;
   }
-  const value = compute();
+  const value = await compute();
   store.set(key, value);
   while (store.size > MAX_ENTRIES) {
     store.delete(store.keys().next().value as string);

@@ -257,9 +257,9 @@ interface ScanContext {
 }
 
 /** Removes the pending upload; confirmImport has already removed it on success. */
-function dropPending(userId: string, pendingId: string) {
+async function dropPending(userId: string, pendingId: string) {
   try {
-    deletePending(userId, pendingId);
+    await deletePending(userId, pendingId);
   } catch (err) {
     if (!(err instanceof LedgerError && err.code === "not_found")) throw err;
   }
@@ -290,7 +290,7 @@ async function importCandidate(
     new File([new Uint8Array(bytes)], c.name),
   );
   try {
-    const preview = buildPreview(userId, meta.id);
+    const preview = await buildPreview(userId, meta.id);
     const review = (reason: string): Outcome => {
       const reviewFile = moveInto(userDir, "review", c.path, c.name, sha, now);
       saveEntry(userId, c.name, sha, {
@@ -322,7 +322,7 @@ async function importCandidate(
     ];
     if (warnings.length > 0) return review(warnings.join(" "));
 
-    const result = confirmImport(userId, meta.id);
+    const result = await confirmImport(userId, meta.id);
     moveInto(userDir, "processed", c.path, c.name, sha, now);
     saveEntry(userId, c.name, sha, {
       status: "imported",
@@ -333,7 +333,7 @@ async function importCandidate(
     });
     return "imported";
   } finally {
-    dropPending(userId, meta.id);
+    await dropPending(userId, meta.id);
   }
 }
 

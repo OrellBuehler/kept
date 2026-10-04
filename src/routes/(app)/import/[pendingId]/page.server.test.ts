@@ -1,3 +1,4 @@
+import { useTestStore } from "$lib/testing/store";
 import { describe, expect, it, vi } from "vitest";
 import { createTestUser } from "$lib/testing/auth";
 import { useTestDB } from "$lib/testing/db";
@@ -13,11 +14,7 @@ import {
 } from "$lib/testing/fixtures/bill-identifiers";
 import { IBAN_QR } from "$lib/testing/fixtures/camt053/examples";
 import { buildCamt } from "$lib/testing/fixtures/camt053/build";
-import {
-  uploadBytes,
-  uploadFixture,
-  usePendingDir,
-} from "$lib/testing/imports";
+import { uploadBytes, uploadFixture } from "$lib/testing/imports";
 import { seedAccount } from "$lib/testing/ledger";
 import { confirmImport, getPendingMeta } from "$lib/server/imports";
 import { getDB, transactions } from "$lib/server/db";
@@ -35,7 +32,7 @@ const failMatching = () => {
 };
 
 useTestDB();
-usePendingDir();
+useTestStore();
 
 type User = Awaited<ReturnType<typeof createTestUser>>;
 interface Data {
@@ -98,7 +95,11 @@ function bigStatement(rows: number) {
 describe("/import/[pendingId] load", () => {
   it("returns the preview plus flags", async () => {
     const { user, account } = await setup();
-    const id = uploadFixture(user.id, account.id, "camt053/overlap-a.xml");
+    const id = await uploadFixture(
+      user.id,
+      account.id,
+      "camt053/overlap-a.xml",
+    );
     const d = data(await loadAs(user, id));
     expect(d).toMatchObject({
       pendingId: id,
@@ -118,7 +119,7 @@ describe("/import/[pendingId] load", () => {
 
   it("flags mapping_required", async () => {
     const { user, account } = await setup();
-    const id = uploadFixture(user.id, account.id, "csv/overlap-a.csv");
+    const id = await uploadFixture(user.id, account.id, "csv/overlap-a.csv");
     const d = data(await loadAs(user, id));
     expect(d).toMatchObject({
       needsMapping: true,
@@ -129,7 +130,7 @@ describe("/import/[pendingId] load", () => {
 
   it("paginates 100 rows per page and clamps out-of-range pages", async () => {
     const { user, account } = await setup();
-    const id = uploadBytes(user.id, account.id, bigStatement(250));
+    const id = await uploadBytes(user.id, account.id, bigStatement(250));
     const p1 = data(await loadAs(user, id));
     expect(p1).toMatchObject({ page: 1, pageCount: 3, filteredTotal: 250 });
     expect(p1.rows).toHaveLength(100);
@@ -142,11 +143,15 @@ describe("/import/[pendingId] load", () => {
 
   it("filters new / duplicate rows, ignoring unknown filters", async () => {
     const { user, account } = await setup();
-    confirmImport(
+    await confirmImport(
       user.id,
-      uploadFixture(user.id, account.id, "camt053/overlap-a.xml"),
+      await uploadFixture(user.id, account.id, "camt053/overlap-a.xml"),
     );
-    const id = uploadFixture(user.id, account.id, "camt053/overlap-b.xml");
+    const id = await uploadFixture(
+      user.id,
+      account.id,
+      "camt053/overlap-b.xml",
+    );
     const all = data(await loadAs(user, id));
     const news = data(await loadAs(user, id, "?filter=new"));
     const dups = data(await loadAs(user, id, "?filter=duplicate"));
@@ -164,7 +169,11 @@ describe("/import/[pendingId] load", () => {
   it("another user gets a 404", async () => {
     const { user, account } = await setup();
     const other = await createTestUser();
-    const id = uploadFixture(user.id, account.id, "camt053/overlap-a.xml");
+    const id = await uploadFixture(
+      user.id,
+      account.id,
+      "camt053/overlap-a.xml",
+    );
     expect(await loadAs(other, id)).toEqual({ type: "error", status: 404 });
     expect(await loadAs(user, "../../etc/passwd")).toEqual({
       type: "error",
@@ -176,7 +185,11 @@ describe("/import/[pendingId] load", () => {
 describe("/import/[pendingId] actions", () => {
   it("confirm imports and redirects to the account with the import id", async () => {
     const { user, account } = await setup();
-    const id = uploadFixture(user.id, account.id, "camt053/overlap-a.xml");
+    const id = await uploadFixture(
+      user.id,
+      account.id,
+      "camt053/overlap-a.xml",
+    );
     const r = await act("confirm", user, id);
     expect(r).toMatchObject({ type: "redirect", status: 303 });
     expect((r as { location: string }).location).toMatch(
@@ -198,7 +211,7 @@ describe("/import/[pendingId] actions", () => {
       amount: "10.00",
       ref: "T1",
     } as const;
-    const out = uploadBytes(
+    const out = await uploadBytes(
       user.id,
       account.id,
       buildCamt({
@@ -215,7 +228,7 @@ describe("/import/[pendingId] actions", () => {
       ),
     );
 
-    const incoming = uploadBytes(
+    const incoming = await uploadBytes(
       user.id,
       savings.id,
       buildCamt({
@@ -253,7 +266,11 @@ describe("/import/[pendingId] actions", () => {
     expect(billView(user.id, bill.id, { today: "2026-10-01" }).status).toBe(
       "credit_due",
     );
-    const id = uploadFixture(user.id, account.id, "camt053/qr-reference.xml");
+    const id = await uploadFixture(
+      user.id,
+      account.id,
+      "camt053/qr-reference.xml",
+    );
     const r = await act("confirm", user, id);
     expect(r).toMatchObject({ type: "redirect", status: 303 });
     expect(listBillAllocations(user.id, bill.id)).toHaveLength(1);
@@ -264,7 +281,11 @@ describe("/import/[pendingId] actions", () => {
 
   it("a failing auto-match never fails the import", async () => {
     const { user, account } = await setup();
-    const id = uploadFixture(user.id, account.id, "camt053/overlap-a.xml");
+    const id = await uploadFixture(
+      user.id,
+      account.id,
+      "camt053/overlap-a.xml",
+    );
     failMatching();
     const r = await act("confirm", user, id);
     expect(r).toMatchObject({ type: "redirect", status: 303 });
@@ -273,7 +294,7 @@ describe("/import/[pendingId] actions", () => {
 
   it("confirm with blocking errors fails with 400 and imports nothing", async () => {
     const { user, account } = await setup();
-    const id = uploadFixture(user.id, account.id, "csv/overlap-a.csv");
+    const id = await uploadFixture(user.id, account.id, "csv/overlap-a.csv");
     const r = await act("confirm", user, id);
     expect(r).toMatchObject({
       type: "fail",
@@ -288,7 +309,11 @@ describe("/import/[pendingId] actions", () => {
 
   it("confirm twice never duplicates", async () => {
     const { user, account } = await setup();
-    const id = uploadFixture(user.id, account.id, "camt053/overlap-a.xml");
+    const id = await uploadFixture(
+      user.id,
+      account.id,
+      "camt053/overlap-a.xml",
+    );
     await act("confirm", user, id);
     expect(await act("confirm", user, id)).toEqual({
       type: "error",
@@ -299,7 +324,11 @@ describe("/import/[pendingId] actions", () => {
 
   it("cancel deletes the upload and redirects to /import", async () => {
     const { user, account } = await setup();
-    const id = uploadFixture(user.id, account.id, "camt053/overlap-a.xml");
+    const id = await uploadFixture(
+      user.id,
+      account.id,
+      "camt053/overlap-a.xml",
+    );
     expect(await act("cancel", user, id)).toEqual({
       type: "redirect",
       status: 303,
@@ -311,7 +340,11 @@ describe("/import/[pendingId] actions", () => {
   it("another user cannot confirm or cancel my upload", async () => {
     const { user, account } = await setup();
     const other = await createTestUser();
-    const id = uploadFixture(user.id, account.id, "camt053/overlap-a.xml");
+    const id = await uploadFixture(
+      user.id,
+      account.id,
+      "camt053/overlap-a.xml",
+    );
     expect(await act("confirm", other, id)).toEqual({
       type: "error",
       status: 404,

@@ -1,3 +1,4 @@
+import { useTestStore } from "$lib/testing/store";
 import {
   existsSync,
   mkdirSync,
@@ -23,7 +24,7 @@ import {
 import { IBAN_DE } from "$lib/testing/fixtures/values";
 import { buildCamt } from "$lib/testing/fixtures/camt053/build";
 import { fixture } from "$lib/testing/fixtures";
-import { SIMPLE_CSV_PROFILE, usePendingDir } from "$lib/testing/imports";
+import { SIMPLE_CSV_PROFILE } from "$lib/testing/imports";
 import { seedAccount } from "$lib/testing/ledger";
 import {
   getInboxView,
@@ -35,7 +36,7 @@ import {
 } from "./inbox";
 
 useTestDB();
-usePendingDir();
+const blobs = useTestStore();
 
 let config: InboxConfig;
 beforeEach(() => {
@@ -115,6 +116,11 @@ describe("scanInbox", () => {
       accountName: "Main",
       newCount: 5,
     });
+    // The handoff through the store leaves nothing behind.
+    const left: string[] = [];
+    for await (const b of blobs.store.list("pending-imports/"))
+      left.push(b.key);
+    expect(left).toEqual([]);
   });
 
   it("mirrors transfers from an inbox import onto an account filled from transfers", async () => {

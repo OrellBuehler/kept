@@ -3,6 +3,7 @@ import { warmDummyHash } from "$lib/server/auth/password";
 import { assertSecretKeyConfigured } from "$lib/server/crypto";
 import { registerBackups } from "$lib/server/backup";
 import { registerInbox } from "$lib/server/inbox";
+import { startPendingSweep } from "$lib/server/imports";
 import { runMigrations } from "$lib/server/db";
 import { getStore } from "$lib/server/storage";
 import { registerNotifications } from "$lib/server/notifications";
@@ -23,6 +24,7 @@ export async function init() {
   assertSecretKeyConfigured();
   getStore();
   runMigrations();
+  startPendingSweep();
   registerBackups();
   registerInbox();
   await warmDummyHash();

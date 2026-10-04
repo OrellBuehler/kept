@@ -1,57 +1,73 @@
 import { createHash, randomBytes } from "node:crypto";
-import {
-  existsSync,
-  mkdirSync,
-  readdirSync,
-  readFileSync,
-  rmSync,
-  statSync,
-  writeFileSync,
-} from "node:fs";
-import { tmpdir } from "node:os";
-import { dirname, join } from "node:path";
+import { and, eq, lt } from "drizzle-orm";
 import { z } from "zod";
 import { IMPORT_FORMATS } from "$lib/ledger-types";
-import { LedgerError, notFound } from "$lib/server/ledger/errors";
-
 import { MAX_UPLOAD_BYTES } from "$lib/import-constants";
+import { getDB, pendingImports } from "$lib/server/db";
+import { describeError } from "$lib/server/errors";
+import { LedgerError, notFound } from "$lib/server/ledger/errors";
+import { getStore } from "$lib/server/storage";
 
 export { MAX_UPLOAD_BYTES };
 export const PENDING_TTL_MS = 2 * 60 * 60 * 1000;
 
+const BLOB_PREFIX = "pending-imports/";
+
 const pendingIdSchema = z.string().regex(/^[A-Za-z0-9_-]{32}$/);
-const userIdSchema = z.string().regex(/^[A-Za-z0-9-]{1,64}$/);
 
-const metaSchema = z.object({
-  id: pendingIdSchema,
-  userId: userIdSchema,
-  accountId: z.string().min(1),
-  fileName: z.string(),
-  format: z.enum(IMPORT_FORMATS),
-  size: z.number().int().nonnegative(),
-  sha256: z.string().regex(/^[0-9a-f]{64}$/),
-  createdAt: z.number().int(),
-});
-export type PendingMeta = z.infer<typeof metaSchema>;
-
-export function pendingRoot(): string {
-  const dbPath = process.env.DATABASE_PATH ?? "./data/kept.db";
-  // An in-memory database has no directory to live next to.
-  if (dbPath === ":memory:") return join(tmpdir(), "kept", "pending-imports");
-  return join(dirname(dbPath), "pending-imports");
+export interface PendingMeta {
+  id: string;
+  userId: string;
+  accountId: string;
+  fileName: string;
+  format: (typeof IMPORT_FORMATS)[number];
+  size: number;
+  sha256: string;
+  /** Epoch milliseconds. */
+  createdAt: number;
+  /** Epoch milliseconds; the upload is gone after this instant. */
+  expiresAt: number;
 }
 
-/** Validates before any filesystem access: an invalid id is simply "not found". */
-function paths(userId: string, pendingId: string) {
-  const id = pendingIdSchema.safeParse(pendingId);
-  const user = userIdSchema.safeParse(userId);
-  if (!id.success || !user.success) throw notFound("Upload");
-  const dir = join(pendingRoot(), user.data);
+const columns = {
+  id: pendingImports.id,
+  userId: pendingImports.userId,
+  accountId: pendingImports.accountId,
+  fileName: pendingImports.fileName,
+  format: pendingImports.format,
+  size: pendingImports.size,
+  sha256: pendingImports.sha256,
+  createdAt: pendingImports.createdAt,
+  expiresAt: pendingImports.expiresAt,
+};
+
+function toMeta(row: {
+  id: string;
+  userId: string;
+  accountId: string;
+  fileName: string;
+  format: PendingMeta["format"];
+  size: number;
+  sha256: string;
+  createdAt: Date;
+  expiresAt: Date;
+}): PendingMeta {
   return {
-    dir,
-    data: join(dir, id.data),
-    sidecar: join(dir, `${id.data}.json`),
+    ...row,
+    createdAt: row.createdAt.getTime(),
+    expiresAt: row.expiresAt.getTime(),
   };
+}
+
+export function pendingBlobKey(userId: string, pendingId: string): string {
+  return `${BLOB_PREFIX}${userId}/${pendingId}`;
+}
+
+/** A malformed id can never exist, so it is simply "not found" without a query. */
+function checkId(pendingId: string): string {
+  const id = pendingIdSchema.safeParse(pendingId);
+  if (!id.success) throw notFound("Upload");
+  return id.data;
 }
 
 function cleanFileName(name: string): string {
@@ -98,57 +114,87 @@ export function detectFormat(
   return "csv";
 }
 
-function safeJson(text: string): unknown {
-  try {
-    return JSON.parse(text);
-  } catch (err) {
-    if (err instanceof SyntaxError) return null;
-    throw err;
-  }
-}
-
-function readMeta(sidecar: string): PendingMeta | null {
-  let text: string;
-  try {
-    text = readFileSync(sidecar, "utf8");
-  } catch (err) {
-    if ((err as NodeJS.ErrnoException).code === "ENOENT") return null;
-    throw err;
-  }
-  const parsed = metaSchema.safeParse(safeJson(text));
-  return parsed.success ? parsed.data : null;
-}
-
-/** Removes every expired upload (and orphaned data files) of all users. */
-export function purgeExpired(now = Date.now()): void {
-  const root = pendingRoot();
-  if (!existsSync(root)) return;
-  for (const user of readdirSync(root)) {
-    const dir = join(root, user);
-    if (!statSync(dir).isDirectory()) continue;
-    for (const entry of readdirSync(dir)) {
-      const file = join(dir, entry);
-      if (entry.endsWith(".json")) {
-        const meta = readMeta(file);
-        if (meta === null || now - meta.createdAt > PENDING_TTL_MS) {
-          rmSync(file, { force: true });
-          rmSync(file.slice(0, -".json".length), { force: true });
-        }
-      } else if (
-        existsSync(file) &&
-        !existsSync(`${file}.json`) &&
-        now - statSync(file).mtimeMs > PENDING_TTL_MS
-      ) {
-        rmSync(file, { force: true });
-      }
+/**
+ * Removes every expired upload (row and blob) of all users. A blob that cannot be
+ * removed keeps its row, so the next purge retries it.
+ */
+export async function purgeExpired(now = Date.now()): Promise<void> {
+  const db = getDB();
+  const expired = db
+    .select({ id: pendingImports.id, userId: pendingImports.userId })
+    .from(pendingImports)
+    .where(lt(pendingImports.expiresAt, new Date(now)))
+    .all();
+  const store = getStore();
+  for (const { id, userId } of expired) {
+    try {
+      await store.delete(pendingBlobKey(userId, id));
+    } catch (err) {
+      console.error(
+        "could not delete expired pending import %s: %s",
+        id,
+        describeError(err),
+      );
+      continue;
     }
+    db.delete(pendingImports).where(eq(pendingImports.id, id)).run();
   }
 }
 
-export function storePending(
+/**
+ * Removes blobs below `pending-imports/` that no row owns: leftovers of deleted
+ * users or accounts, failed uploads, and files of the old sidecar layout
+ * (`<id>` plus `<id>.json`). A blob younger than the TTL is never touched, as
+ * its row may not be written yet.
+ */
+export async function sweepOrphanedPending(now = Date.now()): Promise<number> {
+  const db = getDB();
+  const store = getStore();
+  const orphans: string[] = [];
+  for await (const blob of store.list(BLOB_PREFIX)) {
+    if (now - blob.modifiedAt <= PENDING_TTL_MS) continue;
+    const [userId, id, ...rest] = blob.key.slice(BLOB_PREFIX.length).split("/");
+    const owned =
+      userId !== undefined &&
+      id !== undefined &&
+      rest.length === 0 &&
+      pendingIdSchema.safeParse(id).success &&
+      db
+        .select({ id: pendingImports.id })
+        .from(pendingImports)
+        .where(
+          and(eq(pendingImports.id, id), eq(pendingImports.userId, userId)),
+        )
+        .get() !== undefined;
+    if (!owned) orphans.push(blob.key);
+  }
+  for (const key of orphans) await store.delete(key);
+  return orphans.length;
+}
+
+const ORPHAN_SWEEP_INTERVAL_MS = PENDING_TTL_MS;
+let lastOrphanSweep = 0;
+
+async function maintain(now: number): Promise<void> {
+  await purgeExpired(now);
+  if (now - lastOrphanSweep >= ORPHAN_SWEEP_INTERVAL_MS) {
+    lastOrphanSweep = now;
+    await sweepOrphanedPending(now);
+  }
+}
+
+/** Housekeeping at startup; failures are logged and retried by the next upload. */
+export function startPendingSweep(): void {
+  maintain(Date.now()).catch((err) => {
+    lastOrphanSweep = 0;
+    console.error("pending import cleanup failed: %s", describeError(err));
+  });
+}
+
+export async function storePending(
   userId: string,
   input: { accountId: string; fileName: string; bytes: Uint8Array },
-): PendingMeta {
+): Promise<PendingMeta> {
   if (input.bytes.length > MAX_UPLOAD_BYTES) {
     throw new LedgerError(
       "invalid",
@@ -157,23 +203,39 @@ export function storePending(
     );
   }
   const format = detectFormat(input.bytes);
-  purgeExpired();
+  const now = Date.now();
+  try {
+    await maintain(now);
+  } catch (err) {
+    // Housekeeping must not fail an upload; expired rows are retried next time.
+    lastOrphanSweep = 0;
+    console.error("pending import cleanup failed: %s", describeError(err));
+  }
   const id = randomBytes(24).toString("base64url");
-  const meta: PendingMeta = {
-    id,
-    userId,
-    accountId: input.accountId,
-    fileName: cleanFileName(input.fileName),
-    format,
-    size: input.bytes.length,
-    sha256: createHash("sha256").update(input.bytes).digest("hex"),
-    createdAt: Date.now(),
-  };
-  const { dir, data, sidecar } = paths(userId, id);
-  mkdirSync(dir, { recursive: true, mode: 0o700 });
-  writeFileSync(data, input.bytes, { mode: 0o600 });
-  writeFileSync(sidecar, JSON.stringify(meta), { mode: 0o600 });
-  return meta;
+  const key = pendingBlobKey(userId, id);
+  const store = getStore();
+  await store.put(key, input.bytes);
+  try {
+    const row = getDB()
+      .insert(pendingImports)
+      .values({
+        id,
+        userId,
+        accountId: input.accountId,
+        fileName: cleanFileName(input.fileName),
+        format,
+        size: input.bytes.length,
+        sha256: createHash("sha256").update(input.bytes).digest("hex"),
+        createdAt: new Date(now),
+        expiresAt: new Date(now + PENDING_TTL_MS),
+      })
+      .returning(columns)
+      .get();
+    return toMeta(row);
+  } catch (err) {
+    await store.delete(key);
+    throw err;
+  }
 }
 
 /** Metadata of a pending upload; not found when missing, expired or not owned. */
@@ -182,39 +244,57 @@ export function getPendingMeta(
   pendingId: string,
   now = Date.now(),
 ): PendingMeta {
-  const { sidecar, data } = paths(userId, pendingId);
-  const meta = readMeta(sidecar);
-  if (meta === null || meta.userId !== userId || meta.id !== pendingId) {
-    throw notFound("Upload");
-  }
-  if (now - meta.createdAt > PENDING_TTL_MS) {
-    rmSync(sidecar, { force: true });
-    rmSync(data, { force: true });
-    throw notFound("Upload");
-  }
-  return meta;
+  const id = checkId(pendingId);
+  const row = getDB()
+    .select(columns)
+    .from(pendingImports)
+    .where(and(eq(pendingImports.userId, userId), eq(pendingImports.id, id)))
+    .get();
+  if (!row || row.expiresAt.getTime() < now) throw notFound("Upload");
+  return toMeta(row);
 }
 
-export function readPending(
+export async function readPending(
   userId: string,
   pendingId: string,
-): { meta: PendingMeta; bytes: Uint8Array } {
+): Promise<{ meta: PendingMeta; bytes: Uint8Array }> {
   const meta = getPendingMeta(userId, pendingId);
-  const { data } = paths(userId, pendingId);
-  try {
-    return { meta, bytes: new Uint8Array(readFileSync(data)) };
-  } catch (err) {
-    if ((err as NodeJS.ErrnoException).code === "ENOENT") {
-      throw notFound("Upload");
-    }
-    throw err;
-  }
+  const bytes = await getStore().get(pendingBlobKey(userId, meta.id));
+  if (bytes === null) throw notFound("Upload");
+  return { meta, bytes };
+}
+
+/**
+ * Deletes the row only (synchronous, so it can run inside a transaction);
+ * false when this user has no such upload. Follow with `deletePendingBlob`.
+ */
+export function deletePendingRow(
+  userId: string,
+  pendingId: string,
+  db: Pick<ReturnType<typeof getDB>, "delete"> = getDB(),
+): boolean {
+  const id = checkId(pendingId);
+  return (
+    db
+      .delete(pendingImports)
+      .where(and(eq(pendingImports.userId, userId), eq(pendingImports.id, id)))
+      .returning({ id: pendingImports.id })
+      .all().length > 0
+  );
+}
+
+export async function deletePendingBlob(
+  userId: string,
+  pendingId: string,
+): Promise<void> {
+  await getStore().delete(pendingBlobKey(userId, checkId(pendingId)));
 }
 
 /** Removes the upload; not found when it does not exist for this user. */
-export function deletePending(userId: string, pendingId: string): void {
-  getPendingMeta(userId, pendingId);
-  const { data, sidecar } = paths(userId, pendingId);
-  rmSync(sidecar, { force: true });
-  rmSync(data, { force: true });
+export async function deletePending(
+  userId: string,
+  pendingId: string,
+): Promise<void> {
+  if (!deletePendingRow(userId, pendingId)) throw notFound("Upload");
+  await deletePendingBlob(userId, pendingId);
 }

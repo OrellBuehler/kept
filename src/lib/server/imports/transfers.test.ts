@@ -1,3 +1,4 @@
+import { useTestStore } from "$lib/testing/store";
 import { and, eq } from "drizzle-orm";
 import { describe, expect, it } from "vitest";
 import { getDB, transactions, transfers } from "$lib/server/db";
@@ -13,14 +14,14 @@ import {
   EXAMPLE_IBAN_THIRD,
 } from "$lib/testing/fixtures/bill-identifiers";
 import { buildCamt, type CamtEntry } from "$lib/testing/fixtures/camt053/build";
-import { uploadBytes, usePendingDir } from "$lib/testing/imports";
+import { uploadBytes } from "$lib/testing/imports";
 import { seedAccount } from "$lib/testing/ledger";
 import { confirmImport } from "./confirm";
 import { undoImport } from "./history";
 import { buildPreview } from "./preview";
 
 useTestDB();
-usePendingDir();
+useTestStore();
 
 async function setup(fill = true) {
   const user = await createTestUser();
@@ -60,9 +61,9 @@ const allTransfers = () => getDB().select().from(transfers).all();
 describe("confirmImport links transfers", () => {
   it("mirrors a transfer onto an account filled from transfers", async () => {
     const { user, a, b } = await setup();
-    const result = confirmImport(
+    const result = await confirmImport(
       user.id,
-      uploadBytes(user.id, a.id, statementA([entry()])),
+      await uploadBytes(user.id, a.id, statementA([entry()])),
     );
     expect(result).toMatchObject({
       newCount: 1,
@@ -81,9 +82,9 @@ describe("confirmImport links transfers", () => {
 
   it("creates nothing when the other account is not filled from transfers", async () => {
     const { user, a, b } = await setup(false);
-    const result = confirmImport(
+    const result = await confirmImport(
       user.id,
-      uploadBytes(user.id, a.id, statementA([entry()])),
+      await uploadBytes(user.id, a.id, statementA([entry()])),
     );
     expect(result.transfers).toEqual({
       paired: 0,
@@ -104,9 +105,9 @@ describe("confirmImport links transfers", () => {
       iban: EXAMPLE_IBAN_OTHER,
       fillFromTransfers: true,
     });
-    const result = confirmImport(
+    const result = await confirmImport(
       user.id,
-      uploadBytes(
+      await uploadBytes(
         user.id,
         a.id,
         statementA([
@@ -123,10 +124,13 @@ describe("confirmImport links transfers", () => {
 
   it("pairs with a row that is already on the other account", async () => {
     const { user, a, b } = await setup(false);
-    confirmImport(user.id, uploadBytes(user.id, a.id, statementA([entry()])));
-    const result = confirmImport(
+    await confirmImport(
       user.id,
-      uploadBytes(
+      await uploadBytes(user.id, a.id, statementA([entry()])),
+    );
+    const result = await confirmImport(
+      user.id,
+      await uploadBytes(
         user.id,
         b.id,
         statementB([
@@ -154,14 +158,14 @@ describe("confirmImport links transfers", () => {
       iban: EXAMPLE_IBAN_OTHER,
       fillFromTransfers: true,
     });
-    const first = confirmImport(
+    const first = await confirmImport(
       user.id,
-      uploadBytes(user.id, a.id, statementA([entry()])),
+      await uploadBytes(user.id, a.id, statementA([entry()])),
     );
     expect(first.transfers.needsAmount).toBe(1);
-    const second = confirmImport(
+    const second = await confirmImport(
       user.id,
-      uploadBytes(
+      await uploadBytes(
         user.id,
         eur.id,
         buildCamt({
@@ -192,20 +196,23 @@ describe("confirmImport links transfers", () => {
   it("undoing the source import removes the mirror, and a repeat import brings it back", async () => {
     const { user, a, b } = await setup();
     const bytes = statementA([entry()]);
-    const first = confirmImport(user.id, uploadBytes(user.id, a.id, bytes));
+    const first = await confirmImport(
+      user.id,
+      await uploadBytes(user.id, a.id, bytes),
+    );
     expect(rowsOf(b.id)).toHaveLength(1);
     undoImport(user.id, first.importId);
     expect(rowsOf(b.id)).toEqual([]);
     expect(allTransfers()).toEqual([]);
-    confirmImport(user.id, uploadBytes(user.id, a.id, bytes));
+    await confirmImport(user.id, await uploadBytes(user.id, a.id, bytes));
     expect(rowsOf(b.id)).toHaveLength(1);
   });
 
   it("does not recreate a mirror the user unlinked when the file is imported again", async () => {
     const { user, a, b } = await setup();
-    confirmImport(
+    await confirmImport(
       user.id,
-      uploadBytes(
+      await uploadBytes(
         user.id,
         a.id,
         statementA([entry(), entry({ ref: "R2", date: "2024-04-01" })]),
@@ -213,9 +220,9 @@ describe("confirmImport links transfers", () => {
     );
     const mirror = rowsOf(b.id).find((r) => r.bookingDate === "2024-03-10")!;
     unlink(user.id, getTransaction(user.id, mirror.id).transfer!.id);
-    const again = confirmImport(
+    const again = await confirmImport(
       user.id,
-      uploadBytes(
+      await uploadBytes(
         user.id,
         a.id,
         statementA([
@@ -237,9 +244,9 @@ describe("confirmImport links transfers", () => {
 describe("a later real import replaces mirrors", () => {
   async function mirrored() {
     const { user, a, b } = await setup();
-    confirmImport(
+    await confirmImport(
       user.id,
-      uploadBytes(
+      await uploadBytes(
         user.id,
         a.id,
         statementA([
@@ -261,7 +268,7 @@ describe("a later real import replaces mirrors", () => {
   it("marks matching rows in the preview and counts the replacement", async () => {
     const { user, b } = await mirrored();
     const mirror = rowsOf(b.id).find((r) => r.amount === 10000)!;
-    const pendingId = uploadBytes(
+    const pendingId = await uploadBytes(
       user.id,
       b.id,
       statementB([
@@ -269,7 +276,7 @@ describe("a later real import replaces mirrors", () => {
         incoming({ ref: "R9", date: "2024-03-25", amount: "7.00" }),
       ]),
     );
-    const preview = buildPreview(user.id, pendingId);
+    const preview = await buildPreview(user.id, pendingId);
     expect(preview.rows.map((r) => [r.status, r.mirrorId])).toEqual([
       ["replaces_mirror", mirror.id],
       ["new", null],
@@ -299,9 +306,9 @@ describe("a later real import replaces mirrors", () => {
       .run();
     const before = allTransfers().find((t) => t.inTransactionId === mirror.id)!;
 
-    const result = confirmImport(
+    const result = await confirmImport(
       user.id,
-      uploadBytes(user.id, b.id, statementB([incoming()])),
+      await uploadBytes(user.id, b.id, statementB([incoming()])),
     );
     expect(result).toMatchObject({
       newCount: 1,
@@ -325,9 +332,9 @@ describe("a later real import replaces mirrors", () => {
 
   it("does not warn about the balance when the real row replaces the mirror", async () => {
     const { user, b } = await mirrored();
-    const withReplacement = buildPreview(
+    const withReplacement = await buildPreview(
       user.id,
-      uploadBytes(
+      await uploadBytes(
         user.id,
         b.id,
         statementB(
@@ -348,9 +355,9 @@ describe("a later real import replaces mirrors", () => {
 
   it("flags a mirror that no real row replaced inside a statement period", async () => {
     const { user, b } = await mirrored();
-    const result = confirmImport(
+    const result = await confirmImport(
       user.id,
-      uploadBytes(
+      await uploadBytes(
         user.id,
         b.id,
         statementB([incoming()], {
@@ -369,9 +376,9 @@ describe("a later real import replaces mirrors", () => {
 
   it("matches only the right amount, date and counterparty", async () => {
     const { user, b } = await mirrored();
-    const preview = buildPreview(
+    const preview = await buildPreview(
       user.id,
-      uploadBytes(
+      await uploadBytes(
         user.id,
         b.id,
         statementB([
@@ -387,9 +394,9 @@ describe("a later real import replaces mirrors", () => {
 
   it("undoing the later import restores the mirrors", async () => {
     const { user, b } = await mirrored();
-    const result = confirmImport(
+    const result = await confirmImport(
       user.id,
-      uploadBytes(user.id, b.id, statementB([incoming()])),
+      await uploadBytes(user.id, b.id, statementB([incoming()])),
     );
     expect(rowsOf(b.id).filter((r) => r.source === "mirror")).toHaveLength(1);
     undoImport(user.id, result.importId);
@@ -404,14 +411,14 @@ describe("a later real import replaces mirrors", () => {
       name: "Theirs",
       iban: EXAMPLE_IBAN_OTHER,
     });
-    const preview = buildPreview(
+    const preview = await buildPreview(
       other.id,
-      uploadBytes(other.id, theirs.id, statementB([incoming()])),
+      await uploadBytes(other.id, theirs.id, statementB([incoming()])),
     );
     expect(preview.rows.map((r) => r.status)).toEqual(["new"]);
-    confirmImport(
+    await confirmImport(
       other.id,
-      uploadBytes(other.id, theirs.id, statementB([incoming()])),
+      await uploadBytes(other.id, theirs.id, statementB([incoming()])),
     );
     expect(rowsOf(b.id).filter((r) => r.source === "mirror")).toHaveLength(2);
     expect(

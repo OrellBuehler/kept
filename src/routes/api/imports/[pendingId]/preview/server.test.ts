@@ -1,18 +1,15 @@
+import { useTestStore } from "$lib/testing/store";
 import { describe, expect, it } from "vitest";
 import { createTestUser } from "$lib/testing/auth";
 import { useTestDB } from "$lib/testing/db";
 import { createTestEvent, outcome } from "$lib/testing/event";
 import { EXAMPLE_IBAN } from "$lib/testing/fixtures/bill-identifiers";
-import {
-  SIMPLE_CSV_PROFILE,
-  uploadFixture,
-  usePendingDir,
-} from "$lib/testing/imports";
+import { SIMPLE_CSV_PROFILE, uploadFixture } from "$lib/testing/imports";
 import { seedAccount } from "$lib/testing/ledger";
 import { POST } from "./+server";
 
 useTestDB();
-usePendingDir();
+useTestStore();
 
 type User = Awaited<ReturnType<typeof createTestUser>>;
 const ORIGIN = "http://localhost";
@@ -43,7 +40,7 @@ const post = (
 async function setup() {
   const user = await createTestUser();
   const account = seedAccount(user.id, { iban: EXAMPLE_IBAN });
-  const id = uploadFixture(user.id, account.id, "csv/overlap-a.csv");
+  const id = await uploadFixture(user.id, account.id, "csv/overlap-a.csv");
   return { user, account, id };
 }
 
@@ -163,7 +160,11 @@ describe("POST /api/imports/[pendingId]/preview", () => {
   it("camt uploads have no mapping", async () => {
     const user = await createTestUser();
     const account = seedAccount(user.id, { iban: EXAMPLE_IBAN });
-    const id = uploadFixture(user.id, account.id, "camt053/overlap-a.xml");
+    const id = await uploadFixture(
+      user.id,
+      account.id,
+      "camt053/overlap-a.xml",
+    );
     expect(await post(user, id, { profile: {} })).toEqual({
       type: "error",
       status: 400,

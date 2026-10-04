@@ -6,7 +6,11 @@ import {
   mappingContext,
   saveCsvProfile,
 } from "$lib/server/imports";
-import { ledgerFailure, orNotFound } from "$lib/server/ledger/http";
+import {
+  ledgerFailure,
+  orNotFound,
+  orNotFoundAsync,
+} from "$lib/server/ledger/http";
 import { z } from "zod";
 import type { Actions, PageServerLoad } from "./$types";
 
@@ -15,11 +19,11 @@ const formSchema = z.object({
   profile: z.string().min(1, "Required."),
 });
 
-export const load: PageServerLoad = ({ locals, params }) => {
+export const load: PageServerLoad = async ({ locals, params }) => {
   const user = requireUser(locals);
   const meta = orNotFound(() => getPendingMeta(user.id, params.pendingId));
   if (meta.format === "camt053") redirect(303, `/import/${meta.id}`);
-  return orNotFound(() => mappingContext(user.id, meta.id));
+  return orNotFoundAsync(() => mappingContext(user.id, meta.id));
 };
 
 export const actions: Actions = {

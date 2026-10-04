@@ -3,10 +3,10 @@ import { balanceSnapshots, getDB, imports, transactions } from "$lib/server/db";
 import type { CsvMappingProfile } from "$lib/server/importers/mapping";
 import { categorize, loadRules } from "$lib/server/categories/rules";
 import { getAccount } from "$lib/server/ledger/accounts";
-import { LedgerError } from "$lib/server/ledger/errors";
+import { LedgerError, notFound } from "$lib/server/ledger/errors";
 import { linkAfterWrite } from "$lib/server/transfers/link";
 import { takeOverMirror } from "$lib/server/transfers/replace";
-import { deletePending, getPendingMeta } from "./pending";
+import { deletePendingBlob, deletePendingRow, getPendingMeta } from "./pending";
 import { balanceWarningText, buildPreview } from "./preview";
 import { describeError } from "$lib/server/errors";
 
@@ -36,12 +36,12 @@ const INSERT_CHUNK = 100;
  * is trusted; rows that appeared in the ledger meanwhile are skipped by the
  * (account, external id) unique index. The pending file is removed afterwards.
  */
-export function confirmImport(
+export async function confirmImport(
   userId: string,
   pendingId: string,
   options: { profile?: CsvMappingProfile } = {},
-): ConfirmResult {
-  const preview = buildPreview(userId, pendingId, options);
+): Promise<ConfirmResult> {
+  const preview = await buildPreview(userId, pendingId, options);
   if (preview.errors.length > 0) {
     throw new LedgerError("invalid", preview.errors.join(" "));
   }
@@ -62,6 +62,8 @@ export function confirmImport(
   const rules = loadRules(userId);
 
   const result = getDB().transaction((tx) => {
+    // Claiming the upload first makes a concurrent second confirm fail and roll back.
+    if (!deletePendingRow(userId, pendingId, tx)) throw notFound("Upload");
     const imp = tx
       .insert(imports)
       .values({
@@ -188,11 +190,11 @@ export function confirmImport(
   });
 
   try {
-    deletePending(userId, pendingId);
+    await deletePendingBlob(userId, pendingId);
   } catch (err) {
-    // The import is committed; a leftover file is purged when it expires.
+    // The import is committed; the orphan sweep removes a leftover file.
     console.error(
-      "could not delete pending import %s: %s",
+      "could not delete pending import file %s: %s",
       pendingId,
       describeError(err),
     );

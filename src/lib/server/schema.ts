@@ -344,6 +344,33 @@ export const imports = sqliteTable(
   ],
 );
 
+/**
+ * An uploaded statement waiting for preview and confirmation. The bytes live in
+ * the blob store at `pending-imports/<userId>/<id>`; rows past `expiresAt` are
+ * purged together with their blob.
+ */
+export const pendingImports = sqliteTable(
+  "pending_imports",
+  {
+    /** 32 random url-safe characters; unguessable, never a uuid. */
+    id: text("id").primaryKey(),
+    userId: userId(),
+    accountId: text("account_id")
+      .notNull()
+      .references(() => accounts.id, { onDelete: "cascade" }),
+    format: text("format", { enum: IMPORT_FORMATS }).notNull(),
+    fileName: text("file_name").notNull(),
+    size: integer("size").notNull(),
+    sha256: text("sha256").notNull(),
+    expiresAt: integer("expires_at", { mode: "timestamp_ms" }).notNull(),
+    ...timestamps,
+  },
+  (t) => [
+    index("pending_imports_user_id_idx").on(t.userId),
+    index("pending_imports_expires_at_idx").on(t.expiresAt),
+  ],
+);
+
 export const INBOX_STATUSES = [
   "imported",
   "review",

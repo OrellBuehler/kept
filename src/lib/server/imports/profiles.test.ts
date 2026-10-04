@@ -1,3 +1,4 @@
+import { useTestStore } from "$lib/testing/store";
 import { describe, expect, it } from "vitest";
 import { getDB, csvProfiles } from "$lib/server/db";
 import { archiveAccount } from "$lib/server/ledger/accounts";
@@ -10,7 +11,6 @@ import {
   SIMPLE_CSV_PROFILE,
   uploadBytes,
   uploadFixture,
-  usePendingDir,
 } from "$lib/testing/imports";
 import { seedAccount } from "$lib/testing/ledger";
 import { mappingContext } from "./mapping-context";
@@ -18,7 +18,7 @@ import { getCsvProfile, saveCsvProfile } from "./profiles";
 import { startUpload } from "./upload";
 
 useTestDB();
-usePendingDir();
+useTestStore();
 
 async function setup() {
   const user = await createTestUser();
@@ -79,8 +79,8 @@ describe("csv profiles", () => {
 describe("mappingContext", () => {
   it("offers a guessed draft, detected columns, sample rows and no errors for a fresh csv", async () => {
     const { user, account } = await setup();
-    const id = uploadFixture(user.id, account.id, "csv/overlap-a.csv");
-    const ctx = mappingContext(user.id, id);
+    const id = await uploadFixture(user.id, account.id, "csv/overlap-a.csv");
+    const ctx = await mappingContext(user.id, id);
     expect(ctx).toMatchObject({
       pendingId: id,
       format: "csv",
@@ -120,13 +120,13 @@ describe("mappingContext", () => {
         `2024-01-${String((i % 28) + 1).padStart(2, "0")},X,Row ${i},-1.00,CHF`,
       );
     }
-    const id = uploadBytes(
+    const id = await uploadBytes(
       user.id,
       account.id,
       new TextEncoder().encode(lines.join("\n")),
       "big.csv",
     );
-    const ctx = mappingContext(user.id, id, SIMPLE_CSV_PROFILE);
+    const ctx = await mappingContext(user.id, id, SIMPLE_CSV_PROFILE);
     expect(ctx.sampleRows).toHaveLength(20);
     expect(ctx.preview).toHaveLength(50);
     expect(ctx.rowCount).toBe(81);
@@ -135,8 +135,12 @@ describe("mappingContext", () => {
 
   it("counts data rows without preamble, blank lines and footer", async () => {
     const { user, account } = await setup();
-    const id = uploadFixture(user.id, account.id, "csv/preamble-footer.csv");
-    const ctx = mappingContext(user.id, id, {
+    const id = await uploadFixture(
+      user.id,
+      account.id,
+      "csv/preamble-footer.csv",
+    );
+    const ctx = await mappingContext(user.id, id, {
       ...SIMPLE_CSV_PROFILE,
       headerRow: 5,
       skipFooterRows: 2,
@@ -149,8 +153,8 @@ describe("mappingContext", () => {
 
   it("previews a draft and reports row errors inline", async () => {
     const { user, account } = await setup();
-    const id = uploadFixture(user.id, account.id, "csv/bad-rows.csv");
-    const ctx = mappingContext(user.id, id, BAD_ROWS_PROFILE);
+    const id = await uploadFixture(user.id, account.id, "csv/bad-rows.csv");
+    const ctx = await mappingContext(user.id, id, BAD_ROWS_PROFILE);
     expect(ctx.errors).toEqual([]);
     expect(ctx.profile).not.toBeNull();
     expect(ctx.preview.some((r) => r.error)).toBe(true);
@@ -158,35 +162,35 @@ describe("mappingContext", () => {
 
   it("reports an invalid draft and a missing column without throwing", async () => {
     const { user, account } = await setup();
-    const id = uploadFixture(user.id, account.id, "csv/overlap-a.csv");
-    const invalid = mappingContext(user.id, id, { amountMode: "single" });
+    const id = await uploadFixture(user.id, account.id, "csv/overlap-a.csv");
+    const invalid = await mappingContext(user.id, id, { amountMode: "single" });
     expect(invalid.profile).toBeNull();
     expect(invalid.preview).toEqual([]);
     expect(invalid.errors.length).toBeGreaterThan(0);
     expect(invalid.detected).toHaveLength(5);
 
-    const missing = mappingContext(user.id, id, {
+    const missing = await mappingContext(user.id, id, {
       ...SIMPLE_CSV_PROFILE,
       columns: { ...SIMPLE_CSV_PROFILE.columns, amount: "Nope" },
     });
     expect(missing.errors[0]).toMatch(/not found/);
 
-    expect(mappingContext(user.id, id, 42).errors[0]).toMatch(/object/);
+    expect((await mappingContext(user.id, id, 42)).errors[0]).toMatch(/object/);
   });
 
   it("uses the saved profile when no draft is given", async () => {
     const { user, account } = await setup();
     saveCsvProfile(user.id, account.id, "Mine", SIMPLE_CSV_PROFILE);
-    const id = uploadFixture(user.id, account.id, "csv/overlap-a.csv");
-    const ctx = mappingContext(user.id, id);
+    const id = await uploadFixture(user.id, account.id, "csv/overlap-a.csv");
+    const ctx = await mappingContext(user.id, id);
     expect(ctx).toMatchObject({ saved: true, savedName: "Mine" });
     expect(ctx.profile?.columns.amount).toBe("Amount");
   });
 
   it("honours the draft's delimiter and encoding for raw rows", async () => {
     const { user, account } = await setup();
-    const id = uploadFixture(user.id, account.id, "csv/overlap-a.csv");
-    const ctx = mappingContext(user.id, id, {
+    const id = await uploadFixture(user.id, account.id, "csv/overlap-a.csv");
+    const ctx = await mappingContext(user.id, id, {
       ...SIMPLE_CSV_PROFILE,
       delimiter: ";",
     });
@@ -196,8 +200,8 @@ describe("mappingContext", () => {
 
   it("reads xlsx rows", async () => {
     const { user, account } = await setup();
-    const id = uploadFixture(user.id, account.id, "xlsx/statement.xlsx");
-    const ctx = mappingContext(user.id, id, SIMPLE_CSV_PROFILE);
+    const id = await uploadFixture(user.id, account.id, "xlsx/statement.xlsx");
+    const ctx = await mappingContext(user.id, id, SIMPLE_CSV_PROFILE);
     expect(ctx.format).toBe("xlsx");
     expect(ctx.rowCount).toBe(7);
     expect(ctx.detected[0]!.name).toBe("Date");
@@ -207,10 +211,16 @@ describe("mappingContext", () => {
   it("refuses camt.053 uploads and other users' uploads", async () => {
     const { user, account } = await setup();
     const other = await createTestUser();
-    const camt = uploadFixture(user.id, account.id, "camt053/v04-basic.xml");
-    expect(() => mappingContext(user.id, camt)).toThrow(/no column mapping/);
-    const csv = uploadFixture(user.id, account.id, "csv/overlap-a.csv");
-    expect(() => mappingContext(other.id, csv)).toThrow(/not found/);
+    const camt = await uploadFixture(
+      user.id,
+      account.id,
+      "camt053/v04-basic.xml",
+    );
+    await expect(mappingContext(user.id, camt)).rejects.toThrow(
+      /no column mapping/,
+    );
+    const csv = await uploadFixture(user.id, account.id, "csv/overlap-a.csv");
+    await expect(mappingContext(other.id, csv)).rejects.toThrow(/not found/);
   });
 });
 

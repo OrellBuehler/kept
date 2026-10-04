@@ -1,3 +1,4 @@
+import { useTestStore } from "$lib/testing/store";
 import { describe, expect, it } from "vitest";
 import { minor } from "$lib/money";
 import {
@@ -15,7 +16,7 @@ import {
   EXAMPLE_IBAN_OTHER,
 } from "$lib/testing/fixtures/bill-identifiers";
 import { buildCamt, type CamtEntry } from "$lib/testing/fixtures/camt053/build";
-import { uploadBytes, usePendingDir } from "$lib/testing/imports";
+import { uploadBytes } from "$lib/testing/imports";
 import { seedAccount } from "$lib/testing/ledger";
 import { seedPortfolio } from "$lib/testing/pillar3a";
 import { confirmImport } from "./confirm";
@@ -29,7 +30,7 @@ import { eq } from "drizzle-orm";
 import { LedgerError } from "$lib/server/ledger/errors";
 
 useTestDB();
-usePendingDir();
+useTestStore();
 
 const entry = (over: Partial<CamtEntry> = {}): CamtEntry => ({
   date: "2024-03-10",
@@ -63,9 +64,9 @@ const rowsOf = (accountId: string) =>
 describe("getImportImpact", () => {
   it("is all zero for an untouched import without transfers", async () => {
     const { user, a } = await setup();
-    const done = confirmImport(
+    const done = await confirmImport(
       user.id,
-      uploadBytes(
+      await uploadBytes(
         user.id,
         a.id,
         buildCamt({
@@ -91,9 +92,9 @@ describe("getImportImpact", () => {
 
   it("counts the user edits on the rows the import added", async () => {
     const { user, a, b } = await setup();
-    const done = confirmImport(
+    const done = await confirmImport(
       user.id,
-      uploadBytes(
+      await uploadBytes(
         user.id,
         a.id,
         buildCamt({
@@ -186,9 +187,9 @@ describe("getImportImpact", () => {
 
   it("matches what undo removes", async () => {
     const { user, a, b } = await setup();
-    const done = confirmImport(
+    const done = await confirmImport(
       user.id,
-      uploadBytes(
+      await uploadBytes(
         user.id,
         a.id,
         buildCamt({ iban: EXAMPLE_IBAN, entries: [entry()] }),
@@ -203,9 +204,9 @@ describe("getImportImpact", () => {
 
   it("does not see another user's import", async () => {
     const { user, a } = await setup();
-    const done = confirmImport(
+    const done = await confirmImport(
       user.id,
-      uploadBytes(
+      await uploadBytes(
         user.id,
         a.id,
         buildCamt({ iban: EXAMPLE_IBAN, entries: [entry()] }),
@@ -217,17 +218,17 @@ describe("getImportImpact", () => {
 
   it("batches several imports and agrees with the single lookup", async () => {
     const { user, a } = await setup();
-    const first = confirmImport(
+    const first = await confirmImport(
       user.id,
-      uploadBytes(
+      await uploadBytes(
         user.id,
         a.id,
         buildCamt({ iban: EXAMPLE_IBAN, entries: [entry()] }),
       ),
     );
-    const second = confirmImport(
+    const second = await confirmImport(
       user.id,
-      uploadBytes(
+      await uploadBytes(
         user.id,
         a.id,
         buildCamt({
@@ -266,9 +267,9 @@ describe("getImportImpact", () => {
 
   it("leaves out unknown ids and other users' imports in the batch", async () => {
     const { user, a } = await setup();
-    const done = confirmImport(
+    const done = await confirmImport(
       user.id,
-      uploadBytes(
+      await uploadBytes(
         user.id,
         a.id,
         buildCamt({ iban: EXAMPLE_IBAN, entries: [entry()] }),
