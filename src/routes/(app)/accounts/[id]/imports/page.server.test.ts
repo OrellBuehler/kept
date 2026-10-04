@@ -1,3 +1,4 @@
+import { eq } from "drizzle-orm";
 import { describe, expect, it } from "vitest";
 import { createTestUser } from "$lib/testing/auth";
 import { useTestDB } from "$lib/testing/db";
@@ -48,6 +49,29 @@ describe("/accounts/[id]/imports", () => {
     ).value;
     expect(v.account.id).toBe(account.id);
     expect(v.imports.map((i) => i.id)).toEqual([second.importId, imp.importId]);
+  });
+
+  it("load reports the edits an undo would delete", async () => {
+    const { user, account, imp } = await setup();
+    const row = getDB().select().from(transactions).all()[0]!;
+    getDB()
+      .update(transactions)
+      .set({ note: "kept", taxYear: 2024 })
+      .where(eq(transactions.id, row.id))
+      .run();
+    const r = await loadAs(user, account.id);
+    const impacts = (
+      r as {
+        value: {
+          impacts: Record<string, { transactions: number; notes: number }>;
+        };
+      }
+    ).value.impacts;
+    expect(impacts[imp.importId]).toMatchObject({
+      transactions: 5,
+      notes: 1,
+      taxYears: 1,
+    });
   });
 
   it("undo removes the import and its transactions", async () => {

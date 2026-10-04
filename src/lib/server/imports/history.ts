@@ -1,7 +1,26 @@
-import { and, desc, eq, isNotNull } from "drizzle-orm";
-import type { ImportFormat } from "$lib/ledger-types";
+import {
+  and,
+  count,
+  countDistinct,
+  desc,
+  eq,
+  inArray,
+  isNotNull,
+  or,
+  sql,
+} from "drizzle-orm";
+import type { ImportFormat, ImportImpact } from "$lib/ledger-types";
 import type { Minor } from "$lib/money";
-import { accounts, balanceSnapshots, getDB, imports } from "$lib/server/db";
+import {
+  accounts,
+  balanceSnapshots,
+  billAllocations,
+  getDB,
+  imports,
+  pillar3aContributions,
+  transactions,
+  transfers,
+} from "$lib/server/db";
 import { getAccount } from "$lib/server/ledger/accounts";
 import { notFound } from "$lib/server/ledger/errors";
 import { linkTransfers } from "$lib/server/transfers/link";
@@ -83,6 +102,94 @@ export function listRecentImports(userId: string, limit = 10): ImportView[] {
     .limit(limit)
     .all()
     .map(toView);
+}
+
+export type { ImportImpact };
+
+export function hasImportImpact(impact: ImportImpact): boolean {
+  return Object.entries(impact).some(
+    ([key, n]) => key !== "transactions" && n > 0,
+  );
+}
+
+export function getImportImpact(
+  userId: string,
+  importId: string,
+): ImportImpact {
+  const db = getDB();
+  const found = db
+    .select({ id: imports.id })
+    .from(imports)
+    .where(and(eq(imports.id, importId), eq(imports.userId, userId)))
+    .get();
+  if (!found) throw notFound("Import");
+
+  const rows = and(
+    eq(transactions.userId, userId),
+    eq(transactions.importId, importId),
+  );
+  const ids = db.select({ id: transactions.id }).from(transactions).where(rows);
+  const own = db
+    .select({
+      transactions: count(),
+      categorized: count(transactions.categoryId),
+      notes: sql<number>`count(case when trim(coalesce(${transactions.note}, '')) <> '' then 1 end)`,
+      taxYears: count(transactions.taxYear),
+      deductionYears: count(transactions.deductionYear),
+    })
+    .from(transactions)
+    .where(rows)
+    .get()!;
+  const allocations = db
+    .select({ n: countDistinct(billAllocations.transactionId) })
+    .from(billAllocations)
+    .where(
+      and(
+        eq(billAllocations.userId, userId),
+        inArray(billAllocations.transactionId, ids),
+      ),
+    )
+    .get()!;
+  const contributions = db
+    .select({ n: countDistinct(pillar3aContributions.transactionId) })
+    .from(pillar3aContributions)
+    .where(
+      and(
+        eq(pillar3aContributions.userId, userId),
+        inArray(pillar3aContributions.transactionId, ids),
+      ),
+    )
+    .get()!;
+  const links = db
+    .select({ n: count() })
+    .from(transfers)
+    .where(
+      and(
+        eq(transfers.userId, userId),
+        or(
+          inArray(transfers.outTransactionId, ids),
+          inArray(transfers.inTransactionId, ids),
+        ),
+      ),
+    )
+    .get()!;
+  const mirrors = db
+    .select({ n: count() })
+    .from(transactions)
+    .where(
+      and(
+        eq(transactions.userId, userId),
+        inArray(transactions.mirrorOfId, ids),
+      ),
+    )
+    .get()!;
+  return {
+    ...own,
+    billAllocations: allocations.n,
+    pillar3a: contributions.n,
+    transferLinks: links.n,
+    mirrors: mirrors.n,
+  };
 }
 
 /**

@@ -40,3 +40,21 @@ export type TransferStatus = (typeof TRANSFER_STATUSES)[number];
 
 export const TRANSFER_METHODS = ["paired", "mirrored", "manual"] as const;
 export type TransferMethod = (typeof TRANSFER_METHODS)[number];
+
+/**
+ * What undoing an import would delete besides the imported rows themselves:
+ * edits the user made on those rows. Counts are of transactions (links and
+ * mirrors: of rows). A category cannot be told apart as set by a rule or by
+ * hand, so every category on those rows is counted.
+ */
+export interface ImportImpact {
+  transactions: number;
+  categorized: number;
+  notes: number;
+  taxYears: number;
+  deductionYears: number;
+  billAllocations: number;
+  pillar3a: number;
+  transferLinks: number;
+  mirrors: number;
+}

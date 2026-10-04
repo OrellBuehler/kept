@@ -7,6 +7,7 @@
   import TriangleAlertIcon from "@lucide/svelte/icons/triangle-alert";
   import UndoIcon from "@lucide/svelte/icons/undo-2";
   import UploadIcon from "@lucide/svelte/icons/upload";
+  import * as Alert from "$lib/components/ui/alert";
   import { Badge } from "$lib/components/ui/badge";
   import { Button } from "$lib/components/ui/button";
   import * as Collapsible from "$lib/components/ui/collapsible";
@@ -15,7 +16,12 @@
   import Amount from "$lib/components/Amount.svelte";
   import ConfirmActionDialog from "$lib/components/ConfirmActionDialog.svelte";
   import LocalTime from "$lib/components/import/LocalTime.svelte";
-  import { FORMAT_LABELS, formatPeriod, plural } from "$lib/import-ui";
+  import {
+    FORMAT_LABELS,
+    describeImpact,
+    formatPeriod,
+    plural,
+  } from "$lib/import-ui";
   import type { PageProps } from "./$types";
   import { usePreferences } from "$lib/preferences.svelte";
 
@@ -41,6 +47,10 @@
       );
     }
   });
+
+  const lostEdits = $derived(
+    target ? describeImpact(data.impacts[target.id]!) : [],
+  );
 
   function askUndo(imp: (typeof data.imports)[number]) {
     target = imp;
@@ -244,5 +254,18 @@
 >
   {#if target}
     <p class="text-muted-foreground text-sm break-all">{target.fileName}</p>
+    {#if lostEdits.length > 0}
+      <Alert.Root variant="destructive">
+        <TriangleAlertIcon />
+        <Alert.Title>Your edits on these transactions are lost too</Alert.Title>
+        <Alert.Description>
+          <ul class="list-disc ps-4">
+            {#each lostEdits as line (line)}
+              <li>{line}</li>
+            {/each}
+          </ul>
+        </Alert.Description>
+      </Alert.Root>
+    {/if}
   {/if}
 </ConfirmActionDialog>
