@@ -1,7 +1,6 @@
 import { and, eq, gte, lte } from "drizzle-orm";
 import { z } from "zod";
 import type { CategoryKind } from "$lib/category-types";
-import { normalizeIban } from "$lib/iban";
 import { minor, type Minor } from "$lib/money";
 import {
   buildSankeyGraph,
@@ -11,10 +10,7 @@ import {
 import { accounts, categories, getDB, transactions } from "$lib/server/db";
 import { monthBounds } from "$lib/server/dashboard/dates";
 import { netWorthSeries } from "$lib/server/dashboard/net-worth";
-import {
-  isContributionPayment,
-  portfolioDepositReferences,
-} from "$lib/server/pillar3a/transfers";
+import { loadTransferExclusion } from "$lib/server/transfers/exclusion";
 
 export const TOP_COUNTERPARTIES = 8;
 export const TOP_TRANSACTIONS = 5;
@@ -141,8 +137,6 @@ function loadOwn(userId: string) {
   const own = getDB()
     .select({
       id: accounts.id,
-      iban: accounts.iban,
-      depositIban: accounts.depositIban,
       archived: accounts.archived,
       currency: accounts.currency,
     })
@@ -152,16 +146,7 @@ function loadOwn(userId: string) {
   const active = new Map(
     own.filter((a) => !a.archived).map((a) => [a.id, a.currency]),
   );
-  const ibanOwner = new Map<string, string>();
-  for (const a of own) {
-    if (a.iban) ibanOwner.set(normalizeIban(a.iban), a.id);
-    if (a.depositIban) ibanOwner.set(normalizeIban(a.depositIban), a.id);
-  }
-  return {
-    active,
-    ibanOwner,
-    depositReferences: portfolioDepositReferences(userId),
-  };
+  return { active, exclusion: loadTransferExclusion(userId) };
 }
 
 function loadRows(userId: string, from: string, to: string): Row[] {
@@ -209,10 +194,10 @@ export function defaultReviewYear(today: string, years: number[]): number {
  * currency (account currency, no FX), compared with the year before.
  *
  * Only non-archived accounts count. Transfers between the user's own
- * accounts are left out: a transaction whose counterparty IBAN equals the IBAN
- * (or pillar 3a deposit IBAN) of another account of the user is a transfer, and
- * so is an outgoing payment carrying a pillar 3a portfolio's deposit
- * reference; those without a counterparty IBAN or reference cannot be
+ * accounts are left out: rows in a linked transfer (paired or mirrored) and,
+ * for rows that are not linked, the heuristic in `loadTransferExclusion`
+ * (counterparty IBAN of another own account, or a pillar 3a deposit
+ * reference); those without a counterparty IBAN or reference cannot be
  * recognised. A transaction counts as income when it is
  * positive and as an expense when it is negative, except that its category
  * decides the side: a refund on an expense category reduces that expense.
@@ -226,7 +211,7 @@ export function yearReview(
   const from = `${year}-01-01`;
   const yearEnd = `${year}-12-31`;
   const to = today < yearEnd ? today : yearEnd;
-  const { active, ibanOwner, depositReferences } = loadOwn(userId);
+  const { active, exclusion } = loadOwn(userId);
   const cats = new Map<string, Cat>(
     getDB()
       .select({
@@ -246,14 +231,7 @@ export function yearReview(
   const classify = (row: Row, countExcluded: boolean): Classified | null => {
     const currency = active.get(row.accountId);
     if (currency === undefined) return null;
-    if (row.counterpartyIban) {
-      const owner = ibanOwner.get(normalizeIban(row.counterpartyIban));
-      if (owner !== undefined && owner !== row.accountId) {
-        if (countExcluded) excludedTransfers += 1;
-        return null;
-      }
-    }
-    if (isContributionPayment(depositReferences, row)) {
+    if (exclusion.isTransfer(row)) {
       if (countExcluded) excludedTransfers += 1;
       return null;
     }

@@ -1,4 +1,4 @@
-import { and, eq, gte, isNotNull, lt, lte, notExists } from "drizzle-orm";
+import { and, eq, gte, isNotNull, lt, lte, ne, notExists } from "drizzle-orm";
 import { minor, type Minor } from "$lib/money";
 import type { BillKind } from "$lib/bill-types";
 import { accounts, billAllocations, getDB, transactions } from "$lib/server/db";
@@ -137,6 +137,7 @@ export function unmatchedTransactions(
       and(
         eq(transactions.userId, userId),
         eq(accounts.archived, false),
+        ne(transactions.source, "mirror"),
         lt(transactions.amount, minor(0)),
         isNotNull(transactions.referenceType),
         gte(transactions.bookingDate, addDays(today, -days)),

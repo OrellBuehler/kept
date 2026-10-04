@@ -2,6 +2,13 @@ import { and, count, desc, eq, gte, lte, or, sql } from "drizzle-orm";
 import type { RowSource } from "$lib/ledger-types";
 import type { Minor } from "$lib/money";
 import { accounts, getDB, transactions } from "$lib/server/db";
+import {
+  mirrorRefs,
+  transferRefs,
+  type MirrorRef,
+  type TransferRef,
+} from "$lib/server/transfers/view";
+import { unlink } from "$lib/server/transfers/manual";
 import { LedgerError, notFound } from "./errors";
 import type {
   TransactionFilters,
@@ -32,6 +39,10 @@ export interface TransactionView {
   taxYear: number | null;
   deductionYear: number | null;
   createdAt: number;
+  /** Mirrors only: the transaction on another account this row was created from. */
+  mirrorOf: MirrorRef | null;
+  /** The transfer between two of the user's accounts this row belongs to (not when dismissed). */
+  transfer: TransferRef | null;
 }
 
 export interface TransactionPage {
@@ -65,7 +76,28 @@ const columns = {
   taxYear: transactions.taxYear,
   deductionYear: transactions.deductionYear,
   createdAt: sql<number>`${transactions.createdAt}`,
+  mirrorOfId: transactions.mirrorOfId,
 };
+
+type Row = Omit<TransactionView, "mirrorOf" | "transfer"> & {
+  mirrorOfId: string | null;
+};
+
+function decorate(userId: string, rows: readonly Row[]): TransactionView[] {
+  const transfer = transferRefs(
+    userId,
+    rows.map((r) => r.id),
+  );
+  const mirrors = mirrorRefs(
+    userId,
+    rows.filter((r) => r.source === "mirror"),
+  );
+  return rows.map(({ mirrorOfId: _mirrorOfId, ...r }) => ({
+    ...r,
+    mirrorOf: mirrors.get(r.id) ?? null,
+    transfer: transfer.get(r.id) ?? null,
+  }));
+}
 
 function ownedAccount(userId: string, accountId: string) {
   const account = getDB()
@@ -131,14 +163,20 @@ export function listTransactions(
     .n;
   const pageCount = Math.max(1, Math.ceil(total / pageSize));
   const page = Math.min(requested, pageCount);
-  const items = db
-    .select(columns)
-    .from(transactions)
-    .where(where)
-    .orderBy(desc(transactions.bookingDate), desc(sql`"transactions"."rowid"`))
-    .limit(pageSize)
-    .offset((page - 1) * pageSize)
-    .all();
+  const items = decorate(
+    userId,
+    db
+      .select(columns)
+      .from(transactions)
+      .where(where)
+      .orderBy(
+        desc(transactions.bookingDate),
+        desc(sql`"transactions"."rowid"`),
+      )
+      .limit(pageSize)
+      .offset((page - 1) * pageSize)
+      .all(),
+  );
   return { items, total, page, pageSize, pageCount };
 }
 
@@ -149,7 +187,7 @@ export function getTransaction(userId: string, id: string): TransactionView {
     .where(and(eq(transactions.userId, userId), eq(transactions.id, id)))
     .get();
   if (!row) throw notFound("Transaction");
-  return row;
+  return decorate(userId, [row])[0]!;
 }
 
 export function createManualTransaction(
@@ -175,7 +213,7 @@ export function createManualTransaction(
   return getTransaction(userId, row.id);
 }
 
-/** Manual rows take all fields; imported rows only accept a note. */
+/** Manual rows take all fields; imported rows and mirrors only accept a note. */
 export function updateTransaction(
   userId: string,
   id: string,
@@ -183,7 +221,7 @@ export function updateTransaction(
 ): TransactionView {
   const current = getTransaction(userId, id);
   const where = and(eq(transactions.userId, userId), eq(transactions.id, id));
-  if (current.source === "import") {
+  if (current.source !== "manual") {
     getDB().update(transactions).set({ note: input.note }).where(where).run();
   } else {
     if (!("bookingDate" in input)) {
@@ -200,6 +238,11 @@ export function updateTransaction(
 
 export function deleteTransaction(userId: string, id: string): void {
   const current = getTransaction(userId, id);
+  if (current.source === "mirror") {
+    // Deleting a mirror means "this is not a transfer": the unlink remembers it.
+    if (current.transfer) unlink(userId, current.transfer.id);
+    return;
+  }
   if (current.source !== "manual") {
     throw new LedgerError(
       "conflict",

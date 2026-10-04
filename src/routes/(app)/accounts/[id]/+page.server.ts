@@ -84,6 +84,8 @@ const accountFields = [
   "share",
   "sharedWith",
   "sortOrder",
+  "fillFromTransfers",
+  "tradesMoveCash",
 ] as const;
 const transactionFields = [
   "bookingDate",
@@ -265,7 +267,7 @@ export const actions: Actions = {
       idParsed.data.transactionId,
     );
     const parsed =
-      existing.source === "import"
+      existing.source !== "manual"
         ? parseForm(transactionNoteSchema, form)
         : parseForm(transactionInputSchema(account.currency), form);
     if (!parsed.ok) {

@@ -381,6 +381,8 @@ function accountToInput(a: ReturnType<typeof getAccount>) {
     noticeMonths: a.noticeMonths,
     freeWithdrawal: a.freeWithdrawal,
     freeWithdrawalPeriod: a.freeWithdrawalPeriod,
+    fillFromTransfers: a.fillFromTransfers,
+    tradesMoveCash: a.tradesMoveCash,
     shareBps: a.shareBps,
     sharedWith: a.sharedWith,
     sortOrder: a.sortOrder,

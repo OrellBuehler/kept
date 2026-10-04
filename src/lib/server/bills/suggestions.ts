@@ -1,4 +1,4 @@
-import { and, desc, eq, gte, inArray } from "drizzle-orm";
+import { and, desc, eq, gte, inArray, ne } from "drizzle-orm";
 import type { BillKind } from "$lib/bill-types";
 import { type Minor } from "$lib/money";
 import {
@@ -116,6 +116,8 @@ function compute(
     .where(
       and(
         eq(transactions.userId, userId),
+        // A mirror is the counter-side of a transfer between own accounts, never a payment.
+        ne(transactions.source, "mirror"),
         since ? gte(transactions.bookingDate, since) : undefined,
       ),
     )

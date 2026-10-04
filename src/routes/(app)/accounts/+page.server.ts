@@ -39,6 +39,8 @@ const accountFields = [
   "share",
   "sharedWith",
   "sortOrder",
+  "fillFromTransfers",
+  "tradesMoveCash",
 ] as const;
 
 async function readLogoUpload(form: FormData): Promise<Uint8Array | null> {

@@ -1,4 +1,4 @@
-import { and, asc, eq, ne, sql } from "drizzle-orm";
+import { and, asc, eq, inArray, ne, sql } from "drizzle-orm";
 import type { AccountType, WithdrawalPeriod } from "$lib/ledger-types";
 import { shareOf, type Minor } from "$lib/money";
 import {
@@ -12,6 +12,7 @@ import {
   transactions,
 } from "$lib/server/db";
 import { assertReferenceFits } from "$lib/server/pillar3a/portfolios";
+import { linkTransfers, removeMirrors } from "$lib/server/transfers";
 import { currentValues, type CurrentValue } from "./balances";
 import { LedgerError, notFound } from "./errors";
 import type { AccountInput } from "./schemas";
@@ -40,6 +41,10 @@ export interface AccountView {
   /** Amount withdrawable without notice per period, account currency; needs `noticeMonths`. */
   freeWithdrawal: Minor | null;
   freeWithdrawalPeriod: WithdrawalPeriod | null;
+  /** Kept creates the counter-transaction here when another account shows a transfer to this IBAN. */
+  fillFromTransfers: boolean;
+  /** Buys reduce and sells increase the cash balance (accounts without statements). */
+  tradesMoveCash: boolean;
   archived: boolean;
   sortOrder: number;
   /** Ownership share in basis points (10000 = 100%); stored amounts are always 100%. */
@@ -74,6 +79,8 @@ function baseRows(userId: string, accountId?: string) {
       noticeMonths: accounts.noticeMonths,
       freeWithdrawal: accounts.freeWithdrawal,
       freeWithdrawalPeriod: accounts.freeWithdrawalPeriod,
+      fillFromTransfers: accounts.fillFromTransfers,
+      tradesMoveCash: accounts.tradesMoveCash,
       archived: accounts.archived,
       sortOrder: accounts.sortOrder,
       shareBps: accounts.shareBps,
@@ -156,6 +163,8 @@ function toViews(
     noticeMonths: r.noticeMonths,
     freeWithdrawal: r.freeWithdrawal,
     freeWithdrawalPeriod: r.freeWithdrawalPeriod,
+    fillFromTransfers: r.fillFromTransfers,
+    tradesMoveCash: r.tradesMoveCash,
     archived: r.archived,
     sortOrder: r.sortOrder,
     shareBps: r.shareBps,
@@ -245,11 +254,25 @@ export function createAccount(
       .from(accounts)
       .where(eq(accounts.userId, userId))
       .get()?.m ?? -1) + 1;
-  const row = db
-    .insert(accounts)
-    .values({ ...input, sortOrder, userId })
-    .returning({ id: accounts.id })
-    .get();
+  const row = db.transaction((tx) => {
+    const created = tx
+      .insert(accounts)
+      .values({
+        ...input,
+        sortOrder,
+        userId,
+        fillFromTransfers:
+          input.fillFromTransfers && input.type !== "pillar_3a",
+        tradesMoveCash: input.tradesMoveCash && input.type === "investment",
+      })
+      .returning({ id: accounts.id })
+      .get();
+    // Transfers other accounts already show to this IBAN become mirrors here.
+    if (input.fillFromTransfers && input.type !== "pillar_3a") {
+      linkTransfers(userId, { targetAccountId: created.id }, tx);
+    }
+    return created;
+  });
   return getAccount(userId, row.id);
 }
 
@@ -325,11 +348,58 @@ export function updateAccount(
   }
 
   const { sortOrder, ...rest } = input;
-  getDB()
-    .update(accounts)
-    .set({ ...rest, sortOrder: sortOrder ?? current.sortOrder })
-    .where(and(eq(accounts.userId, userId), eq(accounts.id, id)))
-    .run();
+  const hasTrades =
+    db
+      .select({ id: trades.id })
+      .from(trades)
+      .where(eq(trades.accountId, id))
+      .get() !== undefined;
+  const fillFromTransfers =
+    rest.fillFromTransfers &&
+    rest.type !== "pillar_3a" &&
+    portfolioRows.length === 0;
+  const tradesMoveCash =
+    rest.tradesMoveCash && (rest.type === "investment" || hasTrades);
+  const ibanChanged = rest.iban !== current.iban;
+  db.transaction((tx) => {
+    tx.update(accounts)
+      .set({
+        ...rest,
+        fillFromTransfers,
+        tradesMoveCash,
+        sortOrder: sortOrder ?? current.sortOrder,
+      })
+      .where(and(eq(accounts.userId, userId), eq(accounts.id, id)))
+      .run();
+    if (current.fillFromTransfers && !fillFromTransfers) {
+      removeMirrors(userId, id, tx);
+    }
+    if (ibanChanged || rest.name !== current.name) {
+      // Mirrors created from this account's rows name it as their counterparty.
+      tx.update(transactions)
+        .set({ counterpartyName: rest.name, counterpartyIban: rest.iban })
+        .where(
+          and(
+            eq(transactions.userId, userId),
+            eq(transactions.source, "mirror"),
+            inArray(
+              transactions.mirrorOfId,
+              tx
+                .select({ id: transactions.id })
+                .from(transactions)
+                .where(eq(transactions.accountId, id)),
+            ),
+          ),
+        )
+        .run();
+    }
+    if (
+      (fillFromTransfers && !current.fillFromTransfers) ||
+      (ibanChanged && rest.iban !== null)
+    ) {
+      linkTransfers(userId, { targetAccountId: id }, tx);
+    }
+  });
   return getAccount(userId, id);
 }
 

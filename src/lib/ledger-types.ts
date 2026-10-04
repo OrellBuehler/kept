@@ -25,7 +25,18 @@ export type WithdrawalPeriod = (typeof WITHDRAWAL_PERIODS)[number];
 export const IMPORT_FORMATS = ["camt053", "csv", "xlsx"] as const;
 export type ImportFormat = (typeof IMPORT_FORMATS)[number];
 
-export const ROW_SOURCES = ["manual", "import"] as const;
+/** `mirror`: a counter-transaction Kept created from a transfer on another account. */
+export const ROW_SOURCES = ["manual", "import", "mirror"] as const;
 export type RowSource = (typeof ROW_SOURCES)[number];
 
 export const REFERENCE_TYPES = ["QRR", "SCOR"] as const;
+
+export const TRANSFER_STATUSES = [
+  "linked",
+  "needs_amount",
+  "dismissed",
+] as const;
+export type TransferStatus = (typeof TRANSFER_STATUSES)[number];
+
+export const TRANSFER_METHODS = ["paired", "mirrored", "manual"] as const;
+export type TransferMethod = (typeof TRANSFER_METHODS)[number];

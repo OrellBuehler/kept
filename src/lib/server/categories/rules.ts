@@ -1,4 +1,4 @@
-import { and, asc, eq, isNull, sql } from "drizzle-orm";
+import { and, asc, eq, isNull, ne, sql } from "drizzle-orm";
 import type { AmountSign } from "$lib/category-types";
 import { normalizeIban } from "$lib/iban";
 import { categories, categoryRules, getDB, transactions } from "$lib/server/db";
@@ -177,7 +177,8 @@ export interface ApplyResult {
 /**
  * Runs the user's rules over transactions that have no category. Rows that
  * already have one, whether set by hand or by an earlier run, are never
- * touched, so a manual choice always wins.
+ * touched, so a manual choice always wins. Mirrors (counter-transactions Kept
+ * created from a transfer) are never categorized by rules.
  */
 export function applyRulesToUncategorized(userId: string): ApplyResult {
   const rules = loadRules(userId);
@@ -192,7 +193,11 @@ export function applyRulesToUncategorized(userId: string): ApplyResult {
     })
     .from(transactions)
     .where(
-      and(eq(transactions.userId, userId), isNull(transactions.categoryId)),
+      and(
+        eq(transactions.userId, userId),
+        isNull(transactions.categoryId),
+        ne(transactions.source, "mirror"),
+      ),
     )
     .all();
   if (rules.length === 0) return { scanned: rows.length, categorized: 0 };

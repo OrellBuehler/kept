@@ -9,6 +9,7 @@ import {
 } from "$lib/server/db";
 import { LedgerError, notFound } from "$lib/server/ledger/errors";
 import { monthBounds } from "$lib/server/dashboard/dates";
+import { notInLinkedTransfer } from "$lib/server/transfers/exclusion";
 import { getCategory } from "./categories";
 import type { BudgetInput } from "./schemas";
 
@@ -123,6 +124,7 @@ interface OwnSpend {
 
 /**
  * Spending booked directly on each expense category in a "YYYY-MM" month.
+ * Rows in a linked transfer between the user's own accounts do not count.
  * With basis "share" every transaction is scaled by the ownership share of
  * its account (rounded per transaction, see `shareOf`); stored amounts stay
  * at 100%.
@@ -139,6 +141,7 @@ function ownSpend(
     eq(categories.kind, "expense"),
     gte(transactions.bookingDate, first),
     lte(transactions.bookingDate, last),
+    notInLinkedTransfer,
   );
   const db = getDB();
   if (basis === "total") {
@@ -430,6 +433,7 @@ export function spendingByCategory(
         lt(transactions.amount, minor(0)),
         gte(transactions.bookingDate, first),
         lte(transactions.bookingDate, last),
+        notInLinkedTransfer,
       ),
     )
     .get()!.n;

@@ -15,6 +15,11 @@ import {
 import { isValidIban, normalizeIban } from "$lib/iban";
 import { PILLAR_3A_CURRENCY } from "$lib/pillar-3a";
 
+const checkbox = z
+  .string()
+  .optional()
+  .transform((v) => v === "on" || v === "true" || v === "1");
+
 /** Blank or missing form fields become null; everything else goes through `schema`. */
 export function optionalOf<S extends z.ZodType>(schema: S) {
   return z.preprocess(
@@ -184,6 +189,10 @@ export const accountInputSchema = z
         .regex(/^-?\d{1,6}$/, "Enter a whole number.")
         .transform(Number),
     ),
+    /** Create the counter-transaction here when another account shows a transfer to this IBAN. */
+    fillFromTransfers: checkbox,
+    /** Trades reduce (buys) or increase (sells) the cash balance. Investment accounts, or accounts with trades. */
+    tradesMoveCash: checkbox,
   })
   .transform((v, ctx) => {
     const raw = v.openingBalance?.trim() ?? "";
@@ -289,6 +298,8 @@ export const accountInputSchema = z
       contractNumber: pillar3a ? rest.contractNumber : null,
       depositIban: pillar3a ? rest.depositIban : null,
       sharedWith: pillar3a ? null : rest.sharedWith,
+      fillFromTransfers: pillar3a ? false : rest.fillFromTransfers,
+      tradesMoveCash: pillar3a ? false : rest.tradesMoveCash,
       openingBalance,
       shareBps,
     };
