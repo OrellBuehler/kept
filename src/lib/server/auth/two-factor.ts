@@ -460,7 +460,7 @@ export async function resetTwoFactor(
   keepSessionId?: string,
   audit?: InTransaction<{ id: string; username: string }>,
 ): Promise<void> {
-  getDB().transaction(
+  const afterCommit = getDB().transaction(
     (tx) => {
       const target = tx
         .select({ id: users.id, username: users.username })
@@ -482,11 +482,21 @@ export async function resetTwoFactor(
         targetId,
         actorId === targetId ? keepSessionId : undefined,
       ).run();
-      logAuthEventInTx(tx, "two_factor_reset", targetId, actorId);
-      audit?.(tx, target);
+      const logEvent = logAuthEventInTx(
+        tx,
+        "two_factor_reset",
+        targetId,
+        actorId,
+      );
+      const logAudit = audit?.(tx, target);
+      return () => {
+        logEvent();
+        logAudit?.();
+      };
     },
     { behavior: "immediate" },
   );
+  afterCommit();
 }
 
 export async function usersWithTwoFactor(): Promise<Set<string>> {

@@ -1,10 +1,11 @@
 import { isIP } from "node:net";
 import { ipv6Bytes } from "$lib/server/net/ip";
 import {
+  claimPendingAttempt,
+  consumePendingLogin,
   createPendingLogin,
-  deletePendingLogin,
+  failClaimedAttempt,
   getPendingLogin,
-  recordPendingFailure,
 } from "./challenges";
 import {
   loginRateLimiter,
@@ -219,12 +220,25 @@ export async function completeSecondFactor(
     );
   }
   const release = limiter.acquireOrThrow(pending.userId, ip);
-  if (!(await verifySecondFactorCode(pending.userId, code, now))) {
-    await recordPendingFailure(pending);
+  const expired = () =>
+    new AuthError("pending_expired", "Your sign-in expired. Start again.");
+  const claimed = await claimPendingAttempt(pending.id);
+  if (claimed === null) throw expired();
+  let ok: boolean;
+  let threw = true;
+  try {
+    ok = await verifySecondFactorCode(pending.userId, code, now);
+    threw = false;
+  } finally {
+    // An error is not a wrong guess: give the limiter slot back.
+    if (threw) release();
+  }
+  if (!ok) {
+    await failClaimedAttempt(pending.id, claimed);
     return null;
   }
   release();
-  await deletePendingLogin(pending.id);
+  if (!(await consumePendingLogin(pending.id))) throw expired();
   const result = await issueLogin(pending.userId, now);
   loginLimiter.recordSuccess(result.user.username, ip);
   return result;

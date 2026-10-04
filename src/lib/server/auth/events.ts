@@ -24,13 +24,16 @@ export async function logAuthEvent(
   logEvent(type, userId, actorId);
 }
 
-/** Sync twin for the body of a transaction: the row commits or rolls back with it. */
+/**
+ * Sync twin for the body of a transaction: the row commits or rolls back with it.
+ * Returns the log call, which the caller makes once the transaction has committed.
+ */
 export function logAuthEventInTx(
   tx: Pick<ReturnType<typeof getDB>, "insert">,
   type: AuthEventType,
   userId: string,
   actorId: string = userId,
-): void {
+): () => void {
   authEventInsert(tx, type, userId, actorId).run();
-  logEvent(type, userId, actorId);
+  return () => logEvent(type, userId, actorId);
 }

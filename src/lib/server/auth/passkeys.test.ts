@@ -166,6 +166,59 @@ describe("passkeys", () => {
     expect((await listPasskeys(u.id))[0].lastUsedAt).toBeInstanceOf(Date);
   });
 
+  it("keeps authenticators that always report a zero counter working", async () => {
+    const u = await registered();
+    verifyAuth.mockResolvedValue({
+      verified: true,
+      authenticationInfo: { newCounter: 0 },
+    });
+    expect(await finishAuthentication(authResponse, "ch", config, null)).toBe(
+      u.id,
+    );
+    expect(await finishAuthentication(authResponse, "ch", config, null)).toBe(
+      u.id,
+    );
+  });
+
+  it("rejects a counter that did not advance past the stored one", async () => {
+    await registered();
+    await getDB().update(passkeys).set({ counter: 9 });
+    verifyAuth.mockResolvedValue({
+      verified: true,
+      authenticationInfo: { newCounter: 9 },
+    });
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    expect(
+      await finishAuthentication(authResponse, "ch", config, null),
+    ).toBeNull();
+    verifyAuth.mockResolvedValue({
+      verified: true,
+      authenticationInfo: { newCounter: 0 },
+    });
+    expect(
+      await finishAuthentication(authResponse, "ch", config, null),
+    ).toBeNull();
+    warn.mockRestore();
+    expect((await getDB().select().from(passkeys))[0].counter).toBe(9);
+  });
+
+  it("lets only one of two parallel assertions with the same counter through", async () => {
+    const u = await registered();
+    verifyAuth.mockImplementation(async () => {
+      await new Promise((r) => setTimeout(r, 1));
+      return { verified: true, authenticationInfo: { newCounter: 6 } };
+    });
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const results = await Promise.all([
+      finishAuthentication(authResponse, "ch", config, null),
+      finishAuthentication(authResponse, "ch", config, null),
+    ]);
+    warn.mockRestore();
+    expect(results.filter((r) => r === u.id)).toHaveLength(1);
+    expect(results.filter((r) => r === null)).toHaveLength(1);
+    expect((await getDB().select().from(passkeys))[0].counter).toBe(6);
+  });
+
   it("refuses unknown credentials, other users' credentials and failed verification", async () => {
     const u = await registered();
     const other = await createTestUser();

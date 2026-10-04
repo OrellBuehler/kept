@@ -68,16 +68,17 @@ export async function recordAdminAction(
 
 /**
  * Sync twin for the body of the action's own transaction, so the change and its
- * audit row commit together.
+ * audit row commit together. Returns the log call, which the caller makes once
+ * the transaction has committed.
  */
 export function recordAdminActionInTx(
   tx: AuditDb,
   actor: Person,
   action: AdminAction,
   opts: { target?: Person; details?: string } = {},
-): void {
+): () => void {
   auditInsert(tx, actor, action, opts).run();
-  logAction(actor, action, opts);
+  return () => logAction(actor, action, opts);
 }
 
 /**

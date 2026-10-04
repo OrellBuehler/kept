@@ -1,14 +1,16 @@
 import { describe, expect, it } from "vitest";
 import { eq } from "drizzle-orm";
-import { authChallenges, first } from "$lib/server/db";
+import { authChallenges } from "$lib/server/db";
 import { createTestUser } from "$lib/testing/auth";
 import { useTestDB } from "$lib/testing/db";
 import {
   MAX_PENDING_ATTEMPTS,
+  claimPendingAttempt,
+  consumePendingLogin,
+  failClaimedAttempt,
   createPendingLogin,
   createWebauthnChallenge,
   getPendingLogin,
-  recordPendingFailure,
   takePendingChallenge,
   takeWebauthnChallenge,
   setPendingChallenge,
@@ -27,37 +29,48 @@ describe("challenges", () => {
     return pending!;
   }
 
-  it("counts parallel failures on one pending login exactly", async () => {
+  it("lets parallel claims through only up to the cap", async () => {
     const u = await createTestUser();
     const pending = await pendingFor(u.id);
-    await Promise.all(
-      Array.from({ length: MAX_PENDING_ATTEMPTS - 1 }, () =>
-        recordPendingFailure(pending),
+    const claims = await Promise.all(
+      Array.from({ length: MAX_PENDING_ATTEMPTS * 3 }, () =>
+        claimPendingAttempt(pending.id),
       ),
     );
-    const row = await first(
-      ctx.db
-        .select()
-        .from(authChallenges)
-        .where(eq(authChallenges.id, pending.id))
-        .limit(1),
-    );
-    expect(row?.attempts).toBe(MAX_PENDING_ATTEMPTS - 1);
-  });
-
-  it("destroys the pending login once the attempts add up across parallel failures", async () => {
-    const u = await createTestUser();
-    const pending = await pendingFor(u.id);
-    await Promise.all(
-      Array.from({ length: MAX_PENDING_ATTEMPTS }, () =>
-        recordPendingFailure(pending),
-      ),
+    const granted = claims.filter((c) => c !== null).sort();
+    expect(granted).toEqual(
+      Array.from({ length: MAX_PENDING_ATTEMPTS }, (_, i) => i + 1),
     );
     expect(await ctx.db.select().from(authChallenges)).toHaveLength(0);
   });
 
-  it("recording a failure for a vanished pending login is a no-op", async () => {
-    await expect(recordPendingFailure({ id: "gone" })).resolves.toBeUndefined();
+  it("destroys the pending login when the last claimed attempt fails", async () => {
+    const u = await createTestUser();
+    const pending = await pendingFor(u.id);
+    for (let i = 1; i < MAX_PENDING_ATTEMPTS; i++) {
+      const n = await claimPendingAttempt(pending.id);
+      expect(n).toBe(i);
+      await failClaimedAttempt(pending.id, n!);
+    }
+    expect(await ctx.db.select().from(authChallenges)).toHaveLength(1);
+    const last = await claimPendingAttempt(pending.id);
+    await failClaimedAttempt(pending.id, last!);
+    expect(await ctx.db.select().from(authChallenges)).toHaveLength(0);
+  });
+
+  it("claiming a vanished pending login yields nothing", async () => {
+    expect(await claimPendingAttempt("gone")).toBeNull();
+  });
+
+  it("consumes a pending login exactly once", async () => {
+    const u = await createTestUser();
+    const pending = await pendingFor(u.id);
+    const results = await Promise.all([
+      consumePendingLogin(pending.id),
+      consumePendingLogin(pending.id),
+      consumePendingLogin(pending.id),
+    ]);
+    expect(results.filter(Boolean)).toHaveLength(1);
   });
 
   it("hands a pending WebAuthn challenge out once, even to parallel takers", async () => {

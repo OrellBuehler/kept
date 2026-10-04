@@ -1,9 +1,10 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { first, users } from "$lib/server/db";
 import { createTestUser } from "$lib/testing/auth";
 import { useTestDB } from "$lib/testing/db";
 import { verifyPassword } from "./password";
 import { createSession, validateSessionToken } from "./sessions";
+import { recordAdminActionInTx } from "./admin-audit";
 import { AuthError } from "./types";
 import {
   changePassword,
@@ -239,8 +240,48 @@ describe("users", () => {
       );
       expect(await listUsers()).toHaveLength(2);
       const seen: string[] = [];
-      await deleteUser(admin.id, member.id, (_tx, t) => seen.push(t.username));
+      await deleteUser(admin.id, member.id, (_tx, t) => {
+        seen.push(t.username);
+      });
       expect(seen).toEqual([member.username]);
+    });
+
+    it("logs the admin action only after the transaction committed", async () => {
+      const admin = await createTestUser({ role: "admin" });
+      const actor = { id: admin.id, username: admin.username };
+      const info = vi.spyOn(console, "info").mockImplementation(() => {});
+      await expect(
+        createUser(
+          {
+            username: "newbie",
+            password: "a-long-enough-password",
+            role: "member",
+          },
+          (tx, user) => {
+            recordAdminActionInTx(tx, actor, "user_create", { target: user });
+            throw new Error("later step failed");
+          },
+        ),
+      ).rejects.toThrow("later step failed");
+      expect(info).not.toHaveBeenCalled();
+      const created = await createUser(
+        {
+          username: "newbie",
+          password: "a-long-enough-password",
+          role: "member",
+        },
+        (tx, user) =>
+          recordAdminActionInTx(tx, actor, "user_create", { target: user }),
+      );
+      expect(info).toHaveBeenCalledTimes(1);
+      expect(info).toHaveBeenCalledWith(
+        JSON.stringify({
+          event: "admin.user_create",
+          actorId: admin.id,
+          targetId: created.id,
+        }),
+      );
+      info.mockRestore();
     });
   });
 });

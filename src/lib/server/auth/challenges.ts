@@ -1,5 +1,5 @@
 import type { Cookies } from "@sveltejs/kit";
-import { and, eq, lt, sql } from "drizzle-orm";
+import { and, eq, gte, lt, sql } from "drizzle-orm";
 import {
   authChallenges,
   first,
@@ -83,21 +83,55 @@ export async function deletePendingLogin(id: string): Promise<void> {
 }
 
 /**
- * Counts a failed second-factor attempt; the pending login is destroyed after too many.
- * The increment happens in the database and the new value comes back from it, so
- * parallel wrong guesses on one pending login cannot all count as the same attempt.
+ * Claims one second-factor attempt before the code is checked. The cap is
+ * enforced by the UPDATE itself, so N parallel guesses (from any address) can
+ * claim at most MAX_PENDING_ATTEMPTS attempts between them; the rest get null.
+ * An exhausted pending login is deleted. Returns the claimed attempt number.
  */
-export async function recordPendingFailure(
-  pending: Pick<PendingLogin, "id">,
-): Promise<void> {
-  const [row] = await getDB()
+export async function claimPendingAttempt(id: string): Promise<number | null> {
+  const db = getDB();
+  const [row] = await db
     .update(authChallenges)
     .set({ attempts: sql`${authChallenges.attempts} + 1` })
-    .where(eq(authChallenges.id, pending.id))
+    .where(
+      and(
+        eq(authChallenges.id, id),
+        eq(authChallenges.kind, "login"),
+        lt(authChallenges.attempts, MAX_PENDING_ATTEMPTS),
+      ),
+    )
     .returning({ attempts: authChallenges.attempts });
-  if (row && row.attempts >= MAX_PENDING_ATTEMPTS) {
-    await deletePendingLogin(pending.id);
-  }
+  if (row) return row.attempts;
+  await db
+    .delete(authChallenges)
+    .where(
+      and(
+        eq(authChallenges.id, id),
+        gte(authChallenges.attempts, MAX_PENDING_ATTEMPTS),
+      ),
+    );
+  return null;
+}
+
+/** A claimed attempt turned out wrong; the pending login is destroyed once the cap is reached. */
+export async function failClaimedAttempt(
+  id: string,
+  claimed: number,
+): Promise<void> {
+  if (claimed >= MAX_PENDING_ATTEMPTS) await deletePendingLogin(id);
+}
+
+/**
+ * Consumes the pending login after a successful second factor. True for exactly
+ * one caller: of two parallel valid factors only the one that removes the row
+ * may go on to create a session.
+ */
+export async function consumePendingLogin(id: string): Promise<boolean> {
+  const rows = await getDB()
+    .delete(authChallenges)
+    .where(and(eq(authChallenges.id, id), eq(authChallenges.kind, "login")))
+    .returning({ id: authChallenges.id });
+  return rows.length === 1;
 }
 
 export async function setPendingChallenge(

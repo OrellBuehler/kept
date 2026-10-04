@@ -58,25 +58,29 @@ function insertUser(
     .get();
 }
 
-/** Runs inside the transaction of the change, so the audit row commits or rolls back with it. */
+/**
+ * Runs inside the transaction of the change, so the audit row commits or rolls
+ * back with it. May return a log call, which runs only after the commit.
+ */
 export type InTransaction<T> = (
   tx: Pick<ReturnType<typeof getDB>, "insert">,
   subject: T,
-) => void;
+) => void | (() => void);
 
 export async function createUser(
   input: NewUser,
   audit?: InTransaction<SessionUser>,
 ): Promise<SessionUser> {
   const passwordHash = await hashPassword(input.password);
-  return getDB().transaction(
+  const { created, afterCommit } = getDB().transaction(
     (tx) => {
       const created = insertUser(tx, input, passwordHash);
-      audit?.(tx, created);
-      return created;
+      return { created, afterCommit: audit?.(tx, created) };
     },
     { behavior: "immediate" },
   );
+  afterCommit?.();
+  return created;
 }
 
 /**
@@ -242,14 +246,15 @@ export async function deleteUser(
   targetId: string,
   audit?: InTransaction<DeletableUser>,
 ): Promise<void> {
-  getDB().transaction(
+  const afterCommit = getDB().transaction(
     (tx) => {
       const target = assertCanDeleteUserInTx(tx, actorId, targetId);
       tx.delete(users).where(eq(users.id, targetId)).run();
-      audit?.(tx, target);
+      return audit?.(tx, target);
     },
     { behavior: "immediate" },
   );
+  afterCommit?.();
 }
 
 export async function findUserByUsername(username: string) {

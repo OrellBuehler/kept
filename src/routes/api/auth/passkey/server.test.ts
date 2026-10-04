@@ -379,6 +379,10 @@ describe("passkey api", () => {
     expect(badPassword.status).toBe(400);
     expect(await hasRecentReauth(s.session.id)).toBe(false);
 
+    verifyAuth.mockResolvedValue({
+      verified: true,
+      authenticationInfo: { newCounter: 2 },
+    });
     const again = await call(stepupOptions, post("/x", {}, s));
     const ok = await call(
       stepupVerify,

@@ -198,7 +198,16 @@ describe("two-factor", () => {
     });
     const s = await loginTestUser(u);
 
+    const info = vi.spyOn(console, "info").mockImplementation(() => {});
     await resetTwoFactor(admin.id, u.id);
+    expect(info).toHaveBeenCalledWith(
+      JSON.stringify({
+        event: "auth.two_factor_reset",
+        userId: u.id,
+        actorId: admin.id,
+      }),
+    );
+    info.mockRestore();
 
     expect(await getTwoFactorStatus(u.id)).toMatchObject({
       enabled: false,
@@ -223,11 +232,14 @@ describe("two-factor", () => {
     const u = await createTestUser();
     await enrol(u.id, u.username);
     const s = await loginTestUser(u);
+    const info = vi.spyOn(console, "info").mockImplementation(() => {});
     await expect(
       resetTwoFactor(admin.id, u.id, undefined, () => {
         throw new Error("audit failed");
       }),
     ).rejects.toThrow("audit failed");
+    expect(info).not.toHaveBeenCalled();
+    info.mockRestore();
     expect((await getTwoFactorStatus(u.id)).totpEnabled).toBe(true);
     expect(await validateSessionToken(s.token)).not.toBeNull();
     expect(

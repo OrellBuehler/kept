@@ -11,7 +11,7 @@ import type {
   PublicKeyCredentialRequestOptionsJSON,
   RegistrationResponseJSON,
 } from "@simplewebauthn/server";
-import { and, asc, eq } from "drizzle-orm";
+import { and, asc, eq, lt } from "drizzle-orm";
 import { first, getDB, isUniqueViolation, passkeys } from "$lib/server/db";
 import { logAuthEvent } from "./events";
 import { AuthError, type SessionUser } from "./types";
@@ -275,12 +275,26 @@ export async function finishAuthentication(
   }
   if (!verification.verified) return null;
 
-  await db
+  // Compare-and-swap on the counter: a replayed or cloned assertion (counter not
+  // above what is stored, as another request may just have stored it) updates
+  // nothing. Authenticators that always report 0 are fine while the stored
+  // counter is 0 as well.
+  const newCounter = verification.authenticationInfo.newCounter;
+  const updated = await db
     .update(passkeys)
-    .set({
-      counter: verification.authenticationInfo.newCounter,
-      lastUsedAt: new Date(now),
-    })
-    .where(eq(passkeys.id, stored.id));
+    .set({ counter: newCounter, lastUsedAt: new Date(now) })
+    .where(
+      and(
+        eq(passkeys.id, stored.id),
+        newCounter === 0
+          ? eq(passkeys.counter, 0)
+          : lt(passkeys.counter, newCounter),
+      ),
+    )
+    .returning({ id: passkeys.id });
+  if (updated.length === 0) {
+    console.warn("Passkey assertion rejected: counter did not advance");
+    return null;
+  }
   return stored.userId;
 }

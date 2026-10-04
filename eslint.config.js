@@ -37,6 +37,20 @@ const CONVERTED_TO_ASYNC = [
 const OUTSIDE_TX_BODY =
   ":not(:matches(FunctionDeclaration, FunctionExpression, ArrowFunctionExpression)[params.0.name='tx'] *)";
 
+/**
+ * bun-sqlite transactions are synchronous: an async callback commits (or rolls
+ * back) at its first await, and the rest of the body runs outside the
+ * transaction. Applies to every TypeScript file until phase 2.7 swaps the driver.
+ * A later `no-restricted-syntax` block replaces this one wholesale, so any block
+ * that sets the rule for a subset of files must repeat this entry.
+ */
+const asyncTransactionBan = {
+  selector:
+    "CallExpression[callee.property.name='transaction'] > :matches(ArrowFunctionExpression, FunctionExpression)[async=true]",
+  message:
+    "bun-sqlite transactions must be synchronous until phase 2.7: do not pass an async callback to .transaction().",
+};
+
 const syncTerminalBan = CONVERTED_TO_ASYNC.length
   ? [
       {
@@ -44,6 +58,7 @@ const syncTerminalBan = CONVERTED_TO_ASYNC.length
         rules: {
           "no-restricted-syntax": [
             "error",
+            asyncTransactionBan,
             {
               selector:
                 "CallExpression[arguments.length=0] > MemberExpression.callee[property.name=/^(all|get|run)$/]" +
@@ -125,6 +140,10 @@ export default ts.config(
       "@typescript-eslint/no-misused-promises": "error",
       "@typescript-eslint/await-thenable": "error",
     },
+  },
+  {
+    files: ["src/**/*.ts"],
+    rules: { "no-restricted-syntax": ["error", asyncTransactionBan] },
   },
   ...syncTerminalBan,
 );
