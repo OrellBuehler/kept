@@ -26,7 +26,7 @@ const CONVERTED_TO_ASYNC = [
   "src/routes/(app)/admin/**",
   "src/routes/(app)/settings/account/**",
   "src/routes/(app)/settings/security/**",
-  // 2.3 ledger, transfers, pillar 3a
+  // 2.3 ledger, transfers, pillar 3a, categories, tax
   "src/lib/server/ledger/**",
   "src/lib/server/transfers/**",
   "src/lib/server/pillar3a/**",
@@ -39,6 +39,11 @@ const CONVERTED_TO_ASYNC = [
   "src/routes/(app)/institutions/**",
   "src/routes/(app)/pillar-3a/**",
   "src/routes/api/pillar-3a/**",
+  "src/lib/server/categories/**",
+  "src/lib/server/tax/**",
+  "src/routes/(app)/budgets/**",
+  "src/routes/(app)/settings/categories/**",
+  "src/routes/(app)/taxes/**",
 ];
 
 /**

@@ -144,12 +144,12 @@ export async function loadNetWorthReport(
   };
 }
 
-export function loadTaxReport(
+export async function loadTaxReport(
   userId: string,
   year: number,
   today: string = localToday(),
-): TaxReportInput {
-  const reconciliation = reconcileYear(userId, year);
+): Promise<TaxReportInput> {
+  const reconciliation = await reconcileYear(userId, year);
   if (!reconciliation) throw notFound("Tax year");
   return { reconciliation, asOf: today };
 }

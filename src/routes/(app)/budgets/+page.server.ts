@@ -27,7 +27,7 @@ export const load: PageServerLoad = async ({ locals, url }) => {
   const requested = monthSchema.safeParse(url.searchParams.get("month"));
   const month = requested.success ? requested.data : today.slice(0, 7);
   const monthStart = `${month}-01`;
-  const categories = listCategories(user.id);
+  const categories = await listCategories(user.id);
   const accounts = await listAccounts(user.id);
   const basis = parseShareBasis(url.searchParams.get("basis"), "share");
   return {
@@ -37,7 +37,7 @@ export const load: PageServerLoad = async ({ locals, url }) => {
     currentMonth: today.slice(0, 7),
     previousMonth: addMonths(monthStart, -1).slice(0, 7),
     nextMonth: addMonths(monthStart, 1).slice(0, 7),
-    report: budgetReport(user.id, month, basis),
+    report: await budgetReport(user.id, month, basis),
     categories,
     currencies: [...new Set(accounts.map((a) => a.currency))].sort(),
   };
@@ -47,7 +47,7 @@ function formAction<S extends z.ZodType>(
   action: string,
   schema: S,
   fields: readonly string[],
-  run: (userId: string, data: z.output<S>) => void,
+  run: (userId: string, data: z.output<S>) => unknown,
 ) {
   return async ({ locals, request }: RequestEvent) => {
     const user = requireUser(locals);
@@ -58,7 +58,7 @@ function formAction<S extends z.ZodType>(
       return fail(400, { action, errors: parsed.errors, values });
     }
     try {
-      run(user.id, parsed.data);
+      await run(user.id, parsed.data);
       return { success: true as const, action };
     } catch (err) {
       return ledgerFailure(action, err, values);
@@ -71,13 +71,13 @@ export const actions = {
     "createBudget",
     budgetInputSchema,
     budgetFields,
-    (userId, data) => void createBudget(userId, data),
+    (userId, data) => createBudget(userId, data),
   ),
   updateBudget: formAction(
     "updateBudget",
     budgetInputSchema.and(idFormSchema("id")),
     ["id", ...budgetFields],
-    (userId, { id, ...input }) => void updateBudget(userId, id, input),
+    (userId, { id, ...input }) => updateBudget(userId, id, input),
   ),
   deleteBudget: formAction(
     "deleteBudget",

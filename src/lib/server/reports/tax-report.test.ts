@@ -29,7 +29,7 @@ describe("tax report", () => {
       bookingDate: "2025-03-10",
     });
     await setTransactionTaxYear(user.id, tx.id, 2025);
-    upsertTaxYear(
+    await upsertTaxYear(
       user.id,
       taxYearInputSchema.parse({
         year: "2025",
@@ -38,7 +38,7 @@ describe("tax report", () => {
         assessedTotal: "3000.00",
       }),
     );
-    addTaxCredit(
+    await addTaxCredit(
       user.id,
       2025,
       taxCreditInputSchema("CHF").parse({

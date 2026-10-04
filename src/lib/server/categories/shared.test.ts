@@ -30,8 +30,8 @@ async function setup() {
     currency: "EUR",
     shareBps: 5000,
   });
-  const groceries = createCategory(user.id, category("Groceries"));
-  const dairy = createCategory(user.id, category("Dairy", groceries.id));
+  const groceries = await createCategory(user.id, category("Groceries"));
+  const dairy = await createCategory(user.id, category("Dairy", groceries.id));
   const spend = async (
     accountId: string,
     categoryId: string | null,
@@ -56,14 +56,14 @@ async function setup() {
 describe("budgets and spending at the ownership share", () => {
   it("counts shared transactions at their share, refunds netted", async () => {
     const { user, groceries } = await setup();
-    createBudget(user.id, {
+    await createBudget(user.id, {
       categoryId: groceries.id,
       currency: "CHF",
       amount: m(5000),
     });
 
-    const total = budgetReport(user.id, "2026-10", "total");
-    const share = budgetReport(user.id, "2026-10", "share");
+    const total = await budgetReport(user.id, "2026-10", "total");
+    const share = await budgetReport(user.id, "2026-10", "share");
     const row = (r: typeof total) =>
       r.currencies.find((c) => c.currency === "CHF")!.rows[0]!;
 
@@ -75,17 +75,17 @@ describe("budgets and spending at the ownership share", () => {
       remaining: 1049,
       over: false,
     });
-    expect(budgetReport(user.id, "2026-10").currencies[0]!.rows[0]!.spent).toBe(
-      5501,
-    );
+    expect(
+      (await budgetReport(user.id, "2026-10")).currencies[0]!.rows[0]!.spent,
+    ).toBe(5501);
     const eur = share.currencies.find((c) => c.currency === "EUR")!;
     expect(eur.unbudgeted[0]!.spent).toBe(3);
   });
 
   it("applies the same rule to the category totals", async () => {
     const { user, groceries } = await setup();
-    const total = spendingByCategory(user.id, "2026-10", "total");
-    const share = spendingByCategory(user.id, "2026-10", "share");
+    const total = await spendingByCategory(user.id, "2026-10", "total");
+    const share = await spendingByCategory(user.id, "2026-10", "share");
     const chf = (s: typeof total) =>
       s.currencies.find((c) => c.currency === "CHF")!;
     expect(chf(total).items).toMatchObject([
@@ -103,22 +103,24 @@ describe("budgets and spending at the ownership share", () => {
     const { user } = await setup();
     const other = await createTestUser();
     const a = await seedAccount(other.id, { shareBps: 5000 });
-    const cat = createCategory(other.id, category("Other"));
+    const cat = await createCategory(other.id, category("Other"));
     await seedImportedTransaction(other.id, a.id, {
       categoryId: cat.id,
       amount: m(-1000),
       bookingDate: "2026-10-05",
     });
     expect(
-      spendingByCategory(user.id, "2026-10", "share").currencies.flatMap((c) =>
-        c.items.map((i) => i.name),
-      ),
+      (
+        await spendingByCategory(user.id, "2026-10", "share")
+      ).currencies.flatMap((c) => c.items.map((i) => i.name)),
     ).not.toContain("Other");
     expect(
-      spendingByCategory(other.id, "2026-10", "share").currencies[0]!.total,
+      (await spendingByCategory(other.id, "2026-10", "share")).currencies[0]!
+        .total,
     ).toBe(500);
     expect(
-      spendingByCategory(other.id, "2026-10", "total").currencies[0]!.total,
+      (await spendingByCategory(other.id, "2026-10", "total")).currencies[0]!
+        .total,
     ).toBe(1000);
   });
 });

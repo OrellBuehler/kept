@@ -36,8 +36,8 @@ const income = {
 async function setup() {
   const user = await createTestUser();
   const account = await seedAccount(user.id, { openingBalance: m(100000) });
-  const cat = (name: string, over: Partial<CategoryInput> = {}) =>
-    createCategory(user.id, { name, ...expense, ...over });
+  const cat = async (name: string, over: Partial<CategoryInput> = {}) =>
+    await createCategory(user.id, { name, ...expense, ...over });
   const tx = async (
     amount: number,
     bookingDate: string,
@@ -107,9 +107,9 @@ describe("yearReview", () => {
 
   it("totals income and expenses with refunds netted into their category", async () => {
     const { cat, tx, user } = await setup();
-    const salary = cat("Salary", income);
-    const food = cat("Food");
-    const rent = cat("Rent");
+    const salary = await cat("Salary", income);
+    const food = await cat("Food");
+    const rent = await cat("Rent");
     await tx(5000, "2025-01-25", { categoryId: salary.id });
     await tx(5000, "2025-02-25", { categoryId: salary.id });
     await tx(-800, "2025-01-03", { categoryId: rent.id });
@@ -161,8 +161,8 @@ describe("yearReview", () => {
 
   it("rolls subcategories up into their parent", async () => {
     const { cat, tx, user } = await setup();
-    const food = cat("Food");
-    const groceries = cat("Groceries", { parentId: food.id });
+    const food = await cat("Food");
+    const groceries = await cat("Groceries", { parentId: food.id });
     await tx(-100, "2025-04-01", { categoryId: food.id });
     await tx(-50, "2025-04-02", { categoryId: groceries.id });
     const chf = (await yearReview(user.id, { year: 2025, today: TODAY }))
@@ -175,7 +175,7 @@ describe("yearReview", () => {
 
   it("handles a year without a previous year", async () => {
     const { cat, tx, user } = await setup();
-    await tx(-100, "2025-04-01", { categoryId: cat("Food").id });
+    await tx(-100, "2025-04-01", { categoryId: (await cat("Food")).id });
     const chf = (await yearReview(user.id, { year: 2025, today: TODAY }))
       .currencies[0]!;
     expect(chf.hasPreviousYear).toBe(false);
@@ -184,17 +184,17 @@ describe("yearReview", () => {
 
   it("computes year-over-year changes in both directions", async () => {
     const { cat, tx, user } = await setup();
-    const food = cat("Food");
-    const travel = cat("Travel");
-    const fun = cat("Fun");
-    const salary = cat("Salary", income);
+    const food = await cat("Food");
+    const travel = await cat("Travel");
+    const fun = await cat("Fun");
+    const salary = await cat("Salary", income);
     await tx(-100, "2024-04-01", { categoryId: food.id });
     await tx(-400, "2024-05-01", { categoryId: travel.id });
     await tx(-10, "2024-05-01", { categoryId: fun.id });
     await tx(1000, "2024-05-01", { categoryId: salary.id });
     await tx(-300, "2025-04-01", { categoryId: food.id });
     await tx(-100, "2025-05-01", { categoryId: travel.id });
-    await tx(-60, "2025-05-01", { categoryId: cat("New").id });
+    await tx(-60, "2025-05-01", { categoryId: (await cat("New")).id });
     await tx(1500, "2025-05-01", { categoryId: salary.id });
 
     const chf = (await yearReview(user.id, { year: 2025, today: TODAY }))
@@ -295,7 +295,7 @@ describe("yearReview", () => {
 
   it("ranks counterparties and the largest transactions", async () => {
     const { tx, user, cat } = await setup();
-    const food = cat("Food");
+    const food = await cat("Food");
     await tx(-30, "2025-01-01", {
       counterpartyName: "Shop A",
       categoryId: food.id,

@@ -295,7 +295,7 @@ describe("a later real import replaces mirrors", () => {
   it("takes over the mirror, keeps the link and carries note and category", async () => {
     const { user, a, b } = await mirrored();
     const mirror = rowsOf(b.id).find((r) => r.amount === 10000)!;
-    const cat = createCategory(user.id, {
+    const cat = await createCategory(user.id, {
       name: "Moves",
       kind: "income",
       parentId: null,

@@ -3,6 +3,7 @@ import { minor, type Minor } from "$lib/money";
 import {
   billAllocations,
   bills,
+  first,
   getDB,
   taxCredits,
   taxYears,
@@ -104,39 +105,51 @@ function toYearView(row: typeof taxYears.$inferSelect): TaxYearView {
   };
 }
 
-function yearRow(userId: string, year: number) {
-  return getDB()
-    .select()
-    .from(taxYears)
-    .where(and(eq(taxYears.userId, userId), eq(taxYears.year, year)))
-    .get();
+async function yearRow(userId: string, year: number) {
+  return await first(
+    getDB()
+      .select()
+      .from(taxYears)
+      .where(and(eq(taxYears.userId, userId), eq(taxYears.year, year)))
+      .limit(1),
+  );
 }
 
 /** Currency of the year's tagged payments or bills, when there is no row to say. */
-function inferCurrency(userId: string, year: number): string | null {
+async function inferCurrency(
+  userId: string,
+  year: number,
+): Promise<string | null> {
   const db = getDB();
-  const tx = db
-    .select({ currency: transactions.currency })
-    .from(transactions)
-    .where(and(eq(transactions.userId, userId), eq(transactions.taxYear, year)))
-    .orderBy(asc(transactions.bookingDate))
-    .limit(1)
-    .get();
+  const tx = await first(
+    db
+      .select({ currency: transactions.currency })
+      .from(transactions)
+      .where(
+        and(eq(transactions.userId, userId), eq(transactions.taxYear, year)),
+      )
+      .orderBy(asc(transactions.bookingDate))
+      .limit(1),
+  );
   if (tx) return tx.currency;
-  const bill = db
-    .select({ currency: bills.currency })
-    .from(bills)
-    .where(and(eq(bills.userId, userId), eq(bills.taxYear, year)))
-    .orderBy(asc(bills.createdAt))
-    .limit(1)
-    .get();
+  const bill = await first(
+    db
+      .select({ currency: bills.currency })
+      .from(bills)
+      .where(and(eq(bills.userId, userId), eq(bills.taxYear, year)))
+      .orderBy(asc(bills.createdAt))
+      .limit(1),
+  );
   return bill?.currency ?? null;
 }
 
-function yearView(userId: string, year: number): TaxYearView | null {
-  const row = yearRow(userId, year);
+async function yearView(
+  userId: string,
+  year: number,
+): Promise<TaxYearView | null> {
+  const row = await yearRow(userId, year);
   if (row) return toYearView(row);
-  const currency = inferCurrency(userId, year);
+  const currency = await inferCurrency(userId, year);
   if (currency === null) return null;
   return {
     id: null,
@@ -148,86 +161,93 @@ function yearView(userId: string, year: number): TaxYearView | null {
   };
 }
 
-export function getTaxYear(userId: string, year: number): TaxYearView {
-  const view = yearView(userId, year);
+export async function getTaxYear(
+  userId: string,
+  year: number,
+): Promise<TaxYearView> {
+  const view = await yearView(userId, year);
   if (!view) throw notFound("Tax year");
   return view;
 }
 
-export function upsertTaxYear(
+export async function upsertTaxYear(
   userId: string,
   input: TaxYearInput,
-): TaxYearView {
-  const existing = yearRow(userId, input.year);
+): Promise<TaxYearView> {
   const values = {
     authority: input.authority,
     currency: input.currency,
     assessedTotal: input.assessedTotal,
     notes: input.notes,
   };
-  if (existing) {
-    getDB()
-      .update(taxYears)
-      .set(values)
-      .where(and(eq(taxYears.userId, userId), eq(taxYears.id, existing.id)))
-      .run();
-  } else {
-    getDB()
-      .insert(taxYears)
-      .values({ ...values, userId, year: input.year })
-      .run();
-  }
-  return getTaxYear(userId, input.year);
+  // One statement: the unique index on (user, year) decides insert or update.
+  await getDB()
+    .insert(taxYears)
+    .values({ ...values, userId, year: input.year })
+    .onConflictDoUpdate({
+      target: [taxYears.userId, taxYears.year],
+      set: { ...values, updatedAt: new Date() },
+    });
+  return await getTaxYear(userId, input.year);
 }
 
 /** Removes the year's details and the office statement; tagged payments stay tagged. */
-export function deleteTaxYear(userId: string, year: number): void {
-  const row = yearRow(userId, year);
+export async function deleteTaxYear(
+  userId: string,
+  year: number,
+): Promise<void> {
+  const row = await yearRow(userId, year);
   if (!row) throw notFound("Tax year");
-  getDB()
+  await getDB()
     .delete(taxYears)
-    .where(and(eq(taxYears.userId, userId), eq(taxYears.id, row.id)))
-    .run();
+    .where(and(eq(taxYears.userId, userId), eq(taxYears.id, row.id)));
 }
 
-function ensureYearRow(userId: string, year: number) {
-  const existing = yearRow(userId, year);
+async function ensureYearRow(userId: string, year: number) {
+  const existing = await yearRow(userId, year);
   if (existing) return existing;
-  const currency = inferCurrency(userId, year);
+  const currency = await inferCurrency(userId, year);
   if (currency === null) throw notFound("Tax year");
-  return getDB()
+  // A concurrent insert for the same year wins; either way the row is read back.
+  await getDB()
     .insert(taxYears)
     .values({ userId, year, currency })
-    .returning()
-    .get();
+    .onConflictDoNothing({ target: [taxYears.userId, taxYears.year] });
+  return (await yearRow(userId, year))!;
 }
 
-export function addTaxCredit(
+export async function addTaxCredit(
   userId: string,
   year: number,
   input: TaxCreditInput,
-): CreditLine {
-  const row = ensureYearRow(userId, year);
-  const created = getDB()
-    .insert(taxCredits)
-    .values({ ...input, userId, taxYearId: row.id })
-    .returning()
-    .get();
+): Promise<CreditLine> {
+  const row = await ensureYearRow(userId, year);
+  const created = (
+    await getDB()
+      .insert(taxCredits)
+      .values({ ...input, userId, taxYearId: row.id })
+      .returning()
+  )[0]!;
   return toCredit(created);
 }
 
-export function deleteTaxCredit(userId: string, creditId: string): number {
+export async function deleteTaxCredit(
+  userId: string,
+  creditId: string,
+): Promise<number> {
   const db = getDB();
-  const credit = db
-    .select({ id: taxCredits.id, year: taxYears.year })
-    .from(taxCredits)
-    .innerJoin(taxYears, eq(taxYears.id, taxCredits.taxYearId))
-    .where(and(eq(taxCredits.userId, userId), eq(taxCredits.id, creditId)))
-    .get();
+  const credit = await first(
+    db
+      .select({ id: taxCredits.id, year: taxYears.year })
+      .from(taxCredits)
+      .innerJoin(taxYears, eq(taxYears.id, taxCredits.taxYearId))
+      .where(and(eq(taxCredits.userId, userId), eq(taxCredits.id, creditId)))
+      .limit(1),
+  );
   if (!credit) throw notFound("Statement line");
-  db.delete(taxCredits)
-    .where(and(eq(taxCredits.userId, userId), eq(taxCredits.id, creditId)))
-    .run();
+  await db
+    .delete(taxCredits)
+    .where(and(eq(taxCredits.userId, userId), eq(taxCredits.id, creditId)));
   return credit.year;
 }
 
@@ -238,14 +258,13 @@ export async function setTransactionTaxYear(
   year: number | null,
 ): Promise<void> {
   await assertNotMirror(userId, transactionId, "tagged as a tax payment");
-  const updated = getDB()
+  const updated = await getDB()
     .update(transactions)
     .set({ taxYear: year })
     .where(
       and(eq(transactions.userId, userId), eq(transactions.id, transactionId)),
     )
-    .returning({ id: transactions.id })
-    .all();
+    .returning({ id: transactions.id });
   if (updated.length === 0) throw notFound("Transaction");
 }
 
@@ -259,19 +278,24 @@ function toCredit(row: typeof taxCredits.$inferSelect): CreditLine {
   };
 }
 
-function creditLines(userId: string, yearId: string | null): CreditLine[] {
+async function creditLines(
+  userId: string,
+  yearId: string | null,
+): Promise<CreditLine[]> {
   if (yearId === null) return [];
-  return getDB()
-    .select()
-    .from(taxCredits)
-    .where(and(eq(taxCredits.userId, userId), eq(taxCredits.taxYearId, yearId)))
-    .orderBy(
-      asc(taxCredits.bookingDate),
-      asc(taxCredits.seq),
-      asc(taxCredits.id),
-    )
-    .all()
-    .map(toCredit);
+  return (
+    await getDB()
+      .select()
+      .from(taxCredits)
+      .where(
+        and(eq(taxCredits.userId, userId), eq(taxCredits.taxYearId, yearId)),
+      )
+      .orderBy(
+        asc(taxCredits.bookingDate),
+        asc(taxCredits.seq),
+        asc(taxCredits.id),
+      )
+  ).map(toCredit);
 }
 
 /**
@@ -281,15 +305,19 @@ function creditLines(userId: string, yearId: string | null): CreditLine[] {
  * amount. A transaction counts once; a tag on the transaction wins over bills,
  * and a transaction tagged with another year is never counted here.
  */
-export function paymentLines(userId: string, year: number): PaymentLine[] {
+export async function paymentLines(
+  userId: string,
+  year: number,
+): Promise<PaymentLine[]> {
   const db = getDB();
   const lines = new Map<string, PaymentLine>();
 
-  const tagged = db
+  const tagged = await db
     .select()
     .from(transactions)
-    .where(and(eq(transactions.userId, userId), eq(transactions.taxYear, year)))
-    .all();
+    .where(
+      and(eq(transactions.userId, userId), eq(transactions.taxYear, year)),
+    );
   for (const t of tagged) {
     lines.set(t.id, {
       id: t.id,
@@ -305,7 +333,7 @@ export function paymentLines(userId: string, year: number): PaymentLine[] {
     });
   }
 
-  const allocated = db
+  const allocated = await db
     .select({
       allocation: billAllocations.amount,
       billId: bills.id,
@@ -324,8 +352,7 @@ export function paymentLines(userId: string, year: number): PaymentLine[] {
         eq(bills.taxYear, year),
         isNull(transactions.taxYear),
       ),
-    )
-    .all();
+    );
   for (const a of allocated) {
     const signed = a.kind === "credit_note" ? -a.allocation : a.allocation;
     const existing = lines.get(a.transaction.id);
@@ -353,31 +380,32 @@ export function paymentLines(userId: string, year: number): PaymentLine[] {
   );
 }
 
-function suggestionsFor(
+async function suggestionsFor(
   userId: string,
   officeOnly: readonly CreditLine[],
   counted: ReadonlySet<string>,
   currency: string,
-): TaxSuggestion[] {
+): Promise<TaxSuggestion[]> {
   const out: TaxSuggestion[] = [];
   const db = getDB();
   for (const credit of officeOnly) {
     const from = shiftDate(credit.date, -SUGGESTION_WINDOW_DAYS);
     const to = shiftDate(credit.date, SUGGESTION_WINDOW_DAYS);
-    const rows = db
-      .select()
-      .from(transactions)
-      .where(
-        and(
-          eq(transactions.userId, userId),
-          ne(transactions.source, "mirror"),
-          isNull(transactions.taxYear),
-          eq(transactions.currency, currency),
-          eq(transactions.amount, minor(-credit.amount)),
-          between(transactions.bookingDate, from, to),
-        ),
-      )
-      .all()
+    const rows = (
+      await db
+        .select()
+        .from(transactions)
+        .where(
+          and(
+            eq(transactions.userId, userId),
+            ne(transactions.source, "mirror"),
+            isNull(transactions.taxYear),
+            eq(transactions.currency, currency),
+            eq(transactions.amount, minor(-credit.amount)),
+            between(transactions.bookingDate, from, to),
+          ),
+        )
+    )
       .filter((t) => !counted.has(t.id))
       .sort(
         (a, b) =>
@@ -412,17 +440,17 @@ const kindOrder: Record<RowKind, number> = {
 };
 
 /** Reconciles one tax year; null when the year has neither details nor tagged payments. */
-export function reconcileYear(
+export async function reconcileYear(
   userId: string,
   year: number,
   opts: MatchOptions = {},
-): Reconciliation | null {
-  const view = yearView(userId, year);
+): Promise<Reconciliation | null> {
+  const view = await yearView(userId, year);
   if (!view) return null;
 
-  const all = paymentLines(userId, year);
+  const all = await paymentLines(userId, year);
   const mine = all.filter((l) => l.currency === view.currency);
-  const office = creditLines(userId, view.id);
+  const office = await creditLines(userId, view.id);
   const matching = matchLines(mine, office, opts);
 
   const rows: ReconciliationRow[] = [
@@ -470,7 +498,7 @@ export function reconcileYear(
       counts.amount_mismatch + counts.missing_office + counts.missing_mine ===
         0,
     otherCurrencyLines: all.length - mine.length,
-    suggestions: suggestionsFor(
+    suggestions: await suggestionsFor(
       userId,
       matching.officeOnly,
       new Set(all.map((l) => l.transactionId)),
@@ -480,36 +508,33 @@ export function reconcileYear(
 }
 
 /** Every year with a details row or tagged payments/bills, newest first. */
-export function listTaxYears(userId: string): TaxYearSummary[] {
+export async function listTaxYears(userId: string): Promise<TaxYearSummary[]> {
   const db = getDB();
   const years = new Set<number>();
-  for (const r of db
+  for (const r of await db
     .select({ year: taxYears.year })
     .from(taxYears)
-    .where(eq(taxYears.userId, userId))
-    .all()) {
+    .where(eq(taxYears.userId, userId))) {
     years.add(r.year);
   }
-  for (const r of db
+  for (const r of await db
     .selectDistinct({ year: transactions.taxYear })
     .from(transactions)
     .where(
       and(eq(transactions.userId, userId), isNotNull(transactions.taxYear)),
-    )
-    .all()) {
+    )) {
     if (r.year !== null) years.add(r.year);
   }
-  for (const r of db
+  for (const r of await db
     .selectDistinct({ year: bills.taxYear })
     .from(bills)
-    .where(and(eq(bills.userId, userId), isNotNull(bills.taxYear)))
-    .all()) {
+    .where(and(eq(bills.userId, userId), isNotNull(bills.taxYear)))) {
     if (r.year !== null) years.add(r.year);
   }
 
   const out: TaxYearSummary[] = [];
   for (const year of [...years].sort((a, b) => b - a)) {
-    const rec = reconcileYear(userId, year);
+    const rec = await reconcileYear(userId, year);
     if (!rec) continue;
     const discrepancies =
       rec.counts.amount_mismatch +

@@ -1,6 +1,6 @@
 import { eq } from "drizzle-orm";
 import { describe, expect, it } from "vitest";
-import { getDB, transactions } from "$lib/server/db";
+import { first, getDB, transactions } from "$lib/server/db";
 import { LedgerError } from "$lib/server/ledger/errors";
 import { listTransactions } from "$lib/server/ledger/transactions";
 import { createTestUser } from "$lib/testing/auth";
@@ -206,59 +206,59 @@ describe("rule input", () => {
 describe("categories", () => {
   it("creates, lists as a tree, updates and deletes", async () => {
     const u = await createTestUser();
-    const food = createCategory(u.id, cat("Food"));
-    const groceries = createCategory(
+    const food = await createCategory(u.id, cat("Food"));
+    const groceries = await createCategory(
       u.id,
       cat("Groceries", { parentId: food.id }),
     );
-    createCategory(u.id, cat("Salary", { kind: "income" }));
-    expect(listCategories(u.id).map((c) => c.name)).toEqual([
+    await createCategory(u.id, cat("Salary", { kind: "income" }));
+    expect((await listCategories(u.id)).map((c) => c.name)).toEqual([
       "Food",
       "Groceries",
       "Salary",
     ]);
-    updateCategory(
+    await updateCategory(
       u.id,
       groceries.id,
       cat("Supermarket", { parentId: food.id }),
     );
-    expect(getCategory(u.id, groceries.id).name).toBe("Supermarket");
-    deleteCategory(u.id, food.id);
-    expect(getCategory(u.id, groceries.id).parentId).toBeNull();
+    expect((await getCategory(u.id, groceries.id)).name).toBe("Supermarket");
+    await deleteCategory(u.id, food.id);
+    expect((await getCategory(u.id, groceries.id)).parentId).toBeNull();
   });
 
   it("rejects duplicate names, deep nesting, self parents and kind clashes", async () => {
     const u = await createTestUser();
-    const a = createCategory(u.id, cat("A"));
-    const b = createCategory(u.id, cat("B", { parentId: a.id }));
-    const expectInvalid = (fn: () => unknown, field: string) => {
+    const a = await createCategory(u.id, cat("A"));
+    const b = await createCategory(u.id, cat("B", { parentId: a.id }));
+    const expectInvalid = async (fn: () => unknown, field: string) => {
       try {
-        fn();
+        await fn();
         expect.unreachable();
       } catch (err) {
         expect(err).toBeInstanceOf(LedgerError);
         expect((err as LedgerError).field).toBe(field);
       }
     };
-    expectInvalid(() => createCategory(u.id, cat("A")), "name");
-    expectInvalid(
+    await expectInvalid(() => createCategory(u.id, cat("A")), "name");
+    await expectInvalid(
       () => createCategory(u.id, cat("C", { parentId: b.id })),
       "parentId",
     );
-    expectInvalid(
+    await expectInvalid(
       () => updateCategory(u.id, a.id, cat("A", { parentId: a.id })),
       "parentId",
     );
-    expectInvalid(
+    await expectInvalid(
       () => createCategory(u.id, cat("D", { parentId: a.id, kind: "income" })),
       "kind",
     );
-    expectInvalid(
+    await expectInvalid(
       () => updateCategory(u.id, a.id, cat("A", { kind: "income" })),
       "kind",
     );
-    const other = createCategory(u.id, cat("Other"));
-    expectInvalid(
+    const other = await createCategory(u.id, cat("Other"));
+    await expectInvalid(
       () => updateCategory(u.id, a.id, cat("A", { parentId: other.id })),
       "parentId",
     );
@@ -267,15 +267,17 @@ describe("categories", () => {
   it("is scoped to the user", async () => {
     const a = await createTestUser();
     const b = await createTestUser();
-    const mine = createCategory(a.id, cat("Mine"));
-    createCategory(b.id, cat("Mine"));
-    expect(listCategories(a.id)).toHaveLength(1);
-    expect(() => getCategory(b.id, mine.id)).toThrow(/not found/i);
-    expect(() => deleteCategory(b.id, mine.id)).toThrow(/not found/i);
-    expect(() => updateCategory(b.id, mine.id, cat("X"))).toThrow(/not found/i);
-    expect(() =>
+    const mine = await createCategory(a.id, cat("Mine"));
+    await createCategory(b.id, cat("Mine"));
+    expect(await listCategories(a.id)).toHaveLength(1);
+    await expect(getCategory(b.id, mine.id)).rejects.toThrow(/not found/i);
+    await expect(deleteCategory(b.id, mine.id)).rejects.toThrow(/not found/i);
+    await expect(updateCategory(b.id, mine.id, cat("X"))).rejects.toThrow(
+      /not found/i,
+    );
+    await expect(
       createCategory(b.id, cat("Child", { parentId: mine.id })),
-    ).toThrow(/valid parent/i);
+    ).rejects.toThrow(/valid parent/i);
   });
 
   it("assigns and clears a transaction's category, only with own rows", async () => {
@@ -283,35 +285,41 @@ describe("categories", () => {
     const b = await createTestUser();
     const acc = await seedAccount(a.id);
     const tx = await seedImportedTransaction(a.id, acc.id);
-    const mine = createCategory(a.id, cat("Mine"));
-    const theirs = createCategory(b.id, cat("Theirs"));
+    const mine = await createCategory(a.id, cat("Mine"));
+    const theirs = await createCategory(b.id, cat("Theirs"));
 
-    assignCategory(a.id, tx.id, mine.id);
+    await assignCategory(a.id, tx.id, mine.id);
     expect((await listTransactions(a.id, acc.id)).items[0]!.categoryId).toBe(
       mine.id,
     );
-    assignCategory(a.id, tx.id, null);
+    await assignCategory(a.id, tx.id, null);
     expect(
       (await listTransactions(a.id, acc.id)).items[0]!.categoryId,
     ).toBeNull();
 
-    expect(() => assignCategory(b.id, tx.id, theirs.id)).toThrow(/not found/i);
-    expect(() => assignCategory(a.id, tx.id, theirs.id)).toThrow(/not found/i);
+    await expect(assignCategory(b.id, tx.id, theirs.id)).rejects.toThrow(
+      /not found/i,
+    );
+    await expect(assignCategory(a.id, tx.id, theirs.id)).rejects.toThrow(
+      /not found/i,
+    );
   });
 
   it("uncategorizes transactions when their category is deleted", async () => {
     const u = await createTestUser();
     const acc = await seedAccount(u.id);
-    const c = createCategory(u.id, cat("Gone"));
+    const c = await createCategory(u.id, cat("Gone"));
     const tx = await seedImportedTransaction(u.id, acc.id, {
       categoryId: c.id,
     });
-    deleteCategory(u.id, c.id);
-    const row = getDB()
-      .select()
-      .from(transactions)
-      .where(eq(transactions.id, tx.id))
-      .get()!;
+    await deleteCategory(u.id, c.id);
+    const row = (await first(
+      getDB()
+        .select()
+        .from(transactions)
+        .where(eq(transactions.id, tx.id))
+        .limit(1),
+    ))!;
     expect(row.categoryId).toBeNull();
   });
 });
@@ -319,28 +327,39 @@ describe("categories", () => {
 describe("rules", () => {
   it("applies in priority order, then creation order", async () => {
     const u = await createTestUser();
-    const a = createCategory(u.id, cat("A"));
-    const b = createCategory(u.id, cat("B"));
-    createRule(u.id, rule(a.id, { priority: 50, descriptionContains: "x" }));
-    createRule(u.id, rule(b.id, { priority: 10, descriptionContains: "x" }));
-    createRule(u.id, rule(a.id, { priority: 10, descriptionContains: "y" }));
-    expect(loadRules(u.id).map((r) => [r.categoryId, r.priority])).toEqual([
+    const a = await createCategory(u.id, cat("A"));
+    const b = await createCategory(u.id, cat("B"));
+    await createRule(
+      u.id,
+      rule(a.id, { priority: 50, descriptionContains: "x" }),
+    );
+    await createRule(
+      u.id,
+      rule(b.id, { priority: 10, descriptionContains: "x" }),
+    );
+    await createRule(
+      u.id,
+      rule(a.id, { priority: 10, descriptionContains: "y" }),
+    );
+    expect(
+      (await loadRules(u.id)).map((r) => [r.categoryId, r.priority]),
+    ).toEqual([
       [b.id, 10],
       [a.id, 10],
       [a.id, 50],
     ]);
-    expect(listRules(u.id)[0]!.categoryName).toBe("B");
+    expect((await listRules(u.id))[0]!.categoryName).toBe("B");
   });
 
   it("normalizes the IBAN, updates and deletes", async () => {
     const u = await createTestUser();
-    const a = createCategory(u.id, cat("A"));
-    const r = createRule(
+    const a = await createCategory(u.id, cat("A"));
+    const r = await createRule(
       u.id,
       rule(a.id, { counterpartyIban: EXAMPLE_IBAN.toLowerCase() }),
     );
     expect(r.counterpartyIban).toBe(EXAMPLE_IBAN);
-    const updated = updateRule(
+    const updated = await updateRule(
       u.id,
       r.id,
       rule(a.id, { amountSign: "income", priority: 5 }),
@@ -350,32 +369,35 @@ describe("rules", () => {
       priority: 5,
       counterpartyIban: null,
     });
-    deleteRule(u.id, r.id);
-    expect(loadRules(u.id)).toEqual([]);
+    await deleteRule(u.id, r.id);
+    expect(await loadRules(u.id)).toEqual([]);
   });
 
   it("rejects another user's category and foreign rules", async () => {
     const a = await createTestUser();
     const b = await createTestUser();
-    const theirs = createCategory(b.id, cat("Theirs"));
-    expect(() =>
+    const theirs = await createCategory(b.id, cat("Theirs"));
+    await expect(
       createRule(a.id, rule(theirs.id, { descriptionContains: "x" })),
-    ).toThrow(/choose a category/i);
-    const mine = createCategory(a.id, cat("Mine"));
-    const r = createRule(a.id, rule(mine.id, { descriptionContains: "x" }));
-    expect(() => deleteRule(b.id, r.id)).toThrow(/not found/i);
-    expect(() =>
+    ).rejects.toThrow(/choose a category/i);
+    const mine = await createCategory(a.id, cat("Mine"));
+    const r = await createRule(
+      a.id,
+      rule(mine.id, { descriptionContains: "x" }),
+    );
+    await expect(deleteRule(b.id, r.id)).rejects.toThrow(/not found/i);
+    await expect(
       updateRule(b.id, r.id, rule(theirs.id, { descriptionContains: "x" })),
-    ).toThrow(/not found/i);
-    expect(loadRules(b.id)).toEqual([]);
+    ).rejects.toThrow(/not found/i);
+    expect(await loadRules(b.id)).toEqual([]);
   });
 
   it("re-runs on uncategorized transactions and never overrides a manual choice", async () => {
     const u = await createTestUser();
     const acc = await seedAccount(u.id);
-    const food = createCategory(u.id, cat("Food"));
-    const manual = createCategory(u.id, cat("Manual"));
-    createRule(u.id, rule(food.id, { counterpartyContains: "grocer" }));
+    const food = await createCategory(u.id, cat("Food"));
+    const manual = await createCategory(u.id, cat("Manual"));
+    await createRule(u.id, rule(food.id, { counterpartyContains: "grocer" }));
 
     const open = await seedImportedTransaction(u.id, acc.id, {
       counterpartyName: "Example Grocer",
@@ -386,9 +408,9 @@ describe("rules", () => {
     const unrelated = await seedImportedTransaction(u.id, acc.id, {
       counterpartyName: "Somebody",
     });
-    assignCategory(u.id, chosen.id, manual.id);
+    await assignCategory(u.id, chosen.id, manual.id);
 
-    expect(applyRulesToUncategorized(u.id)).toEqual({
+    expect(await applyRulesToUncategorized(u.id)).toEqual({
       scanned: 2,
       categorized: 1,
     });
@@ -401,7 +423,7 @@ describe("rules", () => {
     expect(byId.get(open.id)).toBe(food.id);
     expect(byId.get(chosen.id)).toBe(manual.id);
     expect(byId.get(unrelated.id)).toBeNull();
-    expect(applyRulesToUncategorized(u.id)).toEqual({
+    expect(await applyRulesToUncategorized(u.id)).toEqual({
       scanned: 1,
       categorized: 0,
     });
@@ -414,9 +436,9 @@ describe("rules", () => {
     const tx = await seedImportedTransaction(b.id, accB.id, {
       counterpartyName: "Example Grocer",
     });
-    const food = createCategory(a.id, cat("Food"));
-    createRule(a.id, rule(food.id, { counterpartyContains: "grocer" }));
-    expect(applyRulesToUncategorized(a.id)).toEqual({
+    const food = await createCategory(a.id, cat("Food"));
+    await createRule(a.id, rule(food.id, { counterpartyContains: "grocer" }));
+    expect(await applyRulesToUncategorized(a.id)).toEqual({
       scanned: 0,
       categorized: 0,
     });
@@ -424,5 +446,96 @@ describe("rules", () => {
       (await listTransactions(b.id, accB.id)).items[0]!.categoryId,
     ).toBeNull();
     expect(tx.categoryId).toBeNull();
+  });
+});
+
+describe("category writes check and write in one transaction", () => {
+  it("changes nothing when an update is refused", async () => {
+    const u = await createTestUser();
+    const parent = await createCategory(u.id, cat("Parent"));
+    const child = await createCategory(u.id, cat("Child"));
+    await expect(
+      updateCategory(
+        u.id,
+        child.id,
+        cat("Renamed", { parentId: parent.id, kind: "income" }),
+      ),
+    ).rejects.toMatchObject({ field: "kind" });
+    expect(await getCategory(u.id, child.id)).toMatchObject({
+      name: "Child",
+      parentId: null,
+      kind: "expense",
+    });
+  });
+
+  it("creates nothing when the name is taken, per user", async () => {
+    const a = await createTestUser();
+    const b = await createTestUser();
+    await createCategory(a.id, cat("Food"));
+    await expect(createCategory(a.id, cat("Food"))).rejects.toMatchObject({
+      code: "conflict",
+      field: "name",
+    });
+    expect(await listCategories(a.id)).toHaveLength(1);
+    await expect(createCategory(b.id, cat("Food"))).resolves.toMatchObject({
+      name: "Food",
+    });
+  });
+
+  it("lets a category keep its own name and answers 404 for another user's", async () => {
+    const a = await createTestUser();
+    const b = await createTestUser();
+    const food = await createCategory(a.id, cat("Food"));
+    await expect(
+      updateCategory(a.id, food.id, cat("Food", { color: "#112233" })),
+    ).resolves.toMatchObject({ name: "Food", color: "#112233" });
+    await expect(
+      updateCategory(b.id, food.id, cat("Other", { parentId: "missing" })),
+    ).rejects.toMatchObject({ code: "not_found" });
+    expect((await getCategory(a.id, food.id)).name).toBe("Food");
+  });
+
+  it("assigns nothing when the category is another user's", async () => {
+    const a = await createTestUser();
+    const b = await createTestUser();
+    const acc = await seedAccount(a.id);
+    const tx = await seedImportedTransaction(a.id, acc.id);
+    const theirs = await createCategory(b.id, cat("Theirs"));
+    await expect(assignCategory(a.id, tx.id, theirs.id)).rejects.toMatchObject({
+      code: "not_found",
+    });
+    expect(
+      (await listTransactions(a.id, acc.id)).items[0]!.categoryId,
+    ).toBeNull();
+  });
+
+  it("creates and updates rules only against the user's own categories", async () => {
+    const a = await createTestUser();
+    const b = await createTestUser();
+    const mine = await createCategory(a.id, cat("Mine"));
+    const theirs = await createCategory(b.id, cat("Theirs"));
+    const created = await createRule(
+      a.id,
+      rule(mine.id, { counterpartyContains: "x" }),
+    );
+    await expect(
+      createRule(a.id, rule(theirs.id, { counterpartyContains: "x" })),
+    ).rejects.toMatchObject({ code: "invalid", field: "categoryId" });
+    await expect(
+      updateRule(
+        a.id,
+        created.id,
+        rule(theirs.id, { counterpartyContains: "x" }),
+      ),
+    ).rejects.toMatchObject({ code: "invalid", field: "categoryId" });
+    await expect(
+      updateRule(
+        b.id,
+        created.id,
+        rule(theirs.id, { counterpartyContains: "x" }),
+      ),
+    ).rejects.toMatchObject({ code: "not_found" });
+    expect(await listRules(a.id)).toHaveLength(1);
+    expect((await listRules(a.id))[0]!.categoryId).toBe(mine.id);
   });
 });

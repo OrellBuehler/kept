@@ -30,8 +30,8 @@ describe("budgets page", () => {
     const b = await createTestUser();
     const accA = await seedAccount(a.id);
     const accB = await seedAccount(b.id, { currency: "EUR" });
-    const food = createCategory(a.id, { name: "Food", ...expense });
-    createBudget(a.id, {
+    const food = await createCategory(a.id, { name: "Food", ...expense });
+    await createBudget(a.id, {
       categoryId: food.id,
       currency: "CHF",
       amount: minor(10000),
@@ -97,7 +97,7 @@ describe("budgets page", () => {
 
   it("creates, updates and deletes a budget", async () => {
     const u = await createTestUser();
-    const food = createCategory(u.id, { name: "Food", ...expense });
+    const food = await createCategory(u.id, { name: "Food", ...expense });
     expect(
       await run("createBudget", u, {
         categoryId: food.id,
@@ -105,7 +105,7 @@ describe("budgets page", () => {
         amount: "400.50",
       }),
     ).toMatchObject({ type: "return", value: { success: true } });
-    const [b] = listBudgets(u.id);
+    const [b] = await listBudgets(u.id);
     expect(b).toMatchObject({ currency: "CHF", amount: 40050 });
 
     await run("updateBudget", u, {
@@ -114,15 +114,15 @@ describe("budgets page", () => {
       currency: "CHF",
       amount: "500",
     });
-    expect(listBudgets(u.id)[0]!.amount).toBe(50000);
+    expect((await listBudgets(u.id))[0]!.amount).toBe(50000);
 
     await run("deleteBudget", u, { id: b!.id });
-    expect(listBudgets(u.id)).toEqual([]);
+    expect(await listBudgets(u.id)).toEqual([]);
   });
 
   it("rejects bad amounts and duplicates with field errors", async () => {
     const u = await createTestUser();
-    const food = createCategory(u.id, { name: "Food", ...expense });
+    const food = await createCategory(u.id, { name: "Food", ...expense });
     expect(
       await run("createBudget", u, {
         categoryId: food.id,
@@ -150,14 +150,14 @@ describe("budgets page", () => {
       status: 400,
       data: { errors: { categoryId: expect.any(Array) } },
     });
-    expect(listBudgets(u.id)).toHaveLength(1);
+    expect(await listBudgets(u.id)).toHaveLength(1);
   });
 
   it("another user's budget and category are not reachable", async () => {
     const a = await createTestUser();
     const b = await createTestUser();
-    const food = createCategory(a.id, { name: "Food", ...expense });
-    const budget = createBudget(a.id, {
+    const food = await createCategory(a.id, { name: "Food", ...expense });
+    const budget = await createBudget(a.id, {
       categoryId: food.id,
       currency: "CHF",
       amount: minor(1000),
@@ -181,7 +181,7 @@ describe("budgets page", () => {
         amount: "5",
       }),
     ).toMatchObject({ type: "fail", status: 400 });
-    expect(listBudgets(a.id)).toHaveLength(1);
-    expect(listBudgets(b.id)).toEqual([]);
+    expect(await listBudgets(a.id)).toHaveLength(1);
+    expect(await listBudgets(b.id)).toEqual([]);
   });
 });

@@ -342,14 +342,14 @@ describe("tax deductions", () => {
   async function withCategory() {
     const { user, acc, a, b } = await setup();
     const current = await seedAccount(user.id, { name: "Current" });
-    const cat = createCategory(user.id, {
+    const cat = await createCategory(user.id, {
       name: "Retirement",
       kind: "expense",
       parentId: null,
       color: null,
       icon: null,
     });
-    setCategoryDeduction(user.id, cat.id, "pillar_3a");
+    await setCategoryDeduction(user.id, cat.id, "pillar_3a");
     return { user, acc, a, b, current, cat };
   }
 

@@ -76,9 +76,11 @@ export interface DeductionSummary {
   excluded: (DeductionLine & { type: DeductionType })[];
 }
 
-export function listDeductionMappings(userId: string): DeductionMappingView[] {
+export async function listDeductionMappings(
+  userId: string,
+): Promise<DeductionMappingView[]> {
   const db = getDB();
-  const cats = db
+  const cats = await db
     .select({
       id: categories.id,
       name: categories.name,
@@ -86,9 +88,8 @@ export function listDeductionMappings(userId: string): DeductionMappingView[] {
     })
     .from(categories)
     .where(eq(categories.userId, userId))
-    .orderBy(asc(categories.name))
-    .all();
-  const own = ownMappings(userId);
+    .orderBy(asc(categories.name));
+  const own = await ownMappings(userId);
   const byName = (a: { name: string }, b: { name: string }) =>
     a.name.localeCompare(b.name);
   const ids = new Set(cats.map((c) => c.id));
@@ -116,51 +117,56 @@ export function listDeductionMappings(userId: string): DeductionMappingView[] {
   ]);
 }
 
-function ownMappings(userId: string): Map<string, DeductionType> {
+async function ownMappings(
+  userId: string,
+): Promise<Map<string, DeductionType>> {
   return new Map(
-    getDB()
-      .select({
-        categoryId: deductionMappings.categoryId,
-        type: deductionMappings.deductionType,
-      })
-      .from(deductionMappings)
-      .where(eq(deductionMappings.userId, userId))
-      .all()
-      .map((r) => [r.categoryId, r.type]),
+    (
+      await getDB()
+        .select({
+          categoryId: deductionMappings.categoryId,
+          type: deductionMappings.deductionType,
+        })
+        .from(deductionMappings)
+        .where(eq(deductionMappings.userId, userId))
+    ).map((r) => [r.categoryId, r.type]),
   );
 }
 
 /** Sets (or, with null, clears) the deduction type of one of the user's categories. */
-export function setCategoryDeduction(
+export async function setCategoryDeduction(
   userId: string,
   categoryId: string,
   type: DeductionType | null,
-): void {
-  const db = getDB();
-  const category = db
-    .select({ id: categories.id })
-    .from(categories)
-    .where(and(eq(categories.userId, userId), eq(categories.id, categoryId)))
-    .get();
-  if (!category) throw notFound("Category");
-  if (type === null) {
-    db.delete(deductionMappings)
-      .where(
-        and(
-          eq(deductionMappings.userId, userId),
-          eq(deductionMappings.categoryId, categoryId),
-        ),
-      )
+): Promise<void> {
+  // The ownership check and the write are one unit, so the category cannot go in between.
+  getDB().transaction((tx) => {
+    const category = tx
+      .select({ id: categories.id })
+      .from(categories)
+      .where(and(eq(categories.userId, userId), eq(categories.id, categoryId)))
+      .limit(1)
+      .get();
+    if (!category) throw notFound("Category");
+    if (type === null) {
+      tx.delete(deductionMappings)
+        .where(
+          and(
+            eq(deductionMappings.userId, userId),
+            eq(deductionMappings.categoryId, categoryId),
+          ),
+        )
+        .run();
+      return;
+    }
+    tx.insert(deductionMappings)
+      .values({ userId, categoryId, deductionType: type })
+      .onConflictDoUpdate({
+        target: [deductionMappings.userId, deductionMappings.categoryId],
+        set: { deductionType: type, updatedAt: new Date() },
+      })
       .run();
-    return;
-  }
-  db.insert(deductionMappings)
-    .values({ userId, categoryId, deductionType: type })
-    .onConflictDoUpdate({
-      target: [deductionMappings.userId, deductionMappings.categoryId],
-      set: { deductionType: type, updatedAt: new Date() },
-    })
-    .run();
+  });
 }
 
 export async function setTransactionDeductionExcluded(
@@ -169,14 +175,13 @@ export async function setTransactionDeductionExcluded(
   excluded: boolean,
 ): Promise<void> {
   await assertNotMirror(userId, transactionId, "left out of the deductions");
-  const updated = getDB()
+  const updated = await getDB()
     .update(transactions)
     .set({ deductionExcluded: excluded })
     .where(
       and(eq(transactions.userId, userId), eq(transactions.id, transactionId)),
     )
-    .returning({ id: transactions.id })
-    .all();
+    .returning({ id: transactions.id });
   if (updated.length === 0) throw notFound("Transaction");
 }
 
@@ -200,7 +205,7 @@ export async function deductionSummary(
   if (!Number.isInteger(year)) {
     throw new LedgerError("invalid", "Enter a valid year.", "year");
   }
-  const own = ownMappings(userId);
+  const own = await ownMappings(userId);
   const groups = new Map<string, DeductionTotal>();
   const excluded: DeductionSummary["excluded"] = [];
   const add = (type: DeductionType, line: DeductionLine) => {
@@ -224,12 +229,12 @@ export async function deductionSummary(
       (await detectedContributions(userId)).map((d) => d.transactionId),
     );
     const parents = new Map(
-      getDB()
-        .select({ id: categories.id, parentId: categories.parentId })
-        .from(categories)
-        .where(eq(categories.userId, userId))
-        .all()
-        .map((c) => [c.id, c.parentId]),
+      (
+        await getDB()
+          .select({ id: categories.id, parentId: categories.parentId })
+          .from(categories)
+          .where(eq(categories.userId, userId))
+      ).map((c) => [c.id, c.parentId]),
     );
     const typeOf = (categoryId: string): DeductionType | null => {
       const mine = own.get(categoryId);
@@ -240,7 +245,7 @@ export async function deductionSummary(
 
     const from = `${String(year).padStart(4, "0")}-01-01`;
     const to = `${String(year).padStart(4, "0")}-12-31`;
-    const rows = getDB()
+    const rows = await getDB()
       .select({
         id: transactions.id,
         accountId: transactions.accountId,
@@ -272,8 +277,7 @@ export async function deductionSummary(
         asc(transactions.bookingDate),
         asc(transactions.seq),
         asc(transactions.id),
-      )
-      .all();
+      );
 
     for (const r of rows) {
       const type = typeOf(r.categoryId!);
@@ -298,23 +302,23 @@ export async function deductionSummary(
   const contributions = await listContributions(userId, { year });
   if (contributions.length > 0) {
     const flagged = new Set(
-      getDB()
-        .select({ id: transactions.id })
-        .from(transactions)
-        .where(
-          and(
-            eq(transactions.userId, userId),
-            eq(transactions.deductionExcluded, true),
-            inArray(
-              transactions.id,
-              contributions.flatMap((c) =>
-                c.transactionId === null ? [] : [c.transactionId],
+      (
+        await getDB()
+          .select({ id: transactions.id })
+          .from(transactions)
+          .where(
+            and(
+              eq(transactions.userId, userId),
+              eq(transactions.deductionExcluded, true),
+              inArray(
+                transactions.id,
+                contributions.flatMap((c) =>
+                  c.transactionId === null ? [] : [c.transactionId],
+                ),
               ),
             ),
-          ),
-        )
-        .all()
-        .map((r) => r.id),
+          )
+      ).map((r) => r.id),
     );
     for (const c of contributions) {
       add("pillar_3a", {
@@ -355,13 +359,12 @@ export async function setTransactionDeductionYear(
   year: number | null,
 ): Promise<void> {
   await assertNotMirror(userId, transactionId, "deducted in another year");
-  const updated = getDB()
+  const updated = await getDB()
     .update(transactions)
     .set({ deductionYear: year })
     .where(
       and(eq(transactions.userId, userId), eq(transactions.id, transactionId)),
     )
-    .returning({ id: transactions.id })
-    .all();
+    .returning({ id: transactions.id });
   if (updated.length === 0) throw notFound("Transaction");
 }

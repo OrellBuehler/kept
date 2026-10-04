@@ -15,7 +15,7 @@ export const load: PageServerLoad = async ({ locals }) => {
   const user = requireUser(locals);
   const today = localToday();
   return {
-    years: listTaxYears(user.id),
+    years: await listTaxYears(user.id),
     defaultYear: Number(today.slice(0, 4)) - 1,
     defaultCurrency:
       (await listAccounts(user.id, today)).find((a) => !a.archived)?.currency ??
@@ -33,7 +33,7 @@ export const actions: Actions = {
       return fail(400, { action: "create", errors: parsed.errors, values });
     }
     try {
-      upsertTaxYear(user.id, parsed.data);
+      await upsertTaxYear(user.id, parsed.data);
     } catch (err) {
       return ledgerFailure("create", err, values);
     }

@@ -1,6 +1,11 @@
 import { eq } from "drizzle-orm";
 import { describe, expect, it } from "vitest";
-import { deductionYearMigration, getDB, transactions } from "$lib/server/db";
+import {
+  deductionYearMigration,
+  first,
+  getDB,
+  transactions,
+} from "$lib/server/db";
 import { minor } from "$lib/money";
 import { addTaxCredit, setTransactionTaxYear } from "$lib/server/tax/tax";
 import { taxCreditInputSchema } from "$lib/server/tax/schemas";
@@ -148,7 +153,7 @@ describe("taxes routes", () => {
     });
     await setTransactionTaxYear(a.id, tx.id, 2025);
     await runList(a, yearForm());
-    const line = addTaxCredit(
+    const line = await addTaxCredit(
       a.id,
       2025,
       taxCreditInputSchema("CHF").parse({
@@ -256,10 +261,9 @@ describe("taxes routes", () => {
       const t = await seedImportedTransaction(userId, accountId, {
         deductionYear: 2024,
       });
-      getDB()
+      await getDB()
         .insert(deductionYearMigration)
-        .values({ userId, transactionId: t.id, oldTaxYear: 2024 })
-        .run();
+        .values({ userId, transactionId: t.id, oldTaxYear: 2024 });
       return t;
     };
     const tx = await moved(u.id, mine.id);
@@ -275,11 +279,20 @@ describe("taxes routes", () => {
 
     await runDetail("undoDeductionMoves", u, "2024");
 
-    const row = (id: string) =>
-      getDB().select().from(transactions).where(eq(transactions.id, id)).get()!;
-    expect(row(tx.id)).toMatchObject({ taxYear: 2024, deductionYear: null });
+    const row = async (id: string) =>
+      (await first(
+        getDB()
+          .select()
+          .from(transactions)
+          .where(eq(transactions.id, id))
+          .limit(1),
+      ))!;
+    expect(await row(tx.id)).toMatchObject({
+      taxYear: 2024,
+      deductionYear: null,
+    });
     expect(await count(u)).toBe(0);
-    expect(row(theirTx.id)).toMatchObject({
+    expect(await row(theirTx.id)).toMatchObject({
       taxYear: null,
       deductionYear: 2024,
     });
@@ -287,6 +300,6 @@ describe("taxes routes", () => {
 
     await runDetail("dismissDeductionMoves", other, "2024");
     expect(await count(other)).toBe(0);
-    expect(row(theirTx.id)).toMatchObject({ deductionYear: 2024 });
+    expect(await row(theirTx.id)).toMatchObject({ deductionYear: 2024 });
   });
 });

@@ -59,7 +59,7 @@ export async function confirmImport(
   const newRows = preview.rows.filter(
     (r) => r.status === "new" || r.status === "replaces_mirror",
   );
-  const rules = loadRules(userId);
+  const rules = await loadRules(userId);
 
   const result = getDB().transaction((tx) => {
     // Claiming the upload first makes a concurrent second confirm fail and roll back.

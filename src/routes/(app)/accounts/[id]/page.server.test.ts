@@ -493,7 +493,7 @@ describe("account detail page", () => {
     const u = await createTestUser();
     const acc = await seedAccount(u.id);
     const tx = await seedImportedTransaction(u.id, acc.id);
-    const c = createCategory(u.id, {
+    const c = await createCategory(u.id, {
       name: "Food",
       kind: "expense",
       parentId: null,
@@ -520,7 +520,7 @@ describe("account detail page", () => {
     const accA = await seedAccount(a.id);
     const accB = await seedAccount(b.id);
     const tx = await seedImportedTransaction(a.id, accA.id);
-    const theirs = createCategory(b.id, {
+    const theirs = await createCategory(b.id, {
       name: "Theirs",
       kind: "expense",
       parentId: null,

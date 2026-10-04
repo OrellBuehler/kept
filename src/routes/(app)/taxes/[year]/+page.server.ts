@@ -46,7 +46,7 @@ function yearOf(params: { year: string }): number {
 
 export const load: PageServerLoad = async ({ locals, params }) => {
   const user = requireUser(locals);
-  const reconciliation = reconcileYear(user.id, yearOf(params));
+  const reconciliation = await reconcileYear(user.id, yearOf(params));
   if (!reconciliation) error(404, "Tax year not found.");
   const taxYear = reconciliation.year.year;
   const deductions = await deductionSummary(user.id, taxYear);
@@ -61,9 +61,9 @@ export const load: PageServerLoad = async ({ locals, params }) => {
   const row = overview.years.find((y) => y.year === taxYear) ?? null;
   return {
     reconciliation,
-    deductionMoves: countDeductionYearMoves(user.id, taxYear),
+    deductionMoves: await countDeductionYearMoves(user.id, taxYear),
     deductions,
-    deductionMappings: listDeductionMappings(user.id),
+    deductionMappings: await listDeductionMappings(user.id),
     // Only worth a card when the user tracks 3a at all.
     pillar3a:
       overview.portfolios.length > 0 || deductible !== 0
@@ -94,17 +94,17 @@ export const actions: Actions = {
       });
     }
     try {
-      upsertTaxYear(user.id, { ...parsed.data, year });
+      await upsertTaxYear(user.id, { ...parsed.data, year });
       return { success: true as const, action: "saveDetails" as const };
     } catch (err) {
       return ledgerFailure("saveDetails", err, values);
     }
   },
 
-  deleteYear: ({ locals, params }) => {
+  deleteYear: async ({ locals, params }) => {
     const user = requireUser(locals);
     try {
-      deleteTaxYear(user.id, yearOf(params));
+      await deleteTaxYear(user.id, yearOf(params));
     } catch (err) {
       return ledgerFailure("deleteYear", err);
     }
@@ -114,7 +114,7 @@ export const actions: Actions = {
   addCredit: async ({ locals, params, request }) => {
     const user = requireUser(locals);
     const year = yearOf(params);
-    const current = reconcileYear(user.id, year);
+    const current = await reconcileYear(user.id, year);
     if (!current) error(404, "Tax year not found.");
     const form = await request.formData();
     const values = safeValues(form, TAX_CREDIT_FORM_FIELDS);
@@ -123,7 +123,7 @@ export const actions: Actions = {
       return fail(400, { action: "addCredit", errors: parsed.errors, values });
     }
     try {
-      addTaxCredit(user.id, year, parsed.data);
+      await addTaxCredit(user.id, year, parsed.data);
       return { success: true as const, action: "addCredit" as const };
     } catch (err) {
       return ledgerFailure("addCredit", err, values);
@@ -143,7 +143,7 @@ export const actions: Actions = {
       });
     }
     try {
-      deleteTaxCredit(user.id, parsed.data.creditId);
+      await deleteTaxCredit(user.id, parsed.data.creditId);
       return { success: true as const, action: "deleteCredit" as const };
     } catch (err) {
       return ledgerFailure("deleteCredit", err, values);
@@ -196,7 +196,7 @@ export const actions: Actions = {
       });
     }
     try {
-      setCategoryDeduction(
+      await setCategoryDeduction(
         user.id,
         parsed.data.categoryId,
         parsed.data.deductionType === "" ? null : parsed.data.deductionType,
@@ -255,15 +255,15 @@ export const actions: Actions = {
     }
   },
 
-  undoDeductionMoves: ({ locals, params }) => {
+  undoDeductionMoves: async ({ locals, params }) => {
     const user = requireUser(locals);
-    undoDeductionYearMoves(user.id, yearOf(params));
+    await undoDeductionYearMoves(user.id, yearOf(params));
     return { success: true as const, action: "undoDeductionMoves" as const };
   },
 
-  dismissDeductionMoves: ({ locals, params }) => {
+  dismissDeductionMoves: async ({ locals, params }) => {
     const user = requireUser(locals);
-    dismissDeductionYearMoves(user.id, yearOf(params));
+    await dismissDeductionYearMoves(user.id, yearOf(params));
     return {
       success: true as const,
       action: "dismissDeductionMoves" as const,

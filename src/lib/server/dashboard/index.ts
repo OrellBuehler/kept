@@ -110,9 +110,9 @@ export async function dashboard(
     shareMonth: hasShared
       ? await monthSummary(userId, { month, basis: "share" })
       : null,
-    spending: spendingByCategory(userId, month, "share"),
+    spending: await spendingByCategory(userId, month, "share"),
     spendingTotal: hasShared
-      ? spendingByCategory(userId, month, "total")
+      ? await spendingByCategory(userId, month, "total")
       : null,
     bills,
     unmatched: unmatchedTransactions(userId, { days: 60, today }),

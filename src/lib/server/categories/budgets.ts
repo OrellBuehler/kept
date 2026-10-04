@@ -1,16 +1,18 @@
-import { and, count, eq, gte, isNull, lt, lte, sql } from "drizzle-orm";
+import { and, count, eq, gte, isNull, lt, lte, ne, sql } from "drizzle-orm";
 import { minor, shareOf, type Minor, type ShareBasis } from "$lib/money";
 import {
   accounts,
   budgets,
   categories,
+  first,
   getDB,
+  isUniqueViolation,
   transactions,
+  type DB,
 } from "$lib/server/db";
 import { LedgerError, notFound } from "$lib/server/ledger/errors";
 import { monthBounds } from "$lib/server/dashboard/dates";
 import { notInLinkedTransfer } from "$lib/server/transfers/exclusion";
-import { getCategory } from "./categories";
 import type { BudgetInput } from "./schemas";
 
 export interface BudgetView {
@@ -27,33 +29,39 @@ const columns = {
   amount: budgets.amount,
 };
 
-export function listBudgets(userId: string): BudgetView[] {
-  return getDB()
+export async function listBudgets(userId: string): Promise<BudgetView[]> {
+  return await getDB()
     .select(columns)
     .from(budgets)
-    .where(eq(budgets.userId, userId))
-    .all();
+    .where(eq(budgets.userId, userId));
 }
 
-function getBudget(userId: string, id: string): BudgetView {
-  const row = getDB()
-    .select(columns)
-    .from(budgets)
-    .where(and(eq(budgets.userId, userId), eq(budgets.id, id)))
-    .get();
+async function getBudget(userId: string, id: string): Promise<BudgetView> {
+  const row = await first(
+    getDB()
+      .select(columns)
+      .from(budgets)
+      .where(and(eq(budgets.userId, userId), eq(budgets.id, id)))
+      .limit(1),
+  );
   if (!row) throw notFound("Budget");
   return row;
 }
 
-function assertBudgetable(userId: string, categoryId: string) {
-  let category;
-  try {
-    category = getCategory(userId, categoryId);
-  } catch (err) {
-    if (err instanceof LedgerError && err.code === "not_found") {
-      throw new LedgerError("invalid", "Choose a category.", "categoryId");
-    }
-    throw err;
+/** Sync: runs inside the transaction of createBudget / updateBudget. */
+function assertBudgetable(
+  tx: Pick<DB, "select">,
+  userId: string,
+  categoryId: string,
+) {
+  const category = tx
+    .select({ kind: categories.kind })
+    .from(categories)
+    .where(and(eq(categories.userId, userId), eq(categories.id, categoryId)))
+    .limit(1)
+    .get();
+  if (!category) {
+    throw new LedgerError("invalid", "Choose a category.", "categoryId");
   }
   if (category.kind !== "expense") {
     throw new LedgerError(
@@ -64,54 +72,97 @@ function assertBudgetable(userId: string, categoryId: string) {
   }
 }
 
-function assertUnique(userId: string, input: BudgetInput, exceptId?: string) {
-  const clash = listBudgets(userId).find(
-    (b) =>
-      b.id !== exceptId &&
-      b.categoryId === input.categoryId &&
-      b.currency === input.currency,
+const budgetTaken = () =>
+  new LedgerError(
+    "conflict",
+    "This category already has a budget in this currency.",
+    "categoryId",
   );
-  if (clash) {
-    throw new LedgerError(
-      "conflict",
-      "This category already has a budget in this currency.",
-      "categoryId",
-    );
+
+/** Sync: runs inside the transaction of createBudget / updateBudget. */
+function assertUnique(
+  tx: Pick<DB, "select">,
+  userId: string,
+  input: BudgetInput,
+  exceptId?: string,
+) {
+  const clash = tx
+    .select({ id: budgets.id })
+    .from(budgets)
+    .where(
+      and(
+        eq(budgets.userId, userId),
+        eq(budgets.categoryId, input.categoryId),
+        eq(budgets.currency, input.currency),
+        exceptId ? ne(budgets.id, exceptId) : undefined,
+      ),
+    )
+    .limit(1)
+    .get();
+  if (clash) throw budgetTaken();
+}
+
+/**
+ * The in-transaction check is the friendly path; the unique index on
+ * (user, category, currency) is the backstop when two writes race, and maps to
+ * the same error.
+ */
+function mapBudgetViolation(err: unknown): never {
+  if (isUniqueViolation(err)) throw budgetTaken();
+  throw err;
+}
+
+export async function createBudget(
+  userId: string,
+  input: BudgetInput,
+): Promise<BudgetView> {
+  try {
+    return getDB().transaction((tx) => {
+      assertBudgetable(tx, userId, input.categoryId);
+      assertUnique(tx, userId, input);
+      return tx
+        .insert(budgets)
+        .values({ userId, ...input })
+        .returning(columns)
+        .get();
+    });
+  } catch (err) {
+    mapBudgetViolation(err);
   }
 }
 
-export function createBudget(userId: string, input: BudgetInput): BudgetView {
-  assertBudgetable(userId, input.categoryId);
-  assertUnique(userId, input);
-  return getDB()
-    .insert(budgets)
-    .values({ userId, ...input })
-    .returning(columns)
-    .get();
-}
-
-export function updateBudget(
+export async function updateBudget(
   userId: string,
   id: string,
   input: BudgetInput,
-): BudgetView {
-  getBudget(userId, id);
-  assertBudgetable(userId, input.categoryId);
-  assertUnique(userId, input, id);
-  getDB()
-    .update(budgets)
-    .set(input)
-    .where(and(eq(budgets.userId, userId), eq(budgets.id, id)))
-    .run();
-  return getBudget(userId, id);
+): Promise<BudgetView> {
+  try {
+    getDB().transaction((tx) => {
+      const found = tx
+        .select({ id: budgets.id })
+        .from(budgets)
+        .where(and(eq(budgets.userId, userId), eq(budgets.id, id)))
+        .limit(1)
+        .get();
+      if (!found) throw notFound("Budget");
+      assertBudgetable(tx, userId, input.categoryId);
+      assertUnique(tx, userId, input, id);
+      tx.update(budgets)
+        .set(input)
+        .where(and(eq(budgets.userId, userId), eq(budgets.id, id)))
+        .run();
+    });
+  } catch (err) {
+    mapBudgetViolation(err);
+  }
+  return await getBudget(userId, id);
 }
 
-export function deleteBudget(userId: string, id: string): void {
-  getBudget(userId, id);
-  getDB()
+export async function deleteBudget(userId: string, id: string): Promise<void> {
+  await getBudget(userId, id);
+  await getDB()
     .delete(budgets)
-    .where(and(eq(budgets.userId, userId), eq(budgets.id, id)))
-    .run();
+    .where(and(eq(budgets.userId, userId), eq(budgets.id, id)));
 }
 
 interface OwnSpend {
@@ -129,11 +180,11 @@ interface OwnSpend {
  * its account (rounded per transaction, see `shareOf`); stored amounts stay
  * at 100%.
  */
-function ownSpend(
+async function ownSpend(
   userId: string,
   month: string,
   basis: ShareBasis,
-): OwnSpend[] {
+): Promise<OwnSpend[]> {
   const { first, last } = monthBounds(month);
   const where = and(
     eq(transactions.userId, userId),
@@ -145,27 +196,27 @@ function ownSpend(
   );
   const db = getDB();
   if (basis === "total") {
-    return db
-      .select({
-        categoryId: transactions.categoryId,
-        parentId: categories.parentId,
-        currency: transactions.currency,
-        total: sql<number>`sum(${transactions.amount})`,
-      })
-      .from(transactions)
-      .innerJoin(categories, eq(categories.id, transactions.categoryId))
-      .where(where)
-      .groupBy(transactions.categoryId, transactions.currency)
-      .all()
-      .map((r) => ({
-        categoryId: r.categoryId!,
-        parentId: r.parentId,
-        currency: r.currency,
-        spent: 0 - r.total,
-      }));
+    return (
+      await db
+        .select({
+          categoryId: transactions.categoryId,
+          parentId: categories.parentId,
+          currency: transactions.currency,
+          total: sql<number>`sum(${transactions.amount})`,
+        })
+        .from(transactions)
+        .innerJoin(categories, eq(categories.id, transactions.categoryId))
+        .where(where)
+        .groupBy(transactions.categoryId, transactions.currency)
+    ).map((r) => ({
+      categoryId: r.categoryId!,
+      parentId: r.parentId,
+      currency: r.currency,
+      spent: 0 - r.total,
+    }));
   }
   const sums = new Map<string, OwnSpend>();
-  for (const r of db
+  for (const r of await db
     .select({
       categoryId: transactions.categoryId,
       parentId: categories.parentId,
@@ -176,8 +227,7 @@ function ownSpend(
     .from(transactions)
     .innerJoin(categories, eq(categories.id, transactions.categoryId))
     .innerJoin(accounts, eq(accounts.id, transactions.accountId))
-    .where(and(where, eq(accounts.userId, userId)))
-    .all()) {
+    .where(and(where, eq(accounts.userId, userId)))) {
     const k = key(r.categoryId!, r.currency);
     const entry = sums.get(k) ?? {
       categoryId: r.categoryId!,
@@ -248,28 +298,28 @@ export interface BudgetReport {
  * Spent against budget per category for a "YYYY-MM" month, per currency.
  * Amounts in different currencies are never combined.
  */
-export function budgetReport(
+export async function budgetReport(
   userId: string,
   month: string,
   basis: ShareBasis = "total",
-): BudgetReport {
+): Promise<BudgetReport> {
   const cats = new Map(
-    getDB()
-      .select({
-        id: categories.id,
-        name: categories.name,
-        parentId: categories.parentId,
-        color: categories.color,
-        icon: categories.icon,
-      })
-      .from(categories)
-      .where(eq(categories.userId, userId))
-      .all()
-      .map((c) => [c.id, c]),
+    (
+      await getDB()
+        .select({
+          id: categories.id,
+          name: categories.name,
+          parentId: categories.parentId,
+          color: categories.color,
+          icon: categories.icon,
+        })
+        .from(categories)
+        .where(eq(categories.userId, userId))
+    ).map((c) => [c.id, c]),
   );
-  const own = ownSpend(userId, month, basis);
+  const own = await ownSpend(userId, month, basis);
   const rolled = rolledUp(own);
-  const all = listBudgets(userId).filter((b) => cats.has(b.categoryId));
+  const all = (await listBudgets(userId)).filter((b) => cats.has(b.categoryId));
   const budgeted = new Set(all.map((b) => key(b.categoryId, b.currency)));
   const parentName = (id: string) => {
     const parentId = cats.get(id)?.parentId;
@@ -370,28 +420,28 @@ export interface SpendingSummary {
 }
 
 /** Spending per top-level expense category for a "YYYY-MM" month, per currency. */
-export function spendingByCategory(
+export async function spendingByCategory(
   userId: string,
   month: string,
   basis: ShareBasis = "total",
-): SpendingSummary {
+): Promise<SpendingSummary> {
   const db = getDB();
   const cats = new Map(
-    db
-      .select({
-        id: categories.id,
-        name: categories.name,
-        parentId: categories.parentId,
-        color: categories.color,
-        icon: categories.icon,
-      })
-      .from(categories)
-      .where(eq(categories.userId, userId))
-      .all()
-      .map((c) => [c.id, c]),
+    (
+      await db
+        .select({
+          id: categories.id,
+          name: categories.name,
+          parentId: categories.parentId,
+          color: categories.color,
+          icon: categories.icon,
+        })
+        .from(categories)
+        .where(eq(categories.userId, userId))
+    ).map((c) => [c.id, c]),
   );
   const totals = new Map<string, Map<string, number>>();
-  for (const r of ownSpend(userId, month, basis)) {
+  for (const r of await ownSpend(userId, month, basis)) {
     const topId =
       r.parentId !== null && cats.has(r.parentId) ? r.parentId : r.categoryId;
     const perCategory = totals.get(r.currency) ?? new Map<string, number>();
@@ -422,20 +472,22 @@ export function spendingByCategory(
     })
     .filter((c) => c.items.length > 0);
 
-  const { first, last } = monthBounds(month);
-  const uncategorizedCount = db
-    .select({ n: count() })
-    .from(transactions)
-    .where(
-      and(
-        eq(transactions.userId, userId),
-        isNull(transactions.categoryId),
-        lt(transactions.amount, minor(0)),
-        gte(transactions.bookingDate, first),
-        lte(transactions.bookingDate, last),
-        notInLinkedTransfer,
-      ),
-    )
-    .get()!.n;
+  const { first: monthFirst, last } = monthBounds(month);
+  const uncategorizedCount = (await first(
+    db
+      .select({ n: count() })
+      .from(transactions)
+      .where(
+        and(
+          eq(transactions.userId, userId),
+          isNull(transactions.categoryId),
+          lt(transactions.amount, minor(0)),
+          gte(transactions.bookingDate, monthFirst),
+          lte(transactions.bookingDate, last),
+          notInLinkedTransfer,
+        ),
+      )
+      .limit(1),
+  ))!.n;
   return { month, currencies, uncategorizedCount };
 }

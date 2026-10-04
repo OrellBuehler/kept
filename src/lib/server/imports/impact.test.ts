@@ -123,7 +123,7 @@ describe("getImportImpact", () => {
     const [r1, r2, r3, r4] = rowsOf(a.id).sort((x, y) =>
       x.bookingDate.localeCompare(y.bookingDate),
     );
-    const category = createCategory(user.id, {
+    const category = await createCategory(user.id, {
       name: "Food",
       kind: "expense",
       parentId: null,

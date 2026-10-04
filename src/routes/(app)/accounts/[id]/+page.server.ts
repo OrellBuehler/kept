@@ -184,7 +184,7 @@ export const load: PageServerLoad = async ({ locals, params, url }) => {
       /** FX transfers waiting for the amount this account received or paid. */
       needsAmount: await listNeedsAmount(user.id, account.id),
     },
-    categories: listCategories(user.id),
+    categories: await listCategories(user.id),
     filters: query.raw,
     filterErrors: query.errors,
   };
@@ -615,7 +615,7 @@ export const actions: Actions = {
       parsed.data.transactionId,
     );
     try {
-      assignCategory(user.id, existing.id, parsed.data.categoryId);
+      await assignCategory(user.id, existing.id, parsed.data.categoryId);
       return {
         success: true as const,
         action: "setCategory" as const,

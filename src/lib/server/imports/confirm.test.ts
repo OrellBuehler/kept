@@ -422,21 +422,21 @@ describe("listImports / undoImport", () => {
   it("categorizes new rows with the user's rules only", async () => {
     const { user, account } = await setup();
     const other = await createTestUser();
-    const mine = createCategory(user.id, {
+    const mine = await createCategory(user.id, {
       name: "Incoming",
       kind: "income",
       parentId: null,
       color: null,
       icon: null,
     });
-    const theirs = createCategory(other.id, {
+    const theirs = await createCategory(other.id, {
       name: "Theirs",
       kind: "expense",
       parentId: null,
       color: null,
       icon: null,
     });
-    createRule(user.id, {
+    await createRule(user.id, {
       categoryId: mine.id,
       priority: 100,
       counterpartyContains: null,
@@ -444,7 +444,7 @@ describe("listImports / undoImport", () => {
       counterpartyIban: null,
       amountSign: "income",
     });
-    createRule(other.id, {
+    await createRule(other.id, {
       categoryId: theirs.id,
       priority: 100,
       counterpartyContains: null,

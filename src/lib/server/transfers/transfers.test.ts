@@ -1362,7 +1362,7 @@ describe("keeping links valid", () => {
     it("keeps a hand-resolved mirror, its amount, note and category, through an edit of the source", async () => {
       const { user, eur, out } = await fxManual();
       const mirror = (await rowsOf(eur.id))[0]!;
-      const category = createCategory(user.id, {
+      const category = await createCategory(user.id, {
         name: "Savings",
         kind: "expense",
         parentId: null,
@@ -1756,7 +1756,7 @@ describe("consumers", () => {
 
   it("leave linked transfers out of budgets and spending", async () => {
     const { user, a, b, send } = await setup();
-    const food = createCategory(user.id, {
+    const food = await createCategory(user.id, {
       name: "Food",
       kind: "expense",
       parentId: null,
@@ -1773,30 +1773,30 @@ describe("consumers", () => {
       bookingDate: "2026-03-12",
       amount: m(-50),
     });
-    expect(spendingByCategory(user.id, "2026-03").currencies[0]!.total).toBe(
-      10700,
-    );
+    expect(
+      (await spendingByCategory(user.id, "2026-03")).currencies[0]!.total,
+    ).toBe(10700);
     await linkTransfers(user.id, {});
     const mirror = (await rowsOf(b.id))[0]!;
     await getDB()
       .update(transactions)
       .set({ categoryId: food.id })
       .where(eq(transactions.id, mirror.id));
-    const spending = spendingByCategory(user.id, "2026-03");
+    const spending = await spendingByCategory(user.id, "2026-03");
     expect(spending.currencies[0]!.total).toBe(700);
     expect(spending.uncategorizedCount).toBe(1);
   });
 
   it("never categorize mirrors by rule", async () => {
     const { user, b, send } = await setup();
-    const cat = createCategory(user.id, {
+    const cat = await createCategory(user.id, {
       name: "Moves",
       kind: "expense",
       parentId: null,
       color: null,
       icon: null,
     });
-    createRule(user.id, {
+    await createRule(user.id, {
       categoryId: cat.id,
       priority: 0,
       counterpartyContains: null,
@@ -1806,7 +1806,7 @@ describe("consumers", () => {
     });
     const out = await send();
     await linkTransfers(user.id, {});
-    expect(applyRulesToUncategorized(user.id)).toMatchObject({
+    expect(await applyRulesToUncategorized(user.id)).toMatchObject({
       categorized: 1,
     });
     expect((await getTransaction(user.id, out.id)).categoryId).toBe(cat.id);
@@ -1877,7 +1877,7 @@ describe("consumers", () => {
     const mirror = (await rowsOf(b.id))[0]!;
     expect(mirror.amount).toBe(-10000);
 
-    upsertTaxYear(
+    await upsertTaxYear(
       user.id,
       taxYearInputSchema.parse({
         year: "2025",
@@ -1887,7 +1887,7 @@ describe("consumers", () => {
         notes: "",
       }),
     );
-    addTaxCredit(
+    await addTaxCredit(
       user.id,
       2025,
       taxCreditInputSchema("CHF").parse({
@@ -1897,19 +1897,19 @@ describe("consumers", () => {
         description: "",
       }),
     );
-    const rec = reconcileYear(user.id, 2025)!;
+    const rec = (await reconcileYear(user.id, 2025))!;
     expect(rec.suggestions.map((s) => s.transactionId)).not.toContain(
       mirror.id,
     );
 
-    const cat = createCategory(user.id, {
+    const cat = await createCategory(user.id, {
       name: "Gifts",
       kind: "expense",
       parentId: null,
       color: null,
       icon: null,
     });
-    setCategoryDeduction(user.id, cat.id, "donations");
+    await setCategoryDeduction(user.id, cat.id, "donations");
     await getDB()
       .update(transactions)
       .set({ categoryId: cat.id })

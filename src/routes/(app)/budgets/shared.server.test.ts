@@ -34,7 +34,7 @@ describe("budgets page with shared accounts", () => {
   it("counts shared spending at the share by default and in full on request", async () => {
     const u = await createTestUser();
     const acc = await seedAccount(u.id, { shareBps: 5000 });
-    const food = createCategory(u.id, {
+    const food = await createCategory(u.id, {
       name: "Food",
       kind: "expense",
       parentId: null,

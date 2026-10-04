@@ -128,7 +128,7 @@ export async function buildReport(
     if (!parsed.success) {
       throw new LedgerError("invalid", parsed.error.issues[0]!.message, "year");
     }
-    const input = loadTaxReport(userId, parsed.data.year, today);
+    const input = await loadTaxReport(userId, parsed.data.year, today);
     return {
       bytes: await taxReport(input),
       fileName: `kept-tax-${parsed.data.year}-${today}.pdf`,
