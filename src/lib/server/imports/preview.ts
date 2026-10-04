@@ -20,7 +20,13 @@ import {
 } from "$lib/server/importers/types";
 import { getAccount, type AccountView } from "$lib/server/ledger/accounts";
 import { findReplacements } from "$lib/server/transfers/replace";
-import { balanceAt, type BalanceInput } from "$lib/server/ledger/balances";
+import {
+  balanceAt,
+  cashMovesOf,
+  ledgerMoves,
+  type BalanceInput,
+} from "$lib/server/ledger/balances";
+import { loadHoldingsInputs } from "$lib/server/investments/load";
 import { getCsvProfile } from "./profiles";
 import { cachedParse } from "./cache";
 import { getPendingMeta, readPending, type PendingMeta } from "./pending";
@@ -194,6 +200,7 @@ function loadLedger(
     .select({
       openingBalance: accounts.openingBalance,
       openingDate: accounts.openingDate,
+      tradesMoveCash: accounts.tradesMoveCash,
     })
     .from(accounts)
     .where(and(eq(accounts.userId, userId), eq(accounts.id, accountId)))
@@ -201,6 +208,11 @@ function loadLedger(
   return {
     openingBalance: account.openingBalance,
     openingDate: account.openingDate,
+    cashMoves: account.tradesMoveCash
+      ? cashMovesOf(
+          loadHoldingsInputs(userId, [accountId], "9999-12-31").get(accountId),
+        )
+      : undefined,
     transactions: db
       .select({
         id: transactions.id,
@@ -237,7 +249,7 @@ function hasDataBefore(input: BalanceInput, date: string): boolean {
   return (
     (input.openingDate !== null && input.openingDate < date) ||
     input.snapshots.some((s) => s.date < date) ||
-    input.transactions.some((t) => t.bookingDate < date)
+    ledgerMoves(input).some((t) => t.bookingDate < date)
   );
 }
 
@@ -264,7 +276,7 @@ export function anchoredBalanceAt(
         Number(b.source === "manual") - Number(a.source === "manual"),
     )[0];
   if (!later) return null;
-  const between = input.transactions
+  const between = ledgerMoves(input)
     .filter((t) => t.bookingDate > date && t.bookingDate <= later.date)
     .reduce((sum, t) => sum + t.amount, 0);
   return minor(later.amount - between);

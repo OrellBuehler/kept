@@ -13,6 +13,7 @@ import { createCategory } from "$lib/server/categories/categories";
 import { spendingByCategory } from "$lib/server/categories/budgets";
 import { monthSummary, unmatchedTransactions } from "$lib/server/dashboard";
 import {
+  deleteAccount,
   getAccount,
   setAccountArchived,
   updateAccount,
@@ -367,6 +368,16 @@ describe("linkTransfers", () => {
     expect(rowsOf(a.id).some((r) => r.id === fromImport.id)).toBe(false);
 
     deleteTransaction(user.id, manual.id);
+    expect(rowsOf(b.id)).toEqual([]);
+    expect(allTransfers()).toEqual([]);
+  });
+
+  it("removes mirrors and transfers when the source account is deleted", async () => {
+    const { user, a, b, send } = await setup();
+    send();
+    linkTransfers(user.id, {});
+    expect(rowsOf(b.id)).toHaveLength(1);
+    deleteAccount(user.id, a.id);
     expect(rowsOf(b.id)).toEqual([]);
     expect(allTransfers()).toEqual([]);
   });

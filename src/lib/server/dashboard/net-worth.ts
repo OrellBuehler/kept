@@ -11,7 +11,12 @@ import {
 } from "$lib/server/db";
 import { loadHoldingsInputs } from "$lib/server/investments/load";
 import type { HoldingsInput } from "$lib/server/investments/valuation";
-import { localToday, makeBalanceAt } from "$lib/server/ledger/balances";
+import {
+  cashMovesOf,
+  localToday,
+  makeBalanceAt,
+  type CashMove,
+} from "$lib/server/ledger/balances";
 import { loadPortfolioInputs } from "$lib/server/pillar3a/load";
 import type { PortfoliosInput } from "$lib/server/pillar3a/valuation";
 import { addMonths, stepDates, type NetWorthStep } from "./dates";
@@ -45,7 +50,9 @@ interface Collected {
   openingDate: string | null;
   /** First date on which the account no longer counts (it was archived that day). */
   archivedFrom: string | null;
+  tradesMoveCash: boolean;
   transactions: { bookingDate: string; amount: number }[];
+  cashMoves?: CashMove[];
   snapshots: { date: string; amount: number; source: string }[];
   holdings?: HoldingsInput;
   portfolios?: PortfoliosInput;
@@ -78,6 +85,7 @@ export function netWorthSeries(
       shareBps: accounts.shareBps,
       openingBalance: accounts.openingBalance,
       openingDate: accounts.openingDate,
+      tradesMoveCash: accounts.tradesMoveCash,
       archived: accounts.archived,
       archivedAt: accounts.archivedAt,
     })
@@ -124,7 +132,9 @@ export function netWorthSeries(
 
   const holdings = loadHoldingsInputs(userId, [...collected.keys()], to);
   for (const [accountId, input] of holdings) {
-    collected.get(accountId)!.holdings = input;
+    const account = collected.get(accountId)!;
+    account.holdings = input;
+    if (account.tradesMoveCash) account.cashMoves = cashMovesOf(input);
   }
 
   const portfolioInputs = loadPortfolioInputs(
