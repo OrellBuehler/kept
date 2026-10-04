@@ -176,6 +176,13 @@
       "when": 1791130311474,
       "tag": "0024_redundant_rafael_vega",
       "breakpoints": true
+    },
+    {
+      "idx": 25,
+      "version": "6",
+      "when": 1791139444397,
+      "tag": "0025_fantastic_skin",
+      "breakpoints": true
     }
   ]
 }

@@ -40,6 +40,7 @@ import {
   MAX_DOCUMENT_ATTEMPTS,
   REVIEW_NOTE,
   externalRef,
+  instanceKey,
   syncConnection,
 } from "./sync";
 import { billPdf, plainPdf, seedConnection } from "./testing";
@@ -729,9 +730,13 @@ describe("syncConnection", () => {
     expect(listBills(user.id)).toHaveLength(0);
   });
 
-  it("changing the address drops the links and the watermark", async () => {
+  it("changing the address keeps the links, the watermark and the bill urls", async () => {
     fake.addDoc({ id: 95, original: pdfEnergy });
     await syncConnection(user.id);
+    const [bill] = listBills(user.id);
+    const watermark = getConnectionRow(user.id)!.lastSyncModified;
+    expect(watermark).not.toBeNull();
+    const oldBase = fake.baseUrl;
 
     saveConnection(user.id, {
       baseUrl: `${fake.origin}/other`,
@@ -739,9 +744,69 @@ describe("syncConnection", () => {
       allowInsecureTls: false,
     });
 
-    expect(getDB().select().from(paperlessDocuments).all()).toHaveLength(0);
-    expect(getConnectionRow(user.id)).toMatchObject({ lastSyncModified: null });
+    expect(getDB().select().from(paperlessDocuments).all()).toHaveLength(1);
+    expect(getConnectionRow(user.id)).toMatchObject({
+      lastSyncModified: watermark,
+    });
+    expect(getBill(user.id, bill!.id).externalUrl).toBe(
+      `${fake.origin}/other/documents/95/details`,
+    );
+    expect(getBill(user.id, bill!.id).externalRef).toBe(
+      externalRef(oldBase, 95),
+    );
+  });
+
+  it("does not duplicate any bill after the address changed", async () => {
+    fake.addDoc({ id: 95, original: pdfEnergy });
+    await syncConnection(user.id);
+    // Same server, new address: here the fake keeps answering on the old one too.
+    fake.prefix = "/other";
+    saveConnection(user.id, {
+      baseUrl: `${fake.origin}/other`,
+      token: null,
+      allowInsecureTls: false,
+    });
+    getDB().update(paperlessConnections).set({ lastSyncModified: null }).run();
+    const r = await syncConnection(user.id);
+    expect(r).toMatchObject({ imported: 0, unchanged: 1, failed: 0 });
     expect(listBills(user.id)).toHaveLength(1);
+  });
+
+  it("keeps a legacy connection (no stored key) on the key its bills already have", async () => {
+    fake.addDoc({ id: 95, original: pdfEnergy });
+    await syncConnection(user.id);
+    getDB().update(paperlessConnections).set({ instanceKey: null }).run();
+    const legacyKey = instanceKey(fake.baseUrl);
+    fake.prefix = "/other";
+    saveConnection(user.id, {
+      baseUrl: `${fake.origin}/other`,
+      token: null,
+      allowInsecureTls: false,
+    });
+    expect(getConnectionRow(user.id)!.instanceKey).toBe(legacyKey);
+  });
+
+  it("a different instance resets links and watermark and gets a fresh key", async () => {
+    fake.addDoc({ id: 95, original: pdfEnergy });
+    await syncConnection(user.id);
+    const before = getConnectionRow(user.id)!;
+
+    saveConnection(user.id, {
+      baseUrl: `${fake.origin}/other`,
+      token: null,
+      allowInsecureTls: false,
+      differentInstance: true,
+    });
+
+    expect(getDB().select().from(paperlessDocuments).all()).toHaveLength(0);
+    const after = getConnectionRow(user.id)!;
+    expect(after.lastSyncModified).toBeNull();
+    expect(after.instanceKey).not.toBe(before.instanceKey);
+    expect(listBills(user.id)).toHaveLength(1);
+
+    fake.prefix = "/other";
+    await syncConnection(user.id);
+    expect(listBills(user.id)).toHaveLength(2);
   });
 
   describe("for specific documents (webhook)", () => {

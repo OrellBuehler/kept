@@ -105,7 +105,12 @@
       use:enhance={submitHandler({
         setPending: (v) => (savePending = v),
         setErrors: (e) => (saveErrors = e),
-        knownFields: ["baseUrl", "token", "allowInsecureTls"],
+        knownFields: [
+          "baseUrl",
+          "token",
+          "allowInsecureTls",
+          "differentInstance",
+        ],
       })}
     >
       <FormAlert message={formError(saveErrors)} />
@@ -145,6 +150,22 @@
           aria-invalid={!!saveErrors.token}
         />
       </FormField>
+      {#if connection}
+        <div class="grid gap-2">
+          <div class="flex items-center gap-3">
+            <Switch id="differentInstance" name="differentInstance" />
+            <Label for="differentInstance">
+              This is a different Paperless server
+            </Label>
+          </div>
+          <p class="text-muted-foreground text-xs">
+            Leave off when only the address changed: your bills stay linked to
+            their documents. Turn on for another or reinstalled server, whose
+            document numbers mean something else; the links are then reset and
+            its documents are imported again.
+          </p>
+        </div>
+      {/if}
       <div class="grid gap-2">
         <div class="flex items-center gap-3">
           <Switch

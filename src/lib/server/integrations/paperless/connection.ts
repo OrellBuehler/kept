@@ -1,8 +1,9 @@
 import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
-import { and, eq, isNull } from "drizzle-orm";
+import { and, eq, isNull, sql } from "drizzle-orm";
 import { z } from "zod";
 import { decryptSecret, encryptSecret } from "$lib/server/crypto";
 import {
+  bills,
   getDB,
   paperlessConnections,
   paperlessDismissed,
@@ -35,6 +36,18 @@ export function instanceKey(baseUrl: string): string {
 
 export function externalRef(baseUrl: string, paperlessId: number): string {
   return `${instanceKey(baseUrl)}:${paperlessId}`;
+}
+
+/** The key of the connection's server: stored, or (older rows) derived from the address. */
+export function rowInstanceKey(row: ConnectionRow): string {
+  return row.instanceKey ?? instanceKey(row.baseUrl);
+}
+
+export function rowExternalRef(
+  row: ConnectionRow,
+  paperlessId: number,
+): string {
+  return `${rowInstanceKey(row)}:${paperlessId}`;
 }
 
 export function isDismissed(userId: string, ref: string): boolean {
@@ -72,7 +85,7 @@ function rememberDismissed(tx: Tx, row: ConnectionRow): void {
     .values(
       dismissed.map((d) => ({
         userId: row.userId,
-        externalRef: externalRef(row.baseUrl, d.paperlessId),
+        externalRef: rowExternalRef(row, d.paperlessId),
       })),
     )
     .onConflictDoNothing()
@@ -123,6 +136,7 @@ export function secretMatches(row: ConnectionRow, presented: string): boolean {
   return a.length === b.length && timingSafeEqual(a, b);
 }
 
+const newInstanceKey = () => randomBytes(6).toString("hex");
 const newWebhookToken = () => randomBytes(24).toString("base64url");
 const newWebhookSecret = () => randomBytes(32).toString("base64url");
 
@@ -183,6 +197,11 @@ export interface SaveConnectionInput {
   /** Required for a new connection; blank keeps the stored token. */
   token?: string | null;
   allowInsecureTls: boolean;
+  /**
+   * The address now points at a different Paperless server (or a reinstalled one): forget the
+   * links to the old server's documents and start over. Without it, an address change keeps them.
+   */
+  differentInstance?: boolean;
 }
 
 export interface SaveConnectionResult {
@@ -230,6 +249,7 @@ export function saveConnection(
         userId,
         baseUrl,
         tokenEncrypted: encryptSecret(token),
+        instanceKey: instanceKey(baseUrl),
         allowInsecureTls: input.allowInsecureTls,
         webhookSecretHash: hashSecret(secret),
         webhookToken: newWebhookToken(),
@@ -240,8 +260,9 @@ export function saveConnection(
   }
 
   const moved = existing.baseUrl !== baseUrl;
+  const reset = input.differentInstance === true;
   const row = db.transaction((tx) => {
-    if (moved) {
+    if (reset) {
       // Another server has other document ids: old links and watermark are meaningless.
       rememberDismissed(tx, existing);
       tx.delete(paperlessDocuments)
@@ -252,22 +273,33 @@ export function saveConnection(
           ),
         )
         .run();
+    } else if (moved) {
+      // Same server under a new address: bills keep their links, only their stored urls follow.
+      tx.update(bills)
+        .set({
+          externalUrl: sql`${baseUrl} || substr(${bills.externalUrl}, length(${existing.baseUrl}) + 1)`,
+        })
+        .where(
+          and(
+            eq(bills.userId, userId),
+            eq(bills.externalSource, "paperless"),
+            sql`substr(${bills.externalUrl}, 1, length(${existing.baseUrl}) + 1) = ${existing.baseUrl + "/"}`,
+          ),
+        )
+        .run();
     }
     return tx
       .update(paperlessConnections)
       .set({
         baseUrl,
+        instanceKey: reset ? newInstanceKey() : rowInstanceKey(existing),
         allowInsecureTls: input.allowInsecureTls,
         ...(token !== null ? { tokenEncrypted: encryptSecret(token) } : {}),
-        ...(moved
-          ? {
-              apiVersion: null,
-              serverVersion: null,
-              lastSyncModified: null,
-              lastSyncAt: null,
-            }
+        ...(moved || reset
+          ? { apiVersion: null, serverVersion: null, lastSyncAt: null }
           : {}),
-        ...(moved || token !== null ? { lastError: null } : {}),
+        ...(reset ? { lastSyncModified: null } : {}),
+        ...(moved || reset || token !== null ? { lastError: null } : {}),
       })
       .where(
         and(

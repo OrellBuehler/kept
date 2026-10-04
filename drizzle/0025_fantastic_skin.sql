@@ -1,0 +1,1 @@
+ALTER TABLE `paperless_connections` ADD `instance_key` text;

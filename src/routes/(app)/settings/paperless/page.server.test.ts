@@ -176,6 +176,21 @@ describe("settings/paperless", () => {
     expect(data.recipe.action.params).toEqual({ document_id: "{{ doc_id }}" });
   });
 
+  it("save keeps the instance on an address change unless told it is a different one", async () => {
+    await connect();
+    const first = getConnectionRow(user.id)!;
+    await connect({ baseUrl: `${fake.origin}/moved` });
+    expect(getConnectionRow(user.id)).toMatchObject({
+      instanceKey: first.instanceKey,
+      baseUrl: `${fake.origin}/moved`,
+    });
+    await connect({
+      baseUrl: `${fake.origin}/new`,
+      differentInstance: "on",
+    });
+    expect(getConnectionRow(user.id)!.instanceKey).not.toBe(first.instanceKey);
+  });
+
   it("save validates and keeps the stored token when the field is blank", async () => {
     expect(
       failure(await act("save", user, { baseUrl: "", token: "x" })).errors

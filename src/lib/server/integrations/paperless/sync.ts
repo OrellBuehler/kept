@@ -37,7 +37,7 @@ import {
 } from "./client";
 import {
   clientForRow,
-  externalRef,
+  rowExternalRef,
   getConnectionRow,
   isDismissed,
   recordConnectionState,
@@ -638,7 +638,7 @@ async function processDocument(
     return "unchanged";
   }
 
-  const ref = externalRef(row.baseUrl, doc.id);
+  const ref = rowExternalRef(row, doc.id);
   if (!link && isDismissed(userId, ref)) {
     saveLink(row, doc.id, { modified, status: "imported", billId: null });
     return "unchanged";
