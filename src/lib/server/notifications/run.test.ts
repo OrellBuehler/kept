@@ -176,3 +176,72 @@ describe("channels", () => {
     expect(res).toMatchObject({ ok: false });
   });
 });
+
+describe("channels encrypted with another KEPT_SECRET_KEY", () => {
+  const keyA = Buffer.alloc(32, 1).toString("base64");
+  const keyB = Buffer.alloc(32, 2).toString("base64");
+  afterEach(() => vi.unstubAllEnvs());
+
+  async function withUnreadable() {
+    vi.stubEnv("KEPT_SECRET_KEY", keyA);
+    const user = await setup();
+    vi.stubEnv("KEPT_SECRET_KEY", keyB);
+    return user;
+  }
+
+  it("are listed as needing re-entry without throwing and without leaking anything", async () => {
+    const user = await withUnreadable();
+    const [view] = listChannels(user.id);
+    expect(view).toMatchObject({
+      kind: "ntfy",
+      enabled: true,
+      needsReentry: true,
+      fields: {},
+      hasSecret: false,
+    });
+  });
+
+  it("are skipped when sending: nothing is fetched, nothing is marked sent, only a code is logged", async () => {
+    const user = await withUnreadable();
+    seedBill(user.id, { dueDate: "2026-09-20" });
+    const fetchFn = okFetch();
+    const errors = vi.spyOn(console, "error").mockImplementation(() => {});
+    const warns = vi.spyOn(console, "warn").mockImplementation(() => {});
+    await runNotifications({ fetch: fetchFn, smtp: null }, NOW);
+    expect(fetchFn).not.toHaveBeenCalled();
+    expect(sentCount()).toBe(0);
+    const logged = JSON.stringify([errors.mock.calls, warns.mock.calls]);
+    expect(logged).not.toContain("tk_secret");
+    expect(logged).not.toContain("ntfy.example.org");
+  });
+
+  it("sendTest reports that the settings must be entered again", async () => {
+    const user = await withUnreadable();
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    const r = await sendTest(user.id, "ntfy", { fetch: okFetch(), smtp: null });
+    expect(r).toMatchObject({ ok: false });
+    expect(JSON.stringify(r)).toMatch(/again|re-enter/i);
+  });
+
+  it("deliver skips an unreadable channel but still uses a readable one", async () => {
+    const user = await withUnreadable();
+    saveChannel(user.id, "webhook", { url: "https://hooks.example.org/k" });
+    const fetchFn = okFetch();
+    seedBill(user.id, { dueDate: "2026-09-20" });
+    await runNotifications({ fetch: fetchFn, smtp: null }, NOW);
+    expect(fetchFn).toHaveBeenCalledTimes(1);
+    expect(String(fetchFn.mock.calls[0]![0])).toBe(
+      "https://hooks.example.org/k",
+    );
+    expect(sentCount()).toBe(1);
+  });
+
+  it("saving the channel again makes it work", async () => {
+    const user = await withUnreadable();
+    saveChannel(user.id, "ntfy", {
+      serverUrl: "https://ntfy.example.org",
+      topic: "kept",
+    });
+    expect(listChannels(user.id)[0]).toMatchObject({ needsReentry: false });
+  });
+});

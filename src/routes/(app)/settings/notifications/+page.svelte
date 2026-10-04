@@ -153,7 +153,9 @@
       <Card.Header>
         <div class="flex flex-wrap items-center justify-between gap-2">
           <Card.Title>{CHANNEL_LABELS[kind]}</Card.Title>
-          {#if channel}
+          {#if channel?.needsReentry}
+            <Badge variant="destructive">Needs re-entry</Badge>
+          {:else if channel}
             <Badge variant={channel.enabled ? "default" : "secondary"}>
               {channel.enabled ? "Enabled" : "Paused"}
             </Badge>
@@ -162,6 +164,11 @@
         <Card.Description>{hints[kind]}</Card.Description>
       </Card.Header>
       <Card.Content class="grid grid-cols-[minmax(0,1fr)] gap-4">
+        {#if channel?.needsReentry}
+          <FormAlert
+            message="The saved settings can no longer be read, probably because KEPT_SECRET_KEY changed. Nothing is sent through this channel until you enter the settings again and save, or remove the channel."
+          />
+        {/if}
         <form
           method="POST"
           action="?/saveChannel"
@@ -248,7 +255,9 @@
           <FormAlert message={formError(errors)} />
           <Button type="submit" disabled={pending === kind} class="self-start">
             {#if pending === kind}<Spinner />Saving…{:else}{channel
-                ? "Save changes"
+                ? channel.needsReentry
+                  ? "Save again"
+                  : "Save changes"
                 : "Add channel"}{/if}
           </Button>
         </form>
@@ -281,7 +290,7 @@
                 <Button
                   type="submit"
                   variant="outline"
-                  disabled={pending === `test-${kind}`}
+                  disabled={pending === `test-${kind}` || channel.needsReentry}
                 >
                   {#if pending === `test-${kind}`}<Spinner />Sending…{:else}Send
                     test{/if}

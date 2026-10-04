@@ -14,7 +14,7 @@ import {
 } from "$lib/server/notifications/schemas";
 import {
   deleteChannel,
-  getChannelConfig,
+  getReadableChannelConfig,
   getSettings,
   listChannels,
   saveChannel,
@@ -75,7 +75,7 @@ export const actions: Actions = {
       token?: string;
       secret?: string;
     };
-    const previous = getChannelConfig(user.id, kind) as {
+    const previous = getReadableChannelConfig(user.id, kind) as {
       token?: string;
       secret?: string;
     } | null;

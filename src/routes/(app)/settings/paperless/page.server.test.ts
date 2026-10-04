@@ -20,6 +20,7 @@ import {
   secretMatches,
   testConnection,
 } from "$lib/server/integrations/paperless/connection";
+import { syncConnection } from "$lib/server/integrations/paperless/sync";
 import { startFakePaperless } from "$lib/server/integrations/paperless/fake-server";
 import {
   billPdf,
@@ -106,6 +107,57 @@ describe("settings/paperless", () => {
 
   const connect = (over: Form = {}) =>
     act("save", user, { baseUrl: fake.baseUrl, token: "test-token", ...over });
+
+  describe("after KEPT_SECRET_KEY changed", () => {
+    const keyA = Buffer.alloc(32, 1).toString("base64");
+    const keyB = Buffer.alloc(32, 2).toString("base64");
+    afterEach(() => vi.stubEnv("KEPT_SECRET_KEY", ""));
+
+    async function brokenConnection() {
+      vi.stubEnv("KEPT_SECRET_KEY", keyA);
+      value(await connect());
+      vi.stubEnv("KEPT_SECRET_KEY", keyB);
+    }
+
+    it("load does not throw and flags the connection", async () => {
+      await brokenConnection();
+      const data = await loaded(user);
+      expect(data.connection).toMatchObject({ tokenUnreadable: true });
+      expect(JSON.stringify(data)).not.toContain("tokenEncrypted");
+    });
+
+    it("sync records a code instead of throwing and sends nothing", async () => {
+      await brokenConnection();
+      vi.spyOn(console, "error").mockImplementation(() => {});
+      fake.requests = [];
+      const result = await syncConnection(user.id);
+      expect(result.error).toBe("token_unreadable");
+      expect(getConnectionRow(user.id)?.lastError).toBe("token_unreadable");
+      expect(fake.requests).toHaveLength(0);
+    });
+
+    it("saving with a blank token is refused; entering the token again repairs it", async () => {
+      await brokenConnection();
+      const blank = failure(
+        await act("save", user, { baseUrl: fake.baseUrl, token: "" }),
+      );
+      expect(blank.errors.token?.[0]).toContain("Enter the token again");
+      const r = value(
+        await act("save", user, { baseUrl: fake.baseUrl, token: "test-token" }),
+      );
+      expect(r).toMatchObject({ success: true, action: "save" });
+      expect((await loaded(user)).connection).toMatchObject({
+        tokenUnreadable: false,
+      });
+    });
+
+    it("can be disconnected", async () => {
+      await brokenConnection();
+      const r = await act("disconnect", user);
+      expect(r.type).toBe("return");
+      expect(getConnectionRow(user.id)).toBeNull();
+    });
+  });
 
   describe("private network targets", () => {
     beforeEach(() => vi.stubEnv("KEPT_ALLOW_PRIVATE_NETWORK", ""));

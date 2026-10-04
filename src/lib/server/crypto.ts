@@ -43,6 +43,18 @@ function getKey(): Buffer {
   return key;
 }
 
+/**
+ * A stored secret cannot be read: it was encrypted with another KEPT_SECRET_KEY,
+ * is damaged, or has an unknown format. Callers show "needs re-entry" instead of failing.
+ */
+export class SecretUnreadableError extends Error {
+  readonly code = "secret_unreadable";
+  constructor(message: string, options?: { cause?: unknown }) {
+    super(message, options);
+    this.name = "SecretUnreadableError";
+  }
+}
+
 export function assertSecretKeyConfigured(): void {
   getKey();
 }
@@ -63,7 +75,9 @@ export function encryptSecret(plaintext: string): string {
 
 export function decryptSecret(payload: string): string {
   const malformed = () =>
-    new Error("Cannot decrypt secret: unsupported or malformed format");
+    new SecretUnreadableError(
+      "Cannot decrypt secret: unsupported or malformed format",
+    );
   const parts = payload.split(".");
   if (parts.length !== 3 || parts[0] !== VERSION) throw malformed();
   const iv = Buffer.from(parts[1], "base64url");
@@ -80,7 +94,7 @@ export function decryptSecret(payload: string): string {
       decipher.final(),
     ]).toString("utf8");
   } catch (cause) {
-    throw new Error(
+    throw new SecretUnreadableError(
       "Cannot decrypt secret: data was tampered with or KEPT_SECRET_KEY is wrong",
       { cause },
     );

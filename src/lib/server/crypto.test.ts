@@ -5,6 +5,7 @@ import {
   decryptSecret,
   encryptSecret,
   resetCryptoWarningForTests,
+  SecretUnreadableError,
 } from "./crypto";
 
 const keyA = Buffer.alloc(32, 1).toString("base64");
@@ -43,6 +44,15 @@ describe("crypto", () => {
     expect(() =>
       decryptSecret(`${v}.${iv}.${bytes.toString("base64url")}`),
     ).toThrow(/tampered/);
+  });
+
+  it("signals an unreadable secret with a typed error under another key or bad format", () => {
+    const enc = encryptSecret("secret");
+    vi.stubEnv("KEPT_SECRET_KEY", keyB);
+    expect(() => decryptSecret(enc)).toThrow(SecretUnreadableError);
+    expect(() => decryptSecret("garbage")).toThrow(SecretUnreadableError);
+    vi.stubEnv("KEPT_SECRET_KEY", "not-a-key");
+    expect(() => decryptSecret(enc)).not.toThrow(SecretUnreadableError);
   });
 
   it("authenticates the version prefix as additional data", () => {

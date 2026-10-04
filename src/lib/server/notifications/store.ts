@@ -1,6 +1,10 @@
 import { and, eq } from "drizzle-orm";
 import type { ChannelKind } from "$lib/notification-types";
-import { decryptSecret, encryptSecret } from "$lib/server/crypto";
+import {
+  SecretUnreadableError,
+  decryptSecret,
+  encryptSecret,
+} from "$lib/server/crypto";
 import {
   getDB,
   notificationChannels,
@@ -98,6 +102,19 @@ export function getChannelConfig<K extends ChannelKind>(
   return JSON.parse(decryptSecret(row.configEncrypted));
 }
 
+/** Like `getChannelConfig`, but null when the stored settings cannot be decrypted (the caller will overwrite them). */
+export function getReadableChannelConfig(
+  userId: string,
+  kind: ChannelKind,
+): ChannelConfig | null {
+  try {
+    return getChannelConfig(userId, kind);
+  } catch (err) {
+    if (err instanceof SecretUnreadableError) return null;
+    throw err;
+  }
+}
+
 export function saveChannel(
   userId: string,
   kind: ChannelKind,
@@ -172,22 +189,30 @@ export interface ChannelView {
   /** Non-secret settings, by field name. */
   fields: Record<string, string>;
   hasSecret: boolean;
+  /** The stored settings cannot be decrypted (KEPT_SECRET_KEY changed): save them again or remove the channel. */
+  needsReentry: boolean;
   lastSuccessAt: number | null;
   lastError: string | null;
   lastErrorAt: number | null;
 }
 
 function toView(row: ChannelRow): ChannelView {
-  const config = JSON.parse(decryptSecret(row.configEncrypted)) as Record<
-    string,
-    string | undefined
-  >;
+  let config: Record<string, string | undefined>;
+  let needsReentry = false;
+  try {
+    config = JSON.parse(decryptSecret(row.configEncrypted));
+  } catch (err) {
+    if (!(err instanceof SecretUnreadableError)) throw err;
+    config = {};
+    needsReentry = true;
+  }
   const { token, secret, ...fields } = config;
   return {
     kind: row.kind,
     enabled: row.enabled,
     fields: fields as Record<string, string>,
     hasSecret: Boolean(token ?? secret),
+    needsReentry,
     lastSuccessAt: row.lastSuccessAt?.getTime() ?? null,
     lastError: row.lastError,
     lastErrorAt: row.lastErrorAt?.getTime() ?? null,
@@ -205,7 +230,7 @@ export function listChannels(userId: string): ChannelView[] {
 
 export function listEnabledChannelKinds(userId: string): ChannelKind[] {
   return listChannels(userId)
-    .filter((c) => c.enabled)
+    .filter((c) => c.enabled && !c.needsReentry)
     .map((c) => c.kind);
 }
 

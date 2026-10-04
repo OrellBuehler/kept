@@ -202,4 +202,60 @@ describe("settings/notifications", () => {
     await act("deleteChannel", user, { kind: "webhook" });
     expect(listChannels(other.id)).toHaveLength(1);
   });
+
+  describe("after KEPT_SECRET_KEY changed", () => {
+    const keyA = Buffer.alloc(32, 1).toString("base64");
+    const keyB = Buffer.alloc(32, 2).toString("base64");
+
+    async function brokenChannel() {
+      vi.stubEnv("KEPT_SECRET_KEY", keyA);
+      await act("saveChannel", user, {
+        kind: "ntfy",
+        serverUrl: "https://ntfy.example.org",
+        topic: "kept",
+        token: "tk_secret",
+      });
+      vi.stubEnv("KEPT_SECRET_KEY", keyB);
+    }
+
+    it("load does not throw and flags the channel", async () => {
+      await brokenChannel();
+      const data = (await load(
+        createTestEvent({
+          user,
+          url: "http://kept.test/settings/notifications",
+        }) as never,
+      )) as { channels: { kind: string; needsReentry: boolean }[] };
+      expect(data.channels).toEqual([
+        expect.objectContaining({ kind: "ntfy", needsReentry: true }),
+      ]);
+    });
+
+    it("re-saving with a blank token stores the new settings", async () => {
+      await brokenChannel();
+      const res = await act("saveChannel", user, {
+        kind: "ntfy",
+        serverUrl: "https://ntfy.example.org",
+        topic: "kept2",
+      });
+      expect(res.type).toBe("return");
+      expect(listChannels(user.id)[0]).toMatchObject({
+        needsReentry: false,
+        fields: { topic: "kept2" },
+        hasSecret: false,
+      });
+    });
+
+    it("the channel can be removed, and toggling does not throw", async () => {
+      await brokenChannel();
+      expect(
+        (await act("toggleChannel", user, { kind: "ntfy", enabled: "false" }))
+          .type,
+      ).toBe("return");
+      expect((await act("deleteChannel", user, { kind: "ntfy" })).type).toBe(
+        "return",
+      );
+      expect(listChannels(user.id)).toEqual([]);
+    });
+  });
 });

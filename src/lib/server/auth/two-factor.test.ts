@@ -1,5 +1,5 @@
 import { eq } from "drizzle-orm";
-import { beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createTestUser, loginTestUser } from "$lib/testing/auth";
 import { useTestDB } from "$lib/testing/db";
 import { authEvents, getDB, passkeys, totpCredentials } from "$lib/server/db";
@@ -13,6 +13,7 @@ import {
   consumeRecoveryCode,
   consumeTotpCode,
   disableTotp,
+  getPendingTotpEnrolment,
   getTwoFactorStatus,
   regenerateRecoveryCodes,
   reauthenticate,
@@ -235,5 +236,41 @@ describe("two-factor", () => {
     await expect(
       reauthenticate(u.id, u.password, "", limiter, NOW),
     ).rejects.toMatchObject({ code: "invalid_code" });
+  });
+});
+
+describe("totp secrets encrypted with another KEPT_SECRET_KEY", () => {
+  useTestDB();
+  const keyA = Buffer.alloc(32, 1).toString("base64");
+  const keyB = Buffer.alloc(32, 2).toString("base64");
+  afterEach(() => vi.unstubAllEnvs());
+
+  it("a pending enrolment reads as not started instead of throwing", async () => {
+    vi.stubEnv("KEPT_SECRET_KEY", keyA);
+    const u = await createTestUser();
+    startTotpEnrolment(u.id, u.username);
+    vi.stubEnv("KEPT_SECRET_KEY", keyB);
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+    expect(getPendingTotpEnrolment(u.id, u.username)).toBeNull();
+    expect(() => startTotpEnrolment(u.id, u.username)).not.toThrow();
+    expect(getPendingTotpEnrolment(u.id, u.username)).not.toBeNull();
+  });
+
+  it("authenticator codes are rejected but recovery codes still work", async () => {
+    vi.stubEnv("KEPT_SECRET_KEY", keyA);
+    const u = await createTestUser();
+    const { secret } = startTotpEnrolment(u.id, u.username);
+    const codes = confirmTotpEnrolment(u.id, totpCode(secret, NOW), NOW);
+    vi.stubEnv("KEPT_SECRET_KEY", keyB);
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    expect(
+      verifySecondFactorCode(
+        u.id,
+        totpCode(secret, NOW + 60_000),
+        NOW + 60_000,
+      ),
+    ).toBe(false);
+    expect(JSON.stringify(warn.mock.calls)).not.toContain(secret);
+    expect(verifySecondFactorCode(u.id, codes[0], NOW)).toBe(true);
   });
 });

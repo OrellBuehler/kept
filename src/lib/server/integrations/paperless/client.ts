@@ -17,6 +17,7 @@ export const PAPERLESS_ERROR_CODES = [
   "wrong_type",
   "too_large",
   "blocked_address",
+  "token_unreadable",
 ] as const;
 export type PaperlessErrorCode = (typeof PAPERLESS_ERROR_CODES)[number];
 
@@ -37,6 +38,8 @@ const MESSAGES: Record<PaperlessErrorCode, string> = {
   invalid_response: "Paperless sent a response Kept could not understand.",
   wrong_type: "Paperless sent a file of an unexpected type.",
   too_large: "The file from Paperless is too large.",
+  token_unreadable:
+    "The saved access token can no longer be read, probably because KEPT_SECRET_KEY changed. Enter the token again.",
   blocked_address:
     "This address is on a private network, which this server does not allow for your account. Ask an administrator.",
 };

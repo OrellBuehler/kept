@@ -9,7 +9,11 @@ import {
   totpCredentials,
   users,
 } from "$lib/server/db";
-import { decryptSecret, encryptSecret } from "$lib/server/crypto";
+import {
+  SecretUnreadableError,
+  decryptSecret,
+  encryptSecret,
+} from "$lib/server/crypto";
 import { logAuthEvent } from "./events";
 import { verifyPassword } from "./password";
 import { twoFactorManageLimiter, type LoginRateLimiter } from "./rate-limit";
@@ -89,7 +93,15 @@ export function getPendingTotpEnrolment(
       ),
     )
     .get();
-  return row ? enrolmentFor(username, row.secret) : null;
+  if (!row) return null;
+  try {
+    return enrolmentFor(username, row.secret);
+  } catch (err) {
+    if (!(err instanceof SecretUnreadableError)) throw err;
+    // KEPT_SECRET_KEY changed mid-enrolment: treat it as not started; starting again replaces it.
+    console.warn("totp enrolment skipped", err.code);
+    return null;
+  }
 }
 
 /** Starts (or restarts) enrolment with a fresh secret. Fails if TOTP is already on. */
@@ -180,12 +192,16 @@ export function consumeTotpCode(
         .get();
       if (!row) return false;
       if (!opts.confirming && !row.confirmedAt) return false;
-      const step = verifyTotp(
-        decryptSecret(row.secret),
-        code,
-        now,
-        row.lastStep,
-      );
+      let secret: string;
+      try {
+        secret = decryptSecret(row.secret);
+      } catch (err) {
+        if (!(err instanceof SecretUnreadableError)) throw err;
+        // KEPT_SECRET_KEY changed: no authenticator code can match; recovery codes and an admin reset still work.
+        console.warn("totp code rejected", err.code);
+        return false;
+      }
+      const step = verifyTotp(secret, code, now, row.lastStep);
       if (step === null) return false;
       tx.update(totpCredentials)
         .set({
