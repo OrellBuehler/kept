@@ -5,6 +5,35 @@ import globals from "globals";
 import ts from "typescript-eslint";
 import svelteConfig from "./svelte.config.js";
 
+/**
+ * Temporary ban on the synchronous bun-sqlite terminals `.all()`, `.get()` and
+ * `.run()` in files that have already been converted to `await`/`first()`.
+ * Each of phases 2.2-2.6 (one domain per PR) appends the globs of the files it
+ * converted, source and tests alike, e.g. "src/lib/server/auth/**". It keeps a
+ * converted file from regressing until the driver swap (2.7) makes the
+ * compiler reject these calls and this list and rule are deleted.
+ */
+const CONVERTED_TO_ASYNC = [];
+
+const syncTerminalBan = CONVERTED_TO_ASYNC.length
+  ? [
+      {
+        files: CONVERTED_TO_ASYNC,
+        rules: {
+          "no-restricted-syntax": [
+            "error",
+            {
+              selector:
+                "CallExpression[arguments.length=0] > MemberExpression.callee[property.name=/^(all|get|run)$/]",
+              message:
+                "Await the query (or use first()) instead of .all()/.get()/.run().",
+            },
+          ],
+        },
+      },
+    ]
+  : [];
+
 export default ts.config(
   {
     ignores: [
@@ -74,4 +103,5 @@ export default ts.config(
       "@typescript-eslint/await-thenable": "error",
     },
   },
+  ...syncTerminalBan,
 );
