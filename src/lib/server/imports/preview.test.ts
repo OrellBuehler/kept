@@ -286,6 +286,32 @@ describe("buildPreview: camt.053", () => {
       uploadFixture(user.id, account.id, "camt053/overlap-ntryref-a.xml"),
     );
     expect(p.counts).toEqual({ new: 0, duplicate: 5, total: 5 });
+    expect(p.rows.every((r) => r.matchedBy === "legacy_id")).toBe(true);
+  });
+
+  it("marks rows matched by their current id differently from legacy matches", async () => {
+    const { user, account } = await setup();
+    const pending = uploadFixture(
+      user.id,
+      account.id,
+      "camt053/overlap-ntryref-a.xml",
+    );
+    const fresh = buildPreview(user.id, pending);
+    expect(fresh.rows.every((r) => r.matchedBy === null)).toBe(true);
+    seedImportedTransaction(user.id, account.id, {
+      externalId: fresh.rows[0]!.tx.externalId,
+    });
+    seedImportedTransaction(user.id, account.id, {
+      externalId: fresh.rows[1]!.tx.legacyExternalIds![0]!,
+    });
+    const p = buildPreview(user.id, pending);
+    expect(p.rows.map((r) => r.matchedBy)).toEqual([
+      "id",
+      "legacy_id",
+      null,
+      null,
+      null,
+    ]);
   });
 });
 

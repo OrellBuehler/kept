@@ -80,7 +80,10 @@
   } as const;
 </script>
 
-{#snippet statusBadge(status: keyof typeof statusLabel)}
+{#snippet statusBadge(
+  status: keyof typeof statusLabel,
+  matchedBy: "id" | "legacy_id" | null,
+)}
   {#if status === "new"}
     <Badge
       variant="outline"
@@ -89,6 +92,11 @@
     >
   {:else}
     <Badge variant="secondary">{statusLabel[status]}</Badge>
+    {#if matchedBy === "legacy_id"}
+      <div class="text-muted-foreground mt-1 text-xs">
+        Matched an earlier import by its old id.
+      </div>
+    {/if}
   {/if}
 {/snippet}
 
@@ -347,7 +355,7 @@
                   />
                 </Table.Cell>
                 <Table.Cell class="align-top">
-                  {@render statusBadge(row.status)}
+                  {@render statusBadge(row.status, row.matchedBy)}
                 </Table.Cell>
               </Table.Row>
             {/each}
@@ -383,7 +391,7 @@
               <span class="text-muted-foreground text-xs">
                 {prefs.date(row.tx.bookingDate)}
               </span>
-              {@render statusBadge(row.status)}
+              {@render statusBadge(row.status, row.matchedBy)}
             </div>
           </li>
         {/each}

@@ -381,6 +381,16 @@ function sha256(parts: unknown[]): string {
   return createHash("sha256").update(JSON.stringify(parts)).digest("hex");
 }
 
+/** The IBAN, else a short hash of the case- and spacing-normalised name, else null. */
+function counterpartyKey(cp: {
+  name: string | null;
+  iban: string | null;
+}): string | null {
+  if (cp.iban) return cp.iban;
+  const name = cp.name?.toLowerCase().replace(/\s+/g, " ").trim();
+  return name ? `n-${sha256([name]).slice(0, 16)}` : null;
+}
+
 function parseEntry(
   entry: Rec,
   accountKey: string,
@@ -483,7 +493,10 @@ function parseEntry(
       const uetr = reference(at(tx, "Refs", "UETR"));
       const e2e = reference(at(tx, "Refs", "EndToEndId"));
       const txId = reference(at(tx, "Refs", "TxId"));
-      const when = `${bookingDate}:${value}`;
+      // EndToEndId and TxId are chosen by the payer and may be reused for different payees on
+      // the same day, so the counterparty is part of the id.
+      const party = counterpartyKey(cp);
+      const when = `${bookingDate}:${value}${party ? `:${party}` : ""}`;
       if (txAcsr) baseId = `acsr:${txAcsr}`;
       else if (uetr) baseId = `uetr:${uetr}`;
       else if (e2e) baseId = `e2e:${e2e}:${when}`;
@@ -515,8 +528,10 @@ function parseEntry(
  *   1. `acsr:<AcctSvcrRef>` - the account servicer's reference, at entry level or, failing
  *      that, at TxDtls level. For split batches with an entry-level reference `/<key>` is
  *      appended, where key is the TxDtls AcctSvcrRef, EndToEndId or TxId, else the position.
- *   2. `uetr:<UETR>`, then `e2e:<EndToEndId>:<date>:<amount>` and `txid:<TxId>:<date>:<amount>`
- *      (date and amount added because those ids are chosen by the payer and may be reused).
+ *   2. `uetr:<UETR>`, then `e2e:<EndToEndId>:<date>:<amount>[:<party>]` and
+ *      `txid:<TxId>:<date>:<amount>[:<party>]` (date, amount and the counterparty - its IBAN,
+ *      else `n-` and a hash of its name, omitted when there is none - are added because those
+ *      ids are chosen by the payer and may be reused for different payees).
  *   3. `hash:<sha256>` of the booking content: account, booking/value date, signed amount,
  *      currency, counterparty IBAN and name, reference, description, AddtlNtryInf, reversal.
  *      No statement id and no position in the file, so the same booking hashes identically

@@ -575,7 +575,45 @@ describe("externalId", () => {
   it("uses EndToEndId with date and amount before hashing", () => {
     const [a] = parse("overlap-ntryref-a.xml");
     const e2e = a!.transactions.find((t) => t.amount === 8000)!;
-    expect(e2e.externalId).toBe("e2e:E2E-EXAMPLE-0001:2024-07-05:8000");
+    expect(e2e.externalId).toMatch(
+      /^e2e:E2E-EXAMPLE-0001:2024-07-05:8000:n-[0-9a-f]{16}$/,
+    );
+  });
+
+  it("separates bookings that reuse an EndToEndId by counterparty", () => {
+    const booking = (party: string, refs: string) =>
+      parseCamt053(
+        stmt(
+          ntry(
+            "9.00",
+            "DBIT",
+            `<NtryDtls><TxDtls><Refs>${refs}</Refs><RltdPties>${party}</RltdPties></TxDtls></NtryDtls>`,
+          ),
+        ),
+      )[0]!.transactions[0]!.externalId;
+    const byIban = (iban: string) =>
+      `<Cdtr><Nm>Same Name</Nm></Cdtr><CdtrAcct><Id><IBAN>${iban}</IBAN></Id></CdtrAcct>`;
+    const byName = (name: string) => `<Cdtr><Nm>${name}</Nm></Cdtr>`;
+    const e2e = "<EndToEndId>E1</EndToEndId>";
+    const txid = "<TxId>T1</TxId>";
+
+    // X and Y: same day, same amount, same EndToEndId, different payees.
+    const x = booking(byIban(IBAN_DE), e2e);
+    const y = booking(byIban(IBAN_GB), e2e);
+    expect(x).toMatch(/^e2e:E1:2024-01-02:-900:/);
+    expect(x).toContain(IBAN_DE);
+    expect(x).not.toBe(y);
+    // Without an IBAN the name separates them, ignoring case and spacing.
+    expect(booking(byName("Alpha Ltd"), e2e)).not.toBe(
+      booking(byName("Beta Ltd"), e2e),
+    );
+    expect(booking(byName("Alpha  Ltd"), e2e)).toBe(
+      booking(byName("alpha ltd"), e2e),
+    );
+    expect(booking(byIban(IBAN_DE), txid)).toMatch(/^txid:T1:2024-01-02:-900:/);
+    expect(booking(byIban(IBAN_DE), txid)).not.toBe(
+      booking(byIban(IBAN_GB), txid),
+    );
   });
 
   it("prefers TxDtls AcctSvcrRef, then UETR, then EndToEndId", () => {
