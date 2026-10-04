@@ -69,6 +69,9 @@ export async function createUser(input: NewUser): Promise<SessionUser> {
 export async function createFirstAdmin(
   input: Omit<NewUser, "role">,
 ): Promise<SessionUser> {
+  if (countUsers() > 0) {
+    throw new AuthError("setup_closed", "Setup has already been completed.");
+  }
   const passwordHash = await hashPassword(input.password);
   return getDB().transaction(
     (tx) => {

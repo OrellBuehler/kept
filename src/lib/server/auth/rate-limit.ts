@@ -190,3 +190,12 @@ export const passkeyOptionsLimiter = new LoginRateLimiter(
   Infinity,
   Infinity,
 );
+
+/** First-run /setup submissions per IP (each costs a password hash); call with username "setup". */
+export const setupLimiter = new LoginRateLimiter(
+  Date.now,
+  WINDOW_MS,
+  MAX_FAILURES_PER_USER_IP * 2,
+  Infinity,
+  Infinity,
+);
