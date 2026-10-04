@@ -12,6 +12,7 @@ import {
 } from "./client";
 import {
   getConnectionRow,
+  isTokenUnreadable,
   privateNetworkGuard,
   saveConnection,
   type ConnectionRow,
@@ -130,6 +131,14 @@ export async function saveConnectionVerified(
   input: SaveConnectionInput,
 ): Promise<SaveConnectionResult> {
   const existing = getConnectionRow(userId);
+  // Without a new token the stored one is used for the check; if it cannot be read, ask for it.
+  if (existing && !input.token?.trim() && isTokenUnreadable(existing)) {
+    throw new LedgerError(
+      "invalid",
+      new PaperlessError("token_unreadable").message,
+      "token",
+    );
+  }
   if (existing && input.differentInstance !== true) {
     let baseUrl: string | null = null;
     try {

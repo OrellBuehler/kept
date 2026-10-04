@@ -3,6 +3,9 @@ import { listBills } from "$lib/server/bills/bills";
 import { createTestUser, type TestUser } from "$lib/testing/auth";
 import { useTestDB } from "$lib/testing/db";
 import { useTestStore } from "$lib/testing/store";
+import { eq } from "drizzle-orm";
+import { getDB } from "$lib/server/db";
+import { paperlessConnections } from "$lib/server/schema";
 import { LedgerError } from "$lib/server/ledger/errors";
 import { getConnectionRow } from "./connection";
 import { startFakePaperless } from "./fake-server";
@@ -85,6 +88,22 @@ describe("saveConnectionVerified", () => {
     expect(err.field).toBe("baseUrl");
     expect(other.requests).toHaveLength(0);
     expect(getConnectionRow(user.id)!.baseUrl).toBe(before.baseUrl);
+  });
+
+  it("asks for the token again instead of failing when the stored one cannot be decrypted", async () => {
+    other.addDoc({ id: 95, original: pdfEnergy });
+    getDB()
+      .update(paperlessConnections)
+      .set({ tokenEncrypted: "v1.broken.broken" })
+      .where(eq(paperlessConnections.userId, user.id))
+      .run();
+
+    const err = await rejection(move(user.id, other.baseUrl));
+
+    expect(err.field).toBe("token");
+    expect(err.message).toContain("KEPT_SECRET_KEY");
+    expect(other.requests).toHaveLength(0);
+    expect(getConnectionRow(user.id)!.baseUrl).toBe(fake.baseUrl);
   });
 
   it("accepts the move when only some sampled documents still match", async () => {
