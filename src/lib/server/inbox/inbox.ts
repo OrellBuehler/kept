@@ -622,9 +622,10 @@ export function startInboxScheduler(
       running = false;
     }
   };
-  const first = setTimeout(tick, options.firstRunDelayMs ?? 5_000);
+  // tick() handles its own errors, so nothing is left to await or catch here.
+  const first = setTimeout(() => void tick(), options.firstRunDelayMs ?? 5_000);
   const timer = setInterval(
-    tick,
+    () => void tick(),
     options.intervalMs ?? config.intervalSeconds * 1000,
   );
   first.unref?.();
