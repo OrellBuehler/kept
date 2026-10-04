@@ -204,6 +204,8 @@ describe("report builders", () => {
           currency: "CHF",
           ibanMasked: null,
           balance: m(1000),
+          shareBps: 5000,
+          shareBalance: m(500),
           institution: { name: "Example Institution" },
         },
         {
@@ -212,6 +214,8 @@ describe("report builders", () => {
           currency: "CHF",
           ibanMasked: null,
           balance: m(2000),
+          shareBps: 10000,
+          shareBalance: m(2000),
           institution: null,
         },
       ],

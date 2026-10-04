@@ -1,6 +1,6 @@
 import { and, eq, gte, lte } from "drizzle-orm";
 import { normalizeIban } from "$lib/iban";
-import { minor, type Minor } from "$lib/money";
+import { minor, shareOf, type Minor, type ShareBasis } from "$lib/money";
 import { accounts, getDB, transactions } from "$lib/server/db";
 import { monthBounds, previousMonth } from "./dates";
 
@@ -29,12 +29,14 @@ export interface MonthSummary {
  * transaction whose counterparty IBAN equals the IBAN of another account of
  * the same user (archived ones included) is a transfer. Transfers whose
  * counterparty carries no IBAN cannot be recognised and count as income or
- * expense. Amounts are bucketed by the account's currency (as in net worth). Income is the sum of positive amounts, expenses the sum of
+ * expense. With basis "share" every transaction is scaled by the ownership
+ * share of its account (rounded per transaction, see `shareOf`); the transfer
+ * check is unchanged. Amounts are bucketed by the account's currency (as in net worth). Income is the sum of positive amounts, expenses the sum of
  * negative ones (reversals are not netted against the original).
  */
 export function monthSummary(
   userId: string,
-  { month }: { month: string },
+  { month, basis = "total" }: { month: string; basis?: ShareBasis },
 ): MonthSummary {
   const db = getDB();
   const prev = previousMonth(month);
@@ -44,6 +46,7 @@ export function monthSummary(
       iban: accounts.iban,
       archived: accounts.archived,
       currency: accounts.currency,
+      shareBps: accounts.shareBps,
     })
     .from(accounts)
     .where(eq(accounts.userId, userId))
@@ -51,6 +54,7 @@ export function monthSummary(
   const active = new Map(
     own.filter((a) => !a.archived).map((a) => [a.id, a.currency]),
   );
+  const shareBpsOf = new Map(own.map((a) => [a.id, a.shareBps]));
   const ibanOwner = new Map<string, string>();
   for (const a of own) if (a.iban) ibanOwner.set(normalizeIban(a.iban), a.id);
 
@@ -91,8 +95,12 @@ export function monthSummary(
     }
     currencies.add(currency);
     const b = bucket(t.bookingDate.slice(0, 7), currency);
-    if (t.amount > 0) b.income += t.amount;
-    else b.expenses -= t.amount;
+    const amount =
+      basis === "share"
+        ? shareOf(t.amount, shareBpsOf.get(t.accountId)!)
+        : t.amount;
+    if (amount > 0) b.income += amount;
+    else b.expenses -= amount;
   }
 
   const sorted = [...currencies].sort();

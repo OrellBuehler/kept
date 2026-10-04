@@ -1,6 +1,13 @@
 import { z } from "zod";
 import { ACCOUNT_TYPES } from "$lib/ledger-types";
-import { currencyExponent, minor, parseAmount, type Minor } from "$lib/money";
+import {
+  currencyExponent,
+  FULL_SHARE_BPS,
+  minor,
+  parseAmount,
+  parseSharePercent,
+  type Minor,
+} from "$lib/money";
 import { isValidIban, normalizeIban } from "$lib/iban";
 
 /** Blank or missing form fields become null; everything else goes through `schema`. */
@@ -136,6 +143,9 @@ export const accountInputSchema = z
     iban: optionalIban,
     openingBalance: z.string().optional(),
     openingDate: optionalDate,
+    /** "My share" as a percentage; blank means 100. */
+    share: z.string().optional(),
+    sharedWith: optionalText(80, "Shared with"),
     sortOrder: optionalOf(
       z
         .string()
@@ -160,7 +170,26 @@ export const accountInputSchema = z
       }
       openingBalance = r.value;
     }
-    return { ...v, openingBalance };
+    let shareBps = FULL_SHARE_BPS;
+    const { share, ...rest } = v;
+    const rawShare = share?.trim() ?? "";
+    if (rawShare !== "") {
+      try {
+        shareBps = parseSharePercent(rawShare);
+      } catch (err) {
+        if (!(err instanceof SyntaxError || err instanceof RangeError)) {
+          throw err;
+        }
+        ctx.issues.push({
+          code: "custom",
+          message: "Enter a share above 0 and up to 100, e.g. 50 or 33.33.",
+          input: rawShare,
+          path: ["share"],
+        });
+        return z.NEVER;
+      }
+    }
+    return { ...rest, openingBalance, shareBps };
   });
 export type AccountInput = z.output<typeof accountInputSchema>;
 

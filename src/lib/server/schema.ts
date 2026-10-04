@@ -235,6 +235,10 @@ export const accounts = sqliteTable(
     openingDate: text("opening_date"),
     archived: integer("archived", { mode: "boolean" }).notNull().default(false),
     sortOrder: integer("sort_order").notNull().default(0),
+    /** The user's ownership share in basis points (10000 = 100%). Never applied to stored amounts. */
+    shareBps: integer("share_bps").notNull().default(10000),
+    /** Free-text note on who the account is shared with. */
+    sharedWith: text("shared_with"),
     ...timestamps,
   },
   (t) => [

@@ -1,5 +1,5 @@
 import { and, eq, lte, min } from "drizzle-orm";
-import { minor, type Minor } from "$lib/money";
+import { minor, shareOf, type Minor, type ShareBasis } from "$lib/money";
 import {
   accounts,
   balanceSnapshots,
@@ -26,11 +26,14 @@ export interface NetWorthOptions {
   to?: string;
   /** Default: "month". */
   step?: NetWorthStep;
+  /** "share" counts each account at its ownership share. Default: "total". */
+  basis?: ShareBasis;
   today: string;
 }
 
 interface Collected {
   currency: string;
+  shareBps: number;
   openingBalance: number;
   openingDate: string | null;
   transactions: { bookingDate: string; amount: number }[];
@@ -42,6 +45,8 @@ interface Collected {
  * currency (no FX). Each account uses the same semantics as `balanceAt`
  * (snapshots + transactions, see ledger/balances.ts). Three queries in total.
  * Currencies are sorted alphabetically; every series has the same dates.
+ * With basis "share" each account's balance is scaled by its ownership share
+ * (rounded per account and date, see `shareOf`) before summing.
  */
 export function netWorthSeries(
   userId: string,
@@ -50,6 +55,7 @@ export function netWorthSeries(
   const to = options.to ?? options.today;
   const from = options.from ?? addMonths(to, -12);
   const dates = stepDates(from, to, options.step ?? "month");
+  const basis = options.basis ?? "total";
   const db = getDB();
 
   const collected = new Map<string, Collected>();
@@ -57,6 +63,7 @@ export function netWorthSeries(
     .select({
       id: accounts.id,
       currency: accounts.currency,
+      shareBps: accounts.shareBps,
       openingBalance: accounts.openingBalance,
       openingDate: accounts.openingDate,
     })
@@ -103,7 +110,8 @@ export function netWorthSeries(
     }
     const target = acc;
     dates.forEach((date, i) => {
-      target[i]! += at(date);
+      const balance = at(date);
+      target[i]! += basis === "share" ? shareOf(balance, a.shareBps) : balance;
     });
   }
   return [...sums.keys()].sort().map((currency) => ({

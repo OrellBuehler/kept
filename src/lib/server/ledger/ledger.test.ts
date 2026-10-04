@@ -326,6 +326,8 @@ function accountToInput(a: ReturnType<typeof getAccount>) {
     iban: a.iban,
     openingBalance: a.openingBalance,
     openingDate: a.openingDate,
+    shareBps: a.shareBps,
+    sharedWith: a.sharedWith,
     sortOrder: a.sortOrder,
   };
 }

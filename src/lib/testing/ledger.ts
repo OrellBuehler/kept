@@ -17,6 +17,8 @@ export function seedAccount(userId: string, over: Partial<AccountInput> = {}) {
     iban: null,
     openingBalance: minor(0),
     openingDate: null,
+    shareBps: 10000,
+    sharedWith: null,
     sortOrder: null,
     ...over,
   });

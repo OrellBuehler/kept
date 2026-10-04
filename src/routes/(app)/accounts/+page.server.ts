@@ -31,6 +31,8 @@ const accountFields = [
   "iban",
   "openingBalance",
   "openingDate",
+  "share",
+  "sharedWith",
   "sortOrder",
 ] as const;
 

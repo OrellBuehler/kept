@@ -11,7 +11,8 @@
   import Amount from "$lib/components/Amount.svelte";
   import CategorySelect from "$lib/components/CategorySelect.svelte";
   import FormField from "$lib/components/FormField.svelte";
-
+  import { FULL_SHARE_BPS, formatShare, shareOf } from "$lib/money";
+  import UsersIcon from "@lucide/svelte/icons/users";
   import ArrowLeftRightIcon from "@lucide/svelte/icons/arrow-left-right";
   import FilterIcon from "@lucide/svelte/icons/filter";
   import PlusIcon from "@lucide/svelte/icons/plus";
@@ -27,6 +28,7 @@
   let {
     accountId,
     currency,
+    shareBps = FULL_SHARE_BPS,
     transactions,
     categories,
     filters,
@@ -36,6 +38,8 @@
   }: {
     accountId: string;
     currency: string;
+    /** Ownership share of the account; below 10000 amounts also show "my share". */
+    shareBps?: number;
     transactions: PageData["transactions"];
     categories: PageData["categories"];
     filters: PageData["filters"];
@@ -43,6 +47,8 @@
     onSelect: (tx: Tx) => void;
     onAdd: () => void;
   } = $props();
+
+  const shared = $derived(shareBps < FULL_SHARE_BPS);
 
   const hasFilters = $derived(Object.values(filters).some((v) => v !== ""));
   const first = $derived(
@@ -253,6 +259,20 @@
                 </Table.Cell>
                 <Table.Cell class="text-end align-top">
                   <Amount value={tx.amount} {currency} flow />
+                  {#if shared}
+                    <div
+                      class="text-muted-foreground flex items-center justify-end gap-1 text-xs"
+                      title="Shared account, your share {formatShare(shareBps)}"
+                    >
+                      <UsersIcon class="size-3" aria-hidden="true" />
+                      <span class="sr-only">My share</span>
+                      <Amount
+                        value={shareOf(tx.amount, shareBps)}
+                        {currency}
+                        flow
+                      />
+                    </div>
+                  {/if}
                 </Table.Cell>
               </Table.Row>
             {/each}
@@ -278,12 +298,27 @@
                     />
                   {/if}
                 </span>
-                <Amount
-                  value={tx.amount}
-                  {currency}
-                  flow
-                  class="shrink-0 font-medium"
-                />
+                <span class="shrink-0 text-end">
+                  <Amount
+                    value={tx.amount}
+                    {currency}
+                    flow
+                    class="font-medium"
+                  />
+                  {#if shared}
+                    <span
+                      class="text-muted-foreground flex items-center justify-end gap-1 text-xs"
+                    >
+                      <UsersIcon class="size-3" aria-hidden="true" />
+                      <span class="sr-only">My share</span>
+                      <Amount
+                        value={shareOf(tx.amount, shareBps)}
+                        {currency}
+                        flow
+                      />
+                    </span>
+                  {/if}
+                </span>
               </span>
               {#if subtitle(tx)}
                 <span class="text-muted-foreground truncate text-xs">

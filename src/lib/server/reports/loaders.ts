@@ -1,4 +1,5 @@
 import { and, asc, eq, gte, lte, sql } from "drizzle-orm";
+import type { ShareBasis } from "$lib/money";
 import { maskIban } from "$lib/iban";
 import { getDB, transactions } from "$lib/server/db";
 import { billViews } from "$lib/server/bills/status";
@@ -85,14 +86,16 @@ export function loadBillsReport(
 export function loadNetWorthReport(
   userId: string,
   today: string = localToday(),
+  basis: ShareBasis = "total",
 ): NetWorthReportInput {
   return {
-    series: netWorthSeries(userId, { today }),
+    series: netWorthSeries(userId, { today, basis }),
     balances: accountBalances(userId, today).map(({ iban, ...balance }) => ({
       ...balance,
       ibanMasked: iban ? maskIban(iban) : null,
     })),
     asOf: today,
+    basis,
   };
 }
 

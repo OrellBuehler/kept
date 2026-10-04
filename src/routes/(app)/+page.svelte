@@ -10,9 +10,15 @@
   import Amount from "$lib/components/Amount.svelte";
   import AccountTypeBadge from "$lib/components/AccountTypeBadge.svelte";
   import CategoryBadge from "$lib/components/CategoryBadge.svelte";
+  import ShareBadge from "$lib/components/ShareBadge.svelte";
   import NetWorthChart from "$lib/components/dashboard/NetWorthChart.svelte";
 
-  import { minor, type Minor } from "$lib/money";
+  import {
+    FULL_SHARE_BPS,
+    minor,
+    type Minor,
+    type ShareBasis,
+  } from "$lib/money";
   import LayoutDashboardIcon from "@lucide/svelte/icons/layout-dashboard";
   import TriangleAlertIcon from "@lucide/svelte/icons/triangle-alert";
   import ArrowUpIcon from "@lucide/svelte/icons/arrow-up";
@@ -25,6 +31,23 @@
 
   let { data }: PageProps = $props();
   const d = $derived(data.dashboard);
+
+  const BASES = [
+    { value: "total", label: "Total" },
+    { value: "share", label: "My share" },
+  ] as const;
+
+  let netBasis = $state<ShareBasis>("total");
+  let spendBasis = $state<ShareBasis>("share");
+
+  const netSeries = $derived(
+    netBasis === "share" && d.netWorth.shareSeries
+      ? d.netWorth.shareSeries
+      : d.netWorth.series,
+  );
+  const spendingView = $derived(
+    spendBasis === "total" && d.spendingTotal ? d.spendingTotal : d.spending,
+  );
 
   const RANGES = [
     { value: "3m", label: "3M" },
@@ -78,6 +101,19 @@
       prev: d.month.previousTotals[i],
       cur: t,
     })),
+  );
+
+  const shareRows = $derived(
+    d.shareMonth
+      ? d.shareMonth.totals.map((t) => ({
+          currency: t.currency,
+          cur: t,
+          total: d.netWorth.totals.find((n) => n.currency === t.currency),
+        }))
+      : [],
+  );
+  const shareTotals = $derived(
+    d.netWorth.totals.filter((t) => t.shareBalance !== t.balance),
   );
 
   function delta(cur: number, prev: number) {
@@ -155,8 +191,34 @@
         <Card.Title>Net worth</Card.Title>
         <Card.Description>
           Per currency, never converted between currencies.
+          {#if d.hasShared}
+            {netBasis === "share"
+              ? "Shared accounts counted at your share."
+              : "All accounts in full."}
+          {/if}
         </Card.Description>
-        <Card.Action>
+        <Card.Action class="flex flex-wrap justify-end gap-2">
+          {#if d.hasShared}
+            <div
+              class="bg-muted inline-flex rounded-lg p-0.5"
+              role="group"
+              aria-label="Net worth basis"
+            >
+              {#each BASES as b (b.value)}
+                <button
+                  type="button"
+                  aria-pressed={netBasis === b.value}
+                  onclick={() => (netBasis = b.value)}
+                  class={cn(
+                    "focus-visible:ring-ring/50 rounded-md px-2.5 py-1 text-xs font-medium transition-colors outline-none focus-visible:ring-[3px]",
+                    netBasis === b.value
+                      ? "bg-background text-foreground shadow-sm"
+                      : "text-muted-foreground hover:text-foreground",
+                  )}>{b.label}</button
+                >
+              {/each}
+            </div>
+          {/if}
           <nav
             class="bg-muted inline-flex rounded-lg p-0.5"
             aria-label="Chart range"
@@ -179,16 +241,16 @@
       </Card.Header>
       <Card.Content class="space-y-8">
         {#each d.netWorth.totals as total, i (total.currency)}
-          {@const series = d.netWorth.series.find(
-            (s) => s.currency === total.currency,
-          )}
+          {@const series = netSeries.find((s) => s.currency === total.currency)}
           <section
             aria-label={`Net worth ${total.currency}`}
             class="not-first:border-t not-first:pt-6"
           >
             <div class="mb-3 flex flex-wrap items-baseline gap-x-3 gap-y-1">
               <Amount
-                value={total.balance}
+                value={netBasis === "share"
+                  ? total.shareBalance
+                  : total.balance}
                 currency={total.currency}
                 class="text-4xl font-semibold tracking-tight"
               />
@@ -216,6 +278,94 @@
         {/each}
       </Card.Content>
     </Card.Root>
+
+    {#if d.hasShared && d.shareMonth}
+      <Card.Root class="lg:col-span-2">
+        <Card.Header>
+          <Card.Title>My share</Card.Title>
+          <Card.Description>
+            Shared accounts counted at your ownership share. The other cards
+            show full amounts.
+          </Card.Description>
+        </Card.Header>
+        <Card.Content class="grid gap-6 sm:grid-cols-2">
+          <section aria-label="Net worth at my share" class="space-y-3">
+            <h3 class="text-sm font-medium">Net worth</h3>
+            {#each d.netWorth.totals as total (total.currency)}
+              <div class="flex items-baseline justify-between gap-3">
+                <span class="text-muted-foreground text-sm">
+                  {total.currency}
+                </span>
+                <span class="text-end">
+                  <Amount
+                    value={total.shareBalance}
+                    currency={total.currency}
+                    class="text-2xl font-semibold"
+                  />
+                  {#if shareTotals.includes(total)}
+                    <span class="text-muted-foreground block text-xs">
+                      of <Amount
+                        value={total.balance}
+                        currency={total.currency}
+                      /> in full
+                    </span>
+                  {/if}
+                </span>
+              </div>
+            {/each}
+          </section>
+          <section aria-label="This month at my share" class="space-y-3">
+            <h3 class="text-sm font-medium">
+              {monthLabel(d.shareMonth.month)}
+            </h3>
+            {#each shareRows as row (row.currency)}
+              <div>
+                {#if shareRows.length > 1}
+                  <p class="text-muted-foreground mb-1 text-xs font-medium">
+                    {row.currency}
+                  </p>
+                {/if}
+                <dl class="space-y-1.5 text-sm">
+                  <div class="flex items-baseline justify-between gap-3">
+                    <dt class="text-muted-foreground">Income</dt>
+                    <dd>
+                      <Amount value={row.cur.income} currency={row.currency} />
+                    </dd>
+                  </div>
+                  <div class="flex items-baseline justify-between gap-3">
+                    <dt class="text-muted-foreground">Expenses</dt>
+                    <dd>
+                      <Amount
+                        value={minor(
+                          row.cur.expenses === 0 ? 0 : -row.cur.expenses,
+                        )}
+                        currency={row.currency}
+                      />
+                    </dd>
+                  </div>
+                  <div
+                    class="flex items-baseline justify-between gap-3 border-t pt-1.5 font-medium"
+                  >
+                    <dt class="text-muted-foreground">Net</dt>
+                    <dd>
+                      <Amount
+                        value={row.cur.net}
+                        currency={row.currency}
+                        flow
+                      />
+                    </dd>
+                  </div>
+                </dl>
+              </div>
+            {:else}
+              <p class="text-muted-foreground text-sm">
+                No transactions this month.
+              </p>
+            {/each}
+          </section>
+        </Card.Content>
+      </Card.Root>
+    {/if}
 
     {#if data.forecastAlerts.length > 0}
       <Card.Root class="border-destructive/50 lg:col-span-2">
@@ -253,7 +403,7 @@
         <Card.Description>
           {monthLabel(d.month.month)}, compared with {monthName(
             d.month.previousMonth,
-          )}
+          )}{d.hasShared ? ". All accounts in full." : ""}
         </Card.Description>
       </Card.Header>
       <Card.Content class="space-y-5">
@@ -476,16 +626,42 @@
       <Card.Header>
         <Card.Title>Spending by category</Card.Title>
         <Card.Description>
-          {monthLabel(d.spending.month)}, per currency.
+          {monthLabel(spendingView.month)}, per currency.
+          {#if d.hasShared}
+            {spendBasis === "share"
+              ? "Shared accounts counted at your share."
+              : "All accounts in full."}
+          {/if}
         </Card.Description>
-        <Card.Action>
+        <Card.Action class="flex flex-wrap justify-end gap-2">
+          {#if d.hasShared}
+            <div
+              class="bg-muted inline-flex rounded-lg p-0.5"
+              role="group"
+              aria-label="Spending basis"
+            >
+              {#each [...BASES].reverse() as b (b.value)}
+                <button
+                  type="button"
+                  aria-pressed={spendBasis === b.value}
+                  onclick={() => (spendBasis = b.value)}
+                  class={cn(
+                    "focus-visible:ring-ring/50 rounded-md px-2.5 py-1 text-xs font-medium transition-colors outline-none focus-visible:ring-[3px]",
+                    spendBasis === b.value
+                      ? "bg-background text-foreground shadow-sm"
+                      : "text-muted-foreground hover:text-foreground",
+                  )}>{b.label}</button
+                >
+              {/each}
+            </div>
+          {/if}
           <Button variant="ghost" size="sm" href={resolve("/(app)/budgets")}>
             Budgets
           </Button>
         </Card.Action>
       </Card.Header>
       <Card.Content class="space-y-5">
-        {#each d.spending.currencies as spending (spending.currency)}
+        {#each spendingView.currencies as spending (spending.currency)}
           <section aria-label={`Spending ${spending.currency}`}>
             <div class="mb-2 flex items-baseline justify-between gap-3">
               <p class="text-muted-foreground text-xs font-medium">
@@ -537,10 +713,10 @@
             >
           </p>
         {/each}
-        {#if d.spending.uncategorizedCount > 0}
+        {#if spendingView.uncategorizedCount > 0}
           <p class="text-muted-foreground text-xs">
-            {plural(d.spending.uncategorizedCount, "expense")} this month
-            {d.spending.uncategorizedCount === 1 ? "has" : "have"} no category.
+            {plural(spendingView.uncategorizedCount, "expense")} this month
+            {spendingView.uncategorizedCount === 1 ? "has" : "have"} no category.
           </p>
         {/if}
       </Card.Content>
@@ -578,6 +754,10 @@
                       <span class="truncate">{a.institution.name}</span>
                     {/if}
                     <AccountTypeBadge type={a.type} />
+                    <ShareBadge
+                      shareBps={a.shareBps}
+                      sharedWith={a.sharedWith}
+                    />
                   </div>
                 </div>
                 <div class="text-end">
@@ -591,6 +771,12 @@
                       currency={a.currency}
                       class="text-sm font-medium"
                     />
+                    {#if a.shareBps < FULL_SHARE_BPS}
+                      <p class="text-muted-foreground text-xs">
+                        My share
+                        <Amount value={a.shareBalance} currency={a.currency} />
+                      </p>
+                    {/if}
                   {/if}
                 </div>
               </div>

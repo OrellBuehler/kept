@@ -11,6 +11,7 @@ import {
   monthSchema,
   updateBudget,
 } from "$lib/server/categories";
+import { FULL_SHARE_BPS, parseShareBasis } from "$lib/money";
 import { addMonths } from "$lib/server/dashboard";
 import { parseForm, safeValues } from "$lib/server/forms";
 import { listAccounts } from "$lib/server/ledger/accounts";
@@ -27,16 +28,18 @@ export const load: PageServerLoad = ({ locals, url }) => {
   const month = requested.success ? requested.data : today.slice(0, 7);
   const monthStart = `${month}-01`;
   const categories = listCategories(user.id);
+  const accounts = listAccounts(user.id);
+  const basis = parseShareBasis(url.searchParams.get("basis"), "share");
   return {
     month,
+    basis,
+    hasShared: accounts.some((a) => !a.archived && a.shareBps < FULL_SHARE_BPS),
     currentMonth: today.slice(0, 7),
     previousMonth: addMonths(monthStart, -1).slice(0, 7),
     nextMonth: addMonths(monthStart, 1).slice(0, 7),
-    report: budgetReport(user.id, month),
+    report: budgetReport(user.id, month, basis),
     categories,
-    currencies: [
-      ...new Set(listAccounts(user.id).map((a) => a.currency)),
-    ].sort(),
+    currencies: [...new Set(accounts.map((a) => a.currency))].sort(),
   };
 };
 

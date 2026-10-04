@@ -9,7 +9,7 @@
   import Amount from "$lib/components/Amount.svelte";
   import CategoryBadge from "$lib/components/CategoryBadge.svelte";
   import ConfirmActionDialog from "$lib/components/ConfirmActionDialog.svelte";
-  import { minor } from "$lib/money";
+  import { minor, type ShareBasis } from "$lib/money";
   import { usePreferences } from "$lib/preferences.svelte";
   import ChevronLeftIcon from "@lucide/svelte/icons/chevron-left";
   import ChevronRightIcon from "@lucide/svelte/icons/chevron-right";
@@ -37,6 +37,14 @@
     data.categories.filter((c) => c.kind === "expense"),
   );
 
+  function monthQuery(month: string) {
+    const base = `?month=${month}`;
+    return data.hasShared ? `${base}&basis=${data.basis}` : base;
+  }
+  function basisQuery(basis: ShareBasis) {
+    return `?month=${data.month}&basis=${basis}`;
+  }
+
   function openForm(row: Row | null, currency = "") {
     editing = row ? { row, currency } : null;
     formOpen = true;
@@ -58,7 +66,7 @@
         variant="outline"
         size="icon-sm"
         aria-label="Previous month"
-        href="{resolve('/(app)/budgets')}?month={data.previousMonth}"
+        href="{resolve('/(app)/budgets')}{monthQuery(data.previousMonth)}"
       >
         <ChevronLeftIcon />
       </Button>
@@ -67,7 +75,7 @@
         variant="outline"
         size="icon-sm"
         aria-label="Next month"
-        href="{resolve('/(app)/budgets')}?month={data.nextMonth}"
+        href="{resolve('/(app)/budgets')}{monthQuery(data.nextMonth)}"
       >
         <ChevronRightIcon />
       </Button>
@@ -75,7 +83,7 @@
         <Button
           variant="ghost"
           size="sm"
-          href="{resolve('/(app)/budgets')}?month={data.currentMonth}"
+          href="{resolve('/(app)/budgets')}{monthQuery(data.currentMonth)}"
         >
           This month
         </Button>
@@ -90,6 +98,36 @@
     </Button>
   {/snippet}
 </PageHeader>
+
+{#if data.hasShared}
+  <div class="mb-4 flex flex-wrap items-center gap-x-3 gap-y-1">
+    <nav
+      class="bg-muted inline-flex rounded-lg p-0.5"
+      aria-label="Count shared accounts"
+    >
+      {#each [{ value: "share", label: "My share" }, { value: "total", label: "Total" }] as option (option.value)}
+        <a
+          href="{resolve('/(app)/budgets')}{basisQuery(
+            option.value as ShareBasis,
+          )}"
+          data-sveltekit-noscroll
+          aria-current={data.basis === option.value ? "page" : undefined}
+          class={cn(
+            "focus-visible:ring-ring/50 rounded-md px-2.5 py-1 text-xs font-medium transition-colors outline-none focus-visible:ring-[3px]",
+            data.basis === option.value
+              ? "bg-background text-foreground shadow-sm"
+              : "text-muted-foreground hover:text-foreground",
+          )}>{option.label}</a
+        >
+      {/each}
+    </nav>
+    <p class="text-muted-foreground text-xs">
+      {data.basis === "share"
+        ? "Spending on shared accounts is counted at your ownership share."
+        : "Spending on shared accounts is counted in full."}
+    </p>
+  </div>
+{/if}
 
 {#if expenseCategories.length === 0}
   <Empty.Root class="border border-dashed">

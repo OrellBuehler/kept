@@ -563,7 +563,7 @@ describe("dashboard", () => {
     const d = dashboard(u.id, TODAY);
     expect(d.range).toBe("12m");
     expect(d.netWorth.totals).toEqual([
-      { currency: "CHF", balance: 4000, accountCount: 1 },
+      { currency: "CHF", balance: 4000, shareBalance: 4000, accountCount: 1 },
     ]);
     expect(d.netWorth.series[0]!.points.at(-1)!.amount).toBe(4000);
     expect(d.accounts).toHaveLength(1);

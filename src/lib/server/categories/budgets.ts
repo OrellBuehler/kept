@@ -1,6 +1,12 @@
 import { and, count, eq, gte, isNull, lt, lte, sql } from "drizzle-orm";
-import { minor, type Minor } from "$lib/money";
-import { budgets, categories, getDB, transactions } from "$lib/server/db";
+import { minor, shareOf, type Minor, type ShareBasis } from "$lib/money";
+import {
+  accounts,
+  budgets,
+  categories,
+  getDB,
+  transactions,
+} from "$lib/server/db";
 import { LedgerError, notFound } from "$lib/server/ledger/errors";
 import { monthBounds } from "$lib/server/dashboard/dates";
 import { getCategory } from "./categories";
@@ -115,35 +121,71 @@ interface OwnSpend {
   spent: number;
 }
 
-/** Spending booked directly on each expense category in a "YYYY-MM" month. */
-function ownSpend(userId: string, month: string): OwnSpend[] {
+/**
+ * Spending booked directly on each expense category in a "YYYY-MM" month.
+ * With basis "share" every transaction is scaled by the ownership share of
+ * its account (rounded per transaction, see `shareOf`); stored amounts stay
+ * at 100%.
+ */
+function ownSpend(
+  userId: string,
+  month: string,
+  basis: ShareBasis,
+): OwnSpend[] {
   const { first, last } = monthBounds(month);
-  return getDB()
+  const where = and(
+    eq(transactions.userId, userId),
+    eq(categories.userId, userId),
+    eq(categories.kind, "expense"),
+    gte(transactions.bookingDate, first),
+    lte(transactions.bookingDate, last),
+  );
+  const db = getDB();
+  if (basis === "total") {
+    return db
+      .select({
+        categoryId: transactions.categoryId,
+        parentId: categories.parentId,
+        currency: transactions.currency,
+        total: sql<number>`sum(${transactions.amount})`,
+      })
+      .from(transactions)
+      .innerJoin(categories, eq(categories.id, transactions.categoryId))
+      .where(where)
+      .groupBy(transactions.categoryId, transactions.currency)
+      .all()
+      .map((r) => ({
+        categoryId: r.categoryId!,
+        parentId: r.parentId,
+        currency: r.currency,
+        spent: 0 - r.total,
+      }));
+  }
+  const sums = new Map<string, OwnSpend>();
+  for (const r of db
     .select({
       categoryId: transactions.categoryId,
       parentId: categories.parentId,
       currency: transactions.currency,
-      total: sql<number>`sum(${transactions.amount})`,
+      amount: transactions.amount,
+      shareBps: accounts.shareBps,
     })
     .from(transactions)
     .innerJoin(categories, eq(categories.id, transactions.categoryId))
-    .where(
-      and(
-        eq(transactions.userId, userId),
-        eq(categories.userId, userId),
-        eq(categories.kind, "expense"),
-        gte(transactions.bookingDate, first),
-        lte(transactions.bookingDate, last),
-      ),
-    )
-    .groupBy(transactions.categoryId, transactions.currency)
-    .all()
-    .map((r) => ({
+    .innerJoin(accounts, eq(accounts.id, transactions.accountId))
+    .where(and(where, eq(accounts.userId, userId)))
+    .all()) {
+    const k = key(r.categoryId!, r.currency);
+    const entry = sums.get(k) ?? {
       categoryId: r.categoryId!,
       parentId: r.parentId,
       currency: r.currency,
-      spent: 0 - r.total,
-    }));
+      spent: 0,
+    };
+    entry.spent -= shareOf(r.amount, r.shareBps);
+    sums.set(k, entry);
+  }
+  return [...sums.values()];
 }
 
 const key = (categoryId: string, currency: string) =>
@@ -203,7 +245,11 @@ export interface BudgetReport {
  * Spent against budget per category for a "YYYY-MM" month, per currency.
  * Amounts in different currencies are never combined.
  */
-export function budgetReport(userId: string, month: string): BudgetReport {
+export function budgetReport(
+  userId: string,
+  month: string,
+  basis: ShareBasis = "total",
+): BudgetReport {
   const cats = new Map(
     getDB()
       .select({
@@ -218,7 +264,7 @@ export function budgetReport(userId: string, month: string): BudgetReport {
       .all()
       .map((c) => [c.id, c]),
   );
-  const own = ownSpend(userId, month);
+  const own = ownSpend(userId, month, basis);
   const rolled = rolledUp(own);
   const all = listBudgets(userId).filter((b) => cats.has(b.categoryId));
   const budgeted = new Set(all.map((b) => key(b.categoryId, b.currency)));
@@ -324,6 +370,7 @@ export interface SpendingSummary {
 export function spendingByCategory(
   userId: string,
   month: string,
+  basis: ShareBasis = "total",
 ): SpendingSummary {
   const db = getDB();
   const cats = new Map(
@@ -341,7 +388,7 @@ export function spendingByCategory(
       .map((c) => [c.id, c]),
   );
   const totals = new Map<string, Map<string, number>>();
-  for (const r of ownSpend(userId, month)) {
+  for (const r of ownSpend(userId, month, basis)) {
     const topId =
       r.parentId !== null && cats.has(r.parentId) ? r.parentId : r.categoryId;
     const perCategory = totals.get(r.currency) ?? new Map<string, number>();
