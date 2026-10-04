@@ -335,6 +335,9 @@ const matrix: Record<string, Entry> = {
       "actions.deleteCredit": (m, e) => m.actions.deleteCredit(e),
       "actions.tag": (m, e) => m.actions.tag(e),
       "actions.untag": (m, e) => m.actions.untag(e),
+      "actions.undoDeductionMoves": (m, e) => m.actions.undoDeductionMoves(e),
+      "actions.dismissDeductionMoves": (m, e) =>
+        m.actions.dismissDeductionMoves(e),
     },
   },
   "/src/routes/(app)/import/+page.server.ts": {

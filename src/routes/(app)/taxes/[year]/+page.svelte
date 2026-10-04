@@ -75,6 +75,7 @@
     knownFields: [],
   });
 
+  let tab = $state("reconciliation");
   const creditUid = $props.id();
   let creditPending = $state(false);
   let creditErrors = $state<NonNullable<FormErrors>>({});
@@ -114,7 +115,37 @@
     </PageHeader>
   </div>
 
-  <Tabs.Root value="reconciliation">
+  {#if data.deductionMoves > 0}
+    <Alert.Root>
+      <TriangleAlertIcon />
+      <Alert.Title>Reclassified during the update</Alert.Title>
+      <Alert.Description>
+        <p>
+          {data.deductionMoves}
+          {data.deductionMoves === 1 ? "transaction was" : "transactions were"}
+          moved from tax payment to deduction year.
+        </p>
+        <div class="mt-2 flex flex-wrap gap-2">
+          <Button
+            type="button"
+            size="sm"
+            variant="outline"
+            onclick={() => (tab = "deductions")}
+          >
+            Review
+          </Button>
+          <form method="POST" action="?/undoDeductionMoves" use:enhance>
+            <Button type="submit" size="sm" variant="outline">Undo</Button>
+          </form>
+          <form method="POST" action="?/dismissDeductionMoves" use:enhance>
+            <Button type="submit" size="sm" variant="ghost">Dismiss</Button>
+          </form>
+        </div>
+      </Alert.Description>
+    </Alert.Root>
+  {/if}
+
+  <Tabs.Root bind:value={tab}>
     <Tabs.List>
       <Tabs.Trigger value="reconciliation">Reconciliation</Tabs.Trigger>
       <Tabs.Trigger value="deductions">Deductions</Tabs.Trigger>

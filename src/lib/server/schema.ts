@@ -534,6 +534,27 @@ export const transactions = sqliteTable(
   ],
 );
 
+/**
+ * Transactions the deduction-year update moved from `tax_year` to `deduction_year`, so the
+ * move can be undone. Created by a data migration; a row goes when the user undoes or dismisses it.
+ */
+export const deductionYearMigration = sqliteTable(
+  "deduction_year_migration",
+  {
+    id: id(),
+    userId: userId(),
+    transactionId: text("transaction_id")
+      .notNull()
+      .references(() => transactions.id, { onDelete: "cascade" }),
+    oldTaxYear: integer("old_tax_year").notNull(),
+    ...timestamps,
+  },
+  (t) => [
+    uniqueIndex("deduction_year_migration_tx_uq").on(t.transactionId),
+    index("deduction_year_migration_user_year_idx").on(t.userId, t.oldTaxYear),
+  ],
+);
+
 export const balanceSnapshots = sqliteTable(
   "balance_snapshots",
   {
@@ -832,6 +853,34 @@ export const paperlessDocuments = sqliteTable(
   ],
 );
 
+/**
+ * A document Paperless could not serve (5xx, timeout) and that is retried. It holds the
+ * sync watermark only while it is below the attempt cap; the row goes once it is handled.
+ */
+export const paperlessPending = sqliteTable(
+  "paperless_pending",
+  {
+    id: id(),
+    userId: userId(),
+    connectionId: text("connection_id")
+      .notNull()
+      .references(() => paperlessConnections.id, { onDelete: "cascade" }),
+    paperlessId: integer("paperless_id").notNull(),
+    attempts: integer("attempts").notNull().default(0),
+    firstFailedAt: integer("first_failed_at", {
+      mode: "timestamp_ms",
+    }).notNull(),
+    ...timestamps,
+  },
+  (t) => [
+    uniqueIndex("paperless_pending_conn_doc_uq").on(
+      t.connectionId,
+      t.paperlessId,
+    ),
+    index("paperless_pending_user_id_idx").on(t.userId),
+  ],
+);
+
 /** Paperless documents whose bill the user deleted; outlives the connection and its links. */
 export const paperlessDismissed = sqliteTable(
   "paperless_dismissed",
@@ -1030,6 +1079,9 @@ export const trades = sqliteTable(
       .default(0 as Minor),
     /** Account currency, positive: cash paid or received including fees. Drives the cost basis. */
     amount: minor("amount").notNull(),
+    /** Split only: the exact integer ratio `splitNew : splitOld`; `quantity` is its Fixed8 approximation. */
+    splitNew: integer("split_new"),
+    splitOld: integer("split_old"),
     note: text("note"),
     ...timestamps,
   },
