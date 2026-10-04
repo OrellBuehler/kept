@@ -321,7 +321,7 @@ export function setAccountArchived(
   getAccount(userId, id);
   getDB()
     .update(accounts)
-    .set({ archived })
+    .set({ archived, archivedAt: archived ? new Date() : null })
     .where(and(eq(accounts.userId, userId), eq(accounts.id, id)))
     .run();
   return getAccount(userId, id);

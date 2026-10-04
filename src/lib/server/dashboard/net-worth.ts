@@ -11,7 +11,7 @@ import {
 } from "$lib/server/db";
 import { loadHoldingsInputs } from "$lib/server/investments/load";
 import type { HoldingsInput } from "$lib/server/investments/valuation";
-import { makeBalanceAt } from "$lib/server/ledger/balances";
+import { localToday, makeBalanceAt } from "$lib/server/ledger/balances";
 import { loadPortfolioInputs } from "$lib/server/pillar3a/load";
 import type { PortfoliosInput } from "$lib/server/pillar3a/valuation";
 import { addMonths, stepDates, type NetWorthStep } from "./dates";
@@ -43,6 +43,8 @@ interface Collected {
   shareBps: number;
   openingBalance: number;
   openingDate: string | null;
+  /** First date on which the account no longer counts (it was archived that day). */
+  archivedFrom: string | null;
   transactions: { bookingDate: string; amount: number }[];
   snapshots: { date: string; amount: number; source: string }[];
   holdings?: HoldingsInput;
@@ -50,8 +52,8 @@ interface Collected {
 }
 
 /**
- * Sum of the balances of all non-archived accounts at each point, per
- * currency (no FX). Each account uses the same semantics as `balanceAt`
+ * Sum of the balances of all accounts at each point, per currency (no FX).
+ * An archived account counts up to the day it was archived and 0 from then on. Each account uses the same semantics as `balanceAt`
  * (snapshots + transactions + holdings + portfolios, see ledger/balances.ts);
  * holdings are already converted into the account currency. A handful of queries in total.
  * Currencies are sorted alphabetically; every series has the same dates.
@@ -76,11 +78,21 @@ export function netWorthSeries(
       shareBps: accounts.shareBps,
       openingBalance: accounts.openingBalance,
       openingDate: accounts.openingDate,
+      archived: accounts.archived,
+      archivedAt: accounts.archivedAt,
     })
     .from(accounts)
-    .where(and(eq(accounts.userId, userId), eq(accounts.archived, false)))
+    .where(eq(accounts.userId, userId))
     .all()) {
-    collected.set(a.id, { ...a, transactions: [], snapshots: [] });
+    const { archived, archivedAt, ...rest } = a;
+    // An archived account without a timestamp has no known past: leave it out.
+    if (archived && !archivedAt) continue;
+    collected.set(a.id, {
+      ...rest,
+      archivedFrom: archivedAt ? localToday(archivedAt) : null,
+      transactions: [],
+      snapshots: [],
+    });
   }
   for (const t of db
     .select({
@@ -134,7 +146,8 @@ export function netWorthSeries(
     }
     const target = acc;
     dates.forEach((date, i) => {
-      const balance = at(date);
+      const balance =
+        a.archivedFrom !== null && date >= a.archivedFrom ? minor(0) : at(date);
       target[i]! += basis === "share" ? shareOf(balance, a.shareBps) : balance;
     });
   }

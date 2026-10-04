@@ -1,5 +1,7 @@
+import { eq } from "drizzle-orm";
 import { describe, expect, it } from "vitest";
 import { minor } from "$lib/money";
+import { accounts, getDB } from "$lib/server/db";
 import { allocate } from "$lib/server/bills/allocations";
 import { createSnapshot } from "$lib/server/ledger";
 import { createTestUser } from "$lib/testing/auth";
@@ -181,6 +183,52 @@ describe("netWorthSeries", () => {
       today: TODAY,
     })[0]!;
     expect(day.points).toHaveLength(2);
+  });
+
+  it("keeps an archived account in the dates before it was archived", async () => {
+    const u = await createTestUser();
+    const other = await createTestUser();
+    const kept = seedAccount(u.id, { name: "Kept", openingBalance: m(100) });
+    const old = seedAccount(u.id, {
+      name: "Old",
+      openingBalance: m(1000),
+      openingDate: "2026-01-01",
+    });
+    const foreign = seedAccount(other.id, { openingBalance: m(5000) });
+    expect(kept.id).not.toBe(old.id);
+    const { archiveAccount } = await import("$lib/server/ledger");
+    archiveAccount(u.id, old.id);
+    archiveAccount(other.id, foreign.id);
+    getDB()
+      .update(accounts)
+      .set({ archivedAt: new Date("2026-08-20T10:00:00") })
+      .where(eq(accounts.id, old.id))
+      .run();
+    const series = netWorthSeries(u.id, {
+      from: "2026-07-31",
+      to: "2026-09-30",
+      step: "month",
+      today: TODAY,
+    })[0]!;
+    expect(series.points.map((p) => [p.date, p.amount])).toEqual([
+      ["2026-07-31", 1100],
+      ["2026-08-31", 100],
+      ["2026-09-30", 100],
+    ]);
+  });
+
+  it("sets archivedAt when archiving and clears it when unarchiving", async () => {
+    const u = await createTestUser();
+    const a = seedAccount(u.id);
+    const { archiveAccount, unarchiveAccount } =
+      await import("$lib/server/ledger");
+    const before = Date.now();
+    archiveAccount(u.id, a.id);
+    const row = () =>
+      getDB().select().from(accounts).where(eq(accounts.id, a.id)).get()!;
+    expect(row().archivedAt!.getTime()).toBeGreaterThanOrEqual(before);
+    unarchiveAccount(u.id, a.id);
+    expect(row().archivedAt).toBeNull();
   });
 
   it("returns an empty list without accounts and finds the earliest date", async () => {

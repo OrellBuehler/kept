@@ -264,6 +264,8 @@ export const accounts = sqliteTable(
       .default(0 as Minor),
     openingDate: text("opening_date"),
     archived: integer("archived", { mode: "boolean" }).notNull().default(false),
+    /** When the account was archived; past net worth still counts it before this instant. */
+    archivedAt: integer("archived_at", { mode: "timestamp_ms" }),
     sortOrder: integer("sort_order").notNull().default(0),
     /** The user's ownership share in basis points (10000 = 100%). Never applied to stored amounts. */
     shareBps: integer("share_bps").notNull().default(10000),

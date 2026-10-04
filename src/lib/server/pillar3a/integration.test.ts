@@ -206,7 +206,7 @@ describe("net worth with portfolios", () => {
     ]);
   });
 
-  it("leaves archived accounts out and includes value dates in the earliest date", async () => {
+  it("counts archived accounts as zero from the archive date and includes value dates in the earliest date", async () => {
     const { user, acc, a } = await setup();
     setValues(user.id, acc.id, "2025-03-01", [
       { portfolioId: a.id, amount: minor(10_000) },
@@ -214,7 +214,8 @@ describe("net worth with portfolios", () => {
     expect(earliestDataDate(user.id)).toBe("2025-03-01");
     archiveAccount(user.id, acc.id);
     expect(earliestDataDate(user.id)).toBeNull();
-    expect(netWorthSeries(user.id, { today: TODAY })).toEqual([]);
+    const points = netWorthSeries(user.id, { today: TODAY })[0]!.points;
+    expect(points.at(-1)!.amount).toBe(0);
   });
 });
 
