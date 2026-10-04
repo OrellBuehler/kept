@@ -9,12 +9,14 @@ export const passwordSchema = z
   .min(PASSWORD_MIN, `Password must be at least ${PASSWORD_MIN} characters.`)
   .max(PASSWORD_MAX, `Password must be at most ${PASSWORD_MAX} characters.`);
 
+export const USERNAME_MAX = 32;
+
 export const usernameSchema = z
   .string()
   .trim()
   .toLowerCase()
   .min(3, "Username must be at least 3 characters.")
-  .max(32, "Username must be at most 32 characters.")
+  .max(USERNAME_MAX, "Username must be at most 32 characters.")
   .regex(
     /^[a-z0-9._-]+$/,
     "Username may only contain letters, digits, dots, underscores and hyphens.",
@@ -29,9 +31,19 @@ export const displayNameSchema = z
 
 export const roleSchema = z.enum(USER_ROLES);
 
-/** Login accepts any non-empty input so malformed usernames are just "invalid credentials". */
+/**
+ * Login accepts any non-empty input so malformed usernames are just "invalid
+ * credentials". Anything longer than a real username is cut to one character
+ * past the limit: it can never match an account but still takes the normal
+ * path (rate limiter, dummy hash), and limiter keys stay small.
+ */
 export const loginSchema = z.object({
-  username: z.string().trim().toLowerCase().min(1, "Enter your username."),
+  username: z
+    .string()
+    .trim()
+    .toLowerCase()
+    .min(1, "Enter your username.")
+    .transform((v) => v.slice(0, USERNAME_MAX + 1)),
   password: z.string().min(1, "Enter your password.").max(PASSWORD_MAX),
   redirectTo: z.string().optional(),
 });

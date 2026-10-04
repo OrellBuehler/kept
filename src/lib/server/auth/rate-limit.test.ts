@@ -114,4 +114,44 @@ describe("LoginRateLimiter", () => {
     expect(limiter.acquire("bob", "1.1.1.1").allowed).toBe(true);
     expect(limiter.acquire("carol", "1.1.1.1").allowed).toBe(false);
   });
+
+  it("hard-caps the number of tracked counters, evicting the oldest", () => {
+    let now = 1_000_000;
+    const limiter = new LoginRateLimiter(
+      () => now,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      { maxKeys: 30 },
+    );
+    for (let i = 0; i < 200; i++) {
+      limiter.acquire(`user${i}`, `10.0.${i >> 8}.${i & 255}`);
+      now += 1;
+    }
+    expect(limiter.size).toBeLessThanOrEqual(30);
+    // the newest attempts are still tracked
+    for (let i = 0; i < 4; i++) limiter.acquire("user199", "10.0.0.199");
+    expect(limiter.acquire("user199", "10.0.0.199").allowed).toBe(false);
+  });
+
+  it("lane bookkeeping returns to empty after attempts finish", async () => {
+    const limiter = new LoginRateLimiter();
+    for (let i = 0; i < 12; i++) limiter.acquire("alice", `10.0.0.${i}`);
+    const r = limiter.acquire("alice", "10.0.1.1", true);
+    if (!r.allowed) throw new Error("expected allowed");
+    await r.waitTurn(async () => {});
+    r.done();
+    r.done();
+    const again = limiter.acquire("alice", "10.0.1.2", true);
+    const third = limiter.acquire("alice", "10.0.1.3", true);
+    const fourth = limiter.acquire("alice", "10.0.1.4", true);
+    const fifth = limiter.acquire("alice", "10.0.1.5", true);
+    expect([again, third, fourth].every((x) => x.allowed)).toBe(true);
+    expect(fifth.allowed).toBe(false);
+    if (again.allowed) again.done();
+    expect(limiter.acquire("alice", "10.0.1.6", true).allowed).toBe(true);
+  });
 });

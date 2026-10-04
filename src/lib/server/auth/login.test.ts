@@ -5,6 +5,7 @@ import {
   RateLimitedError,
   authenticate,
   clientKey,
+  normalizeClientAddress,
   resetAddressWarnings,
   warnIfAddressHeaderUnset,
   warnIfProxied,
@@ -158,5 +159,184 @@ describe("authenticate", () => {
     expect(warn).toHaveBeenCalledTimes(2);
     warn.mockRestore();
     resetAddressWarnings();
+  });
+
+  it("keys IPv6 clients on their /64 and unwraps IPv4-mapped addresses", () => {
+    expect(normalizeClientAddress("203.0.113.9")).toBe("203.0.113.9");
+    expect(normalizeClientAddress("::ffff:203.0.113.9")).toBe("203.0.113.9");
+    expect(normalizeClientAddress("::ffff:cb00:7109")).toBe("203.0.113.9");
+    const a = normalizeClientAddress("2001:db8:1:2:aaaa:bbbb:cccc:dddd");
+    expect(normalizeClientAddress("2001:0DB8:1:2::9")).toBe(a);
+    expect(normalizeClientAddress("2001:db8:1:3::9")).not.toBe(a);
+    expect(normalizeClientAddress("fe80::1%eth0")).toBe(
+      normalizeClientAddress("fe80::2"),
+    );
+    expect(normalizeClientAddress("not an address")).toBe("not an address");
+  });
+
+  it("rotating addresses inside one /64 share a single username+address budget", async () => {
+    const u = await createTestUser({ username: "alice" });
+    const limiter = new LoginRateLimiter();
+    for (let i = 0; i < 5; i++) {
+      const ip = clientKey(() => `2001:db8:7:7:${i}::${i + 1}`);
+      await authenticate("alice", "wrong-password", ip, limiter);
+    }
+    await expect(
+      authenticate(
+        "alice",
+        u.password,
+        clientKey(() => "2001:db8:7:7:ffff::1"),
+        limiter,
+      ),
+    ).rejects.toBeInstanceOf(RateLimitedError);
+    const other = await authenticate(
+      "alice",
+      u.password,
+      clientKey(() => "2001:db8:7:8::1"),
+      new LoginRateLimiter(),
+    );
+    expect(other).not.toBeNull();
+  });
+
+  describe("per-username throttle", () => {
+    function tracker() {
+      let running = 0;
+      let peak = 0;
+      const sleeps: number[] = [];
+      const sleep = async (ms: number) => {
+        running++;
+        peak = Math.max(peak, running);
+        sleeps.push(ms);
+        await Bun.sleep(2);
+        running--;
+      };
+      return { sleep, sleeps, peak: () => peak };
+    }
+
+    it("serialises and caps a parallel burst from rotating addresses", async () => {
+      await createTestUser({ username: "alice" });
+      const limiter = new LoginRateLimiter();
+      const t = tracker();
+      const results = await Promise.allSettled(
+        Array.from({ length: 60 }, (_, i) =>
+          authenticate(
+            "alice",
+            "wrong-password",
+            `10.1.${i >> 8}.${i & 255}`,
+            limiter,
+            Date.now(),
+            t.sleep,
+          ),
+        ),
+      );
+      const rejected = results.filter(
+        (r) => r.status === "rejected" && r.reason instanceof RateLimitedError,
+      );
+      // 10 free attempts + 3 queued behind the backoff; everything else is turned away
+      expect(results.length - rejected.length).toBe(13);
+      expect(rejected).toHaveLength(47);
+      expect(t.sleeps).toHaveLength(3);
+      expect(t.peak()).toBe(1);
+    });
+
+    it("caps queued attempts across usernames globally", async () => {
+      const limiter = new LoginRateLimiter(
+        Date.now,
+        undefined,
+        undefined,
+        undefined,
+        0,
+        undefined,
+        undefined,
+        { maxQueuedGlobal: 4, maxQueuedPerUser: 3 },
+      );
+      const t = tracker();
+      const names = ["aa1", "aa2", "aa3"];
+      const results = await Promise.allSettled(
+        names.flatMap((n, ni) =>
+          Array.from({ length: 3 }, (_, i) =>
+            authenticate(
+              n,
+              "wrong-password",
+              `10.2.${ni}.${i}`,
+              limiter,
+              Date.now(),
+              t.sleep,
+            ),
+          ),
+        ),
+      );
+      const rejected = results.filter((r) => r.status === "rejected");
+      expect(rejected).toHaveLength(5);
+      expect(t.sleeps).toHaveLength(4);
+    });
+
+    it("the owner with the right password still gets in, after a bounded wait", async () => {
+      const u = await createTestUser({ username: "alice" });
+      const limiter = new LoginRateLimiter();
+      const t = tracker();
+      for (let i = 0; i < 25; i++) {
+        await authenticate(
+          "alice",
+          "wrong-password",
+          `10.3.0.${i}`,
+          limiter,
+          Date.now(),
+          t.sleep,
+        );
+      }
+      t.sleeps.length = 0;
+      const attackers = Array.from({ length: 2 }, (_, i) =>
+        authenticate(
+          "alice",
+          "wrong-password",
+          `10.3.1.${i}`,
+          limiter,
+          Date.now(),
+          t.sleep,
+        ),
+      );
+      const r = await authenticate(
+        "alice",
+        u.password,
+        "9.9.9.9",
+        limiter,
+        Date.now(),
+        t.sleep,
+      );
+      await Promise.all(attackers);
+      if (!r || !("user" in r)) throw new Error("expected a full login");
+      expect(r.user.id).toBe(u.id);
+      expect(t.sleeps).toHaveLength(3);
+      expect(t.peak()).toBe(1);
+    });
+
+    it("frees the queue slot once each attempt finishes", async () => {
+      await createTestUser({ username: "alice" });
+      const limiter = new LoginRateLimiter();
+      const t = tracker();
+      for (let i = 0; i < 40; i++) {
+        await authenticate(
+          "alice",
+          "wrong-password",
+          `10.4.0.${i}`,
+          limiter,
+          Date.now(),
+          t.sleep,
+        );
+      }
+      expect(limiter.reserve("alice", "10.4.9.9").delayMs).toBeGreaterThan(0);
+    });
+
+    it("treats an oversized username like any unknown user", async () => {
+      const limiter = new LoginRateLimiter();
+      const r = await authenticate(
+        "a".repeat(33),
+        "wrong-password",
+        "1.1.1.1",
+        limiter,
+      );
+      expect(r).toBeNull();
+    });
   });
 });

@@ -1,3 +1,5 @@
+import { isIP } from "node:net";
+import { ipv6Bytes } from "$lib/server/net/ip";
 import {
   createPendingLogin,
   deletePendingLogin,
@@ -26,10 +28,31 @@ export interface LoginResult {
 
 let warnedAddress = false;
 
+/**
+ * The rate-limit key for an address: IPv4 as is, IPv4-mapped IPv6 as the IPv4
+ * address, and any other IPv6 address as its /64 prefix (one subscriber
+ * routinely controls a whole /64, so per-address budgets would be free).
+ */
+export function normalizeClientAddress(address: string): string {
+  const bytes =
+    isIP(address.split("%")[0]) === 6 ? ipv6Bytes(address.split("%")[0]) : null;
+  if (!bytes) return address;
+  const mapped =
+    bytes.slice(0, 10).every((x) => x === 0) &&
+    bytes[10] === 255 &&
+    bytes[11] === 255;
+  if (mapped) return bytes.slice(12).join(".");
+  const groups: string[] = [];
+  for (let i = 0; i < 8; i += 2) {
+    groups.push(((bytes[i] << 8) | bytes[i + 1]).toString(16));
+  }
+  return `${groups.join(":")}::/64`;
+}
+
 /** Client address for rate limiting; a fixed shared key if the adapter cannot provide one. */
 export function clientKey(getClientAddress: () => string): string {
   try {
-    return getClientAddress();
+    return normalizeClientAddress(getClientAddress());
   } catch {
     if (!warnedAddress) {
       warnedAddress = true;
@@ -115,13 +138,19 @@ export async function authenticate(
   sleep: (ms: number) => Promise<void> = (ms) => Bun.sleep(ms),
 ): Promise<LoginResult | SecondFactorRequired | null> {
   // Reserved before any await so parallel guesses are counted immediately.
-  const { release, delayMs } = limiter.reserve(username, ip);
-  if (delayMs > 0) await sleep(delayMs);
-
-  const row = findUserByUsername(username);
+  // A username under distributed guessing is throttled: its attempts queue up
+  // (bounded; the excess throws RateLimitedError) and run one at a time.
+  const { release, waitTurn, done } = limiter.reserve(username, ip);
+  let row;
   let ok = false;
-  if (row) ok = await verifyPassword(password, row.passwordHash);
-  else await verifyAgainstDummy(password);
+  try {
+    await waitTurn(sleep);
+    row = findUserByUsername(username);
+    if (row) ok = await verifyPassword(password, row.passwordHash);
+    else await verifyAgainstDummy(password);
+  } finally {
+    done();
+  }
 
   if (!row || !ok) return null;
 
