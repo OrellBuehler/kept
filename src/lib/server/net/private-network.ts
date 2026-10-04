@@ -39,9 +39,10 @@ export function privateNetworkAllowedForUser(
   return privateNetworkAllowed(findUserById(userId)?.role ?? "member", env);
 }
 
-function isPrivateV4Bytes(a: number, b: number): boolean {
+function isPrivateV4Bytes(a: number, b: number, c = 1): boolean {
   return (
     a === 0 ||
+    (a === 192 && b === 0 && c === 0) ||
     a === 10 ||
     (a === 100 && b >= 64 && b <= 127) ||
     a === 127 ||
@@ -90,8 +91,8 @@ function ipv6Bytes(address: string): number[] | null {
 export function isPrivateAddress(address: string): boolean {
   const family = isIP(address);
   if (family === 4) {
-    const [a, b] = address.split(".").map(Number);
-    return isPrivateV4Bytes(a, b);
+    const [a, b, c] = address.split(".").map(Number);
+    return isPrivateV4Bytes(a, b, c);
   }
   if (family !== 6) return true;
   const b = ipv6Bytes(address);
@@ -100,7 +101,28 @@ export function isPrivateAddress(address: string): boolean {
     b.slice(from, to).every((x) => x === 0);
   if (zeros(0, 12)) return true;
   if (zeros(0, 10) && b[10] === 255 && b[11] === 255) {
-    return isPrivateV4Bytes(b[12], b[13]);
+    return isPrivateV4Bytes(b[12], b[13], b[14]);
+  }
+  // SIIT (::ffff:0:0:0/96, IPv4-translated) is a translation mechanism, never a public host.
+  if (
+    zeros(0, 8) &&
+    b[8] === 255 &&
+    b[9] === 255 &&
+    b[10] === 0 &&
+    b[11] === 0
+  ) {
+    return true;
+  }
+  // Local-use NAT64 (64:ff9b:1::/48).
+  if (
+    b[0] === 0 &&
+    b[1] === 0x64 &&
+    b[2] === 0xff &&
+    b[3] === 0x9b &&
+    b[4] === 0 &&
+    b[5] === 1
+  ) {
+    return true;
   }
   if (
     b[0] === 0 &&
@@ -109,14 +131,15 @@ export function isPrivateAddress(address: string): boolean {
     b[3] === 0x9b &&
     zeros(4, 12)
   ) {
-    return isPrivateV4Bytes(b[12], b[13]);
+    return isPrivateV4Bytes(b[12], b[13], b[14]);
   }
   // 6to4 (2002::/16) embeds an IPv4 address in bytes 2..5.
-  if (b[0] === 0x20 && b[1] === 0x02) return isPrivateV4Bytes(b[2], b[3]);
+  if (b[0] === 0x20 && b[1] === 0x02) return isPrivateV4Bytes(b[2], b[3], b[4]);
   return (
     b[0] === 0xff ||
     (b[0] & 0xfe) === 0xfc ||
-    (b[0] === 0xfe && (b[1] & 0xc0) === 0x80)
+    // fe80::/10 link-local and fec0::/10 (deprecated site-local)
+    (b[0] === 0xfe && b[1] >= 0x80)
   );
 }
 
