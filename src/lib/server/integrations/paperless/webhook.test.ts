@@ -99,6 +99,19 @@ describe("handleWebhook", () => {
     expect(fake.requests).toHaveLength(0);
   });
 
+  it("a member's stored private connection is not contacted by a webhook-driven sync", async () => {
+    vi.stubEnv("KEPT_ALLOW_PRIVATE_NETWORK", "");
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      fake.addDoc({ id: 5, original: pdf });
+      await finished(await deliver());
+      expect(fake.requests).toHaveLength(0);
+      expect(listBills(user.id)).toHaveLength(0);
+    } finally {
+      vi.stubEnv("KEPT_ALLOW_PRIVATE_NETWORK", "true");
+    }
+  });
+
   it("rejects malformed bodies with 400 and runs nothing", async () => {
     expect(await deliver({}, { document_id: "x" })).toEqual({ status: 400 });
     expect(await deliver({}, [])).toEqual({ status: 400 });

@@ -21,6 +21,7 @@ import {
   paperlessConnections,
   paperlessDocuments,
   paperlessPending,
+  users,
 } from "$lib/server/db";
 import { createTestUser, type TestUser } from "$lib/testing/auth";
 import { useTestDB } from "$lib/testing/db";
@@ -98,6 +99,38 @@ describe("syncConnection", () => {
         ),
       )
       .get();
+
+  describe("with KEPT_ALLOW_PRIVATE_NETWORK cleared", () => {
+    beforeEach(() => vi.stubEnv("KEPT_ALLOW_PRIVATE_NETWORK", ""));
+    afterEach(() => vi.stubEnv("KEPT_ALLOW_PRIVATE_NETWORK", "true"));
+
+    it("a member's stored private connection is never contacted", async () => {
+      fake.addDoc({ id: 11, original: pdfEnergy, tags: [1] });
+      fake.requests = [];
+      const r = await syncConnection(user.id);
+      expect(r.error).toBe("blocked_address");
+      expect(fake.requests).toHaveLength(0);
+      expect(listBills(user.id)).toHaveLength(0);
+    });
+
+    it("an administrator is allowed, and blocked from the next sync after losing the role", async () => {
+      const admin = await createTestUser({ role: "admin" });
+      seedConnection(admin.id, fake);
+      fake.addDoc({ id: 11, original: pdfEnergy, tags: [1] });
+      expect((await syncConnection(admin.id)).imported).toBe(1);
+
+      getDB()
+        .update(users)
+        .set({ role: "member" })
+        .where(eq(users.id, admin.id))
+        .run();
+      fake.requests = [];
+      fake.addDoc({ id: 12, original: pdfWater, tags: [1] });
+      const r = await syncConnection(admin.id);
+      expect(r.error).toBe("blocked_address");
+      expect(fake.requests).toHaveLength(0);
+    });
+  });
 
   it("imports tagged PDFs as bills with an external reference and a stored document", async () => {
     fake.addDoc({ id: 11, original: pdfEnergy, tags: [1] });
