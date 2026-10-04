@@ -16,6 +16,8 @@ export interface Preferences {
   locale: AppLocale;
   defaultCurrency: (typeof COMMON_CURRENCIES)[number];
   pageSize: PageSize;
+  /** Count the cash part of investment accounts as liquid. */
+  investmentCashLiquid: boolean;
 }
 
 export const DEFAULT_PREFERENCES: Preferences = {
@@ -24,6 +26,7 @@ export const DEFAULT_PREFERENCES: Preferences = {
   locale: "en-GB",
   defaultCurrency: "CHF",
   pageSize: 50,
+  investmentCashLiquid: false,
 };
 
 const checkbox = z
@@ -48,5 +51,6 @@ export const preferencesSchema = z.object({
         "Choose a page size.",
       ),
     ),
+  investmentCashLiquid: checkbox.default(false),
 });
 export type PreferencesInput = z.output<typeof preferencesSchema>;

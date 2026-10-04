@@ -142,6 +142,120 @@ describe("accountInputSchema", () => {
   });
 });
 
+describe("accountInputSchema notice fields", () => {
+  const base = { name: "Savings", type: "savings", currency: "CHF" };
+  const parse = (extra: Record<string, string>) =>
+    parseForm(accountInputSchema, form({ ...base, ...extra }));
+
+  it("defaults to no notice", () => {
+    expect(parse({})).toMatchObject({
+      ok: true,
+      data: {
+        noticeMonths: null,
+        freeWithdrawal: null,
+        freeWithdrawalPeriod: null,
+      },
+    });
+  });
+
+  it("parses a notice period with a free withdrawal", () => {
+    expect(
+      parse({
+        noticeMonths: "6",
+        freeWithdrawal: "25'000.50",
+        freeWithdrawalPeriod: "year",
+      }),
+    ).toMatchObject({
+      ok: true,
+      data: {
+        noticeMonths: 6,
+        freeWithdrawal: 2500050,
+        freeWithdrawalPeriod: "year",
+      },
+    });
+    expect(parse({ noticeMonths: "3" })).toMatchObject({
+      ok: true,
+      data: {
+        noticeMonths: 3,
+        freeWithdrawal: null,
+        freeWithdrawalPeriod: null,
+      },
+    });
+  });
+
+  it("rejects an amount without a period", () => {
+    const r = parse({ noticeMonths: "6", freeWithdrawal: "100" });
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.errors.freeWithdrawalPeriod).toBeDefined();
+  });
+
+  it("rejects an amount without a notice period", () => {
+    const r = parse({ freeWithdrawal: "100", freeWithdrawalPeriod: "month" });
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.errors.freeWithdrawal).toBeDefined();
+  });
+
+  it("clears a lone period and treats a zero amount as none", () => {
+    expect(
+      parse({ noticeMonths: "6", freeWithdrawalPeriod: "month" }),
+    ).toMatchObject({ ok: true, data: { freeWithdrawalPeriod: null } });
+    expect(
+      parse({
+        noticeMonths: "6",
+        freeWithdrawal: "0",
+        freeWithdrawalPeriod: "month",
+      }),
+    ).toMatchObject({
+      ok: true,
+      data: { freeWithdrawal: null, freeWithdrawalPeriod: null },
+    });
+    expect(parse({ freeWithdrawalPeriod: "month" })).toMatchObject({
+      ok: true,
+      data: { noticeMonths: null, freeWithdrawalPeriod: null },
+    });
+  });
+
+  it("validates ranges and formats", () => {
+    for (const noticeMonths of ["0", "61", "1.5", "-1", "abc"]) {
+      const r = parse({ noticeMonths });
+      expect(r.ok).toBe(false);
+      if (!r.ok) expect(r.errors.noticeMonths).toBeDefined();
+    }
+    expect(parse({ noticeMonths: "60" }).ok).toBe(true);
+    for (const freeWithdrawal of ["-5", "12.345", "x"]) {
+      const r = parse({
+        noticeMonths: "6",
+        freeWithdrawal,
+        freeWithdrawalPeriod: "year",
+      });
+      expect(r.ok).toBe(false);
+      if (!r.ok) expect(r.errors.freeWithdrawal).toBeDefined();
+    }
+    const bad = parse({ noticeMonths: "6", freeWithdrawalPeriod: "week" });
+    expect(bad.ok).toBe(false);
+  });
+
+  it("drops the notice fields on types a notice makes no sense for", () => {
+    for (const type of ["pension", "pillar_3a", "credit_card", "investment"]) {
+      expect(
+        parse({
+          type,
+          noticeMonths: "6",
+          freeWithdrawal: "100",
+          freeWithdrawalPeriod: "year",
+        }),
+      ).toMatchObject({
+        ok: true,
+        data: {
+          noticeMonths: null,
+          freeWithdrawal: null,
+          freeWithdrawalPeriod: null,
+        },
+      });
+    }
+  });
+});
+
 describe("transactionInputSchema", () => {
   const schema = transactionInputSchema("CHF");
   it("parses signed amounts and blank optionals", () => {

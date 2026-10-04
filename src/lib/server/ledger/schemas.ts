@@ -1,5 +1,9 @@
 import { z } from "zod";
-import { ACCOUNT_TYPES } from "$lib/ledger-types";
+import {
+  ACCOUNT_TYPES,
+  NOTICE_ACCOUNT_TYPES,
+  WITHDRAWAL_PERIODS,
+} from "$lib/ledger-types";
 import {
   currencyExponent,
   FULL_SHARE_BPS,
@@ -154,6 +158,25 @@ export const accountInputSchema = z
     contractNumber: optionalText(60, "Contract number"),
     /** Pillar 3a only: the IBAN (usually a QR-IBAN) to pay into. */
     depositIban: optionalIban,
+    /** Months of notice before the balance can be withdrawn. */
+    noticeMonths: optionalOf(
+      z
+        .string()
+        .trim()
+        .regex(/^\d{1,2}$/, "Enter a whole number of months.")
+        .transform(Number)
+        .pipe(
+          z
+            .number()
+            .min(1, "Enter 1 to 60 months.")
+            .max(60, "Enter 1 to 60 months."),
+        ),
+    ),
+    /** Amount that can be withdrawn without notice per period. */
+    freeWithdrawal: z.string().optional(),
+    freeWithdrawalPeriod: optionalOf(
+      z.enum(WITHDRAWAL_PERIODS, "Choose month or year."),
+    ),
     sortOrder: optionalOf(
       z
         .string()
@@ -207,8 +230,62 @@ export const accountInputSchema = z
         return z.NEVER;
       }
     }
+    const noticeApplies = NOTICE_ACCOUNT_TYPES.includes(v.type);
+    const noticeMonths = noticeApplies ? v.noticeMonths : null;
+    let freeWithdrawal: Minor | null = null;
+    let freeWithdrawalPeriod = noticeApplies ? v.freeWithdrawalPeriod : null;
+    const rawFree = noticeApplies ? (v.freeWithdrawal?.trim() ?? "") : "";
+    if (rawFree !== "") {
+      const r = parseMoneyInput(rawFree, v.currency);
+      if (!r.ok) {
+        ctx.issues.push({
+          code: "custom",
+          message: r.message,
+          input: rawFree,
+          path: ["freeWithdrawal"],
+        });
+        return z.NEVER;
+      }
+      if (r.value < 0) {
+        ctx.issues.push({
+          code: "custom",
+          message: "The free withdrawal must not be negative.",
+          input: rawFree,
+          path: ["freeWithdrawal"],
+        });
+        return z.NEVER;
+      }
+      // Zero means no free amount.
+      freeWithdrawal = r.value === 0 ? null : r.value;
+    }
+    if (freeWithdrawal !== null && noticeMonths === null) {
+      ctx.issues.push({
+        code: "custom",
+        message: "A free withdrawal needs a notice period.",
+        input: rawFree,
+        path: ["freeWithdrawal"],
+      });
+      return z.NEVER;
+    }
+    if (freeWithdrawal !== null && freeWithdrawalPeriod === null) {
+      ctx.issues.push({
+        code: "custom",
+        message: "Choose whether the free withdrawal is per month or per year.",
+        input: rawFree,
+        path: ["freeWithdrawalPeriod"],
+      });
+      return z.NEVER;
+    }
+    if (freeWithdrawal === null) freeWithdrawalPeriod = null;
+    if (noticeMonths === null) {
+      freeWithdrawal = null;
+      freeWithdrawalPeriod = null;
+    }
     return {
       ...rest,
+      noticeMonths,
+      freeWithdrawal,
+      freeWithdrawalPeriod,
       contractNumber: pillar3a ? rest.contractNumber : null,
       depositIban: pillar3a ? rest.depositIban : null,
       sharedWith: pillar3a ? null : rest.sharedWith,

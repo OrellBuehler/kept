@@ -45,6 +45,33 @@ describe("dashboard page", () => {
     expect(data.dashboard.netWorth.series[0]!.points.at(-1)!.date).toBe(today);
   });
 
+  it("returns liquidity for the current user only", async () => {
+    const u = await createTestUser();
+    const other = await createTestUser();
+    seedAccount(u.id, { openingBalance: minor(1000) });
+    seedAccount(u.id, {
+      name: "Notice",
+      type: "savings",
+      openingBalance: minor(50000),
+      noticeMonths: 6,
+      freeWithdrawal: minor(10000),
+      freeWithdrawalPeriod: "year",
+    });
+    seedAccount(other.id, {
+      name: "Other",
+      type: "savings",
+      openingBalance: minor(99999),
+      noticeMonths: 3,
+    });
+
+    const { dashboard } = await loadAs(u);
+    const chf = dashboard.liquidity.find((l) => l.currency === "CHF")!;
+    expect(chf.now.balance).toBe(11000);
+    expect(chf.ladder).toHaveLength(1);
+    expect(chf.ladder[0]).toMatchObject({ months: 6, balance: 40000 });
+    expect(dashboard.invested).toEqual([]);
+  });
+
   it("honours the range parameter and falls back to 12m", async () => {
     const u = await createTestUser();
     seedAccount(u.id);

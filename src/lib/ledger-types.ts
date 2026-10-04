@@ -11,6 +11,17 @@ export const ACCOUNT_TYPES = [
 ] as const;
 export type AccountType = (typeof ACCOUNT_TYPES)[number];
 
+/** Account types a withdrawal notice can apply to. */
+export const NOTICE_ACCOUNT_TYPES: readonly AccountType[] = [
+  "current",
+  "savings",
+  "cash",
+  "other",
+];
+
+export const WITHDRAWAL_PERIODS = ["month", "year"] as const;
+export type WithdrawalPeriod = (typeof WITHDRAWAL_PERIODS)[number];
+
 export const IMPORT_FORMATS = ["camt053", "csv", "xlsx"] as const;
 export type ImportFormat = (typeof IMPORT_FORMATS)[number];
 

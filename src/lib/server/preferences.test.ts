@@ -26,6 +26,15 @@ describe("preferences", () => {
     });
   });
 
+  it("stores the investment cash switch and falls back to off", async () => {
+    const u = await createTestUser();
+    expect(getPreferences(u.id).investmentCashLiquid).toBe(false);
+    updatePreferences(u.id, { investmentCashLiquid: true });
+    expect(getPreferences(u.id).investmentCashLiquid).toBe(true);
+    const other = await createTestUser();
+    expect(getPreferences(other.id).investmentCashLiquid).toBe(false);
+  });
+
   it("keeps preferences per user", async () => {
     const a = await createTestUser();
     const b = await createTestUser();
@@ -71,6 +80,7 @@ describe("preferencesSchema", () => {
       locale: "de-CH",
       defaultCurrency: "EUR",
       pageSize: 100,
+      investmentCashLiquid: false,
     });
     expect(
       preferencesSchema.parse({ ...base, blurAmounts: "true" }).blurAmounts,
@@ -79,6 +89,10 @@ describe("preferencesSchema", () => {
       preferencesSchema.parse({ ...base, blurAmounts: "false" }).blurAmounts,
     ).toBe(false);
     expect(preferencesSchema.parse(base).blurAmounts).toBe(false);
+    expect(
+      preferencesSchema.parse({ ...base, investmentCashLiquid: "on" })
+        .investmentCashLiquid,
+    ).toBe(true);
   });
 
   it("rejects unknown values", () => {

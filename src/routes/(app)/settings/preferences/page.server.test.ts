@@ -12,6 +12,7 @@ const valid = {
   locale: "de-CH",
   defaultCurrency: "EUR",
   pageSize: "100",
+  investmentCashLiquid: "on",
 };
 
 describe("settings/preferences", () => {
@@ -39,6 +40,7 @@ describe("settings/preferences", () => {
       locale: "de-CH",
       defaultCurrency: "EUR",
       pageSize: 100,
+      investmentCashLiquid: true,
     });
     expect(getPreferences(b.id)).toEqual(DEFAULT_PREFERENCES);
   });
@@ -54,6 +56,26 @@ describe("settings/preferences", () => {
       actions.save(createTestEvent({ user: a, form: withoutBlur }) as never),
     );
     expect(getPreferences(a.id).blurAmounts).toBe(false);
+  });
+
+  it("an unchecked investment cash switch saves as off and setBlur keeps it", async () => {
+    const a = await createTestUser();
+    await outcome(() =>
+      actions.save(createTestEvent({ user: a, form: valid }) as never),
+    );
+    expect(getPreferences(a.id).investmentCashLiquid).toBe(true);
+    await outcome(() =>
+      actions.setBlur(
+        createTestEvent({ user: a, form: { blurAmounts: "false" } }) as never,
+      ),
+    );
+    expect(getPreferences(a.id).investmentCashLiquid).toBe(true);
+    const without: Record<string, string> = { ...valid };
+    delete without.investmentCashLiquid;
+    await outcome(() =>
+      actions.save(createTestEvent({ user: a, form: without }) as never),
+    );
+    expect(getPreferences(a.id).investmentCashLiquid).toBe(false);
   });
 
   it("rejects invalid values and stores nothing", async () => {

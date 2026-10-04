@@ -26,6 +26,7 @@
   let ibanDisplay = $derived<IbanDisplay>(data.preferences.ibanDisplay);
   let blurAmounts = $derived(data.preferences.blurAmounts);
   let locale = $derived<string>(data.preferences.locale);
+  let investmentCashLiquid = $derived(data.preferences.investmentCashLiquid);
 
   const IBAN_OPTIONS: { value: IbanDisplay; label: string; hint: string }[] = [
     { value: "full", label: "Full", hint: "Show the whole IBAN." },
@@ -185,6 +186,33 @@
           <Field.Error errors={fieldErrors(form?.errors, "pageSize")} />
         </Field.Field>
       </Field.Group>
+    </Card.Content>
+  </Card.Root>
+
+  <Card.Root>
+    <Card.Header>
+      <Card.Title>Liquidity</Card.Title>
+      <Card.Description>
+        What counts towards liquid cash on the dashboard.
+      </Card.Description>
+    </Card.Header>
+    <Card.Content>
+      <Field.Field orientation="horizontal">
+        <Field.Content>
+          <Field.Label for="investmentCashLiquid">
+            Count cash in investment accounts as liquid
+          </Field.Label>
+          <Field.Description>
+            Securities never count as liquid cash. Pension and pillar 3a
+            accounts are always left out.
+          </Field.Description>
+        </Field.Content>
+        <Switch
+          id="investmentCashLiquid"
+          name="investmentCashLiquid"
+          bind:checked={investmentCashLiquid}
+        />
+      </Field.Field>
     </Card.Content>
   </Card.Root>
 

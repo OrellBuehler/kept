@@ -17,6 +17,8 @@ import {
   spendingByCategory,
   type SpendingSummary,
 } from "$lib/server/categories/budgets";
+import { investedTotals, type InvestedTotal } from "./invested";
+import { liquidity, type CurrencyLiquidity } from "./liquidity";
 import { monthSummary, type MonthSummary } from "./month";
 import {
   earliestDataDate,
@@ -27,6 +29,8 @@ import { parseRange, rangeWindow, type DashboardRange } from "./range";
 
 export * from "./accounts";
 export * from "./bills";
+export * from "./invested";
+export * from "./liquidity";
 export * from "./month";
 export * from "./net-worth";
 export * from "./range";
@@ -49,6 +53,13 @@ export interface Dashboard {
     totals: CurrencyTotal[];
   };
   accounts: AccountBalanceView[];
+  /**
+   * Money available now and behind notice periods, per currency, at the
+   * ownership share (`shareBalance`; `balance` is the full amount).
+   */
+  liquidity: CurrencyLiquidity[];
+  /** Securities holdings per currency; empty without holdings. */
+  invested: InvestedTotal[];
   /** Income and expenses with every transaction at 100%. */
   month: MonthSummary;
   /** The same month at the ownership share; null without shared accounts. */
@@ -93,6 +104,8 @@ export function dashboard(
       totals: balanceTotals(accounts),
     },
     accounts,
+    liquidity: liquidity(userId, today, accounts),
+    invested: investedTotals(accounts),
     month: monthSummary(userId, { month }),
     shareMonth: hasShared
       ? monthSummary(userId, { month, basis: "share" })

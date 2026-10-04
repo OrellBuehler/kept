@@ -3,6 +3,11 @@ import { minor } from "$lib/money";
 import { parseFixed } from "$lib/quantity";
 import { createTestUser } from "$lib/testing/auth";
 import { useTestDB } from "$lib/testing/db";
+import {
+  seedSecurity,
+  seedProviderPrice,
+  seedTrade,
+} from "$lib/testing/investments";
 import { seedAccount, seedImportedTransaction } from "$lib/testing/ledger";
 import {
   accountBalanceAt,
@@ -11,6 +16,7 @@ import {
   balanceSeriesOf,
   currentBalance,
   currentBalances,
+  currentValues,
   seriesDates,
   type BalanceInput,
 } from "./balances";
@@ -293,6 +299,54 @@ describe("current balance cap", () => {
     const m = currentBalances(user.id, [a, b], "2024-12-31");
     expect(m.get(a.id)).toBe(1);
     expect(m.get(b.id)).toBe(7);
+  });
+
+  it("currentValues splits cash and holdings and stays per user", async () => {
+    const user = await createTestUser();
+    const cashOnly = seedAccount(user.id, { openingBalance: minor(500) });
+    const inv = seedAccount(user.id, {
+      name: "Inv",
+      type: "investment",
+      openingBalance: minor(1000),
+    });
+    const sec = seedSecurity(user.id);
+    seedTrade(user.id, inv.id, sec.id, {
+      date: "2024-02-01",
+      qty: "10",
+      price: "100",
+      amount: 100500,
+    });
+    seedProviderPrice(user.id, sec.id, "2024-03-01", "120");
+    const other = await createTestUser();
+    const foreign = seedAccount(other.id, {
+      type: "investment",
+      openingBalance: minor(7),
+    });
+    const secOther = seedSecurity(other.id);
+    seedTrade(other.id, foreign.id, secOther.id, {
+      date: "2024-02-01",
+      amount: 100000,
+    });
+    const v = currentValues(user.id, [cashOnly, inv], "2024-12-31");
+    expect(v.get(cashOnly.id)).toMatchObject({
+      cash: 500,
+      holdings: null,
+      total: 500,
+    });
+    expect(v.get(inv.id)).toMatchObject({
+      cash: 1000,
+      holdings: { value: 120000, cost: 100500, estimated: false },
+      total: 121000,
+    });
+    expect(currentBalances(user.id, [cashOnly, inv], "2024-12-31")).toEqual(
+      new Map([
+        [cashOnly.id, 500],
+        [inv.id, 121000],
+      ]),
+    );
+    expect(
+      currentValues(user.id, [foreign], "2024-12-31").get(foreign.id)!.holdings,
+    ).toBeNull();
   });
 });
 
