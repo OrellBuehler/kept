@@ -152,6 +152,40 @@ export function listUsers(): UserListEntry[] {
     .all();
 }
 
+type Reader = Pick<ReturnType<typeof getDB>, "select">;
+
+/** Throws the AuthError deleteUser would; also used for a cheap check before any credential is spent. */
+export function assertCanDeleteUser(
+  db: Reader,
+  actorId: string,
+  targetId: string,
+): { id: string; username: string; role: UserRole } {
+  if (actorId === targetId) {
+    throw new AuthError(
+      "cannot_delete_self",
+      "You cannot delete your own account.",
+    );
+  }
+  const target = db
+    .select({ id: users.id, username: users.username, role: users.role })
+    .from(users)
+    .where(eq(users.id, targetId))
+    .get();
+  if (!target) throw new AuthError("user_not_found", "User not found.");
+  if (target.role === "admin") {
+    const admins =
+      db.select({ n: count() }).from(users).where(eq(users.role, "admin")).get()
+        ?.n ?? 0;
+    if (admins <= 1) {
+      throw new AuthError(
+        "cannot_delete_last_admin",
+        "The last administrator cannot be deleted.",
+      );
+    }
+  }
+  return target;
+}
+
 export function deleteUser(
   actorId: string,
   targetId: string,
@@ -159,32 +193,7 @@ export function deleteUser(
 ): void {
   getDB().transaction(
     (tx) => {
-      if (actorId === targetId) {
-        throw new AuthError(
-          "cannot_delete_self",
-          "You cannot delete your own account.",
-        );
-      }
-      const target = tx
-        .select({ id: users.id, username: users.username, role: users.role })
-        .from(users)
-        .where(eq(users.id, targetId))
-        .get();
-      if (!target) throw new AuthError("user_not_found", "User not found.");
-      if (target.role === "admin") {
-        const admins =
-          tx
-            .select({ n: count() })
-            .from(users)
-            .where(eq(users.role, "admin"))
-            .get()?.n ?? 0;
-        if (admins <= 1) {
-          throw new AuthError(
-            "cannot_delete_last_admin",
-            "The last administrator cannot be deleted.",
-          );
-        }
-      }
+      const target = assertCanDeleteUser(tx, actorId, targetId);
       tx.delete(users).where(eq(users.id, targetId)).run();
       audit?.(tx, target);
     },

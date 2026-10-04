@@ -16,7 +16,15 @@ import {
   resetTwoFactor,
   usersWithTwoFactor,
 } from "$lib/server/auth/two-factor";
-import { createUser, deleteUser, listUsers } from "$lib/server/auth/users";
+import {
+  assertCanDeleteUser,
+  createUser,
+  deleteUser,
+  findUserById,
+  findUserByUsername,
+  listUsers,
+} from "$lib/server/auth/users";
+import { getDB } from "$lib/server/db";
 import { parseForm, safeValues } from "$lib/server/forms";
 import type { Actions, PageServerLoad } from "./$types";
 
@@ -42,6 +50,15 @@ export const actions: Actions = {
     if (!parsed.ok) return fail(400, { errors: parsed.errors, values });
 
     const { adminPassword, adminCode, ...input } = parsed.data;
+    // Cheap preconditions first: a confirmation that cannot lead to a change
+    // must not spend the TOTP step or a recovery code. createUser re-checks
+    // inside its transaction.
+    if (findUserByUsername(input.username)) {
+      return fail(400, {
+        errors: { username: ["Username is already taken."] },
+        values,
+      });
+    }
     const refused = await adminConfirmationFailure(
       admin,
       locals.session?.id,
@@ -73,6 +90,17 @@ export const actions: Actions = {
     const parsed = parseForm(deleteUserSchema, await request.formData());
     if (!parsed.ok) return fail(400, { errors: parsed.errors });
 
+    // Cheap preconditions before the confirmation spends a TOTP step or recovery
+    // code; deleteUser re-checks them inside its transaction.
+    try {
+      assertCanDeleteUser(getDB(), admin.id, parsed.data.userId);
+    } catch (err) {
+      if (err instanceof AuthError) {
+        return fail(400, { errors: { form: [err.message] } });
+      }
+      throw err;
+    }
+
     const refused = await adminConfirmationFailure(admin, locals.session?.id, {
       password: parsed.data.adminPassword,
       code: parsed.data.adminCode,
@@ -101,6 +129,13 @@ export const actions: Actions = {
     const admin = requireAdmin(locals);
     const parsed = parseForm(resetTwoFactorSchema, await request.formData());
     if (!parsed.ok) return fail(400, { errors: parsed.errors });
+
+    // The target must exist before a confirmation spends a TOTP step or recovery
+    // code; resetTwoFactor re-checks inside its transaction. Resetting yourself
+    // is allowed (lost device), so only existence is checked.
+    if (!findUserById(parsed.data.userId)) {
+      return fail(400, { errors: { form: ["User not found."] } });
+    }
 
     const refused = await adminConfirmationFailure(admin, locals.session?.id, {
       password: parsed.data.adminPassword,

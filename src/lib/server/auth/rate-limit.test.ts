@@ -154,4 +154,94 @@ describe("LoginRateLimiter", () => {
     if (again.allowed) again.done();
     expect(limiter.acquire("alice", "10.0.1.6", true).allowed).toBe(true);
   });
+
+  describe("queue-free acquireOrThrow", () => {
+    it("never joins a lane even when the username is under pressure", () => {
+      const limiter = new LoginRateLimiter();
+      for (let i = 0; i < 10; i++) limiter.acquire("u1", `10.0.0.${i}`);
+      const releases = [];
+      for (let i = 0; i < 5; i++) {
+        releases.push(limiter.acquireOrThrow("u1", `10.0.1.${i}`));
+      }
+      expect(releases).toHaveLength(5);
+      expect(limiter.queued).toBe(0);
+    });
+  });
+
+  describe("recent-success bypass", () => {
+    function pressured(limiter: LoginRateLimiter) {
+      for (let i = 0; i < 12; i++) limiter.acquire("alice", `10.0.0.${i}`);
+      // the attacker fills the per-username queue
+      return Array.from({ length: 3 }, (_, i) =>
+        limiter.acquire("alice", `10.0.1.${i}`, true),
+      );
+    }
+
+    it("a known client skips the queue; an unknown one is still capped", () => {
+      const limiter = new LoginRateLimiter();
+      limiter.recordSuccess("alice", "198.51.100.7");
+      const held = pressured(limiter);
+      expect(held.every((h) => h.allowed)).toBe(true);
+      const owner = limiter.acquire("alice", "198.51.100.7", true);
+      expect(owner.allowed).toBe(true);
+      if (owner.allowed) expect(owner.delayMs).toBe(0);
+      expect(limiter.acquire("alice", "203.0.113.9", true).allowed).toBe(false);
+    });
+
+    it("a client without a success of its own gets no bypass, however clean", () => {
+      const limiter = new LoginRateLimiter();
+      limiter.recordSuccess("alice", "198.51.100.7");
+      pressured(limiter);
+      expect(limiter.acquire("alice", "192.0.2.1", true).allowed).toBe(false);
+      limiter.recordSuccess("bob", "192.0.2.1");
+      expect(limiter.acquire("alice", "192.0.2.1", true).allowed).toBe(false);
+    });
+
+    it("a known client still counts against the hard limits", () => {
+      const limiter = new LoginRateLimiter();
+      limiter.recordSuccess("alice", "198.51.100.7");
+      for (let i = 0; i < 5; i++) limiter.acquire("alice", "198.51.100.7");
+      expect(limiter.acquire("alice", "198.51.100.7", true).allowed).toBe(
+        false,
+      );
+      for (let i = 0; i < 20; i++) limiter.acquire(`user${i}`, "198.51.100.8");
+      limiter.recordSuccess("alice", "198.51.100.8");
+      expect(limiter.acquire("alice", "198.51.100.8", true).allowed).toBe(
+        false,
+      );
+    });
+
+    it("forgets a success after 30 days", () => {
+      const { limiter, advance } = setup();
+      limiter.recordSuccess("alice", "198.51.100.7");
+      advance(31 * 24 * 60 * MIN);
+      pressured(limiter);
+      expect(limiter.acquire("alice", "198.51.100.7", true).allowed).toBe(
+        false,
+      );
+    });
+
+    it("is bounded and evicts the oldest success first", () => {
+      let now = 1_000_000;
+      const limiter = new LoginRateLimiter(
+        () => now,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        { maxSuccesses: 3 },
+      );
+      for (let i = 0; i < 5; i++) {
+        limiter.recordSuccess("alice", `198.51.100.${i}`);
+        now += 1;
+      }
+      pressured(limiter);
+      expect(limiter.acquire("alice", "198.51.100.0", true).allowed).toBe(
+        false,
+      );
+      expect(limiter.acquire("alice", "198.51.100.4", true).allowed).toBe(true);
+    });
+  });
 });

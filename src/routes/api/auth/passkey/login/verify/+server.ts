@@ -10,7 +10,11 @@ import {
   takeWebauthnChallenge,
 } from "$lib/server/auth/challenges";
 import { readJsonBody } from "$lib/server/auth/http";
-import { clientKey, issueLogin } from "$lib/server/auth/login";
+import {
+  clientKey,
+  issueLogin,
+  recordLoginSuccess,
+} from "$lib/server/auth/login";
 import {
   finishAuthentication,
   webauthnConfig,
@@ -94,6 +98,7 @@ export const POST: RequestHandler = async ({
   }
 
   const result = issueLogin(userId);
+  recordLoginSuccess(userId, ip);
   if (locals.session) invalidateSession(locals.session.id);
   setSessionCookie(cookies, result.token, result.session.expiresAt);
   return json({ redirectTo: safeRedirectTo(body.redirectTo) });

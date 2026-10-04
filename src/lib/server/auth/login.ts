@@ -49,19 +49,43 @@ export function normalizeClientAddress(address: string): string {
   return `${groups.join(":")}::/64`;
 }
 
-/** Client address for rate limiting; a fixed shared key if the adapter cannot provide one. */
+/** An IP address from `host`, `host:port` or `[v6]:port` spelling, or null if it is anything else. */
+function parseClientAddress(raw: string): string | null {
+  const text = raw.trim();
+  if (text.length === 0 || text.length > 64) return null;
+  const bracketed = /^\[([^\]]+)\](?::\d{1,5})?$/.exec(text);
+  const v4Port = /^(\d{1,3}(?:\.\d{1,3}){3}):\d{1,5}$/.exec(text);
+  const address = bracketed ? bracketed[1] : v4Port ? v4Port[1] : text;
+  return isIP(address.split("%")[0]) === 0 ? null : address;
+}
+
+function warnSharedKey(): void {
+  if (warnedAddress) return;
+  warnedAddress = true;
+  console.warn(
+    "Could not determine the client address; rate limiting falls back to a single shared key. Check ADDRESS_HEADER / XFF_DEPTH.",
+  );
+}
+
+/**
+ * Client address for rate limiting. A missing, unreadable or non-IP value
+ * (junk in a forwarded header) maps to one fixed shared key, which also keeps
+ * key length bounded.
+ */
 export function clientKey(getClientAddress: () => string): string {
+  let raw: string;
   try {
-    return normalizeClientAddress(getClientAddress());
+    raw = getClientAddress();
   } catch {
-    if (!warnedAddress) {
-      warnedAddress = true;
-      console.warn(
-        "Could not determine the client address; rate limiting falls back to a single shared key. Check ADDRESS_HEADER / XFF_DEPTH.",
-      );
-    }
+    warnSharedKey();
     return "unknown";
   }
+  const address = typeof raw === "string" ? parseClientAddress(raw) : null;
+  if (!address) {
+    warnSharedKey();
+    return "unknown";
+  }
+  return normalizeClientAddress(address);
 }
 
 /** Logs once if ADDRESS_HEADER is unset: behind a proxy every client then shares one rate-limit key. */
@@ -159,7 +183,19 @@ export async function authenticate(
     const pending = createPendingLogin(row.id, now);
     return { secondFactorRequired: true, ...pending };
   }
-  return issueLogin(row.id, now);
+  const result = issueLogin(row.id, now);
+  limiter.recordSuccess(username, ip);
+  return result;
+}
+
+/** Marks the client address as known for the user after a full login (second factor included). */
+export function recordLoginSuccess(
+  userId: string,
+  ip: string,
+  limiter: LoginRateLimiter = loginRateLimiter,
+): void {
+  const row = findUserById(userId);
+  if (row) limiter.recordSuccess(row.username, ip);
 }
 
 /**
@@ -173,6 +209,7 @@ export async function completeSecondFactor(
   ip: string,
   limiter: LoginRateLimiter = secondFactorLimiter,
   now: number = Date.now(),
+  loginLimiter: LoginRateLimiter = loginRateLimiter,
 ): Promise<LoginResult | null> {
   const pending = getPendingLogin(pendingToken, now);
   if (!pending) {
@@ -188,5 +225,7 @@ export async function completeSecondFactor(
   }
   release();
   deletePendingLogin(pending.id);
-  return issueLogin(pending.userId, now);
+  const result = issueLogin(pending.userId, now);
+  loginLimiter.recordSuccess(result.user.username, ip);
+  return result;
 }

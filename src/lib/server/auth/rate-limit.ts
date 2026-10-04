@@ -13,12 +13,18 @@ export const MAX_QUEUED_GLOBAL = 200;
 /** Hard cap on tracked counters; the oldest are evicted first. */
 export const MAX_TRACKED_KEYS = 10_000;
 
+/** How long a successful login keeps its client address "known" for that username. */
+export const SUCCESS_TTL_MS = 30 * 24 * 60 * 60 * 1000;
+/** Hard cap on remembered (username, address) successes; the oldest are evicted first. */
+export const MAX_TRACKED_SUCCESSES = 10_000;
+
 const SWEEP_THRESHOLD = 5000;
 
 export interface LimiterOptions {
   maxQueuedPerUser?: number;
   maxQueuedGlobal?: number;
   maxKeys?: number;
+  maxSuccesses?: number;
 }
 
 interface Lane {
@@ -75,10 +81,12 @@ export type Acquired =
 export class LoginRateLimiter {
   private failures = new Map<string, number[]>();
   private lanes = new Map<string, Lane>();
+  private successes = new Map<string, number>();
   private queuedTotal = 0;
   private readonly maxQueuedPerUser: number;
   private readonly maxQueuedGlobal: number;
   private readonly maxKeys: number;
+  private readonly maxSuccesses: number;
 
   constructor(
     private readonly clock: () => number = Date.now,
@@ -93,6 +101,44 @@ export class LoginRateLimiter {
     this.maxQueuedPerUser = options.maxQueuedPerUser ?? MAX_QUEUED_PER_USER;
     this.maxQueuedGlobal = options.maxQueuedGlobal ?? MAX_QUEUED_GLOBAL;
     this.maxKeys = options.maxKeys ?? MAX_TRACKED_KEYS;
+    this.maxSuccesses = options.maxSuccesses ?? MAX_TRACKED_SUCCESSES;
+  }
+
+  private successKey(username: string, ip: string): string {
+    return `${ip}|${username}`;
+  }
+
+  /**
+   * Remembers that this client address completed a full login (including any
+   * second factor) as this user. Such a client skips the per-username queue
+   * and backoff; it still counts against the username+IP and per-IP limits.
+   * In memory only: lost on restart.
+   */
+  recordSuccess(username: string, ip: string): void {
+    const key = this.successKey(username, ip);
+    this.successes.delete(key);
+    this.successes.set(key, this.clock());
+    while (this.successes.size > this.maxSuccesses) {
+      const oldest = this.successes.keys().next();
+      if (oldest.done) return;
+      this.successes.delete(oldest.value);
+    }
+  }
+
+  private isKnownClient(username: string, ip: string, now: number): boolean {
+    const key = this.successKey(username, ip);
+    const at = this.successes.get(key);
+    if (at === undefined) return false;
+    if (now - at > SUCCESS_TTL_MS) {
+      this.successes.delete(key);
+      return false;
+    }
+    return true;
+  }
+
+  /** Number of attempts currently waiting in per-username queues (for tests and diagnostics). */
+  get queued(): number {
+    return this.queuedTotal;
   }
 
   private userIpKey(username: string, ip: string): string {
@@ -146,8 +192,11 @@ export class LoginRateLimiter {
     }
     const priorForUser = this.recent(uKey, now).length;
     const over = priorForUser - this.delayAfterPerUser + 1;
+    const known = this.isKnownClient(username, ip, now);
     const delayMs =
-      over > 0 ? Math.min(this.delayMaxMs, over * this.delayStepMs) : 0;
+      over > 0 && !known
+        ? Math.min(this.delayMaxMs, over * this.delayStepMs)
+        : 0;
     let lane = this.lanes.get(username);
     const queued = throttle && delayMs > 0;
     if (
@@ -208,9 +257,14 @@ export class LoginRateLimiter {
     };
   }
 
-  /** Throws RateLimitedError when blocked. */
+  /**
+   * Throws RateLimitedError when blocked. Never joins a queue, so there is
+   * nothing to wait for or leave afterwards.
+   */
   acquireOrThrow(username: string, ip: string): () => void {
-    return this.reserve(username, ip).release;
+    const r = this.acquire(username, ip, false);
+    if (!r.allowed) throw new RateLimitedError(r.retryAfterMinutes);
+    return r.release;
   }
 
   /**
@@ -246,6 +300,7 @@ export class LoginRateLimiter {
 
   reset(): void {
     this.failures.clear();
+    this.successes.clear();
   }
 
   /** Number of tracked counters (for tests and diagnostics). */

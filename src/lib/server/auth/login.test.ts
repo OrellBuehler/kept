@@ -1,15 +1,17 @@
 import { describe, expect, it, vi } from "vitest";
-import { createTestUser } from "$lib/testing/auth";
+import { createTestUser, enableTotp } from "$lib/testing/auth";
 import { useTestDB } from "$lib/testing/db";
 import {
   RateLimitedError,
   authenticate,
   clientKey,
+  completeSecondFactor,
   normalizeClientAddress,
   resetAddressWarnings,
   warnIfAddressHeaderUnset,
   warnIfProxied,
 } from "./login";
+import { createPendingLogin } from "./challenges";
 import { LoginRateLimiter } from "./rate-limit";
 import { validateSessionToken } from "./sessions";
 
@@ -96,6 +98,37 @@ describe("authenticate", () => {
     };
     expect(clientKey(boom)).toBe("unknown");
     expect(clientKey(() => "1.2.3.4")).toBe("1.2.3.4");
+  });
+
+  it("clientKey strips brackets and ports and maps junk to the shared key", () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    expect(clientKey(() => "203.0.113.9:51234")).toBe("203.0.113.9");
+    expect(clientKey(() => "[2001:db8:1:2::9]:443")).toBe(
+      normalizeClientAddress("2001:db8:1:2::9"),
+    );
+    expect(clientKey(() => "[2001:db8:1:2::9]")).toBe(
+      normalizeClientAddress("2001:db8:1:2::9"),
+    );
+    expect(clientKey(() => "2001:db8:1:2::9")).toBe(
+      normalizeClientAddress("2001:db8:1:2::9"),
+    );
+    const shared = clientKey(() => {
+      throw new Error("no address");
+    });
+    for (const junk of [
+      "",
+      "unknown",
+      "evil\nvalue",
+      "x".repeat(10_000),
+      "999.1.1.1",
+      "1.2.3.4:99999x",
+      "[not-an-ip]:80",
+      "203.0.113.9, 198.51.100.1",
+    ]) {
+      expect(clientKey(() => junk)).toBe(shared);
+    }
+    warn.mockRestore();
+    resetAddressWarnings();
   });
 
   it("many failures on a username from other clients never lock out the owner", async () => {
@@ -338,5 +371,123 @@ describe("authenticate", () => {
       );
       expect(r).toBeNull();
     });
+  });
+});
+
+describe("recent-success bypass", () => {
+  useTestDB();
+
+  const sleeps: number[] = [];
+  const sleep = async (ms: number) => {
+    sleeps.push(ms);
+  };
+  async function pressure(limiter: LoginRateLimiter) {
+    for (let i = 0; i < 12; i++) {
+      await authenticate("alice", "wrong-password", `10.9.0.${i}`, limiter);
+    }
+    sleeps.length = 0;
+  }
+
+  it("the owner from an address that logged in before skips the backoff", async () => {
+    const u = await createTestUser({ username: "alice" });
+    const limiter = new LoginRateLimiter();
+    await authenticate("alice", u.password, "198.51.100.7", limiter);
+    await pressure(limiter);
+    const known = await authenticate(
+      "alice",
+      u.password,
+      "198.51.100.7",
+      limiter,
+      Date.now(),
+      sleep,
+    );
+    expect(known).not.toBeNull();
+    expect(sleeps).toEqual([]);
+    const unknown = await authenticate(
+      "alice",
+      u.password,
+      "203.0.113.9",
+      limiter,
+      Date.now(),
+      sleep,
+    );
+    expect(unknown).not.toBeNull();
+    expect(sleeps).toHaveLength(1);
+  });
+
+  it("a password-only step of a 2FA user does not make the address known", async () => {
+    const u = await createTestUser({ username: "alice" });
+    enableTotp(u);
+    const limiter = new LoginRateLimiter();
+    const step = await authenticate(
+      "alice",
+      u.password,
+      "198.51.100.7",
+      limiter,
+    );
+    expect(step).toMatchObject({ secondFactorRequired: true });
+    await pressure(limiter);
+    await authenticate(
+      "alice",
+      u.password,
+      "198.51.100.7",
+      limiter,
+      Date.now(),
+      sleep,
+    );
+    expect(sleeps).toHaveLength(1);
+  });
+
+  it("completing the second factor makes the address known", async () => {
+    const u = await createTestUser({ username: "alice" });
+    const [recovery] = enableTotp(u);
+    const limiter = new LoginRateLimiter();
+    const second = new LoginRateLimiter();
+    const pending = createPendingLogin(u.id);
+    const r = await completeSecondFactor(
+      pending.token,
+      recovery,
+      "198.51.100.7",
+      second,
+      Date.now(),
+      limiter,
+    );
+    expect(r).not.toBeNull();
+    await pressure(limiter);
+    await authenticate(
+      "alice",
+      u.password,
+      "198.51.100.7",
+      limiter,
+      Date.now(),
+      sleep,
+    );
+    expect(sleeps).toEqual([]);
+  });
+
+  it("a wrong second-factor code leaves the address unknown", async () => {
+    const u = await createTestUser({ username: "alice" });
+    enableTotp(u);
+    const limiter = new LoginRateLimiter();
+    const pending = createPendingLogin(u.id);
+    const r = await completeSecondFactor(
+      pending.token,
+      "000000",
+      "198.51.100.7",
+      new LoginRateLimiter(),
+      Date.now(),
+      limiter,
+    );
+    expect(r).toBeNull();
+    await pressure(limiter);
+    await authenticate(
+      "alice",
+      u.password,
+      "198.51.100.7",
+      limiter,
+      Date.now(),
+      sleep,
+    );
+    expect(sleeps).toHaveLength(1);
   });
 });

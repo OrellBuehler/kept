@@ -418,6 +418,86 @@ describe("admin/users", () => {
       expect(listUsers()).toHaveLength(2);
     });
 
+    describe("actions that cannot succeed do not spend the code", () => {
+      const run = (
+        action: "delete" | "resetTwoFactor",
+        user: Awaited<ReturnType<typeof createTestUser>>,
+        extra: Record<string, string>,
+      ) =>
+        outcome(() =>
+          actions[action](
+            createTestEvent({
+              user,
+              form: { adminPassword: user.password, ...extra },
+            }) as never,
+          ),
+        );
+
+      it("a taken username on create", async () => {
+        const admin = await createTestUser({ role: "admin" });
+        await createTestUser({ username: "erin" });
+        const [recovery] = enableTotp(admin);
+        const dup = await create(admin, {
+          adminPassword: admin.password,
+          adminCode: recovery,
+        });
+        expect(dup).toMatchObject({ type: "fail", status: 400 });
+        expect(JSON.stringify(dup)).toContain("already taken");
+        const ok = await create(admin, {
+          adminPassword: admin.password,
+          adminCode: recovery,
+          username: "frank",
+        });
+        expect(ok).toMatchObject({ type: "return" });
+      });
+
+      it("deleting yourself, an unknown user or a missing target", async () => {
+        const admin = await createTestUser({ role: "admin" });
+        const member = await createTestUser();
+        const [recovery] = enableTotp(admin);
+        for (const userId of [admin.id, "missing"]) {
+          const r = await run("delete", admin, { userId, adminCode: recovery });
+          expect(r).toMatchObject({ type: "fail", status: 400 });
+          expect(JSON.stringify(r)).not.toContain("adminCode");
+        }
+        const ok = await run("delete", admin, {
+          userId: member.id,
+          adminCode: recovery,
+        });
+        expect(ok).toMatchObject({ type: "return" });
+      });
+
+      it("resetting an unknown user", async () => {
+        const admin = await createTestUser({ role: "admin" });
+        const member = await createTestUser();
+        const [recovery] = enableTotp(admin);
+        const bad = await run("resetTwoFactor", admin, {
+          userId: "missing",
+          adminCode: recovery,
+        });
+        expect(bad).toMatchObject({ type: "fail", status: 400 });
+        const ok = await run("resetTwoFactor", admin, {
+          userId: member.id,
+          adminCode: recovery,
+        });
+        expect(ok).toMatchObject({ type: "return" });
+      });
+
+      it("a failed precheck is not audited and needs no password", async () => {
+        const admin = await createTestUser({ role: "admin" });
+        const r = await outcome(() =>
+          actions.delete(
+            createTestEvent({
+              user: admin,
+              form: { adminPassword: "wrong-password-here", userId: admin.id },
+            }) as never,
+          ),
+        );
+        expect(r).toMatchObject({ type: "fail", status: 400 });
+        expect(audit()).toHaveLength(0);
+      });
+    });
+
     it("a correct code does not replace the password", async () => {
       const admin = await createTestUser({ role: "admin" });
       const [recovery] = enableTotp(admin);
