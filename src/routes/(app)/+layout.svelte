@@ -13,6 +13,7 @@
   import RepeatIcon from "@lucide/svelte/icons/repeat";
   import ReceiptIcon from "@lucide/svelte/icons/receipt";
   import TrendingUpIcon from "@lucide/svelte/icons/trending-up";
+  import ChartLineIcon from "@lucide/svelte/icons/chart-line";
   import ScaleIcon from "@lucide/svelte/icons/scale";
   import FileTextIcon from "@lucide/svelte/icons/file-text";
   import SettingsIcon from "@lucide/svelte/icons/settings";
@@ -71,6 +72,7 @@
   const nav: NavItem[] = $derived([
     { href: "/", label: "Dashboard", icon: LayoutDashboardIcon },
     { href: "/accounts", label: "Accounts", icon: LandmarkIcon },
+    { href: "/investments", label: "Investments", icon: ChartLineIcon },
     { href: "/import", label: "Import", icon: UploadIcon },
     {
       href: "/bills",

@@ -3,6 +3,7 @@ import type { Component } from "svelte";
 export type NavHref =
   | "/"
   | "/accounts"
+  | "/investments"
   | "/import"
   | "/bills"
   | "/budgets"

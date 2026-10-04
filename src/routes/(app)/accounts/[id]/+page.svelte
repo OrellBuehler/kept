@@ -25,6 +25,7 @@
   import PencilIcon from "@lucide/svelte/icons/pencil";
   import Trash2Icon from "@lucide/svelte/icons/trash-2";
   import UploadIcon from "@lucide/svelte/icons/upload";
+  import HoldingsCard from "./HoldingsCard.svelte";
   import SnapshotsCard from "./SnapshotsCard.svelte";
   import TransactionForm from "./TransactionForm.svelte";
   import TransactionSheet from "./TransactionSheet.svelte";
@@ -38,7 +39,9 @@
 
   const account = $derived(data.account);
   const currencyLocked = $derived(
-    account.lastBookingDate !== null || data.snapshots.length > 0,
+    account.lastBookingDate !== null ||
+      data.snapshots.length > 0 ||
+      data.trades.length > 0,
   );
 
   let editOpen = $state(false);
@@ -86,7 +89,7 @@
   <title>{account.name} · Kept</title>
 </svelte:head>
 
-<div class="grid gap-6">
+<div class="grid grid-cols-[minmax(0,1fr)] gap-6">
   <div class="grid gap-3">
     <Button
       variant="ghost"
@@ -142,12 +145,38 @@
 
       <div class="flex items-center gap-3">
         <div class="text-end">
-          <div class="text-muted-foreground text-xs">Current balance</div>
+          <div class="text-muted-foreground text-xs">
+            {data.value ? "Total" : "Current balance"}
+          </div>
           <Amount
             value={data.balance}
             currency={account.currency}
             class="text-3xl font-semibold"
           />
+          {#if data.value}
+            <div
+              class="text-muted-foreground flex flex-wrap justify-end gap-x-1 text-xs"
+            >
+              <span>
+                Cash <Amount
+                  value={data.value.cash}
+                  currency={account.currency}
+                />
+              </span>
+              <span aria-hidden="true">·</span>
+              <span>
+                Holdings <Amount
+                  value={data.value.holdings}
+                  currency={account.currency}
+                />
+              </span>
+            </div>
+            {#if data.value.estimated}
+              <div class="text-muted-foreground text-xs">
+                estimated: no exchange rate for some holdings
+              </div>
+            {/if}
+          {/if}
           {#if account.shareBps < FULL_SHARE_BPS}
             <div class="text-muted-foreground text-xs">
               My share
@@ -233,7 +262,21 @@
     onAdd={() => (addTxOpen = true)}
   />
 
-  <SnapshotsCard snapshots={data.snapshots} currency={account.currency} />
+  {#if data.value}
+    <HoldingsCard
+      positions={data.value.positions}
+      trades={data.trades}
+      securities={data.securities}
+      currency={account.currency}
+      hasSnapshots={data.snapshots.length > 0}
+    />
+  {/if}
+
+  <SnapshotsCard
+    snapshots={data.snapshots}
+    currency={account.currency}
+    holdings={data.value !== null}
+  />
 </div>
 
 <form

@@ -24,8 +24,16 @@
 
   type Snapshot = PageData["snapshots"][number];
 
-  let { snapshots, currency }: { snapshots: Snapshot[]; currency: string } =
-    $props();
+  let {
+    snapshots,
+    currency,
+    holdings = false,
+  }: {
+    snapshots: Snapshot[];
+    currency: string;
+    /** The account has holdings: snapshots then record the cash balance only. */
+    holdings?: boolean;
+  } = $props();
 
   const uid = $props.id();
   let addOpen = $state(false);
@@ -48,8 +56,13 @@
   <Card.Header>
     <Card.Title>Balance snapshots</Card.Title>
     <Card.Description>
-      Use balance snapshots for accounts you don't import, e.g. pension or
-      investment accounts.
+      {#if holdings}
+        Snapshots record the cash balance of this account. The value of your
+        holdings is added on top, so leave it out.
+      {:else}
+        Use balance snapshots for accounts you don't import, e.g. pension
+        accounts.
+      {/if}
     </Card.Description>
     <Card.Action>
       <Button size="sm" variant="outline" onclick={() => (addOpen = true)}>

@@ -20,15 +20,27 @@ import {
   BILL_REFERENCE_TYPES,
   DOCUMENT_SOURCES,
 } from "$lib/bill-types";
+import {
+  PRICE_SOURCES,
+  SECURITY_KINDS,
+  TRADE_SIDES,
+} from "$lib/investment-types";
 import { AMOUNT_SIGNS, CATEGORY_KINDS } from "$lib/category-types";
 import { DEDUCTION_TYPES } from "$lib/tax-deductions";
 import { CHANNEL_KINDS } from "$lib/notification-types";
 import { CADENCES, SERIES_STATUSES } from "$lib/recurring-types";
 import type { Minor } from "$lib/money";
+import type { Fixed8 } from "$lib/quantity";
 import { IBAN_DISPLAY, LOCALES } from "$lib/preferences";
 
 export { ACCOUNT_TYPES, IMPORT_FORMATS, REFERENCE_TYPES, ROW_SOURCES };
 export type { AccountType, ImportFormat, RowSource } from "$lib/ledger-types";
+export { PRICE_SOURCES, SECURITY_KINDS, TRADE_SIDES };
+export type {
+  PriceSource,
+  SecurityKind,
+  TradeSide,
+} from "$lib/investment-types";
 export {
   ALLOCATION_ORIGINS,
   BILL_KINDS,
@@ -197,6 +209,9 @@ const userId = () =>
     .references(() => users.id, { onDelete: "cascade" });
 
 const minor = (name: string) => integer(name).$type<Minor>();
+
+/** Integer scaled by 1e8 (see quantity.ts). */
+const fixed = (name: string) => integer(name).$type<Fixed8>();
 
 export const institutions = sqliteTable(
   "institutions",
@@ -953,4 +968,119 @@ export const userPreferences = sqliteTable(
     ...timestamps,
   },
   (t) => [uniqueIndex("user_preferences_user_id_uq").on(t.userId)],
+);
+
+export const securities = sqliteTable(
+  "securities",
+  {
+    id: id(),
+    userId: userId(),
+    name: text("name").notNull(),
+    kind: text("kind", { enum: SECURITY_KINDS }).notNull(),
+    isin: text("isin"),
+    /** Provider symbol such as "VWRL.SW"; null means manual prices only. */
+    symbol: text("symbol"),
+    /** Currency the security is priced in. */
+    currency: text("currency").notNull(),
+    ...timestamps,
+  },
+  (t) => [index("securities_user_id_idx").on(t.userId)],
+);
+
+export const trades = sqliteTable(
+  "trades",
+  {
+    id: id(),
+    userId: userId(),
+    accountId: text("account_id")
+      .notNull()
+      .references(() => accounts.id, { onDelete: "cascade" }),
+    securityId: text("security_id")
+      .notNull()
+      .references(() => securities.id, { onDelete: "restrict" }),
+    date: text("date").notNull(),
+    side: text("side", { enum: TRADE_SIDES }).notNull(),
+    quantity: fixed("quantity").notNull(),
+    /** Per unit, in the security's currency. */
+    price: fixed("price").notNull(),
+    /** Account currency. */
+    fees: minor("fees")
+      .notNull()
+      .default(0 as Minor),
+    /** Account currency, positive: cash paid or received including fees. Drives the cost basis. */
+    amount: minor("amount").notNull(),
+    note: text("note"),
+    ...timestamps,
+  },
+  (t) => [
+    index("trades_user_id_idx").on(t.userId),
+    index("trades_account_security_date_idx").on(
+      t.accountId,
+      t.securityId,
+      t.date,
+    ),
+    index("trades_security_id_idx").on(t.securityId),
+  ],
+);
+
+export const securityPrices = sqliteTable(
+  "security_prices",
+  {
+    id: id(),
+    userId: userId(),
+    securityId: text("security_id")
+      .notNull()
+      .references(() => securities.id, { onDelete: "cascade" }),
+    date: text("date").notNull(),
+    /** Per unit, in the security's currency. */
+    price: fixed("price").notNull(),
+    source: text("source", { enum: PRICE_SOURCES }).notNull(),
+    ...timestamps,
+  },
+  (t) => [
+    uniqueIndex("security_prices_security_date_source_uq").on(
+      t.securityId,
+      t.date,
+      t.source,
+    ),
+    index("security_prices_user_id_idx").on(t.userId),
+  ],
+);
+
+export const fxRates = sqliteTable(
+  "fx_rates",
+  {
+    id: id(),
+    userId: userId(),
+    base: text("base").notNull(),
+    quote: text("quote").notNull(),
+    date: text("date").notNull(),
+    /** Units of `quote` per one unit of `base`. */
+    rate: fixed("rate").notNull(),
+    source: text("source", { enum: PRICE_SOURCES }).notNull(),
+    ...timestamps,
+  },
+  (t) => [
+    uniqueIndex("fx_rates_user_pair_date_source_uq").on(
+      t.userId,
+      t.base,
+      t.quote,
+      t.date,
+      t.source,
+    ),
+    index("fx_rates_user_id_idx").on(t.userId),
+  ],
+);
+
+export const marketDataSettings = sqliteTable(
+  "market_data_settings",
+  {
+    id: id(),
+    userId: userId(),
+    enabled: integer("enabled", { mode: "boolean" }).notNull().default(false),
+    lastRunAt: integer("last_run_at", { mode: "timestamp_ms" }),
+    lastError: text("last_error"),
+    ...timestamps,
+  },
+  (t) => [uniqueIndex("market_data_settings_user_id_uq").on(t.userId)],
 );

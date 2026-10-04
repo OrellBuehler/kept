@@ -7,9 +7,10 @@ import {
   getDB,
   imports,
   institutions,
+  trades,
   transactions,
 } from "$lib/server/db";
-import { currentBalances } from "./balances";
+import { currentBalanceParts } from "./balances";
 import { LedgerError, notFound } from "./errors";
 import type { AccountInput } from "./schemas";
 
@@ -36,6 +37,8 @@ export interface AccountView {
   institution: InstitutionRef | null;
   /** Latest known balance in the account currency (see balances.ts). */
   balance: Minor;
+  /** `balance` without the value of holdings. */
+  cashBalance: Minor;
   /** `balance` at the ownership share. */
   shareBalance: Minor;
   lastBookingDate: string | null;
@@ -115,7 +118,7 @@ function toViews(
       .map((r) => [r.id, r.t]),
   );
   const rows = baseRows(userId, accountId);
-  const balances = currentBalances(userId, rows, today);
+  const balances = currentBalanceParts(userId, rows, today);
   return rows.map((r) => ({
     id: r.id,
     name: r.name,
@@ -136,8 +139,9 @@ function toViews(
           logoVersion: r.institutionLogoVersion,
         }
       : null,
-    balance: balances.get(r.id)!,
-    shareBalance: shareOf(balances.get(r.id)!, r.shareBps),
+    balance: balances.get(r.id)!.total,
+    cashBalance: balances.get(r.id)!.cash,
+    shareBalance: shareOf(balances.get(r.id)!.total, r.shareBps),
     lastBookingDate: lastBooking.get(r.id) ?? null,
     lastImportAt: lastImport.get(r.id) ?? null,
   }));
@@ -240,11 +244,16 @@ export function updateAccount(
         .select({ id: balanceSnapshots.id })
         .from(balanceSnapshots)
         .where(eq(balanceSnapshots.accountId, id))
+        .get() ??
+      db
+        .select({ id: trades.id })
+        .from(trades)
+        .where(eq(trades.accountId, id))
         .get();
     if (used) {
       throw new LedgerError(
         "conflict",
-        "The currency cannot change while the account has transactions or balances.",
+        "The currency cannot change while the account has transactions, balances or trades.",
         "currency",
       );
     }

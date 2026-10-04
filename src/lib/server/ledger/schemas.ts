@@ -77,7 +77,10 @@ export function parseMoneyInput(value: string, currency: string): MoneyResult {
   }
 }
 
-function amountField(currency: string, opts: { nonZero?: boolean } = {}) {
+export function amountField(
+  currency: string,
+  opts: { nonZero?: boolean } = {},
+) {
   return z.string().transform((v, ctx) => {
     const r = parseMoneyInput(v, currency);
     if (!r.ok) {

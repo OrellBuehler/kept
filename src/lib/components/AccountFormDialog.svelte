@@ -162,7 +162,7 @@
           for="{uid}-currency"
           errors={errors.currency}
           hint={currencyLocked
-            ? "Locked: this account already has transactions or balances."
+            ? "Locked: this account already has transactions, balances or trades."
             : "3-letter ISO code, e.g. CHF."}
         >
           {#if currencyLocked}

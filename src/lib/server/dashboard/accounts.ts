@@ -2,6 +2,7 @@ import { and, eq, lte, max } from "drizzle-orm";
 import type { AccountType } from "$lib/ledger-types";
 import { minor, type Minor } from "$lib/money";
 import { balanceSnapshots, getDB } from "$lib/server/db";
+import { latestHoldingsActivity } from "$lib/server/investments/load";
 import { listAccounts, type InstitutionRef } from "$lib/server/ledger/accounts";
 import { localToday } from "$lib/server/ledger/balances";
 import { daysBetween } from "./dates";
@@ -19,6 +20,8 @@ export interface AccountBalanceView {
   iban: string | null;
   institution: InstitutionRef | null;
   balance: Minor;
+  /** `balance` without the value of holdings. */
+  cashBalance: Minor;
   shareBps: number;
   sharedWith: string | null;
   /** `balance` at the ownership share. */
@@ -32,8 +35,11 @@ export interface AccountBalanceView {
   noData: boolean;
   /**
    * Age in days of the data the stale flag is based on: the last import, or,
-   * for accounts that were never imported, the last snapshot. Null when the
-   * account has neither.
+   * for accounts that were never imported, the last snapshot. Recent holdings
+   * activity (a trade or a manual price of a held security; fetched prices do
+   * not count) takes over when it
+   * clears staleness or when there is neither. Null when the account has none
+   * of these.
    */
   staleDays: number | null;
 }
@@ -68,44 +74,61 @@ export function accountBalances(
       .all()
       .map((r) => [r.accountId, r.d]),
   );
-  return listAccounts(userId, today)
-    .filter((a) => !a.archived)
-    .map((a) => {
-      const lastSnapshotDate = lastSnapshot.get(a.id) ?? null;
-      let staleDays: number | null = null;
-      let stale = false;
-      if (a.lastImportAt !== null) {
-        staleDays = Math.max(
-          0,
-          daysBetween(localToday(new Date(a.lastImportAt)), today),
-        );
-        stale = staleDays > IMPORT_STALE_DAYS;
-      } else if (lastSnapshotDate !== null) {
-        staleDays = Math.max(0, daysBetween(lastSnapshotDate, today));
-        stale = staleDays > SNAPSHOT_STALE_DAYS;
+  const accountRows = listAccounts(userId, today).filter((a) => !a.archived);
+  const holdingsActivity = latestHoldingsActivity(
+    userId,
+    accountRows.map((a) => a.id),
+    today,
+  );
+  return accountRows.map((a) => {
+    const lastSnapshotDate = lastSnapshot.get(a.id) ?? null;
+    let staleDays: number | null = null;
+    let stale = false;
+    if (a.lastImportAt !== null) {
+      staleDays = Math.max(
+        0,
+        daysBetween(localToday(new Date(a.lastImportAt)), today),
+      );
+      stale = staleDays > IMPORT_STALE_DAYS;
+    } else if (lastSnapshotDate !== null) {
+      staleDays = Math.max(0, daysBetween(lastSnapshotDate, today));
+      stale = staleDays > SNAPSHOT_STALE_DAYS;
+    }
+    const activity = holdingsActivity.get(a.id) ?? null;
+    if (activity !== null) {
+      const age = Math.max(0, daysBetween(activity, today));
+      if (staleDays === null) {
+        staleDays = age;
+        stale = age > IMPORT_STALE_DAYS;
+      } else if (stale && age <= IMPORT_STALE_DAYS) {
+        staleDays = age;
+        stale = false;
       }
-      return {
-        id: a.id,
-        name: a.name,
-        type: a.type,
-        currency: a.currency,
-        iban: a.iban,
-        institution: a.institution,
-        balance: a.balance,
-        shareBps: a.shareBps,
-        sharedWith: a.sharedWith,
-        shareBalance: a.shareBalance,
-        lastBookingDate: a.lastBookingDate,
-        lastImportAt: a.lastImportAt,
-        lastSnapshotDate,
-        stale,
-        noData:
-          a.lastImportAt === null &&
-          lastSnapshotDate === null &&
-          a.lastBookingDate === null,
-        staleDays,
-      };
-    });
+    }
+    return {
+      id: a.id,
+      name: a.name,
+      type: a.type,
+      currency: a.currency,
+      iban: a.iban,
+      institution: a.institution,
+      balance: a.balance,
+      cashBalance: a.cashBalance,
+      shareBps: a.shareBps,
+      sharedWith: a.sharedWith,
+      shareBalance: a.shareBalance,
+      lastBookingDate: a.lastBookingDate,
+      lastImportAt: a.lastImportAt,
+      lastSnapshotDate,
+      stale,
+      noData:
+        a.lastImportAt === null &&
+        lastSnapshotDate === null &&
+        a.lastBookingDate === null &&
+        activity === null,
+      staleDays,
+    };
+  });
 }
 
 export function balanceTotals(

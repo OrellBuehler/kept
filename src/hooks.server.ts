@@ -6,6 +6,7 @@ import { registerInbox } from "$lib/server/inbox";
 import { runMigrations } from "$lib/server/db";
 import { registerNotifications } from "$lib/server/notifications";
 import { registerPaperless } from "$lib/server/integrations/paperless";
+import { registerMarketData } from "$lib/server/integrations/yahoo-finance";
 import {
   SESSION_COOKIE,
   clearedSessionCookieHeader,
@@ -23,6 +24,7 @@ export async function init() {
   registerInbox();
   await warmDummyHash();
   registerPaperless();
+  registerMarketData();
   registerNotifications();
 }
 

@@ -4,8 +4,11 @@ import {
   accounts,
   balanceSnapshots,
   getDB,
+  trades,
   transactions,
 } from "$lib/server/db";
+import { loadHoldingsInputs } from "$lib/server/investments/load";
+import type { HoldingsInput } from "$lib/server/investments/valuation";
 import { makeBalanceAt } from "$lib/server/ledger/balances";
 import { addMonths, stepDates, type NetWorthStep } from "./dates";
 
@@ -38,12 +41,14 @@ interface Collected {
   openingDate: string | null;
   transactions: { bookingDate: string; amount: number }[];
   snapshots: { date: string; amount: number; source: string }[];
+  holdings?: HoldingsInput;
 }
 
 /**
  * Sum of the balances of all non-archived accounts at each point, per
  * currency (no FX). Each account uses the same semantics as `balanceAt`
- * (snapshots + transactions, see ledger/balances.ts). Three queries in total.
+ * (snapshots + transactions + holdings, see ledger/balances.ts); holdings are
+ * already converted into the account currency. A handful of queries in total.
  * Currencies are sorted alphabetically; every series has the same dates.
  * With basis "share" each account's balance is scaled by its ownership share
  * (rounded per account and date, see `shareOf`) before summing.
@@ -100,6 +105,11 @@ export function netWorthSeries(
     collected.get(s.accountId)?.snapshots.push(s);
   }
 
+  const holdings = loadHoldingsInputs(userId, [...collected.keys()], to);
+  for (const [accountId, input] of holdings) {
+    collected.get(accountId)!.holdings = input;
+  }
+
   const sums = new Map<string, number[]>();
   for (const a of collected.values()) {
     const at = makeBalanceAt(a);
@@ -140,6 +150,12 @@ export function earliestDataDate(userId: string): string | null {
       .where(
         and(eq(balanceSnapshots.userId, userId), eq(accounts.archived, false)),
       )
+      .get()?.d,
+    db
+      .select({ d: min(trades.date) })
+      .from(trades)
+      .innerJoin(accounts, eq(accounts.id, trades.accountId))
+      .where(and(eq(trades.userId, userId), eq(accounts.archived, false)))
       .get()?.d,
     db
       .select({ d: min(accounts.openingDate) })

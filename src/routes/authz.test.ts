@@ -175,7 +175,30 @@ const matrix: Record<string, Entry> = {
       "actions.setTaxYear": (m, e) => m.actions.setTaxYear(e),
       "actions.addSnapshot": (m, e) => m.actions.addSnapshot(e),
       "actions.deleteSnapshot": (m, e) => m.actions.deleteSnapshot(e),
+      "actions.addTrade": (m, e) => m.actions.addTrade(e),
+      "actions.updateTrade": (m, e) => m.actions.updateTrade(e),
+      "actions.deleteTrade": (m, e) => m.actions.deleteTrade(e),
       "actions.setCategory": (m, e) => m.actions.setCategory(e),
+    },
+  },
+  "/src/routes/(app)/investments/+page.server.ts": {
+    access: "user",
+    handlers: {
+      load: (m, e) => m.load(e),
+      "actions.createSecurity": (m, e) => m.actions.createSecurity(e),
+      "actions.updateSecurity": (m, e) => m.actions.updateSecurity(e),
+      "actions.deleteSecurity": (m, e) => m.actions.deleteSecurity(e),
+      "actions.lookup": (m, e) => m.actions.lookup(e),
+      "actions.setPrice": (m, e) => m.actions.setPrice(e),
+      "actions.deletePrice": (m, e) => m.actions.deletePrice(e),
+    },
+  },
+  "/src/routes/(app)/settings/market-data/+page.server.ts": {
+    access: "user",
+    handlers: {
+      load: (m, e) => m.load(e),
+      "actions.save": (m, e) => m.actions.save(e),
+      "actions.refresh": (m, e) => m.actions.refresh(e),
     },
   },
   "/src/routes/(app)/settings/categories/+page.server.ts": {

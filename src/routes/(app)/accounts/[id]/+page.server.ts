@@ -7,6 +7,16 @@ import {
 } from "$lib/server/categories";
 import { parseForm, safeValues } from "$lib/server/forms";
 import {
+  createTrade,
+  deleteTrade,
+  getTrade,
+  listSecurities,
+  listTrades,
+  tradeInputSchema,
+  updateTrade,
+} from "$lib/server/investments";
+import { accountValue, localToday } from "$lib/server/ledger";
+import {
   archiveAccount,
   deleteAccount,
   getAccount,
@@ -64,6 +74,16 @@ const transactionFields = [
   "note",
 ] as const;
 const snapshotFields = ["date", "amount", "note"] as const;
+const tradeFields = [
+  "securityId",
+  "date",
+  "side",
+  "quantity",
+  "price",
+  "fees",
+  "amount",
+  "note",
+] as const;
 
 export const load: PageServerLoad = ({ locals, params, url }) => {
   const user = requireUser(locals);
@@ -73,9 +93,17 @@ export const load: PageServerLoad = ({ locals, params, url }) => {
     account.currency,
     getPreferences(user.id).pageSize,
   );
+  const trades = listTrades(user.id, account.id);
   return {
     account,
     balance: account.balance,
+    // Cash and holdings are only broken out where holdings are in play.
+    value:
+      account.type === "investment" || trades.length > 0
+        ? accountValue(user.id, account.id, localToday())
+        : null,
+    trades,
+    securities: listSecurities(user.id),
     institutions: listInstitutions(user.id).map((i) => ({
       id: i.id,
       name: i.name,
@@ -96,6 +124,12 @@ function ownedTransaction(userId: string, accountId: string, id: string) {
   const tx = orNotFound(() => getTransaction(userId, id));
   if (tx.accountId !== accountId) error(404, "Transaction not found.");
   return tx;
+}
+
+function ownedTrade(userId: string, accountId: string, id: string) {
+  const trade = orNotFound(() => getTrade(userId, id));
+  if (trade.accountId !== accountId) error(404, "Trade not found.");
+  return trade;
 }
 
 export const actions: Actions = {
@@ -341,6 +375,87 @@ export const actions: Actions = {
       };
     } catch (err) {
       return ledgerFailure("deleteSnapshot", err, values);
+    }
+  },
+
+  addTrade: async ({ locals, params, request }) => {
+    const user = requireUser(locals);
+    const account = orNotFound(() => getAccount(user.id, params.id));
+    const form = await request.formData();
+    const values = safeValues(form, tradeFields);
+    const parsed = parseForm(tradeInputSchema(account.currency), form);
+    if (!parsed.ok) {
+      return fail(400, { action: "addTrade", errors: parsed.errors, values });
+    }
+    try {
+      const created = createTrade(user.id, account.id, parsed.data);
+      return {
+        success: true as const,
+        action: "addTrade" as const,
+        id: created.id,
+      };
+    } catch (err) {
+      return ledgerFailure("addTrade", err, values);
+    }
+  },
+
+  updateTrade: async ({ locals, params, request }) => {
+    const user = requireUser(locals);
+    const account = orNotFound(() => getAccount(user.id, params.id));
+    const form = await request.formData();
+    const values = safeValues(form, ["tradeId", ...tradeFields]);
+    const idParsed = parseForm(idFormSchema("tradeId"), form);
+    if (!idParsed.ok) {
+      return fail(400, {
+        action: "updateTrade",
+        errors: idParsed.errors,
+        values,
+      });
+    }
+    const existing = ownedTrade(user.id, account.id, idParsed.data.tradeId);
+    const parsed = parseForm(tradeInputSchema(account.currency), form);
+    if (!parsed.ok) {
+      return fail(400, {
+        action: "updateTrade",
+        errors: parsed.errors,
+        values,
+      });
+    }
+    try {
+      updateTrade(user.id, existing.id, parsed.data);
+      return {
+        success: true as const,
+        action: "updateTrade" as const,
+        id: existing.id,
+      };
+    } catch (err) {
+      return ledgerFailure("updateTrade", err, values);
+    }
+  },
+
+  deleteTrade: async ({ locals, params, request }) => {
+    const user = requireUser(locals);
+    const account = orNotFound(() => getAccount(user.id, params.id));
+    const form = await request.formData();
+    const values = safeValues(form, ["tradeId"]);
+    const parsed = parseForm(idFormSchema("tradeId"), form);
+    if (!parsed.ok) {
+      return fail(400, {
+        action: "deleteTrade",
+        errors: parsed.errors,
+        values,
+      });
+    }
+    const existing = ownedTrade(user.id, account.id, parsed.data.tradeId);
+    try {
+      deleteTrade(user.id, existing.id);
+      return {
+        success: true as const,
+        action: "deleteTrade" as const,
+        id: existing.id,
+      };
+    } catch (err) {
+      return ledgerFailure("deleteTrade", err, values);
     }
   },
 };
