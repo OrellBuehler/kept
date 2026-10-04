@@ -16,6 +16,11 @@ import {
   taxYearInputSchema,
 } from "$lib/server/tax/schemas";
 import {
+  countDeductionYearMoves,
+  dismissDeductionYearMoves,
+  undoDeductionYearMoves,
+} from "$lib/server/tax/deduction-year-migration";
+import {
   deductionExcludeSchema,
   deductionMappingSchema,
   deductionSummary,
@@ -56,6 +61,7 @@ export const load: PageServerLoad = ({ locals, params }) => {
   const row = overview.years.find((y) => y.year === taxYear) ?? null;
   return {
     reconciliation,
+    deductionMoves: countDeductionYearMoves(user.id, taxYear),
     deductions,
     deductionMappings: listDeductionMappings(user.id),
     // Only worth a card when the user tracks 3a at all.
@@ -243,5 +249,20 @@ export const actions: Actions = {
     } catch (err) {
       return ledgerFailure("includeDeduction", err, values);
     }
+  },
+
+  undoDeductionMoves: ({ locals, params }) => {
+    const user = requireUser(locals);
+    undoDeductionYearMoves(user.id, yearOf(params));
+    return { success: true as const, action: "undoDeductionMoves" as const };
+  },
+
+  dismissDeductionMoves: ({ locals, params }) => {
+    const user = requireUser(locals);
+    dismissDeductionYearMoves(user.id, yearOf(params));
+    return {
+      success: true as const,
+      action: "dismissDeductionMoves" as const,
+    };
   },
 };

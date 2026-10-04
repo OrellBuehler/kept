@@ -1,0 +1,103 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Document xmlns="urn:iso:std:iso:20022:tech:xsd:camt.053.001.04">
+  <BkToCstmrStmt>
+    <GrpHdr>
+      <MsgId>EXAMPLE-NTRYREF-A</MsgId>
+      <CreDtTm>2024-07-16T06:00:00</CreDtTm>
+    </GrpHdr>
+    <Stmt>
+      <Id>STMT-NTRYREF-A</Id>
+      <FrToDt>
+        <FrDtTm>2024-07-01T00:00:00</FrDtTm>
+        <ToDtTm>2024-07-10T23:59:59</ToDtTm>
+      </FrToDt>
+      <Acct>
+        <Id><IBAN>CH9300762011623852957</IBAN></Id>
+        <Ccy>CHF</Ccy>
+      </Acct>
+      <Bal>
+        <Tp><CdOrPrtry><Cd>OPBD</Cd></CdOrPrtry></Tp>
+        <Amt Ccy="CHF">1000.00</Amt>
+        <CdtDbtInd>CRDT</CdtDbtInd>
+        <Dt><Dt>2024-07-01</Dt></Dt>
+      </Bal>
+      <Bal>
+        <Tp><CdOrPrtry><Cd>CLBD</Cd></CdOrPrtry></Tp>
+        <Amt Ccy="CHF">1046.00</Amt>
+        <CdtDbtInd>CRDT</CdtDbtInd>
+        <Dt><Dt>2024-07-10</Dt></Dt>
+      </Bal>
+      <Ntry>
+        <NtryRef>1</NtryRef>
+        <Amt Ccy="CHF">12.00</Amt>
+        <CdtDbtInd>DBIT</CdtDbtInd>
+        <Sts>BOOK</Sts>
+        <BookgDt><Dt>2024-07-02</Dt></BookgDt>
+        <ValDt><Dt>2024-07-02</Dt></ValDt>
+        <NtryDtls>
+          <TxDtls>
+            <RltdPties><Cdtr><Nm>Example Transit Ltd</Nm></Cdtr></RltdPties>
+            <RmtInf><Ustrd>Example Transit Ltd payment</Ustrd></RmtInf>
+          </TxDtls>
+        </NtryDtls>
+      </Ntry>
+      <Ntry>
+        <NtryRef>2</NtryRef>
+        <Amt Ccy="CHF">5.00</Amt>
+        <CdtDbtInd>DBIT</CdtDbtInd>
+        <Sts>BOOK</Sts>
+        <BookgDt><Dt>2024-07-03</Dt></BookgDt>
+        <ValDt><Dt>2024-07-03</Dt></ValDt>
+        <NtryDtls>
+          <TxDtls>
+            <RltdPties><Cdtr><Nm>Example Kiosk Ltd</Nm></Cdtr></RltdPties>
+            <RmtInf><Ustrd>Example Kiosk Ltd purchase</Ustrd></RmtInf>
+          </TxDtls>
+        </NtryDtls>
+      </Ntry>
+      <Ntry>
+        <NtryRef>3</NtryRef>
+        <Amt Ccy="CHF">5.00</Amt>
+        <CdtDbtInd>DBIT</CdtDbtInd>
+        <Sts>BOOK</Sts>
+        <BookgDt><Dt>2024-07-03</Dt></BookgDt>
+        <ValDt><Dt>2024-07-03</Dt></ValDt>
+        <NtryDtls>
+          <TxDtls>
+            <RltdPties><Cdtr><Nm>Example Kiosk Ltd</Nm></Cdtr></RltdPties>
+            <RmtInf><Ustrd>Example Kiosk Ltd purchase</Ustrd></RmtInf>
+          </TxDtls>
+        </NtryDtls>
+      </Ntry>
+      <Ntry>
+        <NtryRef>4</NtryRef>
+        <Amt Ccy="CHF">80.00</Amt>
+        <CdtDbtInd>CRDT</CdtDbtInd>
+        <Sts>BOOK</Sts>
+        <BookgDt><Dt>2024-07-05</Dt></BookgDt>
+        <ValDt><Dt>2024-07-05</Dt></ValDt>
+        <NtryDtls>
+          <TxDtls>
+            <Refs><EndToEndId>E2E-EXAMPLE-0001</EndToEndId></Refs>
+            <RltdPties><Dbtr><Nm>Jane Example</Nm></Dbtr></RltdPties>
+            <RmtInf><Ustrd>Jane Example payment</Ustrd></RmtInf>
+          </TxDtls>
+        </NtryDtls>
+      </Ntry>
+      <Ntry>
+        <NtryRef>5</NtryRef>
+        <Amt Ccy="CHF">12.00</Amt>
+        <CdtDbtInd>DBIT</CdtDbtInd>
+        <Sts>BOOK</Sts>
+        <BookgDt><Dt>2024-07-08</Dt></BookgDt>
+        <ValDt><Dt>2024-07-08</Dt></ValDt>
+        <NtryDtls>
+          <TxDtls>
+            <RltdPties><Cdtr><Nm>Example Transit Ltd</Nm></Cdtr></RltdPties>
+            <RmtInf><Ustrd>Example Transit Ltd payment</Ustrd></RmtInf>
+          </TxDtls>
+        </NtryDtls>
+      </Ntry>
+    </Stmt>
+  </BkToCstmrStmt>
+</Document>

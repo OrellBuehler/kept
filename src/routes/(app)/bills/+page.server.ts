@@ -20,6 +20,7 @@ import {
 import { parseForm, safeValues } from "$lib/server/forms";
 import { ledgerFailure } from "$lib/server/ledger/http";
 import type { Actions, PageServerLoad } from "./$types";
+import { describeError } from "$lib/server/errors";
 
 export const load: PageServerLoad = ({ locals, url }) => {
   const user = requireUser(locals);
@@ -35,10 +36,7 @@ export const load: PageServerLoad = ({ locals, url }) => {
     suggestionsTruncated = result.truncated;
   } catch (err) {
     // The overview must still render; the flag tells the UI matching did not run.
-    console.warn(
-      "auto-matching failed",
-      err instanceof Error ? err.name : "unknown",
-    );
+    console.warn("auto-matching failed", describeError(err));
     matchingFailed = true;
   }
   const views = billViews(user.id, { today });

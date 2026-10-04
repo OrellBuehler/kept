@@ -2,19 +2,14 @@
  * Generic in-process event bus. The core emits; optional integrations subscribe
  * at startup. A listener failing never affects the operation that emitted.
  */
+import { describeError } from "$lib/server/errors";
+
 export type BillChangedListener = (
   userId: string,
   billId: string,
 ) => void | Promise<void>;
 
 const billChanged = new Set<BillChangedListener>();
-
-function describe(err: unknown): string {
-  if (err && typeof err === "object" && "code" in err) {
-    return String((err as { code: unknown }).code);
-  }
-  return err instanceof Error ? err.name : "unknown";
-}
 
 /** Subscribes to bill changes; returns an unsubscribe function. */
 export function onBillChanged(listener: BillChangedListener): () => void {
@@ -32,11 +27,11 @@ export function emitBillChanged(userId: string, billId: string): void {
       const result = listener(userId, billId);
       if (result instanceof Promise) {
         result.catch((err) =>
-          console.error("bill-changed listener failed", describe(err)),
+          console.error("bill-changed listener failed", describeError(err)),
         );
       }
     } catch (err) {
-      console.error("bill-changed listener failed", describe(err));
+      console.error("bill-changed listener failed", describeError(err));
     }
   }
 }

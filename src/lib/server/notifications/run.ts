@@ -18,6 +18,7 @@ import {
   usersWithTriggers,
 } from "./store";
 import type { TriggerSettings } from "./types";
+import { describeError } from "$lib/server/errors";
 
 function accountFacts(userId: string): AccountFact[] {
   const lastImports = new Map(
@@ -96,10 +97,7 @@ export async function runNotifications(
         );
       }
     } catch (err) {
-      console.error(
-        "notification run failed",
-        err instanceof Error ? err.name : "unknown",
-      );
+      console.error("notification run failed", describeError(err));
     }
   }
 }

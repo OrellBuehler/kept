@@ -10,6 +10,7 @@ import {
   securityPrices,
   trades,
 } from "$lib/server/db";
+import { describeError } from "$lib/server/errors";
 import { LedgerError } from "$lib/server/ledger/errors";
 import { isRealDate } from "$lib/server/ledger/schemas";
 import { upsertFxRates, upsertProviderPrices } from "./prices";
@@ -169,13 +170,18 @@ function fetchFrom(
   return have.last > firstTrade ? have.last : firstTrade;
 }
 
+/**
+ * Only a provider error's message is written for the user. Anything else (a
+ * database error carries SQL text and bound parameters) is described by its
+ * class names and code, never its message.
+ */
 function describe(err: unknown): string {
-  return err instanceof Error ? err.message : "Unknown error";
+  return err instanceof QuoteProviderError ? err.message : describeError(err);
 }
 
 function assertPointDates(points: readonly { date: string }[]) {
   if (points.some((p) => !isRealDate(p.date))) {
-    throw new Error("The provider returned an invalid date.");
+    throw new QuoteProviderError("The provider returned an invalid date.");
   }
 }
 
@@ -300,7 +306,7 @@ export async function refreshPrices(
     try {
       const history = await source.history(target.symbol, from, today);
       if (history.currency.toUpperCase() !== target.currency) {
-        throw new Error(
+        throw new QuoteProviderError(
           `quoted in ${history.currency}, expected ${target.currency}`,
         );
       }

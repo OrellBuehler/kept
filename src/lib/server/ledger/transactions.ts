@@ -30,6 +30,7 @@ export interface TransactionView {
   note: string | null;
   categoryId: string | null;
   taxYear: number | null;
+  deductionYear: number | null;
   createdAt: number;
 }
 
@@ -62,6 +63,7 @@ const columns = {
   note: transactions.note,
   categoryId: transactions.categoryId,
   taxYear: transactions.taxYear,
+  deductionYear: transactions.deductionYear,
   createdAt: sql<number>`${transactions.createdAt}`,
 };
 

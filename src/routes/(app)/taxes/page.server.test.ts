@@ -1,4 +1,6 @@
+import { eq } from "drizzle-orm";
 import { describe, expect, it } from "vitest";
+import { deductionYearMigration, getDB, transactions } from "$lib/server/db";
 import { minor } from "$lib/money";
 import { addTaxCredit, setTransactionTaxYear } from "$lib/server/tax/tax";
 import { taxCreditInputSchema } from "$lib/server/tax/schemas";
@@ -241,5 +243,50 @@ describe("taxes routes", () => {
       deductible: 0,
       excluded: 100_000,
     });
+  });
+
+  it("shows and resolves the reclassification notice per user", async () => {
+    const u = await createTestUser();
+    const other = await createTestUser();
+    await runList(u, yearForm({ year: "2024" }));
+    await runList(other, yearForm({ year: "2024" }));
+    const mine = seedAccount(u.id);
+    const theirs = seedAccount(other.id);
+    const moved = (userId: string, accountId: string) => {
+      const t = seedImportedTransaction(userId, accountId, {
+        deductionYear: 2024,
+      });
+      getDB()
+        .insert(deductionYearMigration)
+        .values({ userId, transactionId: t.id, oldTaxYear: 2024 })
+        .run();
+      return t;
+    };
+    const tx = moved(u.id, mine.id);
+    const theirTx = moved(other.id, theirs.id);
+    const count = async (user: User) =>
+      (
+        (await loadDetail(user, "2024")) as {
+          value: { deductionMoves: number };
+        }
+      ).value.deductionMoves;
+    expect(await count(u)).toBe(1);
+    expect(await count(other)).toBe(1);
+
+    await runDetail("undoDeductionMoves", u, "2024");
+
+    const row = (id: string) =>
+      getDB().select().from(transactions).where(eq(transactions.id, id)).get()!;
+    expect(row(tx.id)).toMatchObject({ taxYear: 2024, deductionYear: null });
+    expect(await count(u)).toBe(0);
+    expect(row(theirTx.id)).toMatchObject({
+      taxYear: null,
+      deductionYear: 2024,
+    });
+    expect(await count(other)).toBe(1);
+
+    await runDetail("dismissDeductionMoves", other, "2024");
+    expect(await count(other)).toBe(0);
+    expect(row(theirTx.id)).toMatchObject({ deductionYear: 2024 });
   });
 });

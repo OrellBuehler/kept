@@ -368,6 +368,39 @@ describe("suggestMatches: rule 1 (structured reference)", () => {
     expect(autoConfirmable(s)).toBe(true);
   });
 
+  it("does not auto-confirm a reference match paid to a different IBAN", () => {
+    const s = only(
+      suggestMatches(
+        [bill({ reference: QRR, referenceType: "QRR" })],
+        [tx({ reference: QRR, counterpartyIban: OTHER_IBAN })],
+        [],
+      ),
+    );
+    expect(s.rule).toBe("reference");
+    expect(s.confidence).toBe("high");
+    expect(autoConfirmable(s)).toBe(false);
+  });
+
+  it("compares IBANs after normalization and keeps the match if one is missing", () => {
+    const spacedIban = IBAN.replace(/(.{4})/g, "$1 ").toLowerCase();
+    const same = only(
+      suggestMatches(
+        [bill({ reference: QRR, referenceType: "QRR" })],
+        [tx({ reference: QRR, counterpartyIban: spacedIban })],
+        [],
+      ),
+    );
+    expect(autoConfirmable(same)).toBe(true);
+    const missing = only(
+      suggestMatches(
+        [bill({ reference: QRR, referenceType: "QRR" })],
+        [tx({ reference: QRR, counterpartyIban: null })],
+        [],
+      ),
+    );
+    expect(autoConfirmable(missing)).toBe(true);
+  });
+
   it("matches SCOR and ignores spaces and case", () => {
     const s = only(
       suggestMatches(
@@ -895,7 +928,7 @@ describe("suggestMatches: ambiguity and precedence", () => {
       id: "b1",
       reference: QRR,
       referenceType: "QRR",
-      creditorIban: OTHER_IBAN,
+      creditorIban: null,
     });
     const ibanBill = bill({ id: "b2" });
     const result = suggestMatches(
@@ -961,7 +994,7 @@ describe("suggestMatches: ambiguity and precedence", () => {
       amount: minor(6000),
       reference: QRR,
       referenceType: "QRR",
-      creditorIban: OTHER_IBAN,
+      creditorIban: null,
     });
     const ibanBill = bill({ id: "b2", amount: minor(4000) });
     const result = suggestMatches(

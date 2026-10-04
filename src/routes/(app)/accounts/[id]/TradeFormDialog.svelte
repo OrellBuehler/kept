@@ -13,7 +13,7 @@
   import { todayIso } from "$lib/format";
   import type { FormErrors } from "$lib/form-errors";
   import { submitHandler } from "$lib/form-submit";
-  import { TRADE_SIDE_LABELS } from "$lib/investment-labels";
+  import { TRADE_SIDE_LABELS, splitTerms } from "$lib/investment-labels";
   import { TRADE_SIDES, type TradeSide } from "$lib/investment-types";
   import { currencyExponent, parseAmount } from "$lib/money";
   import { fixed, fixedToInput, parseFixed, valueOf } from "$lib/quantity";
@@ -43,6 +43,8 @@
   let securityId = $state("");
   let side = $state<TradeSide>("buy");
   let quantity = $state("");
+  let splitNew = $state("");
+  let splitOld = $state("");
   let price = $state("");
   let fees = $state("");
   let amount = $state("");
@@ -55,6 +57,9 @@
       securityId = trade?.securityId ?? securities[0]?.id ?? "";
       side = trade?.side ?? "buy";
       quantity = trade ? fixedToInput(trade.quantity) : "";
+      const terms = trade?.side === "split" ? splitTerms(trade) : null;
+      splitNew = terms ? String(terms.new) : "";
+      splitOld = terms ? String(terms.old) : "";
       price = trade ? fixedToInput(trade.price) : "";
       fees =
         trade && trade.fees !== 0 ? minorToInput(trade.fees, currency) : "";
@@ -63,6 +68,7 @@
     });
   });
 
+  const isSplit = $derived(side === "split");
   const security = $derived(securities.find((s) => s.id === securityId));
   const sameCurrency = $derived(security?.currency === currency);
 
@@ -101,9 +107,14 @@
     <Dialog.Header>
       <Dialog.Title>{editing ? "Edit trade" : "Add trade"}</Dialog.Title>
       <Dialog.Description>
-        A trade changes the holdings, not the cash. Kept does not create a cash
-        transaction for it: import your statements or add the cash movement by
-        hand.
+        {#if isSplit}
+          A split changes the number of shares you hold, not what you paid. The
+          cost basis stays the same and the cost per share is divided.
+        {:else}
+          A trade changes the holdings, not the cash. Kept does not create a
+          cash transaction for it: import your statements or add the cash
+          movement by hand.
+        {/if}
       </Dialog.Description>
     </Dialog.Header>
     {#if securities.length === 0}
@@ -127,6 +138,8 @@
             "date",
             "side",
             "quantity",
+            "splitNew",
+            "splitOld",
             "price",
             "fees",
             "amount",
@@ -199,83 +212,124 @@
         </div>
 
         <div class="grid gap-4 sm:grid-cols-2">
-          <FormField
-            label="Quantity"
-            for="{uid}-quantity"
-            errors={errors.quantity}
-            hint="Units, up to 8 decimals."
-          >
-            <Input
-              id="{uid}-quantity"
-              name="quantity"
-              inputmode="decimal"
-              autocomplete="off"
-              required
-              class="text-end tabular-nums"
-              placeholder="0"
-              bind:value={quantity}
-              aria-invalid={!!errors.quantity}
-            />
-          </FormField>
-          <FormField
-            label="Price per unit{security ? ` (${security.currency})` : ''}"
-            for="{uid}-price"
-            errors={errors.price}
-            hint="In the security's currency."
-          >
-            <Input
-              id="{uid}-price"
-              name="price"
-              inputmode="decimal"
-              autocomplete="off"
-              required
-              class="text-end tabular-nums"
-              placeholder="0.00"
-              bind:value={price}
-              aria-invalid={!!errors.price}
-            />
-          </FormField>
+          {#if isSplit}
+            <FormField
+              label="Split (new : old)"
+              for="{uid}-split-new"
+              errors={errors.splitNew ?? errors.splitOld ?? errors.quantity}
+              hint="Whole numbers: 2 : 1 for a 2-for-1 split, 1 : 3 for a 1-for-3 reverse split. Applies from this date."
+            >
+              <div class="flex items-center gap-2">
+                <Input
+                  id="{uid}-split-new"
+                  name="splitNew"
+                  inputmode="numeric"
+                  autocomplete="off"
+                  required
+                  class="text-end tabular-nums"
+                  placeholder="2"
+                  aria-label="New shares"
+                  bind:value={splitNew}
+                  aria-invalid={!!(errors.splitNew ?? errors.quantity)}
+                />
+                <span aria-hidden="true">:</span>
+                <Input
+                  id="{uid}-split-old"
+                  name="splitOld"
+                  inputmode="numeric"
+                  autocomplete="off"
+                  required
+                  class="text-end tabular-nums"
+                  placeholder="1"
+                  aria-label="Old shares"
+                  bind:value={splitOld}
+                  aria-invalid={!!errors.splitOld}
+                />
+              </div>
+            </FormField>
+          {:else}
+            <FormField
+              label="Quantity"
+              for="{uid}-quantity"
+              errors={errors.quantity}
+              hint="Units, up to 8 decimals."
+            >
+              <Input
+                id="{uid}-quantity"
+                name="quantity"
+                inputmode="decimal"
+                autocomplete="off"
+                required
+                class="text-end tabular-nums"
+                placeholder="0"
+                bind:value={quantity}
+                aria-invalid={!!errors.quantity}
+              />
+            </FormField>
+          {/if}
+          {#if !isSplit}
+            <FormField
+              label="Price per unit{security ? ` (${security.currency})` : ''}"
+              for="{uid}-price"
+              errors={errors.price}
+              hint="In the security's currency."
+            >
+              <Input
+                id="{uid}-price"
+                name="price"
+                inputmode="decimal"
+                autocomplete="off"
+                required
+                class="text-end tabular-nums"
+                placeholder="0.00"
+                bind:value={price}
+                aria-invalid={!!errors.price}
+              />
+            </FormField>
+          {/if}
         </div>
 
-        <div class="grid gap-4 sm:grid-cols-2">
-          <FormField
-            label="Fees ({currency}, optional)"
-            for="{uid}-fees"
-            errors={errors.fees}
-          >
-            <Input
-              id="{uid}-fees"
-              name="fees"
-              inputmode="decimal"
-              autocomplete="off"
-              class="text-end tabular-nums"
-              placeholder="0.00"
-              bind:value={fees}
-              aria-invalid={!!errors.fees}
-            />
-          </FormField>
-          <FormField
-            label="Amount ({currency})"
-            for="{uid}-amount"
-            errors={errors.amount}
-            hint={sameCurrency
-              ? "Cash paid or received including fees. Filled in from quantity, price and fees until you change it."
-              : "Cash paid or received including fees, in your account's currency, as on your statement."}
-          >
-            <Input
-              id="{uid}-amount"
-              name="amount"
-              inputmode="decimal"
-              autocomplete="off"
-              required
-              class="text-end tabular-nums"
-              placeholder="0.00"
-              bind:value={amount}
-              oninput={() => (amountTouched = true)}
-              aria-invalid={!!errors.amount}
-            />
-          </FormField>
-        </div>
+        {#if !isSplit}
+          <div class="grid gap-4 sm:grid-cols-2">
+            <FormField
+              label="Fees ({currency}, optional)"
+              for="{uid}-fees"
+              errors={errors.fees}
+            >
+              <Input
+                id="{uid}-fees"
+                name="fees"
+                inputmode="decimal"
+                autocomplete="off"
+                class="text-end tabular-nums"
+                placeholder="0.00"
+                bind:value={fees}
+                aria-invalid={!!errors.fees}
+              />
+            </FormField>
+            <FormField
+              label="Amount ({currency})"
+              for="{uid}-amount"
+              errors={errors.amount}
+              hint={sameCurrency
+                ? "Cash paid or received including fees. Filled in from quantity, price and fees until you change it."
+                : "Cash paid or received including fees, in your account's currency, as on your statement."}
+            >
+              <Input
+                id="{uid}-amount"
+                name="amount"
+                inputmode="decimal"
+                autocomplete="off"
+                required
+                class="text-end tabular-nums"
+                placeholder="0.00"
+                bind:value={amount}
+                oninput={() => (amountTouched = true)}
+                aria-invalid={!!errors.amount}
+              />
+            </FormField>
+          </div>
+        {/if}
 
         <FormField
           label="Note (optional)"

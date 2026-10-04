@@ -441,6 +441,34 @@ describe("staleness with holdings", () => {
     ).toBe(0);
   });
 
+  it("treats a security as held after a split even when sells exceed the raw quantity", async () => {
+    const user = await createTestUser();
+    const account = seedAccount(user.id);
+    const sec = seedSecurity(user.id);
+    seedTrade(user.id, account.id, sec.id, {
+      date: "2026-01-01",
+      qty: "10",
+      amount: 1,
+    });
+    seedTrade(user.id, account.id, sec.id, {
+      date: "2026-02-01",
+      side: "split",
+      qty: "2",
+      price: "0",
+      amount: 0,
+    });
+    seedTrade(user.id, account.id, sec.id, {
+      date: "2026-03-01",
+      side: "sell",
+      qty: "15",
+      amount: 1,
+    });
+    seedManualPrice(user.id, sec.id, "2026-09-01", "1");
+    expect(
+      latestHoldingsActivity(user.id, [account.id], TODAY).get(account.id),
+    ).toBe("2026-09-01");
+  });
+
   it("stays stale when prices and trades are old too", async () => {
     const user = await createTestUser();
     const account = seedAccount(user.id);

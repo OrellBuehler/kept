@@ -5,6 +5,8 @@ export type { ReferenceType };
 
 export interface NormalizedTransaction {
   externalId: string;
+  /** Ids earlier importer versions derived for the same booking; matched as duplicates. */
+  legacyExternalIds?: string[];
   bookingDate: string;
   valueDate: string | null;
   amount: Minor;

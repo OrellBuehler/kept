@@ -8,7 +8,11 @@
   import { Button } from "$lib/components/ui/button";
   import Amount from "$lib/components/Amount.svelte";
   import ConfirmActionDialog from "$lib/components/ConfirmActionDialog.svelte";
-  import { PRICE_SOURCE_LABELS } from "$lib/investment-labels";
+  import {
+    PRICE_SOURCE_LABELS,
+    TRADE_SIDE_LABELS,
+    splitTerms,
+  } from "$lib/investment-labels";
   import { formatFixed } from "$lib/quantity";
   import ChartLineIcon from "@lucide/svelte/icons/chart-line";
   import PencilIcon from "@lucide/svelte/icons/pencil";
@@ -57,8 +61,20 @@
     deleteOpen = true;
   }
 
+  const deleteDescription = $derived.by(() => {
+    if (!deleting) return "";
+    const what =
+      deleting.side === "split"
+        ? `The split (${ratio(deleting)}) of ${deleting.securityName}`
+        : `The ${deleting.side === "sell" ? "sale" : "purchase"} of ${qty(deleting.quantity)} × ${deleting.securityName}`;
+    return `${what} on ${prefs.date(deleting.date)} will be removed and the holdings recalculated. Your transactions are not affected.`;
+  });
   const qty = (v: Parameters<typeof formatFixed>[0]) =>
     formatFixed(v, prefs.locale);
+  const ratio = (t: Trade) => {
+    const terms = splitTerms(t);
+    return terms ? `${terms.new} : ${terms.old}` : `×${qty(t.quantity)}`;
+  };
   const unit = (v: Parameters<typeof formatFixed>[0]) =>
     formatFixed(v, prefs.locale, 2);
 </script>
@@ -232,28 +248,45 @@
                       <Badge
                         variant={t.side === "buy" ? "secondary" : "outline"}
                       >
-                        {t.side === "buy" ? "Buy" : "Sell"}
+                        {TRADE_SIDE_LABELS[t.side]}
                       </Badge>
                       <span class="break-words">{t.securityName}</span>
                     </div>
                     <div class="text-muted-foreground text-xs sm:hidden">
-                      {prefs.date(t.date)} · {qty(t.quantity)} × {unit(t.price)}
-                      {t.securityCurrency}
+                      {prefs.date(t.date)} ·
+                      {#if t.side === "split"}
+                        split {ratio(t)}
+                      {:else}
+                        {qty(t.quantity)} × {unit(t.price)}
+                        {t.securityCurrency}
+                      {/if}
                     </div>
                   </Table.Cell>
                   <Table.Cell
                     class="hidden text-end tabular-nums sm:table-cell"
                   >
-                    {qty(t.quantity)}
+                    {#if t.side === "split"}
+                      {ratio(t)}
+                    {:else}
+                      {qty(t.quantity)}
+                    {/if}
                   </Table.Cell>
                   <Table.Cell
                     class="hidden text-end whitespace-nowrap tabular-nums md:table-cell"
                   >
-                    {unit(t.price)}
-                    {t.securityCurrency}
+                    {#if t.side === "split"}
+                      –
+                    {:else}
+                      {unit(t.price)}
+                      {t.securityCurrency}
+                    {/if}
                   </Table.Cell>
                   <Table.Cell class="text-end">
-                    <Amount value={t.amount} {currency} />
+                    {#if t.side === "split"}
+                      –
+                    {:else}
+                      <Amount value={t.amount} {currency} />
+                    {/if}
                     {#if t.fees > 0}
                       <div class="text-muted-foreground text-xs">
                         incl. <Amount value={t.fees} {currency} /> fees
@@ -299,13 +332,7 @@
 <ConfirmActionDialog
   bind:open={deleteOpen}
   title="Delete this trade?"
-  description="The {deleting?.side === 'sell'
-    ? 'sale'
-    : 'purchase'} of {deleting
-    ? qty(deleting.quantity)
-    : ''} × {deleting?.securityName ?? ''} on {deleting
-    ? prefs.date(deleting.date)
-    : ''} will be removed and the holdings recalculated. Your transactions are not affected."
+  description={deleteDescription}
   action="?/deleteTrade"
   fields={{ tradeId: deleting?.id ?? "" }}
   successMessage="Trade deleted"

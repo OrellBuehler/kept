@@ -262,10 +262,7 @@ describe("startBackupScheduler", () => {
       { firstRunDelayMs: 5, intervalMs: 1000 },
     );
     await vi.waitFor(() =>
-      expect(error).toHaveBeenCalledWith(
-        "scheduled backup failed",
-        "no database",
-      ),
+      expect(error).toHaveBeenCalledWith("scheduled backup failed", "Error"),
     );
     stop();
     error.mockRestore();

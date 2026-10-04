@@ -30,6 +30,8 @@ export interface PreviewRowView {
   /** 1-based position in the file's transaction list. */
   index: number;
   status: RowStatus;
+  /** Why a `duplicate` row counts as imported: its current id, or only an id earlier versions derived. */
+  matchedBy: "id" | "legacy_id" | null;
   tx: NormalizedTransaction;
 }
 
@@ -469,16 +471,25 @@ export function buildPreview(
   const existing = existingExternalIds(
     userId,
     account.id,
-    statement.transactions.map((t) => t.externalId),
+    statement.transactions.flatMap((t) => [
+      t.externalId,
+      ...(t.legacyExternalIds ?? []),
+    ]),
   );
   const seen = new Set<string>();
   const rows: PreviewRowView[] = statement.transactions.map((tx, i) => {
     let status: RowStatus;
-    if (existing.has(tx.externalId)) status = "duplicate";
-    else if (seen.has(tx.externalId)) status = "duplicate_in_file";
+    let matchedBy: PreviewRowView["matchedBy"] = null;
+    if (existing.has(tx.externalId)) {
+      status = "duplicate";
+      matchedBy = "id";
+    } else if (tx.legacyExternalIds?.some((id) => existing.has(id))) {
+      status = "duplicate";
+      matchedBy = "legacy_id";
+    } else if (seen.has(tx.externalId)) status = "duplicate_in_file";
     else status = "new";
     seen.add(tx.externalId);
-    return { index: i + 1, status, tx };
+    return { index: i + 1, status, matchedBy, tx };
   });
   const newRows = rows.filter((r) => r.status === "new");
 

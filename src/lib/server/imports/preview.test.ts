@@ -269,6 +269,50 @@ describe("buildPreview: camt.053", () => {
       total: first.rows.length,
     });
   });
+
+  it("recognises rows imported with legacy NtryRef-based ids as duplicates", async () => {
+    const { user, account } = await setup();
+    for (const externalId of [
+      "ntry:1:2024-07-02:-1200",
+      "ntry:2:2024-07-03:-500",
+      "ntry:3:2024-07-03:-500",
+      "ntry:4:2024-07-05:8000",
+      "ntry:5:2024-07-08:-1200",
+    ]) {
+      seedImportedTransaction(user.id, account.id, { externalId });
+    }
+    const p = buildPreview(
+      user.id,
+      uploadFixture(user.id, account.id, "camt053/overlap-ntryref-a.xml"),
+    );
+    expect(p.counts).toEqual({ new: 0, duplicate: 5, total: 5 });
+    expect(p.rows.every((r) => r.matchedBy === "legacy_id")).toBe(true);
+  });
+
+  it("marks rows matched by their current id differently from legacy matches", async () => {
+    const { user, account } = await setup();
+    const pending = uploadFixture(
+      user.id,
+      account.id,
+      "camt053/overlap-ntryref-a.xml",
+    );
+    const fresh = buildPreview(user.id, pending);
+    expect(fresh.rows.every((r) => r.matchedBy === null)).toBe(true);
+    seedImportedTransaction(user.id, account.id, {
+      externalId: fresh.rows[0]!.tx.externalId,
+    });
+    seedImportedTransaction(user.id, account.id, {
+      externalId: fresh.rows[1]!.tx.legacyExternalIds![0]!,
+    });
+    const p = buildPreview(user.id, pending);
+    expect(p.rows.map((r) => r.matchedBy)).toEqual([
+      "id",
+      "legacy_id",
+      null,
+      null,
+      null,
+    ]);
+  });
 });
 
 describe("buildPreview: csv and xlsx", () => {

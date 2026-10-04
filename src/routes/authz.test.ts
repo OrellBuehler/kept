@@ -173,6 +173,7 @@ const matrix: Record<string, Entry> = {
       "actions.updateTransaction": (m, e) => m.actions.updateTransaction(e),
       "actions.deleteTransaction": (m, e) => m.actions.deleteTransaction(e),
       "actions.setTaxYear": (m, e) => m.actions.setTaxYear(e),
+      "actions.setDeductionYear": (m, e) => m.actions.setDeductionYear(e),
       "actions.addSnapshot": (m, e) => m.actions.addSnapshot(e),
       "actions.deleteSnapshot": (m, e) => m.actions.deleteSnapshot(e),
       "actions.addTrade": (m, e) => m.actions.addTrade(e),
@@ -334,6 +335,9 @@ const matrix: Record<string, Entry> = {
       "actions.deleteCredit": (m, e) => m.actions.deleteCredit(e),
       "actions.tag": (m, e) => m.actions.tag(e),
       "actions.untag": (m, e) => m.actions.untag(e),
+      "actions.undoDeductionMoves": (m, e) => m.actions.undoDeductionMoves(e),
+      "actions.dismissDeductionMoves": (m, e) =>
+        m.actions.dismissDeductionMoves(e),
     },
   },
   "/src/routes/(app)/import/+page.server.ts": {

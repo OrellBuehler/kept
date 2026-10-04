@@ -260,6 +260,30 @@ describe("accounts", () => {
     ).toBe(renamed.sortOrder);
   });
 
+  it("blocks a currency change while the opening balance is not zero", async () => {
+    const u = await createTestUser();
+    const acc = seedAccount(u.id, { openingBalance: minor(50000) });
+    expect(
+      code(() =>
+        updateAccount(u.id, acc.id, {
+          ...accountToInput(acc),
+          currency: "EUR",
+        }),
+      ),
+    ).toBe("conflict:currency");
+    expect(getAccount(u.id, acc.id).currency).toBe("CHF");
+    const cleared = updateAccount(u.id, acc.id, {
+      ...accountToInput(acc),
+      openingBalance: minor(0),
+    });
+    expect(
+      updateAccount(u.id, acc.id, {
+        ...accountToInput(cleared),
+        currency: "EUR",
+      }).currency,
+    ).toBe("EUR");
+  });
+
   it("archives and unarchives", async () => {
     const u = await createTestUser();
     const acc = seedAccount(u.id);

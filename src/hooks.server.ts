@@ -1,4 +1,4 @@
-import { json, type Handle } from "@sveltejs/kit";
+import { json, type Handle, type HandleServerError } from "@sveltejs/kit";
 import { warmDummyHash } from "$lib/server/auth/password";
 import { assertSecretKeyConfigured } from "$lib/server/crypto";
 import { registerBackups } from "$lib/server/backup";
@@ -15,6 +15,7 @@ import {
   validateSessionToken,
 } from "$lib/server/auth/sessions";
 import { isApiPath, isPublicPath } from "$lib/server/auth/routing";
+import { describeError } from "$lib/server/errors";
 import { countUsers } from "$lib/server/auth/users";
 
 export async function init() {
@@ -27,6 +28,15 @@ export async function init() {
   registerMarketData();
   registerNotifications();
 }
+
+export const handleError: HandleServerError = ({ error, event, status }) => {
+  const errorId = crypto.randomUUID();
+  console.error(
+    `unhandled error ${errorId} status=${status} route=${event.route.id ?? "none"}`,
+    describeError(error),
+  );
+  return { message: "An unexpected error occurred.", errorId };
+};
 
 function redirectResponse(location: string, clearCookie?: string): Response {
   const headers = new Headers({ location });

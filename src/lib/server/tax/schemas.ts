@@ -143,3 +143,8 @@ export const taxTagSchema = z.object({
   transactionId: idSchema,
   taxYear: optionalOf(yearSchema),
 });
+
+export const deductionYearTagSchema = z.object({
+  transactionId: idSchema,
+  deductionYear: optionalOf(yearSchema),
+});

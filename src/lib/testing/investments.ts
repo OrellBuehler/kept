@@ -1,5 +1,5 @@
 import { minor } from "$lib/money";
-import { parseFixed } from "$lib/quantity";
+import { fixed, parseFixed, scaleFixed } from "$lib/quantity";
 import {
   createSecurity,
   createTrade,
@@ -36,17 +36,23 @@ export function seedTrade(
     fees?: number;
     amount: number;
     note?: string | null;
+    /** Split only: the exact integer ratio. */
+    split?: { new: number; old: number };
   },
 ) {
   return createTrade(userId, accountId, {
     securityId,
     date: over.date ?? "2024-01-15",
     side: over.side ?? "buy",
-    quantity: parseFixed(over.qty ?? "10"),
+    quantity: over.split
+      ? scaleFixed(fixed(100_000_000), over.split.new, over.split.old)
+      : parseFixed(over.qty ?? "10"),
     price: parseFixed(over.price ?? "100"),
     fees: minor(over.fees ?? 0),
     amount: minor(over.amount),
     note: over.note ?? null,
+    splitNew: over.split?.new ?? null,
+    splitOld: over.split?.old ?? null,
   });
 }
 

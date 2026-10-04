@@ -153,6 +153,20 @@ describe("tax reconciliation", () => {
     expect(rec.balance.remainingByMe).toBe(0);
   });
 
+  it("does not count a donation with a deduction year as a tax payment", async () => {
+    const { user, account } = await setup();
+    const donation = pay(user.id, account.id, 5000, "2025-01-10", {
+      deductionYear: 2024,
+    });
+    const taxPayment = pay(user.id, account.id, 100000, "2024-03-10");
+    setTransactionTaxYear(user.id, taxPayment.id, 2024);
+    expect(paymentLines(user.id, 2024).map((l) => l.transactionId)).toEqual([
+      taxPayment.id,
+    ]);
+    expect(donation.deductionYear).toBe(2024);
+    expect(listTaxYears(user.id).map((y) => y.year)).toEqual([2024]);
+  });
+
   it("counts payments allocated to bills tagged with the year", async () => {
     const { user, account } = await setup();
     const bill = seedBill(user.id, {

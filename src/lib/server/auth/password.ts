@@ -1,3 +1,4 @@
+import { describeError } from "$lib/server/errors";
 export function hashPassword(password: string): Promise<string> {
   return Bun.password.hash(password, { algorithm: "argon2id" });
 }
@@ -12,7 +13,7 @@ export async function verifyPassword(
     // A corrupt stored hash must not authenticate; treat it as a mismatch.
     console.error(
       "Password verification failed on a malformed hash:",
-      err instanceof Error ? err.message : "unknown error",
+      describeError(err),
     );
     return false;
   }

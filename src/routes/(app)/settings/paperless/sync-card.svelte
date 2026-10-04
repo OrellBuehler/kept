@@ -44,6 +44,7 @@
           ["Unchanged", syncResult.unchanged],
           ["Skipped", syncResult.skipped],
           ["Failed", syncResult.failed],
+          ["Will retry", syncResult.pending],
           ["Missing", syncResult.missing],
         ] as const)
       : [],

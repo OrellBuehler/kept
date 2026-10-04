@@ -373,11 +373,22 @@ function detailKey(tx: unknown, index: number): string {
 
 interface Draft {
   tx: Omit<NormalizedTransaction, "externalId">;
-  baseId: string | null;
+  baseId: string;
+  legacyBaseId: string | null;
 }
 
 function sha256(parts: unknown[]): string {
   return createHash("sha256").update(JSON.stringify(parts)).digest("hex");
+}
+
+/** The IBAN, else a short hash of the case- and spacing-normalised name, else null. */
+function counterpartyKey(cp: {
+  name: string | null;
+  iban: string | null;
+}): string | null {
+  if (cp.iban) return cp.iban;
+  const name = cp.name?.toLowerCase().replace(/\s+/g, " ").trim();
+  return name ? `n-${sha256([name]).slice(0, 16)}` : null;
 }
 
 function parseEntry(
@@ -454,17 +465,12 @@ function parseEntry(
       reversal,
     };
 
-    let baseId: string | null = null;
-    if (entryRef) {
-      baseId = split
-        ? `acsr:${entryRef}/${detailKey(tx, index)}`
-        : `acsr:${entryRef}`;
-    } else if (ntryRef) {
-      baseId = `ntry:${ntryRef}:${bookingDate}:${signed}`;
-      if (split) baseId += `/${detailKey(tx, index)}`;
-    }
-    if (baseId === null) {
-      baseId = `hash:${sha256([
+    const legacy = (): string => {
+      if (ntryRef) {
+        const id = `ntry:${ntryRef}:${bookingDate}:${signed}`;
+        return split ? `${id}/${detailKey(tx, index)}` : id;
+      }
+      return `hash:${sha256([
         accountKey,
         bookingDate,
         valueDate,
@@ -475,35 +481,83 @@ function parseEntry(
         description,
         reversal,
       ])}`;
+    };
+
+    let baseId: string;
+    if (entryRef) {
+      baseId = split
+        ? `acsr:${entryRef}/${detailKey(tx, index)}`
+        : `acsr:${entryRef}`;
+    } else {
+      const txAcsr = reference(at(tx, "Refs", "AcctSvcrRef"));
+      const uetr = reference(at(tx, "Refs", "UETR"));
+      const e2e = reference(at(tx, "Refs", "EndToEndId"));
+      const txId = reference(at(tx, "Refs", "TxId"));
+      // EndToEndId and TxId are chosen by the payer and may be reused for different payees on
+      // the same day, so the counterparty is part of the id.
+      const party = counterpartyKey(cp);
+      const when = `${bookingDate}:${value}${party ? `:${party}` : ""}`;
+      if (txAcsr) baseId = `acsr:${txAcsr}`;
+      else if (uetr) baseId = `uetr:${uetr}`;
+      else if (e2e) baseId = `e2e:${e2e}:${when}`;
+      else if (txId) baseId = `txid:${txId}:${when}`;
+      else {
+        baseId = `hash:${sha256([
+          accountKey,
+          bookingDate,
+          valueDate,
+          value,
+          transaction.currency,
+          cp.iban,
+          cp.name,
+          ref.reference,
+          description,
+          text(entry["AddtlNtryInf"]),
+          reversal,
+        ])}`;
+      }
     }
-    return { tx: transaction, baseId };
+    const legacyBaseId = entryRef ? null : legacy();
+    return { tx: transaction, baseId, legacyBaseId };
   });
 }
 
 /**
- * externalId rules, in order of preference:
- *   1. `acsr:<AcctSvcrRef>` - the account servicer's reference for the booking; identical in
- *      every download that contains the booking. For split batches `/<key>` is appended, where
- *      key is the TxDtls AcctSvcrRef, EndToEndId or TxId, else the TxDtls position.
- *   2. `ntry:<NtryRef>:<bookingDate>:<signedAmount>` - NtryRef is often only a sequence number
- *      within one statement, so date and amount are added to keep different bookings apart
- *      across overlapping files.
- *   3. `hash:<sha256>` of the normalized entry (account, booking/value date, signed amount,
- *      currency, counterparty IBAN, reference, description, reversal). Only fields that the
- *      bank reports identically for the same booking are hashed (no statement id, no position
- *      in the file), so the same booking hashes identically in every overlapping file.
+ * externalId rules, in order of preference (NtryRef is never used: many banks number entries
+ * per file, so the same booking carries a different NtryRef in each overlapping download):
+ *   1. `acsr:<AcctSvcrRef>` - the account servicer's reference, at entry level or, failing
+ *      that, at TxDtls level. For split batches with an entry-level reference `/<key>` is
+ *      appended, where key is the TxDtls AcctSvcrRef, EndToEndId or TxId, else the position.
+ *   2. `uetr:<UETR>`, then `e2e:<EndToEndId>:<date>:<amount>[:<party>]` and
+ *      `txid:<TxId>:<date>:<amount>[:<party>]` (date, amount and the counterparty - its IBAN,
+ *      else `n-` and a hash of its name, omitted when there is none - are added because those
+ *      ids are chosen by the payer and may be reused for different payees).
+ *   3. `hash:<sha256>` of the booking content: account, booking/value date, signed amount,
+ *      currency, counterparty IBAN and name, reference, description, AddtlNtryInf, reversal.
+ *      No statement id and no position in the file, so the same booking hashes identically
+ *      in every overlapping file.
  * Identical ids within one statement (e.g. two identical bookings on the same day) get an
  * occurrence suffix `#2`, `#3`, ... in file order, so real duplicates are kept apart yet
  * remain stable as long as overlapping files contain the same identical bookings.
+ *
+ * `legacyExternalIds` holds the ids earlier versions derived (NtryRef-based or the older,
+ * smaller hash) so already imported rows are still recognised as duplicates.
  */
 function assignExternalIds(drafts: Draft[]): NormalizedTransaction[] {
   const seen = new Map<string, number>();
-  return drafts.map(({ tx, baseId }) => {
-    const count = (seen.get(baseId!) ?? 0) + 1;
-    seen.set(baseId!, count);
+  const occurrence = (id: string, scope: string): string => {
+    const key = `${scope}|${id}`;
+    const count = (seen.get(key) ?? 0) + 1;
+    seen.set(key, count);
+    return count === 1 ? id : `${id}#${count}`;
+  };
+  return drafts.map(({ tx, baseId, legacyBaseId }) => {
+    const externalId = occurrence(baseId, "id");
+    if (legacyBaseId === null) return { ...tx, externalId };
     return {
       ...tx,
-      externalId: count === 1 ? baseId! : `${baseId}#${count}`,
+      externalId,
+      legacyExternalIds: [occurrence(legacyBaseId, "legacy")],
     };
   });
 }

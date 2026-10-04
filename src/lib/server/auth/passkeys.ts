@@ -15,6 +15,7 @@ import { and, asc, eq } from "drizzle-orm";
 import { getDB, passkeys } from "$lib/server/db";
 import { logAuthEvent } from "./events";
 import { AuthError, type SessionUser } from "./types";
+import { describeError } from "$lib/server/errors";
 
 const RP_NAME = "Kept";
 
@@ -100,7 +101,7 @@ function parseTransports(raw: string | null): AuthenticatorTransport[] {
   } catch (err) {
     console.error(
       "Stored passkey transports are malformed:",
-      err instanceof Error ? err.message : "unknown error",
+      describeError(err),
     );
     return [];
   }
@@ -154,10 +155,7 @@ export async function finishRegistration(
       requireUserVerification: true,
     });
   } catch (err) {
-    console.warn(
-      "Passkey registration rejected:",
-      err instanceof Error ? err.message : "unknown error",
-    );
+    console.warn("Passkey registration rejected:", describeError(err));
     return null;
   }
   if (!verification.verified) return null;
@@ -261,10 +259,7 @@ export async function finishAuthentication(
       },
     });
   } catch (err) {
-    console.warn(
-      "Passkey assertion rejected:",
-      err instanceof Error ? err.message : "unknown error",
-    );
+    console.warn("Passkey assertion rejected:", describeError(err));
     return null;
   }
   if (!verification.verified) return null;

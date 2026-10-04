@@ -233,6 +233,8 @@ export function createYahooProvider(options: YahooOptions = {}): QuoteProvider {
     const series = result?.[0];
     if (!series) throw new YahooError("no_data", "Yahoo Finance has no data.");
 
+    // `close` is adjusted retroactively for splits (but not for dividends), so these
+    // quotes are in the units after every split; valuation.ts relies on that.
     const closes = series.indicators?.quote?.[0]?.close ?? [];
     const formatter = zoneFormatter(series.meta.exchangeTimezoneName);
     // The last bar can repeat the previous day while the market is open; the later one wins.

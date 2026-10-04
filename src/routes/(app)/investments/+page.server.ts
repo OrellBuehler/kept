@@ -23,6 +23,7 @@ import { localToday } from "$lib/server/ledger";
 import { ledgerFailure, orNotFound } from "$lib/server/ledger/http";
 import { idFormSchema, idSchema } from "$lib/server/ledger/schemas";
 import type { Actions, PageServerLoad } from "./$types";
+import { describeError } from "$lib/server/errors";
 
 const securityFields = ["name", "kind", "isin", "symbol", "currency"] as const;
 const priceFields = ["date", "price"] as const;
@@ -192,10 +193,7 @@ export const actions: Actions = {
       };
     } catch (err) {
       // The search text is never logged; only provider errors written for users are shown.
-      console.error(
-        "security lookup failed:",
-        err instanceof Error ? err.name : "unknown error",
-      );
+      console.error("security lookup failed:", describeError(err));
       return fail(400, {
         action: "lookup",
         errors: {

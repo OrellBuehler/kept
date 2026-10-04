@@ -7,6 +7,7 @@
   import { formatIban } from "$lib/iban";
   import Trash2Icon from "@lucide/svelte/icons/trash-2";
   import TaxYearTag from "./TaxYearTag.svelte";
+  import DeductionYearTag from "./DeductionYearTag.svelte";
   import TransactionForm from "./TransactionForm.svelte";
   import type { PageData } from "./$types";
   import { usePreferences } from "$lib/preferences.svelte";
@@ -139,6 +140,13 @@
           <TaxYearTag
             transactionId={transaction.id}
             taxYear={transaction.taxYear}
+          />
+        {/key}
+
+        {#key transaction.id + ":" + transaction.deductionYear}
+          <DeductionYearTag
+            transactionId={transaction.id}
+            deductionYear={transaction.deductionYear}
           />
         {/key}
 

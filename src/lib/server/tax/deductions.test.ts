@@ -18,6 +18,7 @@ import {
   listDeductionMappings,
   setCategoryDeduction,
   setTransactionDeductionExcluded,
+  setTransactionDeductionYear,
 } from "./deductions";
 
 const setup = async () => {
@@ -78,12 +79,12 @@ describe("deduction summary", () => {
     ]);
   });
 
-  it("uses the explicit tax year over the booking date, across the year boundary", async () => {
+  it("uses the explicit deduction year over the booking date, across the year boundary", async () => {
     const { user, cat, tx } = await setup();
     const pillar = cat("Retirement");
     setCategoryDeduction(user.id, pillar.id, "pillar_3a");
-    tx(-100, "2026-01-02", { categoryId: pillar.id, taxYear: 2025 });
-    tx(-200, "2025-12-30", { categoryId: pillar.id, taxYear: 2026 });
+    tx(-100, "2026-01-02", { categoryId: pillar.id, deductionYear: 2025 });
+    tx(-200, "2025-12-30", { categoryId: pillar.id, deductionYear: 2026 });
     tx(-400, "2025-12-31", { categoryId: pillar.id });
     tx(-800, "2026-01-01", { categoryId: pillar.id });
 
@@ -94,6 +95,36 @@ describe("deduction summary", () => {
       true,
     ]);
     expect(deductionSummary(user.id, 2026).totals[0]!.total).toBe(1000);
+  });
+
+  it("a tax-office payment tag does not move a deduction to that year", async () => {
+    const { user, cat, tx } = await setup();
+    const gifts = cat("Gifts");
+    setCategoryDeduction(user.id, gifts.id, "donations");
+    tx(-100, "2025-03-01", { categoryId: gifts.id, taxYear: 2024 });
+    expect(deductionSummary(user.id, 2024).totals).toEqual([]);
+    expect(deductionSummary(user.id, 2025).totals[0]!.total).toBe(100);
+  });
+
+  it("setTransactionDeductionYear sets and clears the override", async () => {
+    const { user, cat, tx } = await setup();
+    const gifts = cat("Gifts");
+    setCategoryDeduction(user.id, gifts.id, "donations");
+    const t = tx(-100, "2025-01-02", { categoryId: gifts.id });
+    setTransactionDeductionYear(user.id, t.id, 2024);
+    expect(deductionSummary(user.id, 2024).totals[0]!.total).toBe(100);
+    expect(deductionSummary(user.id, 2025).totals).toEqual([]);
+    setTransactionDeductionYear(user.id, t.id, null);
+    expect(deductionSummary(user.id, 2025).totals[0]!.total).toBe(100);
+  });
+
+  it("cannot set the deduction year of another user's transaction", async () => {
+    const a = await setup();
+    const b = await createTestUser();
+    const t = a.tx(-100, "2025-01-02");
+    expect(() => setTransactionDeductionYear(b.id, t.id, 2024)).toThrow(
+      LedgerError,
+    );
   });
 
   it("excludes individual transactions and lists them separately", async () => {
@@ -240,12 +271,12 @@ describe("deduction summary with detected pillar 3a payments", () => {
     expect(total(user.id, 2026)).toBe(50000);
   });
 
-  it("ignores an explicit tax-year marking on a detected payment", async () => {
+  it("ignores an explicit deduction year on a detected payment", async () => {
     const { user, cat, tx } = await setup3a();
     const t = tx(-50000, "2025-12-28", {
       categoryId: cat.id,
       reference: makeQrr(1),
-      taxYear: 2025,
+      deductionYear: 2025,
     });
     credit(user.id, t.id, "2026-01-05");
     expect(total(user.id, 2025)).toBe(0);

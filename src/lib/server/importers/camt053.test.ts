@@ -537,11 +537,147 @@ describe("externalId", () => {
     expect(new Set([a, b, c]).size).toBe(3);
   });
 
-  it("falls back to NtryRef combined with date and amount", () => {
-    const [s] = parseCamt053(
-      stmt(ntry("9.00", "DBIT", "<NtryRef>7</NtryRef>")),
+  it("ignores NtryRef when there is no bank reference", () => {
+    const withRef = (r: string) =>
+      parseCamt053(stmt(ntry("9.00", "DBIT", `<NtryRef>${r}</NtryRef>`)))[0]!
+        .transactions[0]!.externalId;
+    expect(withRef("7")).toBe(withRef("42"));
+    expect(withRef("7")).toMatch(/^hash:[0-9a-f]{64}$/);
+  });
+
+  it("gives shared bookings the same ids when NtryRef is a per-file sequence", () => {
+    const [a] = parse("overlap-ntryref-a.xml");
+    const [b] = parse("overlap-ntryref-b.xml");
+    const idsA = a!.transactions.map((t) => t.externalId);
+    const idsB = b!.transactions.map((t) => t.externalId);
+    expect(a!.transactions).toHaveLength(5);
+    expect(b!.transactions).toHaveLength(5);
+    const shared = idsA.filter((id) => idsB.includes(id));
+    expect(shared).toHaveLength(4);
+    expect(new Set([...idsA, ...idsB]).size).toBe(6);
+    expect(idsA.every((id) => !id.startsWith("ntry:"))).toBe(true);
+    parse("overlap-ntryref-a.xml").forEach(expectReconciles);
+    parse("overlap-ntryref-b.xml").forEach(expectReconciles);
+  });
+
+  it("keeps identical same-day bookings apart and stable across files", () => {
+    const [a] = parse("overlap-ntryref-a.xml");
+    const [b] = parse("overlap-ntryref-b.xml");
+    const kiosk = (s: NormalizedStatement) =>
+      s.transactions
+        .filter((t) => t.counterpartyName === "Example Kiosk Ltd")
+        .map((t) => t.externalId);
+    expect(kiosk(a!)).toHaveLength(2);
+    expect(new Set(kiosk(a!)).size).toBe(2);
+    expect(kiosk(b!)).toEqual(kiosk(a!));
+  });
+
+  it("uses EndToEndId with date and amount before hashing", () => {
+    const [a] = parse("overlap-ntryref-a.xml");
+    const e2e = a!.transactions.find((t) => t.amount === 8000)!;
+    expect(e2e.externalId).toMatch(
+      /^e2e:E2E-EXAMPLE-0001:2024-07-05:8000:n-[0-9a-f]{16}$/,
     );
-    expect(s!.transactions[0]!.externalId).toBe("ntry:7:2024-01-02:-900");
+  });
+
+  it("separates bookings that reuse an EndToEndId by counterparty", () => {
+    const booking = (party: string, refs: string) =>
+      parseCamt053(
+        stmt(
+          ntry(
+            "9.00",
+            "DBIT",
+            `<NtryDtls><TxDtls><Refs>${refs}</Refs><RltdPties>${party}</RltdPties></TxDtls></NtryDtls>`,
+          ),
+        ),
+      )[0]!.transactions[0]!.externalId;
+    const byIban = (iban: string) =>
+      `<Cdtr><Nm>Same Name</Nm></Cdtr><CdtrAcct><Id><IBAN>${iban}</IBAN></Id></CdtrAcct>`;
+    const byName = (name: string) => `<Cdtr><Nm>${name}</Nm></Cdtr>`;
+    const e2e = "<EndToEndId>E1</EndToEndId>";
+    const txid = "<TxId>T1</TxId>";
+
+    // X and Y: same day, same amount, same EndToEndId, different payees.
+    const x = booking(byIban(IBAN_DE), e2e);
+    const y = booking(byIban(IBAN_GB), e2e);
+    expect(x).toMatch(/^e2e:E1:2024-01-02:-900:/);
+    expect(x).toContain(IBAN_DE);
+    expect(x).not.toBe(y);
+    // Without an IBAN the name separates them, ignoring case and spacing.
+    expect(booking(byName("Alpha Ltd"), e2e)).not.toBe(
+      booking(byName("Beta Ltd"), e2e),
+    );
+    expect(booking(byName("Alpha  Ltd"), e2e)).toBe(
+      booking(byName("alpha ltd"), e2e),
+    );
+    expect(booking(byIban(IBAN_DE), txid)).toMatch(/^txid:T1:2024-01-02:-900:/);
+    expect(booking(byIban(IBAN_DE), txid)).not.toBe(
+      booking(byIban(IBAN_GB), txid),
+    );
+  });
+
+  it("prefers TxDtls AcctSvcrRef, then UETR, then EndToEndId", () => {
+    const tx = (refs: string) =>
+      parseCamt053(
+        stmt(
+          ntry(
+            "9.00",
+            "DBIT",
+            `<NtryRef>3</NtryRef><NtryDtls><TxDtls><Refs>${refs}</Refs></TxDtls></NtryDtls>`,
+          ),
+        ),
+      )[0]!.transactions[0]!.externalId;
+    const e2e = "<EndToEndId>E1</EndToEndId>";
+    const uetr = "<UETR>123e4567-e89b-42d3-a456-426614174000</UETR>";
+    expect(tx(`<AcctSvcrRef>TX-9</AcctSvcrRef>${uetr}${e2e}`)).toBe(
+      "acsr:TX-9",
+    );
+    expect(tx(`${e2e}${uetr}`)).toBe(
+      "uetr:123e4567-e89b-42d3-a456-426614174000",
+    );
+    expect(tx(e2e)).toBe("e2e:E1:2024-01-02:-900");
+    expect(tx("<EndToEndId>NOTPROVIDED</EndToEndId>")).toMatch(/^hash:/);
+  });
+
+  it("separates reversals and negative amounts from the original booking", () => {
+    const id = (ind: string, amt: string, rv: string) =>
+      parseCamt053(stmt(ntry(amt, ind, `<RvslInd>${rv}</RvslInd>`)))[0]!
+        .transactions[0]!.externalId;
+    expect(id("DBIT", "9.00", "false")).not.toBe(id("CRDT", "9.00", "true"));
+    expect(id("DBIT", "9.00", "false")).not.toBe(id("DBIT", "9.00", "true"));
+    expect(id("DBIT", "0.00", "false")).toMatch(/^hash:/);
+  });
+
+  it("hashes the currency and counterparty name", () => {
+    const base = (cur: string, name: string) =>
+      parseCamt053(
+        stmt(
+          ntry(
+            "9.00",
+            "DBIT",
+            `<NtryDtls><TxDtls><RltdPties><Cdtr><Nm>${name}</Nm></Cdtr></RltdPties></TxDtls></NtryDtls>`,
+            cur,
+          ),
+        ),
+      )[0]!.transactions[0]!.externalId;
+    expect(base("CHF", "A")).not.toBe(base("CHF", "B"));
+    expect(base("CHF", "A")).not.toBe(base("EUR", "A"));
+  });
+
+  it("derives legacy ids matching what earlier versions stored", () => {
+    const e = (r: string) =>
+      parseCamt053(stmt(ntry("9.00", "DBIT", `<NtryRef>${r}</NtryRef>`)))[0]!
+        .transactions[0]!;
+    expect(e("7").legacyExternalIds).toEqual(["ntry:7:2024-01-02:-900"]);
+    expect(
+      parseCamt053(stmt(ntry("9.00", "DBIT")))[0]!.transactions[0]!
+        .legacyExternalIds![0],
+    ).toMatch(/^hash:/);
+    expect(
+      parseCamt053(
+        stmt(ntry("9.00", "DBIT", "<AcctSvcrRef>A1</AcctSvcrRef>")),
+      )[0]!.transactions[0]!.legacyExternalIds,
+    ).toBeUndefined();
   });
 
   it("prefers AcctSvcrRef over NtryRef and disambiguates repeated references", () => {

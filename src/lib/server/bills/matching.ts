@@ -314,13 +314,20 @@ export function suggestMatches(
       }
       const abs = Math.abs(txFree);
       const amount = remaining === null ? abs : Math.min(remaining, abs);
+      // A matching reference paid to a different account is only a suggestion.
+      const ibanConflict =
+        bill.creditorIban !== null &&
+        tx.counterpartyIban !== null &&
+        normalizeIban(bill.creditorIban) !== "" &&
+        normalizeIban(tx.counterpartyIban) !== "" &&
+        normalizeIban(bill.creditorIban) !== normalizeIban(tx.counterpartyIban);
       rule1.push({
         billId: bill.id,
         transactionId: tx.id,
         rule: "reference",
-        confidence: "exact",
+        confidence: ibanConflict ? "high" : "exact",
         amount: minor(amount),
-        ambiguous: false,
+        ambiguous: ibanConflict,
       });
       consumed.set(tx.id, Math.max(consumed.get(tx.id) ?? 0, amount));
     }
