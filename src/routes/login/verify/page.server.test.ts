@@ -28,10 +28,10 @@ import { actions, load } from "./+page.server";
 
 async function userWithTotp() {
   const u = await createTestUser({ username: "alice" });
-  const { secret } = startTotpEnrolment(u.id, u.username);
+  const { secret } = await startTotpEnrolment(u.id, u.username);
   // enrol in the past so the current step is still usable at login time
   const past = Date.now() - 5 * 60_000;
-  const codes = confirmTotpEnrolment(u.id, totpCode(secret, past), past);
+  const codes = await confirmTotpEnrolment(u.id, totpCode(secret, past), past);
   return { u, secret, codes };
 }
 
@@ -67,7 +67,7 @@ describe("two-step login", () => {
     expect(token).toBeTruthy();
     expect(cookies.get(SESSION_COOKIE)).toBeUndefined();
     // the pending token is not a session token
-    expect(validateSessionToken(token!)).toBeNull();
+    expect(await validateSessionToken(token!)).toBeNull();
   });
 
   it("completes with a valid code and issues the session", async () => {
@@ -78,8 +78,8 @@ describe("two-step login", () => {
     expect(r).toMatchObject({ type: "redirect", location: "/bills" });
     const cookies = event.cookies as unknown as FakeCookies;
     const session = cookies.get(SESSION_COOKIE);
-    expect(validateSessionToken(session!)?.user.id).toBe(u.id);
-    expect(getPendingLogin(token)).toBeNull();
+    expect((await validateSessionToken(session!))?.user.id).toBe(u.id);
+    expect(await getPendingLogin(token)).toBeNull();
   });
 
   it("cannot skip the second step: missing, bogus or reused pending cookie", async () => {
@@ -105,7 +105,7 @@ describe("two-step login", () => {
   it("the pending state grants no access to the app", async () => {
     const { u } = await userWithTotp();
     const { token } = await passwordStep(u);
-    expect(validateSessionToken(token!)).toBeNull();
+    expect(await validateSessionToken(token!)).toBeNull();
     const r = await outcome(() =>
       load(createTestEvent({ cookies: { [PENDING_COOKIE]: token! } }) as never),
     );
@@ -115,11 +115,10 @@ describe("two-step login", () => {
   it("the pending state expires", async () => {
     const { u, secret } = await userWithTotp();
     const { token } = await passwordStep(u);
-    getDB()
+    await getDB()
       .update(authChallenges)
-      .set({ expiresAt: new Date(Date.now() - 1) })
-      .run();
-    expect(getPendingLogin(token)).toBeNull();
+      .set({ expiresAt: new Date(Date.now() - 1) });
+    expect(await getPendingLogin(token)).toBeNull();
     const event = codeEvent(token, totpCode(secret, Date.now()));
     const r = await outcome(() => actions.default(event as never));
     expect(r).toMatchObject({
@@ -146,7 +145,7 @@ describe("two-step login", () => {
       expect(await wrong()).toMatchObject({ type: "fail", status: 400 });
     }
     expect(await wrong()).toMatchObject({ type: "redirect" });
-    expect(getPendingLogin(token)).toBeNull();
+    expect(await getPendingLogin(token)).toBeNull();
   });
 
   it("rate limits the second step independently of the password step", async () => {
@@ -204,11 +203,10 @@ describe("two-step login", () => {
       ),
     );
     expect(
-      getDB()
+      await getDB()
         .select()
         .from(authChallenges)
-        .where(eq(authChallenges.kind, "login"))
-        .all(),
+        .where(eq(authChallenges.kind, "login")),
     ).toHaveLength(0);
   });
 

@@ -57,7 +57,7 @@ describe("handle", () => {
 
   it("resolves locals from a valid session cookie", async () => {
     const user = await createTestUser({ role: "admin" });
-    const { token } = loginTestUser(user);
+    const { token } = await loginTestUser(user);
     const { res, event } = await run("/", { [SESSION_COOKIE]: token });
     expect(res.status).toBe(200);
     expect(event.locals.user).toMatchObject({ id: user.id, role: "admin" });

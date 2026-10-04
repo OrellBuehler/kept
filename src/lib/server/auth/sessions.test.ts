@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { eq } from "drizzle-orm";
-import { sessions, users } from "$lib/server/db";
+import { first, sessions, users } from "$lib/server/db";
 import { createTestUser } from "$lib/testing/auth";
 import { useTestDB } from "$lib/testing/db";
 import { FakeCookies } from "$lib/testing/event";
@@ -25,8 +25,8 @@ describe("sessions", () => {
 
   it("stores only the hash of the token", async () => {
     const user = await createTestUser();
-    const { token, session } = createSession(user.id, T0);
-    const rows = ctx.db.select().from(sessions).all();
+    const { token, session } = await createSession(user.id, T0);
+    const rows = await ctx.db.select().from(sessions);
     expect(rows).toHaveLength(1);
     expect(rows[0].id).toBe(hashToken(token));
     expect(rows[0].id).not.toBe(token);
@@ -37,8 +37,8 @@ describe("sessions", () => {
 
   it("validates a fresh session without refreshing", async () => {
     const user = await createTestUser({ role: "admin", displayName: "Ada" });
-    const { token } = createSession(user.id, T0);
-    const v = validateSessionToken(token, T0 + DAY);
+    const { token } = await createSession(user.id, T0);
+    const v = await validateSessionToken(token, T0 + DAY);
     expect(v?.user).toEqual({
       id: user.id,
       username: user.username,
@@ -48,76 +48,82 @@ describe("sessions", () => {
     expect(v?.refreshed).toBe(false);
   });
 
-  it("rejects unknown tokens", () => {
-    expect(validateSessionToken("nope", T0)).toBeNull();
+  it("rejects unknown tokens", async () => {
+    expect(await validateSessionToken("nope", T0)).toBeNull();
   });
 
   it("extends the session when less than 15 days remain", async () => {
     const user = await createTestUser();
-    const { token, session } = createSession(user.id, T0);
+    const { token, session } = await createSession(user.id, T0);
     const later = T0 + 16 * DAY;
-    const v = validateSessionToken(token, later);
+    const v = await validateSessionToken(token, later);
     expect(v?.refreshed).toBe(true);
     expect(v?.session.expiresAt.getTime()).toBe(later + SESSION_LIFETIME_MS);
-    const row = ctx.db
-      .select()
-      .from(sessions)
-      .where(eq(sessions.id, session.id))
-      .get();
+    const row = await first(
+      ctx.db
+        .select()
+        .from(sessions)
+        .where(eq(sessions.id, session.id))
+        .limit(1),
+    );
     expect(row?.expiresAt.getTime()).toBe(later + SESSION_LIFETIME_MS);
   });
 
   it("does not extend at exactly 15 days remaining", async () => {
     const user = await createTestUser();
-    const { token } = createSession(user.id, T0);
-    expect(validateSessionToken(token, T0 + 15 * DAY)?.refreshed).toBe(false);
+    const { token } = await createSession(user.id, T0);
+    expect((await validateSessionToken(token, T0 + 15 * DAY))?.refreshed).toBe(
+      false,
+    );
   });
 
   it("rejects and deletes expired sessions", async () => {
     const user = await createTestUser();
-    const { token } = createSession(user.id, T0);
-    expect(validateSessionToken(token, T0 + SESSION_LIFETIME_MS)).toBeNull();
-    expect(ctx.db.select().from(sessions).all()).toHaveLength(0);
+    const { token } = await createSession(user.id, T0);
+    expect(
+      await validateSessionToken(token, T0 + SESSION_LIFETIME_MS),
+    ).toBeNull();
+    expect(await ctx.db.select().from(sessions)).toHaveLength(0);
   });
 
   it("invalidates a single session", async () => {
     const user = await createTestUser();
-    const a = createSession(user.id, T0);
-    const b = createSession(user.id, T0);
-    invalidateSession(a.session.id);
-    expect(validateSessionToken(a.token, T0)).toBeNull();
-    expect(validateSessionToken(b.token, T0)).not.toBeNull();
+    const a = await createSession(user.id, T0);
+    const b = await createSession(user.id, T0);
+    await invalidateSession(a.session.id);
+    expect(await validateSessionToken(a.token, T0)).toBeNull();
+    expect(await validateSessionToken(b.token, T0)).not.toBeNull();
   });
 
   it("invalidates all of a user's sessions except one, never touching others", async () => {
     const alice = await createTestUser();
     const bob = await createTestUser();
-    const a1 = createSession(alice.id, T0);
-    const a2 = createSession(alice.id, T0);
-    const b1 = createSession(bob.id, T0);
-    invalidateUserSessions(alice.id, a1.session.id);
-    expect(validateSessionToken(a1.token, T0)).not.toBeNull();
-    expect(validateSessionToken(a2.token, T0)).toBeNull();
-    expect(validateSessionToken(b1.token, T0)).not.toBeNull();
-    invalidateUserSessions(alice.id);
-    expect(validateSessionToken(a1.token, T0)).toBeNull();
-    expect(validateSessionToken(b1.token, T0)).not.toBeNull();
+    const a1 = await createSession(alice.id, T0);
+    const a2 = await createSession(alice.id, T0);
+    const b1 = await createSession(bob.id, T0);
+    await invalidateUserSessions(alice.id, a1.session.id);
+    expect(await validateSessionToken(a1.token, T0)).not.toBeNull();
+    expect(await validateSessionToken(a2.token, T0)).toBeNull();
+    expect(await validateSessionToken(b1.token, T0)).not.toBeNull();
+    await invalidateUserSessions(alice.id);
+    expect(await validateSessionToken(a1.token, T0)).toBeNull();
+    expect(await validateSessionToken(b1.token, T0)).not.toBeNull();
   });
 
   it("purges expired sessions", async () => {
     const user = await createTestUser();
-    createSession(user.id, T0);
-    const live = createSession(user.id, T0 + 10 * DAY);
-    purgeExpiredSessions(T0 + SESSION_LIFETIME_MS + 1);
-    const rows = ctx.db.select().from(sessions).all();
+    await createSession(user.id, T0);
+    const live = await createSession(user.id, T0 + 10 * DAY);
+    await purgeExpiredSessions(T0 + SESSION_LIFETIME_MS + 1);
+    const rows = await ctx.db.select().from(sessions);
     expect(rows.map((r) => r.id)).toEqual([live.session.id]);
   });
 
   it("deleting a user cascades to sessions", async () => {
     const user = await createTestUser();
-    createSession(user.id, T0);
-    ctx.db.delete(users).where(eq(users.id, user.id)).run();
-    expect(ctx.db.select().from(sessions).all()).toHaveLength(0);
+    await createSession(user.id, T0);
+    await ctx.db.delete(users).where(eq(users.id, user.id));
+    expect(await ctx.db.select().from(sessions)).toHaveLength(0);
   });
 });
 

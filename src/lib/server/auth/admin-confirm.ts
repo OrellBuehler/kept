@@ -23,7 +23,7 @@ export async function confirmAdmin(
   limiter: LoginRateLimiter = adminActionLimiter,
   now: number = Date.now(),
 ): Promise<void> {
-  const status = getTwoFactorStatus(userId);
+  const status = await getTwoFactorStatus(userId);
   if (status.totpEnabled) {
     await reauthenticate(
       userId,
@@ -34,7 +34,7 @@ export async function confirmAdmin(
     );
     return;
   }
-  if (status.passkeyCount > 0 && !hasRecentReauth(sessionId, now)) {
+  if (status.passkeyCount > 0 && !(await hasRecentReauth(sessionId, now))) {
     throw new AuthError(
       "passkey_required",
       "Confirm with one of your passkeys on the security page first.",
@@ -44,10 +44,10 @@ export async function confirmAdmin(
 }
 
 /** Which extra proof the administrator's forms must ask for. */
-export function adminConfirmMode(
+export async function adminConfirmMode(
   userId: string,
-): "password" | "totp" | "passkey" {
-  const status = getTwoFactorStatus(userId);
+): Promise<"password" | "totp" | "passkey"> {
+  const status = await getTwoFactorStatus(userId);
   if (status.totpEnabled) return "totp";
   return status.passkeyCount > 0 ? "passkey" : "password";
 }

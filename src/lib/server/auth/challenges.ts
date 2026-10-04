@@ -1,6 +1,11 @@
 import type { Cookies } from "@sveltejs/kit";
-import { and, eq, lt } from "drizzle-orm";
-import { authChallenges, getDB, type AuthChallengeKind } from "$lib/server/db";
+import { and, eq, lt, sql } from "drizzle-orm";
+import {
+  authChallenges,
+  first,
+  getDB,
+  type AuthChallengeKind,
+} from "$lib/server/db";
 import { cookieSecureOverride, hashToken } from "./sessions";
 
 export const PENDING_COOKIE = "kept_pending";
@@ -25,42 +30,44 @@ function newToken(): string {
   );
 }
 
-export function purgeExpiredChallenges(now: number = Date.now()): void {
-  getDB()
+export async function purgeExpiredChallenges(
+  now: number = Date.now(),
+): Promise<void> {
+  await getDB()
     .delete(authChallenges)
-    .where(lt(authChallenges.expiresAt, new Date(now)))
-    .run();
+    .where(lt(authChallenges.expiresAt, new Date(now)));
 }
 
-export function createPendingLogin(
+export async function createPendingLogin(
   userId: string,
   now: number = Date.now(),
-): { token: string; expiresAt: Date } {
-  purgeExpiredChallenges(now);
+): Promise<{ token: string; expiresAt: Date }> {
+  await purgeExpiredChallenges(now);
   const token = newToken();
   const expiresAt = new Date(now + PENDING_LOGIN_TTL_MS);
-  getDB()
+  await getDB()
     .insert(authChallenges)
-    .values({ id: hashToken(token), userId, kind: "login", expiresAt })
-    .run();
+    .values({ id: hashToken(token), userId, kind: "login", expiresAt });
   return { token, expiresAt };
 }
 
-export function getPendingLogin(
+export async function getPendingLogin(
   token: string | undefined,
   now: number = Date.now(),
-): PendingLogin | null {
+): Promise<PendingLogin | null> {
   if (!token) return null;
   const db = getDB();
   const id = hashToken(token);
-  const row = db
-    .select()
-    .from(authChallenges)
-    .where(and(eq(authChallenges.id, id), eq(authChallenges.kind, "login")))
-    .get();
+  const row = await first(
+    db
+      .select()
+      .from(authChallenges)
+      .where(and(eq(authChallenges.id, id), eq(authChallenges.kind, "login")))
+      .limit(1),
+  );
   if (!row || !row.userId) return null;
   if (row.expiresAt.getTime() <= now) {
-    db.delete(authChallenges).where(eq(authChallenges.id, id)).run();
+    await db.delete(authChallenges).where(eq(authChallenges.id, id));
     return null;
   }
   return {
@@ -71,40 +78,47 @@ export function getPendingLogin(
   };
 }
 
-export function deletePendingLogin(id: string): void {
-  getDB().delete(authChallenges).where(eq(authChallenges.id, id)).run();
+export async function deletePendingLogin(id: string): Promise<void> {
+  await getDB().delete(authChallenges).where(eq(authChallenges.id, id));
 }
 
-/** Counts a failed second-factor attempt; the pending login is destroyed after too many. */
-export function recordPendingFailure(pending: PendingLogin): void {
-  const attempts = pending.attempts + 1;
-  if (attempts >= MAX_PENDING_ATTEMPTS) {
-    deletePendingLogin(pending.id);
-    return;
-  }
-  getDB()
+/**
+ * Counts a failed second-factor attempt; the pending login is destroyed after too many.
+ * The increment happens in the database and the new value comes back from it, so
+ * parallel wrong guesses on one pending login cannot all count as the same attempt.
+ */
+export async function recordPendingFailure(
+  pending: Pick<PendingLogin, "id">,
+): Promise<void> {
+  const [row] = await getDB()
     .update(authChallenges)
-    .set({ attempts })
+    .set({ attempts: sql`${authChallenges.attempts} + 1` })
     .where(eq(authChallenges.id, pending.id))
-    .run();
+    .returning({ attempts: authChallenges.attempts });
+  if (row && row.attempts >= MAX_PENDING_ATTEMPTS) {
+    await deletePendingLogin(pending.id);
+  }
 }
 
-export function setPendingChallenge(id: string, challenge: string): void {
-  getDB()
+export async function setPendingChallenge(
+  id: string,
+  challenge: string,
+): Promise<void> {
+  await getDB()
     .update(authChallenges)
     .set({ challenge })
-    .where(eq(authChallenges.id, id))
-    .run();
+    .where(eq(authChallenges.id, id));
 }
 
 /** Atomically reads and clears the stored WebAuthn challenge of a pending login. */
-export function takePendingChallenge(id: string): string | null {
+export async function takePendingChallenge(id: string): Promise<string | null> {
   return getDB().transaction(
     (tx) => {
       const row = tx
         .select({ challenge: authChallenges.challenge })
         .from(authChallenges)
         .where(eq(authChallenges.id, id))
+        .limit(1)
         .get();
       if (!row?.challenge) return null;
       tx.update(authChallenges)
@@ -117,15 +131,15 @@ export function takePendingChallenge(id: string): string | null {
   );
 }
 
-export function createWebauthnChallenge(
+export async function createWebauthnChallenge(
   kind: WebauthnKind,
   userId: string | null,
   challenge: string,
   now: number = Date.now(),
-): string {
-  purgeExpiredChallenges(now);
+): Promise<string> {
+  await purgeExpiredChallenges(now);
   const id = crypto.randomUUID();
-  getDB()
+  await getDB()
     .insert(authChallenges)
     .values({
       id,
@@ -133,24 +147,24 @@ export function createWebauthnChallenge(
       kind,
       challenge,
       expiresAt: new Date(now + PASSKEY_CHALLENGE_TTL_MS),
-    })
-    .run();
+    });
   return id;
 }
 
 /** Single use: the row is deleted whether or not the ceremony then succeeds. */
-export function takeWebauthnChallenge(
+export async function takeWebauthnChallenge(
   id: string,
   kind: WebauthnKind,
   userId: string | null,
   now: number = Date.now(),
-): string | null {
+): Promise<string | null> {
   return getDB().transaction(
     (tx) => {
       const row = tx
         .select()
         .from(authChallenges)
         .where(and(eq(authChallenges.id, id), eq(authChallenges.kind, kind)))
+        .limit(1)
         .get();
       if (!row) return null;
       tx.delete(authChallenges).where(eq(authChallenges.id, id)).run();

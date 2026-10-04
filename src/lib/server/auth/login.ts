@@ -126,14 +126,14 @@ export interface SecondFactorRequired {
 }
 
 /** Full login for a user whose factors are all satisfied. */
-export function issueLogin(
+export async function issueLogin(
   userId: string,
   now: number = Date.now(),
-): LoginResult {
-  const row = findUserById(userId);
+): Promise<LoginResult> {
+  const row = await findUserById(userId);
   if (!row) throw new AuthError("user_not_found", "User not found.");
-  purgeExpiredSessions(now);
-  const { token, session } = createSession(row.id, now);
+  await purgeExpiredSessions(now);
+  const { token, session } = await createSession(row.id, now);
   return {
     user: {
       id: row.id,
@@ -169,7 +169,7 @@ export async function authenticate(
   let ok = false;
   try {
     await waitTurn(sleep);
-    row = findUserByUsername(username);
+    row = await findUserByUsername(username);
     if (row) ok = await verifyPassword(password, row.passwordHash);
     else await verifyAgainstDummy(password);
   } finally {
@@ -179,22 +179,22 @@ export async function authenticate(
   if (!row || !ok) return null;
 
   release();
-  if (hasSecondFactor(row.id)) {
-    const pending = createPendingLogin(row.id, now);
+  if (await hasSecondFactor(row.id)) {
+    const pending = await createPendingLogin(row.id, now);
     return { secondFactorRequired: true, ...pending };
   }
-  const result = issueLogin(row.id, now);
+  const result = await issueLogin(row.id, now);
   limiter.recordSuccess(username, ip);
   return result;
 }
 
 /** Marks the client address as known for the user after a full login (second factor included). */
-export function recordLoginSuccess(
+export async function recordLoginSuccess(
   userId: string,
   ip: string,
   limiter: LoginRateLimiter = loginRateLimiter,
-): void {
-  const row = findUserById(userId);
+): Promise<void> {
+  const row = await findUserById(userId);
   if (row) limiter.recordSuccess(row.username, ip);
 }
 
@@ -211,7 +211,7 @@ export async function completeSecondFactor(
   now: number = Date.now(),
   loginLimiter: LoginRateLimiter = loginRateLimiter,
 ): Promise<LoginResult | null> {
-  const pending = getPendingLogin(pendingToken, now);
+  const pending = await getPendingLogin(pendingToken, now);
   if (!pending) {
     throw new AuthError(
       "pending_expired",
@@ -219,13 +219,13 @@ export async function completeSecondFactor(
     );
   }
   const release = limiter.acquireOrThrow(pending.userId, ip);
-  if (!verifySecondFactorCode(pending.userId, code, now)) {
-    recordPendingFailure(pending);
+  if (!(await verifySecondFactorCode(pending.userId, code, now))) {
+    await recordPendingFailure(pending);
     return null;
   }
   release();
-  deletePendingLogin(pending.id);
-  const result = issueLogin(pending.userId, now);
+  await deletePendingLogin(pending.id);
+  const result = await issueLogin(pending.userId, now);
   loginLimiter.recordSuccess(result.user.username, ip);
   return result;
 }

@@ -11,14 +11,14 @@ import type { RequestHandler } from "./$types";
 export const POST: RequestHandler = async ({ locals, request, url }) => {
   const user = requireUser(locals);
   await readJsonBody(request, url, z.object({}));
-  if (getTwoFactorStatus(user.id).totpEnabled) {
+  if ((await getTwoFactorStatus(user.id)).totpEnabled) {
     return json({ message: "Use your authenticator code." }, { status: 400 });
   }
-  if (getTwoFactorStatus(user.id).passkeyCount === 0) {
+  if ((await getTwoFactorStatus(user.id)).passkeyCount === 0) {
     return json({ message: "No passkeys registered." }, { status: 400 });
   }
   const options = await beginAuthentication(user.id, webauthnConfig(url));
-  const challengeId = createWebauthnChallenge(
+  const challengeId = await createWebauthnChallenge(
     "passkey_stepup",
     user.id,
     options.challenge,

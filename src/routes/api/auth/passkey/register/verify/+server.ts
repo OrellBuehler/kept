@@ -10,14 +10,14 @@ import type { RequestHandler } from "./$types";
 
 export const POST: RequestHandler = async ({ locals, request, url }) => {
   const user = requireUser(locals);
-  if (!hasRecentReauth(locals.session?.id)) {
+  if (!(await hasRecentReauth(locals.session?.id))) {
     return json(
       { message: "Confirm your password first.", code: "reauth_required" },
       { status: 403 },
     );
   }
   const body = await readJsonBody(request, url, passkeyRegisterVerifySchema);
-  const challenge = takeWebauthnChallenge(
+  const challenge = await takeWebauthnChallenge(
     body.challengeId,
     "passkey_register",
     user.id,

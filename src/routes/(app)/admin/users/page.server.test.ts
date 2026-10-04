@@ -60,10 +60,12 @@ describe("admin/users", () => {
       type: "return",
       value: { created: true, username: "bob" },
     });
-    expect(listUsers().find((u) => u.username === "bob")).toMatchObject({
-      role: "member",
-      displayName: null,
-    });
+    expect((await listUsers()).find((u) => u.username === "bob")).toMatchObject(
+      {
+        role: "member",
+        displayName: null,
+      },
+    );
   });
 
   it("rejects a duplicate username, an invalid role and a short password", async () => {
@@ -114,7 +116,7 @@ describe("admin/users", () => {
       ),
     );
     expect(r).toEqual({ type: "return", value: { deleted: true } });
-    expect(listUsers()).toHaveLength(1);
+    expect(await listUsers()).toHaveLength(1);
   });
 
   it("cannot delete self or the last admin", async () => {
@@ -128,7 +130,7 @@ describe("admin/users", () => {
       ),
     );
     expect(r).toMatchObject({ type: "fail", status: 400 });
-    expect(listUsers()).toHaveLength(1);
+    expect(await listUsers()).toHaveLength(1);
   });
 
   it("rejects a missing userId", async () => {
@@ -147,8 +149,8 @@ describe("admin/users", () => {
   it("admin resets a user's two-factor and the event is logged without secrets", async () => {
     const admin = await createTestUser({ role: "admin" });
     const member = await createTestUser();
-    const { secret } = startTotpEnrolment(member.id, member.username);
-    confirmTotpEnrolment(member.id, totpCode(secret, Date.now()));
+    const { secret } = await startTotpEnrolment(member.id, member.username);
+    await confirmTotpEnrolment(member.id, totpCode(secret, Date.now()));
     const flagged = await outcome(() =>
       load(createTestEvent({ user: admin }) as never),
     );
@@ -166,12 +168,10 @@ describe("admin/users", () => {
       ),
     );
     expect(r).toEqual({ type: "return", value: { twoFactorReset: true } });
-    expect(getTwoFactorStatus(member.id).enabled).toBe(false);
-    const event = getDB()
-      .select()
-      .from(authEvents)
-      .all()
-      .find((e) => e.type === "two_factor_reset");
+    expect((await getTwoFactorStatus(member.id)).enabled).toBe(false);
+    const event = (await getDB().select().from(authEvents)).find(
+      (e) => e.type === "two_factor_reset",
+    );
     expect(event).toMatchObject({ userId: member.id, actorId: admin.id });
     expect(JSON.stringify(event)).not.toContain(secret);
   });
@@ -201,7 +201,7 @@ describe("admin/users", () => {
   });
 
   describe("password confirmation and audit trail", () => {
-    const audit = () => getDB().select().from(adminAuditLog).all();
+    const audit = async () => await getDB().select().from(adminAuditLog);
 
     it("create, delete and reset need the admin's own password", async () => {
       const admin = await createTestUser({ role: "admin" });
@@ -240,14 +240,16 @@ describe("admin/users", () => {
           expect(r).toMatchObject({ type: "fail", status: 400 });
         }
       }
-      expect(listUsers()).toHaveLength(2);
+      expect(await listUsers()).toHaveLength(2);
       // only the three real wrong-password attempts are audited, and no action is
-      expect(audit().map((r) => r.action)).toEqual([
+      expect((await audit()).map((r) => r.action)).toEqual([
         "admin_confirm_failed",
         "admin_confirm_failed",
         "admin_confirm_failed",
       ]);
-      expect(audit().every((r) => r.details === "reason=password")).toBe(true);
+      expect(
+        (await audit()).every((r) => r.details === "reason=password"),
+      ).toBe(true);
     });
 
     it("wrong password attempts are rate limited", async () => {
@@ -265,7 +267,7 @@ describe("admin/users", () => {
         );
       }
       expect(last).toMatchObject({ type: "fail", status: 429 });
-      expect(listUsers()).toHaveLength(2);
+      expect(await listUsers()).toHaveLength(2);
     });
 
     it("records rate-limit hits once per window instead of once per request", async () => {
@@ -281,7 +283,7 @@ describe("admin/users", () => {
           ),
         );
       }
-      const actionsSeen = audit().map((r) => r.action);
+      const actionsSeen = (await audit()).map((r) => r.action);
       expect(
         actionsSeen.filter((a) => a === "admin_confirm_failed"),
       ).toHaveLength(5);
@@ -322,7 +324,7 @@ describe("admin/users", () => {
           }) as never,
         ),
       );
-      const rows = audit();
+      const rows = await audit();
       expect(rows.map((r) => r.action).sort()).toEqual([
         "user_create",
         "user_delete",
@@ -351,14 +353,14 @@ describe("admin/users", () => {
           }) as never,
         ),
       );
-      expect(audit()).toHaveLength(0);
+      expect(await audit()).toHaveLength(0);
     });
 
     it("load shows the newest entries to admins only", async () => {
       const admin = await createTestUser({ role: "admin" });
       const member = await createTestUser();
       for (let i = 0; i < 25; i++) {
-        recordAdminAction(admin, "backup_download");
+        await recordAdminAction(admin, "backup_download");
       }
       const r = (await outcome(() =>
         load(createTestEvent({ user: admin }) as never),
@@ -369,15 +371,15 @@ describe("admin/users", () => {
       expect(
         await outcome(() => load(createTestEvent({ user: member }) as never)),
       ).toEqual({ type: "error", status: 403 });
-      expect(() => listAdminAuditLog(member)).toThrow(/Administrator/);
+      await expect(listAdminAuditLog(member)).rejects.toThrow(/Administrator/);
     });
   });
   describe("second factor on the acting administrator", () => {
-    const audit = () => getDB().select().from(adminAuditLog).all();
+    const audit = async () => await getDB().select().from(adminAuditLog);
     const create = (
       user: Awaited<ReturnType<typeof createTestUser>>,
       extra: Record<string, string>,
-      session?: ReturnType<typeof loginTestUser>["session"],
+      session?: Awaited<ReturnType<typeof loginTestUser>>["session"],
     ) =>
       outcome(() =>
         actions.create(
@@ -396,7 +398,7 @@ describe("admin/users", () => {
 
     it("with an authenticator app the password alone is not enough", async () => {
       const admin = await createTestUser({ role: "admin" });
-      const [recovery] = enableTotp(admin);
+      const [recovery] = await enableTotp(admin);
 
       for (const code of [undefined, "", "000000", "bad"]) {
         const r = await create(admin, {
@@ -406,16 +408,18 @@ describe("admin/users", () => {
         expect(r).toMatchObject({ type: "fail", status: 400 });
         expect(JSON.stringify(r)).toContain("adminCode");
       }
-      expect(listUsers()).toHaveLength(1);
-      expect(audit().every((r) => r.details === "reason=code")).toBe(true);
-      expect(audit()).toHaveLength(4);
+      expect(await listUsers()).toHaveLength(1);
+      expect((await audit()).every((r) => r.details === "reason=code")).toBe(
+        true,
+      );
+      expect(await audit()).toHaveLength(4);
 
       const ok = await create(admin, {
         adminPassword: admin.password,
         adminCode: recovery,
       });
       expect(ok).toMatchObject({ type: "return" });
-      expect(listUsers()).toHaveLength(2);
+      expect(await listUsers()).toHaveLength(2);
     });
 
     describe("actions that cannot succeed do not spend the code", () => {
@@ -436,7 +440,7 @@ describe("admin/users", () => {
       it("a taken username on create", async () => {
         const admin = await createTestUser({ role: "admin" });
         await createTestUser({ username: "erin" });
-        const [recovery] = enableTotp(admin);
+        const [recovery] = await enableTotp(admin);
         const dup = await create(admin, {
           adminPassword: admin.password,
           adminCode: recovery,
@@ -454,7 +458,7 @@ describe("admin/users", () => {
       it("deleting yourself, an unknown user or a missing target", async () => {
         const admin = await createTestUser({ role: "admin" });
         const member = await createTestUser();
-        const [recovery] = enableTotp(admin);
+        const [recovery] = await enableTotp(admin);
         for (const userId of [admin.id, "missing"]) {
           const r = await run("delete", admin, { userId, adminCode: recovery });
           expect(r).toMatchObject({ type: "fail", status: 400 });
@@ -470,7 +474,7 @@ describe("admin/users", () => {
       it("resetting an unknown user", async () => {
         const admin = await createTestUser({ role: "admin" });
         const member = await createTestUser();
-        const [recovery] = enableTotp(admin);
+        const [recovery] = await enableTotp(admin);
         const bad = await run("resetTwoFactor", admin, {
           userId: "missing",
           adminCode: recovery,
@@ -494,24 +498,24 @@ describe("admin/users", () => {
           ),
         );
         expect(r).toMatchObject({ type: "fail", status: 400 });
-        expect(audit()).toHaveLength(0);
+        expect(await audit()).toHaveLength(0);
       });
     });
 
     it("a correct code does not replace the password", async () => {
       const admin = await createTestUser({ role: "admin" });
-      const [recovery] = enableTotp(admin);
+      const [recovery] = await enableTotp(admin);
       const r = await create(admin, {
         adminPassword: "wrong-password-here",
         adminCode: recovery,
       });
       expect(r).toMatchObject({ type: "fail", status: 400 });
-      expect(listUsers()).toHaveLength(1);
+      expect(await listUsers()).toHaveLength(1);
     });
 
     it("a wrong code counts against the same rate limit", async () => {
       const admin = await createTestUser({ role: "admin" });
-      enableTotp(admin);
+      await enableTotp(admin);
       let last: unknown;
       for (let i = 0; i < 6; i++) {
         last = await create(admin, {
@@ -524,8 +528,8 @@ describe("admin/users", () => {
 
     it("with only passkeys, a recent passkey step-up of the session is required too", async () => {
       const admin = await createTestUser({ role: "admin" });
-      addPasskey(admin.id);
-      const { session } = loginTestUser(admin);
+      await addPasskey(admin.id);
+      const { session } = await loginTestUser(admin);
 
       const refused = await create(
         admin,
@@ -534,9 +538,9 @@ describe("admin/users", () => {
       );
       expect(refused).toMatchObject({ type: "fail", status: 400 });
       expect(JSON.stringify(refused)).toContain("passkey");
-      expect(listUsers()).toHaveLength(1);
+      expect(await listUsers()).toHaveLength(1);
 
-      markSessionReauthenticated(admin.id, session.id);
+      await markSessionReauthenticated(admin.id, session.id);
       const wrong = await create(
         admin,
         { adminPassword: "wrong-password-here" },
@@ -549,15 +553,15 @@ describe("admin/users", () => {
         session,
       );
       expect(ok).toMatchObject({ type: "return" });
-      expect(listUsers()).toHaveLength(2);
+      expect(await listUsers()).toHaveLength(2);
     });
 
     it("exposes which extra proof the forms must ask for", async () => {
       const plain = await createTestUser({ role: "admin" });
       const withTotp = await createTestUser({ role: "admin" });
-      enableTotp(withTotp);
+      await enableTotp(withTotp);
       const withKey = await createTestUser({ role: "admin" });
-      addPasskey(withKey.id);
+      await addPasskey(withKey.id);
       const mode = async (user: typeof plain) =>
         (
           (await outcome(() => load(createTestEvent({ user }) as never))) as {

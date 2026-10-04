@@ -13,7 +13,29 @@ import svelteConfig from "./svelte.config.js";
  * converted file from regressing until the driver swap (2.7) makes the
  * compiler reject these calls and this list and rule are deleted.
  */
-const CONVERTED_TO_ASYNC = [];
+const CONVERTED_TO_ASYNC = [
+  // 2.2 auth
+  "src/lib/server/auth/**",
+  "src/lib/testing/auth.ts",
+  "src/hooks.server.ts",
+  "src/hooks.server.test.ts",
+  "src/routes/login/**",
+  "src/routes/logout/**",
+  "src/routes/setup/**",
+  "src/routes/api/auth/**",
+  "src/routes/(app)/admin/**",
+  "src/routes/(app)/settings/account/**",
+  "src/routes/(app)/settings/security/**",
+];
+
+/**
+ * The sync terminals stay legal inside the synchronous transaction bodies and
+ * the helpers that only run there (until 2.7 makes those async too). Both take
+ * the transaction as their first parameter, named `tx`, so the ban skips any
+ * call lexically inside a function declared that way.
+ */
+const OUTSIDE_TX_BODY =
+  ":not(:matches(FunctionDeclaration, FunctionExpression, ArrowFunctionExpression)[params.0.name='tx'] *)";
 
 const syncTerminalBan = CONVERTED_TO_ASYNC.length
   ? [
@@ -24,7 +46,8 @@ const syncTerminalBan = CONVERTED_TO_ASYNC.length
             "error",
             {
               selector:
-                "CallExpression[arguments.length=0] > MemberExpression.callee[property.name=/^(all|get|run)$/]",
+                "CallExpression[arguments.length=0] > MemberExpression.callee[property.name=/^(all|get|run)$/]" +
+                OUTSIDE_TX_BODY,
               message:
                 "Await the query (or use first()) instead of .all()/.get()/.run().",
             },

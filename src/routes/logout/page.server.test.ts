@@ -13,8 +13,8 @@ describe("logout", () => {
 
   it("invalidates only the current session, clears the cookie, redirects", async () => {
     const u = await createTestUser();
-    const current = loginTestUser(u);
-    const other = loginTestUser(u);
+    const current = await loginTestUser(u);
+    const other = await loginTestUser(u);
     const event = createTestEvent({
       user: u,
       session: current.session,
@@ -28,8 +28,8 @@ describe("logout", () => {
     expect((event.cookies as unknown as FakeCookies).deleted).toContain(
       SESSION_COOKIE,
     );
-    expect(validateSessionToken(current.token)).toBeNull();
-    expect(validateSessionToken(other.token)).not.toBeNull();
+    expect(await validateSessionToken(current.token)).toBeNull();
+    expect(await validateSessionToken(other.token)).not.toBeNull();
   });
 
   it("is harmless without a session", async () => {

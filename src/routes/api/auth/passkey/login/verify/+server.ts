@@ -54,7 +54,7 @@ export const POST: RequestHandler = async ({
   try {
     if (body.challengeId) {
       const release = passkeyLoginLimiter.acquireOrThrow("passkey", ip);
-      const challenge = takeWebauthnChallenge(
+      const challenge = await takeWebauthnChallenge(
         body.challengeId,
         "passkey_login",
         null,
@@ -64,7 +64,7 @@ export const POST: RequestHandler = async ({
       if (!userId) return invalid();
       release();
     } else {
-      const pending = getPendingLogin(cookies.get(PENDING_COOKIE));
+      const pending = await getPendingLogin(cookies.get(PENDING_COOKIE));
       if (!pending) {
         deletePendingCookie(cookies);
         return json(
@@ -73,7 +73,7 @@ export const POST: RequestHandler = async ({
         );
       }
       const release = secondFactorLimiter.acquireOrThrow(pending.userId, ip);
-      const challenge = takePendingChallenge(pending.id);
+      const challenge = await takePendingChallenge(pending.id);
       if (challenge) {
         userId = await finishAuthentication(
           credential,
@@ -83,11 +83,11 @@ export const POST: RequestHandler = async ({
         );
       }
       if (!userId) {
-        recordPendingFailure(pending);
+        await recordPendingFailure(pending);
         return invalid();
       }
       release();
-      deletePendingLogin(pending.id);
+      await deletePendingLogin(pending.id);
       deletePendingCookie(cookies);
     }
   } catch (err) {
@@ -97,9 +97,9 @@ export const POST: RequestHandler = async ({
     throw err;
   }
 
-  const result = issueLogin(userId);
-  recordLoginSuccess(userId, ip);
-  if (locals.session) invalidateSession(locals.session.id);
+  const result = await issueLogin(userId);
+  await recordLoginSuccess(userId, ip);
+  if (locals.session) await invalidateSession(locals.session.id);
   setSessionCookie(cookies, result.token, result.session.expiresAt);
   return json({ redirectTo: safeRedirectTo(body.redirectTo) });
 };

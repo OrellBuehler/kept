@@ -24,7 +24,7 @@ describe("authenticate", () => {
     const r = await authenticate("alice", u.password, "1.1.1.1", limiter);
     if (!r || !("user" in r)) throw new Error("expected a full login");
     expect(r.user.id).toBe(u.id);
-    expect(validateSessionToken(r.token)?.user.id).toBe(u.id);
+    expect((await validateSessionToken(r.token))?.user.id).toBe(u.id);
   });
 
   it("returns null for a wrong password and for an unknown user alike", async () => {
@@ -417,7 +417,7 @@ describe("recent-success bypass", () => {
 
   it("a password-only step of a 2FA user does not make the address known", async () => {
     const u = await createTestUser({ username: "alice" });
-    enableTotp(u);
+    await enableTotp(u);
     const limiter = new LoginRateLimiter();
     const step = await authenticate(
       "alice",
@@ -440,10 +440,10 @@ describe("recent-success bypass", () => {
 
   it("completing the second factor makes the address known", async () => {
     const u = await createTestUser({ username: "alice" });
-    const [recovery] = enableTotp(u);
+    const [recovery] = await enableTotp(u);
     const limiter = new LoginRateLimiter();
     const second = new LoginRateLimiter();
-    const pending = createPendingLogin(u.id);
+    const pending = await createPendingLogin(u.id);
     const r = await completeSecondFactor(
       pending.token,
       recovery,
@@ -467,9 +467,9 @@ describe("recent-success bypass", () => {
 
   it("a wrong second-factor code leaves the address unknown", async () => {
     const u = await createTestUser({ username: "alice" });
-    enableTotp(u);
+    await enableTotp(u);
     const limiter = new LoginRateLimiter();
-    const pending = createPendingLogin(u.id);
+    const pending = await createPendingLogin(u.id);
     const r = await completeSecondFactor(
       pending.token,
       "000000",

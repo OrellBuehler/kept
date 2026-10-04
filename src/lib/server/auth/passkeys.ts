@@ -12,7 +12,7 @@ import type {
   RegistrationResponseJSON,
 } from "@simplewebauthn/server";
 import { and, asc, eq } from "drizzle-orm";
-import { getDB, passkeys } from "$lib/server/db";
+import { first, getDB, isUniqueViolation, passkeys } from "$lib/server/db";
 import { logAuthEvent } from "./events";
 import { AuthError, type SessionUser } from "./types";
 import { describeError } from "$lib/server/errors";
@@ -45,8 +45,8 @@ export interface PasskeyInfo {
   lastUsedAt: Date | null;
 }
 
-export function listPasskeys(userId: string): PasskeyInfo[] {
-  return getDB()
+export async function listPasskeys(userId: string): Promise<PasskeyInfo[]> {
+  return await getDB()
     .select({
       id: passkeys.id,
       name: passkeys.name,
@@ -57,36 +57,36 @@ export function listPasskeys(userId: string): PasskeyInfo[] {
     })
     .from(passkeys)
     .where(eq(passkeys.userId, userId))
-    .orderBy(asc(passkeys.createdAt))
-    .all();
+    .orderBy(asc(passkeys.createdAt));
 }
 
-export function renamePasskey(
+export async function renamePasskey(
   userId: string,
   passkeyId: string,
   name: string,
-): void {
-  const r = getDB()
+): Promise<void> {
+  const r = await getDB()
     .update(passkeys)
     .set({ name })
     .where(and(eq(passkeys.id, passkeyId), eq(passkeys.userId, userId)))
-    .returning({ id: passkeys.id })
-    .all();
+    .returning({ id: passkeys.id });
   if (r.length !== 1) {
     throw new AuthError("passkey_not_found", "Passkey not found.");
   }
 }
 
-export function deletePasskey(userId: string, passkeyId: string): void {
-  const r = getDB()
+export async function deletePasskey(
+  userId: string,
+  passkeyId: string,
+): Promise<void> {
+  const r = await getDB()
     .delete(passkeys)
     .where(and(eq(passkeys.id, passkeyId), eq(passkeys.userId, userId)))
-    .returning({ id: passkeys.id })
-    .all();
+    .returning({ id: passkeys.id });
   if (r.length !== 1) {
     throw new AuthError("passkey_not_found", "Passkey not found.");
   }
-  logAuthEvent("passkey_removed", userId);
+  await logAuthEvent("passkey_removed", userId);
 }
 
 function parseTransports(raw: string | null): AuthenticatorTransport[] {
@@ -111,14 +111,13 @@ export async function beginRegistration(
   user: SessionUser,
   config: WebauthnConfig,
 ): Promise<PublicKeyCredentialCreationOptionsJSON> {
-  const existing = getDB()
+  const existing = await getDB()
     .select({
       credentialId: passkeys.credentialId,
       transports: passkeys.transports,
     })
     .from(passkeys)
-    .where(eq(passkeys.userId, user.id))
-    .all();
+    .where(eq(passkeys.userId, user.id));
   return generateRegistrationOptions({
     rpName: RP_NAME,
     rpID: config.rpID,
@@ -162,38 +161,49 @@ export async function finishRegistration(
   const { credential, credentialDeviceType, credentialBackedUp } =
     verification.registrationInfo;
 
-  const duplicate = getDB()
-    .select({ id: passkeys.id })
-    .from(passkeys)
-    .where(eq(passkeys.credentialId, credential.id))
-    .get();
+  const duplicate = await first(
+    getDB()
+      .select({ id: passkeys.id })
+      .from(passkeys)
+      .where(eq(passkeys.credentialId, credential.id))
+      .limit(1),
+  );
   if (duplicate) return null;
 
-  const row = getDB()
-    .insert(passkeys)
-    .values({
-      userId,
-      name,
-      credentialId: credential.id,
-      publicKey: Buffer.from(credential.publicKey).toString("base64url"),
-      counter: credential.counter,
-      transports: credential.transports
-        ? JSON.stringify(credential.transports)
-        : null,
-      deviceType: credentialDeviceType,
-      backedUp: credentialBackedUp,
-    })
-    .returning({
-      id: passkeys.id,
-      name: passkeys.name,
-      deviceType: passkeys.deviceType,
-      backedUp: passkeys.backedUp,
-      createdAt: passkeys.createdAt,
-      lastUsedAt: passkeys.lastUsedAt,
-    })
-    .get();
-  logAuthEvent("passkey_added", userId);
-  return row;
+  // The look-up above is only a shortcut: two registrations of one credential can
+  // both pass it, so the unique index on credential_id decides.
+  let row;
+  try {
+    row = await first(
+      getDB()
+        .insert(passkeys)
+        .values({
+          userId,
+          name,
+          credentialId: credential.id,
+          publicKey: Buffer.from(credential.publicKey).toString("base64url"),
+          counter: credential.counter,
+          transports: credential.transports
+            ? JSON.stringify(credential.transports)
+            : null,
+          deviceType: credentialDeviceType,
+          backedUp: credentialBackedUp,
+        })
+        .returning({
+          id: passkeys.id,
+          name: passkeys.name,
+          deviceType: passkeys.deviceType,
+          backedUp: passkeys.backedUp,
+          createdAt: passkeys.createdAt,
+          lastUsedAt: passkeys.lastUsedAt,
+        }),
+    );
+  } catch (err) {
+    if (isUniqueViolation(err)) return null;
+    throw err;
+  }
+  await logAuthEvent("passkey_added", userId);
+  return row ?? null;
 }
 
 /**
@@ -205,14 +215,13 @@ export async function beginAuthentication(
   config: WebauthnConfig,
 ): Promise<PublicKeyCredentialRequestOptionsJSON> {
   const allow = userId
-    ? getDB()
+    ? await getDB()
         .select({
           credentialId: passkeys.credentialId,
           transports: passkeys.transports,
         })
         .from(passkeys)
         .where(eq(passkeys.userId, userId))
-        .all()
     : [];
   return generateAuthenticationOptions({
     rpID: config.rpID,
@@ -235,11 +244,13 @@ export async function finishAuthentication(
   now: number = Date.now(),
 ): Promise<string | null> {
   const db = getDB();
-  const stored = db
-    .select()
-    .from(passkeys)
-    .where(eq(passkeys.credentialId, response.id))
-    .get();
+  const stored = await first(
+    db
+      .select()
+      .from(passkeys)
+      .where(eq(passkeys.credentialId, response.id))
+      .limit(1),
+  );
   if (!stored) return null;
   if (onlyUserId && stored.userId !== onlyUserId) return null;
 
@@ -264,12 +275,12 @@ export async function finishAuthentication(
   }
   if (!verification.verified) return null;
 
-  db.update(passkeys)
+  await db
+    .update(passkeys)
     .set({
       counter: verification.authenticationInfo.newCounter,
       lastUsedAt: new Date(now),
     })
-    .where(eq(passkeys.id, stored.id))
-    .run();
+    .where(eq(passkeys.id, stored.id));
   return stored.userId;
 }

@@ -16,38 +16,32 @@ import { createTestEvent, outcome } from "$lib/testing/event";
 import { getDB, passkeys, sessions } from "$lib/server/db";
 import { actions, load } from "./+page.server";
 
-function sess(
+async function sess(
   u: Awaited<ReturnType<typeof createTestUser>>,
   reauthAgeMs: number | null = 0,
 ) {
-  const s = loginTestUser(u);
+  const s = await loginTestUser(u);
   if (reauthAgeMs !== null) {
-    getDB()
+    await getDB()
       .update(sessions)
       .set({ reauthAt: new Date(Date.now() - reauthAgeMs) })
-      .where(eq(sessions.id, s.session.id))
-      .run();
+      .where(eq(sessions.id, s.session.id));
   }
   return { user: u, session: s.session };
 }
 
-function seedPasskey(userId: string, credentialId = "cred") {
-  getDB()
-    .insert(passkeys)
-    .values({
-      userId,
-      name: "Laptop",
-      credentialId,
-      publicKey: "AQID",
-      deviceType: "singleDevice",
-      backedUp: false,
-    })
-    .run();
-  return getDB()
-    .select()
-    .from(passkeys)
-    .all()
-    .find((p) => p.credentialId === credentialId)!;
+async function seedPasskey(userId: string, credentialId = "cred") {
+  await getDB().insert(passkeys).values({
+    userId,
+    name: "Laptop",
+    credentialId,
+    publicKey: "AQID",
+    deviceType: "singleDevice",
+    backedUp: false,
+  });
+  return (await getDB().select().from(passkeys)).find(
+    (p) => p.credentialId === credentialId,
+  )!;
 }
 
 describe("settings/security", () => {
@@ -56,7 +50,7 @@ describe("settings/security", () => {
 
   it("load shows enrolment secret only while pending and never leaks key material", async () => {
     const u = await createTestUser();
-    seedPasskey(u.id);
+    await seedPasskey(u.id);
     const r = (await outcome(() =>
       load(createTestEvent({ user: u }) as never),
     )) as {
@@ -87,7 +81,7 @@ describe("settings/security", () => {
 
   it("enrols with a valid code and returns recovery codes once", async () => {
     const u = await createTestUser();
-    const { secret } = startTotpEnrolment(u.id, u.username);
+    const { secret } = await startTotpEnrolment(u.id, u.username);
     const bad = await outcome(() =>
       actions.confirmTotp(
         createTestEvent({
@@ -97,7 +91,7 @@ describe("settings/security", () => {
       ),
     );
     expect(bad).toMatchObject({ type: "fail", status: 400 });
-    expect(getTwoFactorStatus(u.id).totpEnabled).toBe(false);
+    expect((await getTwoFactorStatus(u.id)).totpEnabled).toBe(false);
     const ok = await outcome(() =>
       actions.confirmTotp(
         createTestEvent({
@@ -122,8 +116,12 @@ describe("settings/security", () => {
   it("disabling needs the right password and a valid code", async () => {
     const u = await createTestUser();
     const past = Date.now() - 600_000;
-    const { secret } = startTotpEnrolment(u.id, u.username);
-    const codes = confirmTotpEnrolment(u.id, totpCode(secret, past), past);
+    const { secret } = await startTotpEnrolment(u.id, u.username);
+    const codes = await confirmTotpEnrolment(
+      u.id,
+      totpCode(secret, past),
+      past,
+    );
     const wrongPw = await outcome(() =>
       actions.disableTotp(
         createTestEvent({
@@ -133,7 +131,7 @@ describe("settings/security", () => {
       ),
     );
     expect(wrongPw).toMatchObject({ type: "fail", status: 400 });
-    expect(getTwoFactorStatus(u.id).totpEnabled).toBe(true);
+    expect((await getTwoFactorStatus(u.id)).totpEnabled).toBe(true);
     const ok = await outcome(() =>
       actions.disableTotp(
         createTestEvent({
@@ -143,13 +141,13 @@ describe("settings/security", () => {
       ),
     );
     expect(ok).toMatchObject({ type: "return", value: { disabled: true } });
-    expect(getTwoFactorStatus(u.id).totpEnabled).toBe(false);
+    expect((await getTwoFactorStatus(u.id)).totpEnabled).toBe(false);
   });
 
   it("starting enrolment is refused while TOTP is enabled", async () => {
     const u = await createTestUser();
-    const { secret } = startTotpEnrolment(u.id, u.username);
-    confirmTotpEnrolment(u.id, totpCode(secret, Date.now()));
+    const { secret } = await startTotpEnrolment(u.id, u.username);
+    await confirmTotpEnrolment(u.id, totpCode(secret, Date.now()));
     const r = await outcome(() =>
       actions.startTotp(
         createTestEvent({ user: u, form: { password: u.password } }) as never,
@@ -178,7 +176,7 @@ describe("settings/security", () => {
 
   it("confirming enrolment needs the current password even with a valid code", async () => {
     const u = await createTestUser();
-    const { secret } = startTotpEnrolment(u.id, u.username);
+    const { secret } = await startTotpEnrolment(u.id, u.username);
     const code = totpCode(secret, Date.now());
     for (const form of [
       { code } as Record<string, string>,
@@ -189,7 +187,7 @@ describe("settings/security", () => {
       );
       expect(r).toMatchObject({ type: "fail", status: 400 });
     }
-    expect(getTwoFactorStatus(u.id).totpEnabled).toBe(false);
+    expect((await getTwoFactorStatus(u.id)).totpEnabled).toBe(false);
   });
 
   it("wrong enrolment passwords are rate limited", async () => {
@@ -211,8 +209,8 @@ describe("settings/security", () => {
   it("renames and deletes only the caller's passkeys", async () => {
     const a = await createTestUser();
     const b = await createTestUser();
-    const pa = seedPasskey(a.id, "a");
-    const pb = seedPasskey(b.id, "b");
+    const pa = await seedPasskey(a.id, "a");
+    const pb = await seedPasskey(b.id, "b");
 
     const crossRename = await outcome(() =>
       actions.renamePasskey(
@@ -222,14 +220,14 @@ describe("settings/security", () => {
         }) as never,
       ),
     );
-    const crossDelete = await outcome(() =>
+    const crossDelete = await outcome(async () =>
       actions.deletePasskey(
-        createTestEvent({ ...sess(a), form: { id: pb.id } }) as never,
+        createTestEvent({ ...(await sess(a)), form: { id: pb.id } }) as never,
       ),
     );
     expect(crossRename).toMatchObject({ type: "fail", status: 400 });
     expect(crossDelete).toMatchObject({ type: "fail", status: 400 });
-    expect(getDB().select().from(passkeys).all()).toHaveLength(2);
+    expect(await getDB().select().from(passkeys)).toHaveLength(2);
 
     expect(
       await outcome(() =>
@@ -242,23 +240,19 @@ describe("settings/security", () => {
       ),
     ).toMatchObject({ type: "return" });
     expect(
-      getDB()
-        .select()
-        .from(passkeys)
-        .all()
-        .find((p) => p.id === pa.id)?.name,
+      (await getDB().select().from(passkeys)).find((p) => p.id === pa.id)?.name,
     ).toBe("Phone");
-    await outcome(() =>
+    await outcome(async () =>
       actions.deletePasskey(
-        createTestEvent({ ...sess(a), form: { id: pa.id } }) as never,
+        createTestEvent({ ...(await sess(a)), form: { id: pa.id } }) as never,
       ),
     );
-    expect(getDB().select().from(passkeys).all()).toHaveLength(1);
+    expect(await getDB().select().from(passkeys)).toHaveLength(1);
   });
 
   it("validates passkey names", async () => {
     const a = await createTestUser();
-    const pa = seedPasskey(a.id);
+    const pa = await seedPasskey(a.id);
     const r = await outcome(() =>
       actions.renamePasskey(
         createTestEvent({ user: a, form: { id: pa.id, name: " " } }) as never,
@@ -269,21 +263,24 @@ describe("settings/security", () => {
 
   it("removing a passkey needs a recent step-up", async () => {
     const a = await createTestUser();
-    const pa = seedPasskey(a.id);
+    const pa = await seedPasskey(a.id);
     for (const age of [null, REAUTH_WINDOW_MS + 1000]) {
-      const r = await outcome(() =>
+      const r = await outcome(async () =>
         actions.deletePasskey(
-          createTestEvent({ ...sess(a, age), form: { id: pa.id } }) as never,
+          createTestEvent({
+            ...(await sess(a, age)),
+            form: { id: pa.id },
+          }) as never,
         ),
       );
       expect(r).toMatchObject({ type: "fail", status: 403 });
     }
-    expect(getDB().select().from(passkeys).all()).toHaveLength(1);
+    expect(await getDB().select().from(passkeys)).toHaveLength(1);
   });
 
   it("stepUp needs the password (and a code when TOTP is on) and starts the window", async () => {
     const u = await createTestUser();
-    const s = sess(u, null);
+    const s = await sess(u, null);
     const wrong = await outcome(() =>
       actions.stepUp(
         createTestEvent({
@@ -293,58 +290,57 @@ describe("settings/security", () => {
       ),
     );
     expect(wrong).toMatchObject({ type: "fail", status: 400 });
-    expect(hasRecentReauth(s.session.id)).toBe(false);
+    expect(await hasRecentReauth(s.session.id)).toBe(false);
     const ok = await outcome(() =>
       actions.stepUp(
         createTestEvent({ ...s, form: { password: u.password } }) as never,
       ),
     );
     expect(ok).toMatchObject({ type: "return", value: { reauthed: true } });
-    expect(hasRecentReauth(s.session.id)).toBe(true);
+    expect(await hasRecentReauth(s.session.id)).toBe(true);
     expect(
-      hasRecentReauth(s.session.id, Date.now() + REAUTH_WINDOW_MS + 1000),
+      await hasRecentReauth(s.session.id, Date.now() + REAUTH_WINDOW_MS + 1000),
     ).toBe(false);
 
     const t = await createTestUser();
-    const { secret } = startTotpEnrolment(t.id, t.username);
-    confirmTotpEnrolment(
+    const { secret } = await startTotpEnrolment(t.id, t.username);
+    await confirmTotpEnrolment(
       t.id,
       totpCode(secret, Date.now() - 600_000),
       Date.now() - 600_000,
     );
-    const ts = sess(t, null);
+    const ts = await sess(t, null);
     const noCode = await outcome(() =>
       actions.stepUp(
         createTestEvent({ ...ts, form: { password: t.password } }) as never,
       ),
     );
     expect(noCode).toMatchObject({ type: "fail", status: 400 });
-    expect(hasRecentReauth(ts.session.id)).toBe(false);
+    expect(await hasRecentReauth(ts.session.id)).toBe(false);
   });
 
   it("passkey-only users cannot step up with the password form alone", async () => {
     const u = await createTestUser();
-    seedPasskey(u.id);
-    const s = sess(u, null);
+    await seedPasskey(u.id);
+    const s = await sess(u, null);
     const r = await outcome(() =>
       actions.stepUp(
         createTestEvent({ ...s, form: { password: u.password } }) as never,
       ),
     );
     expect(r).toMatchObject({ type: "fail", status: 400 });
-    expect(hasRecentReauth(s.session.id)).toBe(false);
+    expect(await hasRecentReauth(s.session.id)).toBe(false);
   });
 
   it("removing a passkey keeps this session and signs the others out", async () => {
     const u = await createTestUser();
-    const pa = seedPasskey(u.id);
-    const mine = loginTestUser(u);
-    const other = loginTestUser(u);
-    getDB()
+    const pa = await seedPasskey(u.id);
+    const mine = await loginTestUser(u);
+    const other = await loginTestUser(u);
+    await getDB()
       .update(sessions)
       .set({ reauthAt: new Date() })
-      .where(eq(sessions.id, mine.session.id))
-      .run();
+      .where(eq(sessions.id, mine.session.id));
     await outcome(() =>
       actions.deletePasskey(
         createTestEvent({
@@ -354,17 +350,21 @@ describe("settings/security", () => {
         }) as never,
       ),
     );
-    expect(validateSessionToken(mine.token)).not.toBeNull();
-    expect(validateSessionToken(other.token)).toBeNull();
+    expect(await validateSessionToken(mine.token)).not.toBeNull();
+    expect(await validateSessionToken(other.token)).toBeNull();
   });
 
   it("disabling the authenticator app keeps this session and signs the others out", async () => {
     const u = await createTestUser();
     const past = Date.now() - 600_000;
-    const { secret } = startTotpEnrolment(u.id, u.username);
-    const codes = confirmTotpEnrolment(u.id, totpCode(secret, past), past);
-    const mine = loginTestUser(u);
-    const other = loginTestUser(u);
+    const { secret } = await startTotpEnrolment(u.id, u.username);
+    const codes = await confirmTotpEnrolment(
+      u.id,
+      totpCode(secret, past),
+      past,
+    );
+    const mine = await loginTestUser(u);
+    const other = await loginTestUser(u);
     const r = await outcome(() =>
       actions.disableTotp(
         createTestEvent({
@@ -375,7 +375,7 @@ describe("settings/security", () => {
       ),
     );
     expect(r).toMatchObject({ type: "return" });
-    expect(validateSessionToken(mine.token)).not.toBeNull();
-    expect(validateSessionToken(other.token)).toBeNull();
+    expect(await validateSessionToken(mine.token)).not.toBeNull();
+    expect(await validateSessionToken(other.token)).toBeNull();
   });
 });

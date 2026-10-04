@@ -18,15 +18,15 @@ import { AuthError } from "$lib/server/auth/types";
 import { parseForm } from "$lib/server/forms";
 import type { Actions, PageServerLoad } from "./$types";
 
-export const load: PageServerLoad = ({ locals, url, cookies }) => {
+export const load: PageServerLoad = async ({ locals, url, cookies }) => {
   const redirectTo = safeRedirectTo(url.searchParams.get("redirectTo"));
   if (locals.user) redirect(303, redirectTo);
-  const pending = getPendingLogin(cookies.get(PENDING_COOKIE));
+  const pending = await getPendingLogin(cookies.get(PENDING_COOKIE));
   if (!pending) {
     deletePendingCookie(cookies);
     redirect(303, `/login?redirectTo=${encodeURIComponent(redirectTo)}`);
   }
-  const status = getTwoFactorStatus(pending.userId);
+  const status = await getTwoFactorStatus(pending.userId);
   return {
     redirectTo,
     totp: status.totpEnabled,
@@ -62,7 +62,7 @@ export const actions: Actions = {
       throw err;
     }
     if (!result) {
-      if (!getPendingLogin(cookies.get(PENDING_COOKIE))) {
+      if (!(await getPendingLogin(cookies.get(PENDING_COOKIE)))) {
         deletePendingCookie(cookies);
         redirect(303, `/login?redirectTo=${encodeURIComponent(redirectTo)}`);
       }
@@ -70,14 +70,14 @@ export const actions: Actions = {
     }
 
     deletePendingCookie(cookies);
-    if (locals.session) invalidateSession(locals.session.id);
+    if (locals.session) await invalidateSession(locals.session.id);
     setSessionCookie(cookies, result.token, result.session.expiresAt);
     redirect(303, redirectTo);
   },
 
-  cancel: ({ cookies }) => {
-    const pending = getPendingLogin(cookies.get(PENDING_COOKIE));
-    if (pending) deletePendingLogin(pending.id);
+  cancel: async ({ cookies }) => {
+    const pending = await getPendingLogin(cookies.get(PENDING_COOKIE));
+    if (pending) await deletePendingLogin(pending.id);
     deletePendingCookie(cookies);
     redirect(303, "/login");
   },
