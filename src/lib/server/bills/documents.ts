@@ -93,17 +93,27 @@ export async function storeDocument(
 
   const sha256 = createHash("sha256").update(bytes).digest("hex");
   const store = getStore();
+  const storedType = source === "upload" ? PDF_MIME : mimeType;
   const existing = findBySha256(userId, sha256);
   if (existing) {
     const key = blobKey(existing.storageKey);
-    if (!(await store.has(key))) await store.put(key, bytes, mimeType);
-    return toMeta(existing);
+    let restored = false;
+    if (!(await store.has(key))) {
+      await store.put(key, bytes, storedType);
+      restored = true;
+    }
+    // A concurrent delete may have removed the row while we awaited the store.
+    const stillThere = findBySha256(userId, sha256);
+    if (stillThere?.id === existing.id) return toMeta(existing);
+    if (restored) await store.delete(key);
+    if (stillThere) return toMeta(stillThere);
+    // Gone: fall through and store it as a new document.
   }
 
   const id = crypto.randomUUID();
   const storageKey = `${userId}/${id}`;
   const key = blobKey(storageKey);
-  await store.put(key, bytes, source === "upload" ? PDF_MIME : mimeType);
+  await store.put(key, bytes, storedType);
   try {
     const row = getDB()
       .insert(documents)
@@ -111,7 +121,7 @@ export async function storeDocument(
         id,
         userId,
         fileName: sanitizeFileName(fileName),
-        mimeType: source === "upload" ? PDF_MIME : mimeType,
+        mimeType: storedType,
         size: bytes.byteLength,
         sha256,
         storageKey,

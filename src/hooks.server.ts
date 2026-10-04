@@ -5,7 +5,7 @@ import { registerBackups } from "$lib/server/backup";
 import { registerInbox } from "$lib/server/inbox";
 import { startPendingSweep } from "$lib/server/imports";
 import { runMigrations } from "$lib/server/db";
-import { getStore } from "$lib/server/storage";
+import { getStore, sweepStaleStorageTemp } from "$lib/server/storage";
 import { registerNotifications } from "$lib/server/notifications";
 import { registerPaperless } from "$lib/server/integrations/paperless";
 import { registerMarketData } from "$lib/server/integrations/yahoo-finance";
@@ -25,6 +25,9 @@ export async function init() {
   getStore();
   runMigrations();
   startPendingSweep();
+  sweepStaleStorageTemp().catch((err) =>
+    console.error("storage temp cleanup failed: %s", describeError(err)),
+  );
   registerBackups();
   registerInbox();
   await warmDummyHash();

@@ -302,6 +302,38 @@ describe("sweepOrphanedPending", () => {
     expect(await ctx.store.has("documents/u/d")).toBe(true);
   });
 
+  it("never lists or deletes keys outside pending-imports/", async () => {
+    const keys = [
+      "documents/u/d",
+      "pending-imports-old/u/" + "a".repeat(32),
+      "pending-imports",
+      "other/pending-imports/u/" + "a".repeat(32),
+      "x",
+    ];
+    for (const k of keys) await ctx.store.put(k, enc("x"));
+    expect(await sweepOrphanedPending(later())).toBe(0);
+    const left = (await Array.fromAsync(ctx.store.list(""))).map((i) => i.key);
+    expect(left).toEqual([...keys].sort());
+  });
+
+  it("does not sweep or purge the blob of an upload whose row is not written yet", async () => {
+    const { user, account } = await setup();
+    const realPut = ctx.store.put.bind(ctx.store);
+    let swept = -1;
+    vi.spyOn(ctx.store, "put").mockImplementation(async (k, b) => {
+      await realPut(k, b);
+      if (k.startsWith("pending-imports/")) {
+        swept = await sweepOrphanedPending();
+        await purgeExpired();
+      }
+    });
+    const meta = await store(user.id, account.id);
+    vi.restoreAllMocks();
+    expect(swept).toBe(0);
+    expect(await blobKeys()).toEqual([pendingBlobKey(user.id, meta.id)]);
+    expect(getPendingMeta(user.id, meta.id).id).toBe(meta.id);
+  });
+
   it("startPendingSweep purges expired uploads in the background", async () => {
     const { user, account } = await setup();
     const old = await store(user.id, account.id);

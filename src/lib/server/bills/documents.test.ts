@@ -198,6 +198,72 @@ describe("documents", () => {
     );
   });
 
+  it("a sweep does not delete a document attached after it selected the stale ones", async () => {
+    const u = await createTestUser();
+    const bill = seedBill(u.id);
+    const a = await storeDocument(u.id, pdf("a"), "a.pdf", "x");
+    const b = await storeDocument(u.id, pdf("b"), "b.pdf", "x");
+    const dayAndAbit = new Date(Date.now() - 25 * 3600 * 1000);
+    getDB().update(documents).set({ createdAt: dayAndAbit }).run();
+    const realDelete = blobs.store.delete.bind(blobs.store);
+    let kept = "";
+    vi.spyOn(blobs.store, "delete").mockImplementation(async (key) => {
+      await realDelete(key);
+      if (kept) return;
+      // While the first stale document is removed, the user uploads the other one
+      // again (a dedupe hit) and attaches it to a bill.
+      const other = key.endsWith(a.id) ? b : a;
+      kept = other.id;
+      const again = await storeDocument(
+        u.id,
+        other === a ? pdf("a") : pdf("b"),
+        "again.pdf",
+        "x",
+      );
+      expect(again.id).toBe(other.id);
+      await attachDocument(u.id, bill.id, other.id);
+    });
+    expect(await sweepUnreferencedDocuments(u.id)).toBe(1);
+    vi.restoreAllMocks();
+    expect(getDocumentMeta(u.id, kept).id).toBe(kept);
+    expect((await readDocument(u.id, kept)).bytes.byteLength).toBeGreaterThan(
+      0,
+    );
+    expect(getBill(u.id, bill.id).documentId).toBe(kept);
+  });
+
+  it("re-inserts a document that was deleted while its dedupe hit was being checked", async () => {
+    const u = await createTestUser();
+    const first = await storeDocument(u.id, pdf("same"), "a.pdf", "x");
+    const realHas = blobs.store.has.bind(blobs.store);
+    vi.spyOn(blobs.store, "has").mockImplementation(async (key) => {
+      const found = await realHas(key);
+      await deleteDocument(u.id, first.id);
+      return found;
+    });
+    const again = await storeDocument(u.id, pdf("same"), "a.pdf", "x");
+    vi.restoreAllMocks();
+    expect(again.id).not.toBe(first.id);
+    expect((await readDocument(u.id, again.id)).bytes.byteLength).toBe(
+      pdf("same").byteLength,
+    );
+    expect(await keys()).toEqual([`documents/${u.id}/${again.id}`]);
+  });
+
+  it("restores a missing blob of a deduped upload as application/pdf", async () => {
+    const u = await createTestUser();
+    const doc = await storeDocument(u.id, pdf("r"), "a.pdf", "x");
+    await blobs.store.delete(`documents/${u.id}/${doc.id}`);
+    const put = vi.spyOn(blobs.store, "put");
+    await storeDocument(u.id, pdf("r"), "a.pdf", "text/plain");
+    expect(put).toHaveBeenCalledWith(
+      `documents/${u.id}/${doc.id}`,
+      expect.anything(),
+      "application/pdf",
+    );
+    vi.restoreAllMocks();
+  });
+
   it("reads a bill whose stored extraction is corrupt", async () => {
     const u = await createTestUser();
     const bill = seedBill(u.id);

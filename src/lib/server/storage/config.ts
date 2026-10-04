@@ -37,7 +37,7 @@ export function readStorageConfig(
   if (parsed.data.KEPT_STORAGE_DIR) {
     return { kind: "fs", dir: resolve(parsed.data.KEPT_STORAGE_DIR) };
   }
-  const dbPath = env.DATABASE_PATH || "./data/kept.db";
+  const dbPath = env.DATABASE_PATH ?? "./data/kept.db";
   if (dbPath === ":memory:") {
     throw new Error(
       "Invalid storage configuration (KEPT_STORAGE_DIR: required when DATABASE_PATH is :memory:)",

@@ -267,14 +267,18 @@ function documentReferenced(userId: string, documentId: string): boolean {
 export async function deleteDocumentIfUnused(
   userId: string,
   documentId: string | null,
-): Promise<void> {
-  if (documentId === null || documentReferenced(userId, documentId)) return;
+): Promise<boolean> {
+  if (documentId === null || documentReferenced(userId, documentId)) {
+    return false;
+  }
   const row = getDB()
     .select({ source: documents.source })
     .from(documents)
     .where(and(eq(documents.userId, userId), eq(documents.id, documentId)))
     .get();
-  if (row?.source === "upload") await deleteDocument(userId, documentId);
+  if (row?.source !== "upload") return false;
+  await deleteDocument(userId, documentId);
+  return true;
 }
 
 /** Deletes the bill, its allocations (cascade) and its uploaded document when nothing else uses it. */
@@ -367,6 +371,11 @@ export async function sweepUnreferencedDocuments(
       ),
     )
     .all();
-  for (const d of stale) await deleteDocument(userId, d.id);
-  return stale.length;
+  // The reference check and row delete of deleteDocumentIfUnused run before its first
+  // await, so a bill attached since the query above keeps its document.
+  let removed = 0;
+  for (const d of stale) {
+    if (await deleteDocumentIfUnused(userId, d.id)) removed++;
+  }
+  return removed;
 }

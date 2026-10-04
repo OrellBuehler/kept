@@ -1,5 +1,5 @@
 import type { BlobStore } from "./blob-store";
-import { createFsBlobStore } from "./fs";
+import { createFsBlobStore, FsBlobStore } from "./fs";
 import { readStorageConfig, type StorageConfig } from "./config";
 
 export * from "./config";
@@ -22,4 +22,10 @@ export function getStore(): BlobStore {
 /** Replace the process-wide store. Tests only; pass null to reset. */
 export function setStore(next: BlobStore | null): void {
   store = next;
+}
+
+/** Startup housekeeping for the local-files store: removes leftovers of crashed writes. */
+export async function sweepStaleStorageTemp(): Promise<number> {
+  const current = getStore();
+  return current instanceof FsBlobStore ? current.sweepStaleTemp() : 0;
 }

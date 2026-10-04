@@ -60,7 +60,7 @@ happens, anyone who can reach the server can claim it, so do this right after st
 | `ADDRESS_HEADER`, `XFF_DEPTH`          | Client address behind a proxy (e.g. `X-Forwarded-For`, `1`) so login rate limiting works per client.                                                                                                                                                                                                        |
 | `KEPT_COOKIE_SECURE=false`             | Only when serving over plain HTTP on a trusted network.                                                                                                                                                                                                                                                     |
 | `DATABASE_PATH`                        | Defaults to `/data/kept.db` in the image. Uploaded bills and pending imports live next to it.                                                                                                                                                                                                               |
-| `KEPT_STORAGE_DIR`                     | Optional. Where uploaded bills are stored (in a `documents` subfolder). Defaults to the directory of `DATABASE_PATH`.                                                                                                                                                                                       |
+| `KEPT_STORAGE_DIR`                     | Optional. Where uploaded bills are stored (in a `documents` subfolder). Defaults to the directory of `DATABASE_PATH`. Setting it on an existing install does not move `documents/`: move the folder yourself first.                                                                                         |
 | `KEPT_BACKUP_DIR`                      | Optional. Writes a daily database backup into this directory (e.g. `/data/backups`).                                                                                                                                                                                                                        |
 | `KEPT_BACKUP_KEEP`                     | How many scheduled backups to keep; older ones are deleted. Defaults to `7`.                                                                                                                                                                                                                                |
 | `KEPT_INBOX_DIR`                       | Optional. Enables the watch-folder import, e.g. `/data/inbox` (see below).                                                                                                                                                                                                                                  |
@@ -104,6 +104,10 @@ write access to the directory.
 
 The database holds everything (including institution logos) except uploaded bill PDFs, which live next to it in
 `/data/documents`. Back up the whole `/data` volume, and keep `KEPT_SECRET_KEY` with it.
+
+Files Kept writes to storage are owner-only (mode `0600`, folders `0700`). Host-side tools that read the volume
+(backup agents, rsync) must run as the same user id as Kept. Stored files are kept inside the storage folder by
+checking the path, not by resolving symlinks, so do not create symlinks inside it.
 
 - **Download:** the administrator can download a consistent copy of the database under
   **Backup** in the sidebar. It is taken with SQLite's `VACUUM INTO`, so it is safe while Kept is

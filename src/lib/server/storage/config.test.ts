@@ -14,6 +14,13 @@ describe("readStorageConfig", () => {
     });
   });
 
+  it("uses an empty DATABASE_PATH as given, like the database does", () => {
+    expect(readStorageConfig({ DATABASE_PATH: "" })).toEqual({
+      kind: "fs",
+      dir: resolve("."),
+    });
+  });
+
   it("accepts fs explicitly and an empty value as unset", () => {
     expect(
       readStorageConfig({

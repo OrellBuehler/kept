@@ -84,4 +84,44 @@ describe("FsBlobStore", () => {
     expect(await Array.fromAsync(fresh.list(""))).toEqual([]);
     expect(await fresh.get("a")).toBeNull();
   });
+
+  it("treats a directory at the key as missing for get", async () => {
+    await store.put("a/b/c", new Uint8Array([1]));
+    expect(await store.get("a/b")).toBeNull();
+  });
+
+  it("works with a root of /", async () => {
+    const rootStore = new FsBlobStore("/");
+    expect(await rootStore.has("kept-nonexistent-test-key")).toBe(false);
+    await expect(rootStore.get("../x")).rejects.toThrow();
+  });
+
+  describe("sweepStaleTemp", () => {
+    const hourAgo = (ms: number) => new Date(Date.now() - ms);
+    it("removes only temporary files older than an hour, anywhere under the root", async () => {
+      await store.put("a/keep", new Uint8Array([1]));
+      await mkdir(join(dir, "a", "deep"), { recursive: true });
+      const stale = [
+        join(dir, "a", "keep.kept-tmp-1"),
+        join(dir, "a", "deep", "x.kept-tmp-2"),
+      ];
+      const fresh = join(dir, "a", "fresh.kept-tmp-3");
+      const old = join(dir, "a", "old-but-not-tmp");
+      for (const f of [...stale, fresh, old]) await writeFile(f, "x");
+      for (const f of [...stale, old]) {
+        utimesSync(f, hourAgo(2 * 3600_000), hourAgo(2 * 3600_000));
+      }
+      expect(await store.sweepStaleTemp()).toBe(2);
+      expect(readdirSync(join(dir, "a")).sort()).toEqual([
+        "deep",
+        "fresh.kept-tmp-3",
+        "keep",
+        "old-but-not-tmp",
+      ]);
+    });
+
+    it("is a no-op for a root that does not exist", async () => {
+      expect(await new FsBlobStore(join(dir, "nope")).sweepStaleTemp()).toBe(0);
+    });
+  });
 });
