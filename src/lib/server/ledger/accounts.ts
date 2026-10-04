@@ -14,6 +14,7 @@ import {
 import { assertReferenceFits } from "$lib/server/pillar3a/portfolios";
 import {
   linkTransfers,
+  countMirrors,
   removeMirrors,
   revalidateLinks,
 } from "$lib/server/transfers";
@@ -283,7 +284,7 @@ export function createAccount(
 export function updateAccount(
   userId: string,
   id: string,
-  input: AccountInput,
+  input: AccountInput & { confirmRemoveMirrors?: boolean },
 ): AccountView {
   const current = getAccount(userId, id);
   assertInstitutionOwned(userId, input.institutionId);
@@ -351,7 +352,7 @@ export function updateAccount(
     }
   }
 
-  const { sortOrder, ...rest } = input;
+  const { sortOrder, confirmRemoveMirrors, ...rest } = input;
   const hasTrades =
     db
       .select({ id: trades.id })
@@ -362,6 +363,18 @@ export function updateAccount(
     (rest.fillFromTransfers ?? current.fillFromTransfers) &&
     rest.type !== "pillar_3a" &&
     portfolioRows.length === 0;
+  if (
+    current.fillFromTransfers &&
+    rest.fillFromTransfers === false &&
+    !confirmRemoveMirrors &&
+    countMirrors(userId, id) > 0
+  ) {
+    throw new LedgerError(
+      "invalid",
+      "Turning this off deletes the transactions Kept created from transfers. Confirm to continue.",
+      "fillFromTransfers",
+    );
+  }
   const tradesMoveCash =
     rest.tradesMoveCash && (rest.type === "investment" || hasTrades);
   const ibanChanged = rest.iban !== current.iban;

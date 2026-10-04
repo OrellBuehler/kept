@@ -7,6 +7,7 @@ import {
 import {
   counterAmount,
   matchMirrors,
+  pairIsConsistent,
   planLinks,
   shiftDate,
   type PlanAccount,
@@ -582,6 +583,25 @@ describe("matchMirrors", () => {
     expect(signal("my savings")).toBe(1);
   });
 
+  it("treats a row that names an IBAN as exact only when the mirror names the same one", () => {
+    const noSignal = { reference: null, description: null };
+    expect(
+      matchMirrors(
+        [row("r", noSignal)],
+        [mirror("m", { counterpartyIban: null })],
+      ).size,
+    ).toBe(0);
+    expect(
+      matchMirrors(
+        [row("r", { ...noSignal, reference: "RF-7788" })],
+        [mirror("m", { counterpartyIban: null })],
+      ),
+    ).toEqual(new Map([["r", "m"]]));
+    expect(
+      matchMirrors([row("r", noSignal)], [mirror("m", { description: null })]),
+    ).toEqual(new Map([["r", "m"]]));
+  });
+
   it("never lets a row without a counterparty compete with an exact match", () => {
     const result = matchMirrors(
       [
@@ -602,5 +622,46 @@ describe("matchMirrors", () => {
       [mirror("m")],
     );
     expect(result).toEqual(new Map([["near", "m"]]));
+  });
+});
+
+describe("pairIsConsistent across currencies", () => {
+  const eur = acc("e", { iban: IBAN_B, currency: "EUR" });
+  const debit = tx({ amount: -10000, counterpartyIban: IBAN_B });
+  const credit = (over: Partial<PlanTransaction> = {}) =>
+    tx({
+      accountId: "e",
+      currency: "EUR",
+      amount: 9300,
+      bookingDate: "2024-03-11",
+      counterpartyIban: IBAN_A,
+      ...over,
+    });
+
+  it("accepts rows without an original amount when sign, window and IBANs fit", () => {
+    expect(pairIsConsistent(debit, A, credit(), eur)).toBe(true);
+  });
+
+  it("still rejects a wrong sign, a distant date or another counterparty", () => {
+    expect(pairIsConsistent(debit, A, credit({ amount: -9300 }), eur)).toBe(
+      false,
+    );
+    expect(
+      pairIsConsistent(debit, A, credit({ bookingDate: "2024-03-20" }), eur),
+    ).toBe(false);
+    expect(
+      pairIsConsistent(debit, A, credit({ counterpartyIban: IBAN_C }), eur),
+    ).toBe(false);
+  });
+
+  it("rejects a known original amount that disagrees", () => {
+    expect(
+      pairIsConsistent(
+        { ...debit, originalAmount: -9000, originalCurrency: "EUR" },
+        A,
+        credit(),
+        eur,
+      ),
+    ).toBe(false);
   });
 });

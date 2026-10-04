@@ -1,6 +1,6 @@
 <script lang="ts">
   import { enhance } from "$app/forms";
-  import { untrack } from "svelte";
+  import { tick, untrack } from "svelte";
   import * as Dialog from "$lib/components/ui/dialog";
   import * as AlertDialog from "$lib/components/ui/alert-dialog";
   import * as Select from "$lib/components/ui/select";
@@ -82,6 +82,8 @@
   let tradesCash = $state(false);
   let form = $state<HTMLFormElement | null>(null);
   let confirmOffOpen = $state(false);
+  /** The user agreed that saving deletes the mirrors; posted so the server accepts it. */
+  let confirmedOff = $state(false);
 
   $effect(() => {
     if (!open) return;
@@ -95,6 +97,7 @@
       fill = account?.fillFromTransfers ?? false;
       tradesCash = account?.tradesMoveCash ?? false;
       confirmOffOpen = false;
+      confirmedOff = false;
     });
   });
 
@@ -134,7 +137,10 @@
       class="grid gap-4"
       bind:this={form}
       use:enhance={submitHandler({
-        setPending: (v) => (pending = v),
+        setPending: (v) => {
+          pending = v;
+          if (!v) confirmedOff = false;
+        },
         setErrors: (e) => (errors = e),
         knownFields: [
           "name",
@@ -161,6 +167,9 @@
       <input type="hidden" name="institutionId" value={institutionId} />
       <input type="hidden" name="type" value={type} />
       <input type="hidden" name="fillFromTransfersField" value="1" />
+      {#if turningOff && confirmedOff}
+        <input type="hidden" name="confirmRemoveMirrors" value="1" />
+      {/if}
       {#if hasNotice}
         <input type="hidden" name="freeWithdrawalPeriod" value={period} />
       {/if}
@@ -571,8 +580,10 @@
       <AlertDialog.Cancel type="button">Keep filling</AlertDialog.Cancel>
       <AlertDialog.Action
         class={buttonVariants({ variant: "destructive" })}
-        onclick={() => {
+        onclick={async () => {
           confirmOffOpen = false;
+          confirmedOff = true;
+          await tick();
           form?.requestSubmit();
         }}
       >

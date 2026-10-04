@@ -184,6 +184,7 @@ const matrix: Record<string, Entry> = {
       "actions.linkTransfer": (m, e) => m.actions.linkTransfer(e),
       "actions.transferCandidates": (m, e) => m.actions.transferCandidates(e),
       "actions.resolveNeedsAmount": (m, e) => m.actions.resolveNeedsAmount(e),
+      "actions.linkNeedsAmount": (m, e) => m.actions.linkNeedsAmount(e),
       "actions.enableFillFromTransfers": (m, e) =>
         m.actions.enableFillFromTransfers(e),
       "actions.addPortfolio": (m, e) => m.actions.addPortfolio(e),

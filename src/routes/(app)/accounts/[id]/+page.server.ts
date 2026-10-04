@@ -70,6 +70,7 @@ import {
   enableFill,
   fillSuggestion,
   linkManually,
+  linkNeedsAmountTo,
   listNeedsAmount,
   resolveNeedsAmount,
   transferCandidates,
@@ -533,6 +534,39 @@ export const actions: Actions = {
       };
     } catch (err) {
       return ledgerFailure("resolveNeedsAmount", err, values);
+    }
+  },
+
+  /** "Link instead": ties the source of a needs-amount transfer to a booked row of this account. */
+  linkNeedsAmount: async ({ locals, params, request }) => {
+    const user = requireUser(locals);
+    const account = orNotFound(() => getAccount(user.id, params.id));
+    const form = await request.formData();
+    const values = safeValues(form, ["transferId", "peerId"]);
+    const parsed = parseForm(
+      idFormSchema("transferId").and(idFormSchema("peerId")),
+      form,
+    );
+    if (!parsed.ok) {
+      return fail(400, {
+        action: "linkNeedsAmount",
+        errors: parsed.errors,
+        values,
+      });
+    }
+    const pending = listNeedsAmount(user.id, account.id).find(
+      (n) => n.transferId === parsed.data.transferId,
+    );
+    if (!pending) error(404, "Transfer not found.");
+    try {
+      linkNeedsAmountTo(user.id, pending.transferId, parsed.data.peerId);
+      return {
+        success: true as const,
+        action: "linkNeedsAmount" as const,
+        id: pending.transferId,
+      };
+    } catch (err) {
+      return ledgerFailure("linkNeedsAmount", err, values);
     }
   },
 

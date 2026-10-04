@@ -179,6 +179,8 @@ function namesOrSilent(iban: string | null, account: PlanAccount): boolean {
  * Whether two booked rows on different accounts still look like the two sides
  * of one transfer, e.g. after one of them was edited: opposite signs, within
  * the window, agreeing amounts and no counterparty IBAN naming another account.
+ * Rows in different currencies with no original amount cannot be compared and
+ * count as agreeing.
  */
 export function pairIsConsistent(
   a: PlanTransaction,
@@ -191,7 +193,14 @@ export function pairIsConsistent(
   if (daysApart(a.bookingDate, b.bookingDate) > LINK_WINDOW_DAYS) return false;
   const forward = counterAmount(a, bAccount);
   const backward = counterAmount(b, aAccount);
+  // A hand-resolved or taken-over foreign-currency pair carries no original
+  // amount on either side: nothing to compare, so the other checks decide.
+  const unknown =
+    aAccount.currency !== bAccount.currency &&
+    forward === null &&
+    backward === null;
   const agrees =
+    unknown ||
     (forward !== null && Math.abs(forward) === Math.abs(b.amount)) ||
     (backward !== null && Math.abs(backward) === Math.abs(a.amount));
   return (
@@ -502,8 +511,9 @@ function sharesSignal(row: IncomingRow, mirror: MirrorRow): boolean {
 
 /**
  * Which real rows take over which mirrors: same amount, within the window, and
- * a counterparty that is the mirror's source account. A row without any
- * counterparty IBAN only counts when it is the single match for that mirror
+ * a counterparty that is the mirror's source account. Only a row and mirror
+ * that both name the same IBAN match outright. Any other row (no IBAN, or the
+ * mirror has none) only counts when it is the single match for that mirror
  * (exact matches count as competition), and it carries the same reference or
  * shares a significant description word with it.
  * Closest dates are matched first; a mirror is used once. Returns row key -> mirror id.
@@ -535,7 +545,12 @@ export function matchMirrors(
       if (rowIban !== null && mirrorIban !== null && rowIban !== mirrorIban) {
         continue;
       }
-      pairs.push({ row, mirror, distance, exact: rowIban !== null });
+      pairs.push({
+        row,
+        mirror,
+        distance,
+        exact: mirrorIban !== null && rowIban === mirrorIban,
+      });
     }
   }
   const perMirror = new Map<string, number>();

@@ -199,6 +199,11 @@ export const accountInputSchema = z
     fillFromTransfersField: z.string().optional(),
     /** Trades reduce (buys) or increase (sells) the cash balance. Investment accounts, or accounts with trades. */
     tradesMoveCash: checkbox,
+    /**
+     * Posted (as "1") after the user confirmed that turning `fillFromTransfers`
+     * off deletes the account's mirrors; the server refuses the change without it.
+     */
+    confirmRemoveMirrors: checkbox,
   })
   .transform((v, ctx) => {
     const raw = v.openingBalance?.trim() ?? "";
@@ -316,7 +321,9 @@ export const accountInputSchema = z
       shareBps,
     };
   });
-export type AccountInput = z.output<typeof accountInputSchema>;
+export type ParsedAccountInput = z.output<typeof accountInputSchema>;
+/** What the ledger takes to create or update an account; `confirmRemoveMirrors` only matters to updates. */
+export type AccountInput = Omit<ParsedAccountInput, "confirmRemoveMirrors">;
 
 // --- transactions ---------------------------------------------------------
 

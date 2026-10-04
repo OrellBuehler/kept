@@ -125,7 +125,7 @@ export function mirrorRefs(
       });
     }
   }
-  const uncovered = new Set<string>();
+  const insideImportedPeriod = new Set<string>();
   for (const ids of chunks(withSource.map((m) => m.id))) {
     for (const r of db
       .select({ id: transactions.id })
@@ -138,13 +138,16 @@ export function mirrorRefs(
         ),
       )
       .all()) {
-      uncovered.add(r.id);
+      insideImportedPeriod.add(r.id);
     }
   }
   for (const m of withSource) {
     const source = sourceOf.get(m.mirrorOfId);
     if (!source) continue;
-    out.set(m.id, { ...source, noBankCounterpart: uncovered.has(m.id) });
+    out.set(m.id, {
+      ...source,
+      noBankCounterpart: insideImportedPeriod.has(m.id),
+    });
   }
   return out;
 }

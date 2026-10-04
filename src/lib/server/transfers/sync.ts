@@ -72,8 +72,18 @@ export function resyncSource(
         ? t.inTransactionId
         : t.outTransactionId;
     if (t.status === "dismissed") {
-      if (ibanChanged)
+      // Only a dismissed mirror is about the IBAN: it is a new question when the
+      // IBAN now names another account of the user. A dismissed pair names both rows.
+      const dismissedTarget =
+        t.outTransactionId === transactionId ? t.toAccountId : t.fromAccountId;
+      if (
+        ibanChanged &&
+        mirrorId === null &&
+        target !== undefined &&
+        target.id !== dismissedTarget
+      ) {
         conn.delete(transfers).where(eq(transfers.id, t.id)).run();
+      }
       continue;
     }
     if (t.status === "needs_amount") {
@@ -110,13 +120,15 @@ export function resyncSource(
       )
       .get();
     if (!mirror) continue;
-    const amount = target ? counterAmount(source, target) : null;
+    // Unknown for a foreign-currency mirror whose amount was entered by hand: it keeps that amount.
+    const derived = target ? counterAmount(source, target) : null;
+    const amount = derived ?? mirror.amount;
     if (
       !home ||
       !target ||
-      amount === null ||
+      amount === 0 ||
       target.id !== mirror.accountId ||
-      Math.sign(amount) !== Math.sign(mirror.amount) ||
+      Math.sign(amount) !== -Math.sign(source.amount) ||
       !canMirrorOnto(target, source.bookingDate)
     ) {
       conn.delete(transactions).where(eq(transactions.id, mirror.id)).run();

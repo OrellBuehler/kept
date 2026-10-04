@@ -272,8 +272,15 @@ export function deleteTransaction(userId: string, id: string): void {
   const current = getTransaction(userId, id);
   if (current.source === "mirror") {
     // Deleting a mirror means "this is not a transfer": the unlink remembers it.
-    if (!current.transfer) throw notFound("Transfer");
-    unlink(userId, current.transfer.id);
+    // One that lost its transfer has nothing to remember and just goes.
+    if (current.transfer) {
+      unlink(userId, current.transfer.id);
+    } else {
+      getDB()
+        .delete(transactions)
+        .where(and(eq(transactions.userId, userId), eq(transactions.id, id)))
+        .run();
+    }
     return;
   }
   if (current.source !== "manual") {

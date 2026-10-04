@@ -201,6 +201,84 @@ export function linkManually(
   });
 }
 
+/** A booked row on the receiving account that may be the real other side of a needs-amount transfer. */
+export interface LinkCandidate {
+  id: string;
+  bookingDate: string;
+  amount: Minor;
+  currency: string;
+  description: string | null;
+}
+
+/** Resolving was refused because `candidateId` may be the other side: link it instead. */
+export class LinkInsteadError extends LedgerError {
+  override name = "LinkInsteadError";
+  constructor(
+    message: string,
+    readonly candidateId: string,
+  ) {
+    super("conflict", message);
+  }
+}
+
+/**
+ * The booked row on `target` nearest to the source's date that may be the real
+ * other side: opposite direction, within the window, in no linked transfer and
+ * with a counterparty that is absent or the source's account (a row naming
+ * someone else is another payment). Null when there is none.
+ */
+function findLinkCandidate(
+  userId: string,
+  source: { bookingDate: string; amount: number },
+  home: { iban: string | null },
+  target: { id: string },
+  conn: Conn,
+): LinkCandidate | null {
+  const outgoing = source.amount < 0;
+  const rows = conn
+    .select({
+      id: transactions.id,
+      bookingDate: transactions.bookingDate,
+      amount: transactions.amount,
+      currency: transactions.currency,
+      description: transactions.description,
+    })
+    .from(transactions)
+    .where(
+      and(
+        eq(transactions.userId, userId),
+        eq(transactions.accountId, target.id),
+        ne(transactions.source, "mirror"),
+        outgoing
+          ? sql`${transactions.amount} > 0`
+          : sql`${transactions.amount} < 0`,
+        gte(
+          transactions.bookingDate,
+          shiftDate(source.bookingDate, -LINK_WINDOW_DAYS),
+        ),
+        lte(
+          transactions.bookingDate,
+          shiftDate(source.bookingDate, LINK_WINDOW_DAYS),
+        ),
+        home.iban === null
+          ? sql`${transactions.counterpartyIban} is null`
+          : or(
+              sql`${transactions.counterpartyIban} is null`,
+              sql`upper(replace(${transactions.counterpartyIban}, ' ', '')) = ${home.iban}`,
+            ),
+        notInLinkedTransfer,
+      ),
+    )
+    .all();
+  rows.sort(
+    (a, b) =>
+      daysApart(source.bookingDate, a.bookingDate) -
+        daysApart(source.bookingDate, b.bookingDate) ||
+      a.id.localeCompare(b.id),
+  );
+  return rows[0] ?? null;
+}
+
 export interface NeedsAmountView {
   transferId: string;
   sourceTransactionId: string;
@@ -217,6 +295,8 @@ export interface NeedsAmountView {
   amount: Minor;
   currency: string;
   description: string | null;
+  /** A booked row on the receiving account that may be the other side: link it instead of entering an amount. */
+  linkCandidate: LinkCandidate | null;
 }
 
 const SOURCE_CHUNK = 500;
@@ -268,6 +348,9 @@ export function listNeedsAmount(
       sources.set(t.id, t);
     }
   }
+  const ibans = new Map(
+    loadPlanAccounts(userId, db).map((a) => [a.id, a.iban]),
+  );
   const views: NeedsAmountView[] = [];
   for (const r of rows) {
     const sourceId = r.outTransactionId ?? r.inTransactionId;
@@ -293,6 +376,13 @@ export function listNeedsAmount(
       amount: tx.amount,
       currency: tx.currency,
       description: tx.description,
+      linkCandidate: findLinkCandidate(
+        userId,
+        tx,
+        { iban: ibans.get(tx.accountId) ?? null },
+        { id: targetId },
+        db,
+      ),
     });
   }
   return views.sort(
@@ -342,33 +432,11 @@ export function resolveNeedsAmount(
       );
     }
     // A booked row that may be the real counterpart: link it instead of booking a second one.
-    const counterpart = tx
-      .select({ id: transactions.id })
-      .from(transactions)
-      .where(
-        and(
-          eq(transactions.userId, userId),
-          eq(transactions.accountId, target.id),
-          ne(transactions.source, "mirror"),
-          outgoing
-            ? sql`${transactions.amount} > 0`
-            : sql`${transactions.amount} < 0`,
-          gte(
-            transactions.bookingDate,
-            shiftDate(source.bookingDate, -LINK_WINDOW_DAYS),
-          ),
-          lte(
-            transactions.bookingDate,
-            shiftDate(source.bookingDate, LINK_WINDOW_DAYS),
-          ),
-          notInLinkedTransfer,
-        ),
-      )
-      .get();
+    const counterpart = findLinkCandidate(userId, source, home, target, tx);
     if (counterpart) {
-      throw new LedgerError(
-        "conflict",
-        "The receiving account has a transaction that may be the other side of this transfer. Link them instead of entering an amount.",
+      throw new LinkInsteadError(
+        `The receiving account has a transaction on ${counterpart.bookingDate} that may be the other side of this transfer. Link it instead of entering an amount.`,
+        counterpart.id,
       );
     }
     const mirror = tx
@@ -413,6 +481,35 @@ export function resolveNeedsAmount(
       .where(eq(transfers.id, row.id))
       .run();
   });
+}
+
+/**
+ * Links the source of a needs-amount transfer to a booked row of the
+ * receiving account instead of creating a counter-transaction. Returns the
+ * transfer's id.
+ */
+export function linkNeedsAmountTo(
+  userId: string,
+  transferId: string,
+  peerId: string,
+): string {
+  const db = getDB();
+  const row = ownedTransfer(userId, transferId, db);
+  if (row.status !== "needs_amount") {
+    throw new LedgerError("conflict", "This transfer needs no amount.");
+  }
+  const outgoing = row.outTransactionId !== null;
+  const sourceId = (outgoing ? row.outTransactionId : row.inTransactionId)!;
+  const peer = ownedTransaction(userId, peerId, db);
+  if (peer.accountId !== (outgoing ? row.toAccountId : row.fromAccountId)) {
+    throw new LedgerError(
+      "invalid",
+      "Choose a transaction of the receiving account.",
+    );
+  }
+  return outgoing
+    ? linkManually(userId, sourceId, peer.id)
+    : linkManually(userId, peer.id, sourceId);
 }
 
 export const CANDIDATE_WINDOW_DAYS = 10;
@@ -563,6 +660,7 @@ export function fillSuggestion(
   if (!account) throw notFound("Account");
   if (
     account.fillFromTransfers ||
+    account.archived ||
     account.iban === null ||
     account.type === "pillar_3a" ||
     account.hasPortfolios
@@ -602,6 +700,12 @@ export function enableFill(userId: string, accountId: string): LinkResult {
       (a) => a.id === accountId,
     );
     if (!account) throw notFound("Account");
+    if (account.archived) {
+      throw new LedgerError(
+        "invalid",
+        "An archived account cannot be filled from transfers. Restore it first.",
+      );
+    }
     if (account.type === "pillar_3a" || account.hasPortfolios) {
       throw new LedgerError(
         "invalid",

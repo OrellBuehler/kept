@@ -996,7 +996,20 @@ describe("account page: transfer linking", () => {
     expect(getAccount(u.id, b.id).fillFromTransfers).toBe(true);
     expect(rowsOf(b.id)).toHaveLength(1);
 
-    await run("updateAccount", u, b.id, accountForm());
+    // Deleting the mirrors has to be confirmed.
+    expect(await run("updateAccount", u, b.id, accountForm())).toMatchObject({
+      type: "fail",
+      data: { errors: { fillFromTransfers: [expect.any(String)] } },
+    });
+    expect(getAccount(u.id, b.id).fillFromTransfers).toBe(true);
+    expect(rowsOf(b.id)).toHaveLength(1);
+
+    await run(
+      "updateAccount",
+      u,
+      b.id,
+      accountForm({ confirmRemoveMirrors: "1" }),
+    );
     expect(getAccount(u.id, b.id).fillFromTransfers).toBe(false);
     expect(rowsOf(b.id)).toEqual([]);
   });
@@ -1207,6 +1220,62 @@ describe("account page: transfer linking", () => {
     expect(listNeedsAmount(u.id)).toEqual([]);
   });
 
+  it("offers the row to link instead of an amount, and links it from the receiving account's page", async () => {
+    const u = await createTestUser();
+    const a = seedAccount(u.id, { name: "Main", iban: EXAMPLE_IBAN });
+    const eur = seedAccount(u.id, {
+      name: "Euro",
+      currency: "EUR",
+      iban: EXAMPLE_IBAN_OTHER,
+      fillFromTransfers: true,
+    });
+    const out = seedImportedTransaction(u.id, a.id, {
+      bookingDate: "2024-03-10",
+      amount: minor(-10000),
+      counterpartyIban: EXAMPLE_IBAN_OTHER,
+    });
+    linkTransfers(u.id, {});
+    const real = seedImportedTransaction(u.id, eur.id, {
+      bookingDate: "2024-03-11",
+      amount: minor(9300),
+      currency: "EUR",
+    });
+    const [pending] = listNeedsAmount(u.id);
+    const data = ((await loadAs(u, eur.id)) as { value: LoadData }).value;
+    expect(data.transfers.needsAmount[0]!.linkCandidate).toMatchObject({
+      id: real.id,
+    });
+    expect(
+      await run("resolveNeedsAmount", u, eur.id, {
+        transferId: pending!.transferId,
+        amount: "93.00",
+      }),
+    ).toMatchObject({ type: "fail", status: 400 });
+    expect(
+      await run("linkNeedsAmount", u, a.id, {
+        transferId: pending!.transferId,
+        peerId: real.id,
+      }),
+    ).toEqual({ type: "error", status: 404 });
+    expect(
+      await run("linkNeedsAmount", u, eur.id, {
+        transferId: pending!.transferId,
+        peerId: out.id,
+      }),
+    ).toMatchObject({ type: "fail", status: 400 });
+    expect(
+      await run("linkNeedsAmount", u, eur.id, {
+        transferId: pending!.transferId,
+        peerId: real.id,
+      }),
+    ).toMatchObject({
+      type: "return",
+      value: { success: true, action: "linkNeedsAmount" },
+    });
+    expect(listNeedsAmount(u.id)).toEqual([]);
+    expect(rowsOf(eur.id)).toHaveLength(1);
+  });
+
   it("keeps mirrors in step with a manual source row", async () => {
     const { u, a, b } = await setup();
     const added = await run("addTransaction", u, a.id, {
@@ -1295,6 +1364,12 @@ describe("account page: transfer linking", () => {
       await run("resolveNeedsAmount", intruder, b.id, {
         transferId: "x",
         amount: "1",
+      }),
+    ).toEqual(notFound);
+    expect(
+      await run("linkNeedsAmount", intruder, b.id, {
+        transferId: "x",
+        peerId: mine.id,
       }),
     ).toEqual(notFound);
 

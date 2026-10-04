@@ -276,7 +276,7 @@
     </div>
   </div>
 
-  {#if data.transfers.fillSuggestion && !account.fillFromTransfers}
+  {#if data.transfers.fillSuggestion && !account.fillFromTransfers && !account.archived}
     <FillSuggestionBanner count={data.transfers.fillSuggestion.count} />
   {/if}
 
