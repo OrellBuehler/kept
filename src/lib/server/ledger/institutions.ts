@@ -8,6 +8,7 @@ export interface InstitutionView {
   name: string;
   bic: string | null;
   color: string | null;
+  logoVersion: string | null;
   accountCount: number;
 }
 
@@ -16,6 +17,7 @@ const columns = {
   name: institutions.name,
   bic: institutions.bic,
   color: institutions.color,
+  logoVersion: institutions.logoVersion,
 };
 
 function assertNameFree(userId: string, name: string, exceptId?: string) {
