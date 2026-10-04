@@ -20,7 +20,6 @@ import {
   listTags,
   resolveSource,
   rotateWebhookSecret,
-  saveConnection,
   setBillSourceRow,
   setEnabled,
   setFieldMapping,
@@ -29,6 +28,7 @@ import {
   type SavedViewOption,
   type TagOption,
 } from "$lib/server/integrations/paperless/connection";
+import { saveConnectionVerified } from "$lib/server/integrations/paperless/identity";
 import {
   mappingFormSchema,
   saveFormSchema,
@@ -207,7 +207,10 @@ export const actions: Actions = {
       return fail(400, { action: "save", errors: parsed.errors, values });
     }
     try {
-      const { webhookSecret } = saveConnection(user.id, parsed.data);
+      const { webhookSecret } = await saveConnectionVerified(
+        user.id,
+        parsed.data,
+      );
       // The connection is saved either way; the test only tells the user at once whether it works.
       let test:
         | { result: Awaited<ReturnType<typeof testConnection>> }

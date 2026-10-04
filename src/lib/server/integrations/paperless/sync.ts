@@ -443,9 +443,9 @@ function buildBillInput(draft: Record<string, string>): Built {
   return { ok: false, reason: "The document data is not a valid bill." };
 }
 
-async function fetchPdf(
+export async function fetchPdf(
   client: PaperlessClient,
-  doc: PaperlessDoc,
+  doc: Pick<PaperlessDoc, "id" | "mime_type" | "archived_file_name">,
 ): Promise<Uint8Array | null> {
   const mime = (doc.mime_type ?? "").toLowerCase();
   if (mime === "application/pdf") {

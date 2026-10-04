@@ -191,6 +191,16 @@ describe("settings/paperless", () => {
     expect(getConnectionRow(user.id)!.instanceKey).not.toBe(first.instanceKey);
   });
 
+  it("save refuses an address change to a server that does not have the linked documents", async () => {
+    await connect();
+    fake.addDoc({ id: 7, original: pdf });
+    value(await act("setSource", user, { kind: "tag", id: "1" }));
+    value(await act("syncNow", user));
+    const bad = failure(await connect({ baseUrl: "http://127.0.0.1:1" }));
+    expect(bad.errors.baseUrl?.[0]).toContain("could not be reached");
+    expect(getConnectionRow(user.id)!.baseUrl).toBe(fake.baseUrl);
+  });
+
   it("save validates and keeps the stored token when the field is blank", async () => {
     expect(
       failure(await act("save", user, { baseUrl: "", token: "x" })).errors
