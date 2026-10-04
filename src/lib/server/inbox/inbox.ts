@@ -261,7 +261,10 @@ async function dropPending(userId: string, pendingId: string) {
   try {
     await deletePending(userId, pendingId);
   } catch (err) {
-    if (!(err instanceof LedgerError && err.code === "not_found")) throw err;
+    // The row is gone either way; a leftover blob is reclaimed by the orphan sweep.
+    if (!(err instanceof LedgerError && err.code === "not_found")) {
+      console.error("inbox pending cleanup failed", describeError(err));
+    }
   }
 }
 

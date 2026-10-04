@@ -285,6 +285,22 @@ describe("sweepOrphanedPending", () => {
     expect(await blobKeys()).toEqual([pendingBlobKey(user.id, owned.id)]);
   });
 
+  it("keeps sweeping when one delete fails", async () => {
+    const { user } = await setup();
+    const stuck = `pending-imports/${user.id}/${"s".repeat(32)}`;
+    const gone = `pending-imports/${user.id}/${"t".repeat(32)}`;
+    await ctx.store.put(stuck, enc("x"));
+    await ctx.store.put(gone, enc("x"));
+    const original = ctx.store.delete.bind(ctx.store);
+    vi.spyOn(ctx.store, "delete").mockImplementation(async (key) => {
+      if (key === stuck) throw new Error("EACCES");
+      return original(key);
+    });
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    expect(await sweepOrphanedPending(later())).toBe(1);
+    expect(await blobKeys()).toEqual([stuck]);
+  });
+
   it("never touches a blob younger than the TTL", async () => {
     const { user } = await setup();
     await ctx.store.put(

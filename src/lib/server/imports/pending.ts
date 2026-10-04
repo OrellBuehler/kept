@@ -168,8 +168,16 @@ export async function sweepOrphanedPending(now = Date.now()): Promise<number> {
         .get() !== undefined;
     if (!owned) orphans.push(blob.key);
   }
-  for (const key of orphans) await store.delete(key);
-  return orphans.length;
+  let removed = 0;
+  for (const key of orphans) {
+    try {
+      await store.delete(key);
+      removed++;
+    } catch (err) {
+      console.error("pending import orphan delete failed", describeError(err));
+    }
+  }
+  return removed;
 }
 
 const ORPHAN_SWEEP_INTERVAL_MS = PENDING_TTL_MS;
