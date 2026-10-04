@@ -21,12 +21,12 @@ import type { RequestHandler } from "./$types";
 export const POST: RequestHandler = async ({ locals, request, url }) => {
   const user = requireUser(locals);
   if (!locals.session) return json({ message: "No session." }, { status: 401 });
-  if (getTwoFactorStatus(user.id).totpEnabled) {
+  if ((await getTwoFactorStatus(user.id)).totpEnabled) {
     return json({ message: "Use your authenticator code." }, { status: 400 });
   }
   const body = await readJsonBody(request, url, passkeyStepUpVerifySchema);
 
-  const challenge = takeWebauthnChallenge(
+  const challenge = await takeWebauthnChallenge(
     body.challengeId,
     "passkey_stepup",
     user.id,
@@ -57,6 +57,6 @@ export const POST: RequestHandler = async ({ locals, request, url }) => {
     }
     throw err;
   }
-  markSessionReauthenticated(user.id, locals.session.id);
+  await markSessionReauthenticated(user.id, locals.session.id);
   return json({ reauthed: true });
 };

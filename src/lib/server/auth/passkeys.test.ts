@@ -97,8 +97,8 @@ describe("passkeys", () => {
         requireUserVerification: true,
       }),
     );
-    expect(listPasskeys(u.id)).toHaveLength(1);
-    expect(getDB().select().from(authEvents).all()[0]).toMatchObject({
+    expect(await listPasskeys(u.id)).toHaveLength(1);
+    expect((await getDB().select().from(authEvents))[0]).toMatchObject({
       type: "passkey_added",
       userId: u.id,
     });
@@ -124,7 +124,24 @@ describe("passkeys", () => {
     expect(
       await finishRegistration(other.id, "b", regResponse, "ch", config),
     ).toBeNull();
-    expect(listPasskeys(other.id)).toHaveLength(0);
+    expect(await listPasskeys(other.id)).toHaveLength(0);
+  });
+
+  it("lets exactly one of two parallel registrations of one credential win", async () => {
+    const u = await createTestUser();
+    const other = await createTestUser();
+    verifyReg.mockResolvedValue(verifiedRegistration());
+    const results = await Promise.all([
+      finishRegistration(u.id, "a", regResponse, "ch", config),
+      finishRegistration(other.id, "b", regResponse, "ch", config),
+    ]);
+    expect(results.filter((r) => r !== null)).toHaveLength(1);
+    expect(await getDB().select().from(passkeys)).toHaveLength(1);
+    expect(
+      (await getDB().select().from(authEvents)).filter(
+        (e) => e.type === "passkey_added",
+      ),
+    ).toHaveLength(1);
   });
 
   async function registered() {
@@ -143,10 +160,63 @@ describe("passkeys", () => {
     expect(await finishAuthentication(authResponse, "ch", config, null)).toBe(
       u.id,
     );
-    expect(getDB().select().from(passkeys).all()[0]).toMatchObject({
+    expect((await getDB().select().from(passkeys))[0]).toMatchObject({
       counter: 7,
     });
-    expect(listPasskeys(u.id)[0].lastUsedAt).toBeInstanceOf(Date);
+    expect((await listPasskeys(u.id))[0].lastUsedAt).toBeInstanceOf(Date);
+  });
+
+  it("keeps authenticators that always report a zero counter working", async () => {
+    const u = await registered();
+    verifyAuth.mockResolvedValue({
+      verified: true,
+      authenticationInfo: { newCounter: 0 },
+    });
+    expect(await finishAuthentication(authResponse, "ch", config, null)).toBe(
+      u.id,
+    );
+    expect(await finishAuthentication(authResponse, "ch", config, null)).toBe(
+      u.id,
+    );
+  });
+
+  it("rejects a counter that did not advance past the stored one", async () => {
+    await registered();
+    await getDB().update(passkeys).set({ counter: 9 });
+    verifyAuth.mockResolvedValue({
+      verified: true,
+      authenticationInfo: { newCounter: 9 },
+    });
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    expect(
+      await finishAuthentication(authResponse, "ch", config, null),
+    ).toBeNull();
+    verifyAuth.mockResolvedValue({
+      verified: true,
+      authenticationInfo: { newCounter: 0 },
+    });
+    expect(
+      await finishAuthentication(authResponse, "ch", config, null),
+    ).toBeNull();
+    warn.mockRestore();
+    expect((await getDB().select().from(passkeys))[0].counter).toBe(9);
+  });
+
+  it("lets only one of two parallel assertions with the same counter through", async () => {
+    const u = await registered();
+    verifyAuth.mockImplementation(async () => {
+      await new Promise((r) => setTimeout(r, 1));
+      return { verified: true, authenticationInfo: { newCounter: 6 } };
+    });
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const results = await Promise.all([
+      finishAuthentication(authResponse, "ch", config, null),
+      finishAuthentication(authResponse, "ch", config, null),
+    ]);
+    warn.mockRestore();
+    expect(results.filter((r) => r === u.id)).toHaveLength(1);
+    expect(results.filter((r) => r === null)).toHaveLength(1);
+    expect((await getDB().select().from(passkeys))[0].counter).toBe(6);
   });
 
   it("refuses unknown credentials, other users' credentials and failed verification", async () => {
@@ -194,12 +264,12 @@ describe("passkeys", () => {
   it("renames and deletes only the owner's passkeys", async () => {
     const u = await registered();
     const other = await createTestUser();
-    const id = listPasskeys(u.id)[0].id;
-    expect(() => renamePasskey(other.id, id, "x")).toThrow();
-    expect(() => deletePasskey(other.id, id)).toThrow();
-    renamePasskey(u.id, id, "Phone");
-    expect(listPasskeys(u.id)[0].name).toBe("Phone");
-    deletePasskey(u.id, id);
-    expect(listPasskeys(u.id)).toHaveLength(0);
+    const id = (await listPasskeys(u.id))[0].id;
+    await expect(renamePasskey(other.id, id, "x")).rejects.toThrow();
+    await expect(deletePasskey(other.id, id)).rejects.toThrow();
+    await renamePasskey(u.id, id, "Phone");
+    expect((await listPasskeys(u.id))[0].name).toBe("Phone");
+    await deletePasskey(u.id, id);
+    expect(await listPasskeys(u.id)).toHaveLength(0);
   });
 });

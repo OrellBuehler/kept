@@ -12,11 +12,11 @@ import { listBackups, readBackupConfig } from "$lib/server/backup/backup";
 import { parseForm } from "$lib/server/forms";
 import type { Actions, PageServerLoad } from "./$types";
 
-export const load: PageServerLoad = ({ locals }) => {
+export const load: PageServerLoad = async ({ locals }) => {
   const admin = requireAdmin(locals);
   const config = readBackupConfig();
   return {
-    confirmMode: adminConfirmMode(admin.id),
+    confirmMode: await adminConfirmMode(admin.id),
     scheduled: config
       ? { dir: config.dir, keep: config.keep, backups: listBackups(config.dir) }
       : null,
@@ -40,7 +40,7 @@ export const actions: Actions = {
     });
     if (refused) return refused;
     const token = issueDownloadToken(admin.id);
-    recordAdminAction(admin, "backup_link_issued");
+    await recordAdminAction(admin, "backup_link_issued");
     return {
       downloadUrl: `/admin/backup/download?token=${encodeURIComponent(token)}`,
     };

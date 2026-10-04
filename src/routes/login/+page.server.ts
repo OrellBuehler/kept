@@ -55,7 +55,7 @@ export const actions: Actions = {
       );
     }
 
-    if (locals.session) invalidateSession(locals.session.id);
+    if (locals.session) await invalidateSession(locals.session.id);
     setSessionCookie(cookies, result.token, result.session.expiresAt);
     redirect(303, redirectTo);
   },

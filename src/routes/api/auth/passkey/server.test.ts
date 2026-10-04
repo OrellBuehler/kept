@@ -49,17 +49,16 @@ const post = (
     ...extra,
   });
 
-function sess(
+async function sess(
   u: Awaited<ReturnType<typeof createTestUser>>,
   reauthAgeMs: number | null = 0,
 ) {
-  const s = loginTestUser(u);
+  const s = await loginTestUser(u);
   if (reauthAgeMs !== null) {
-    getDB()
+    await getDB()
       .update(sessions)
       .set({ reauthAt: new Date(Date.now() - reauthAgeMs) })
-      .where(eq(sessions.id, s.session.id))
-      .run();
+      .where(eq(sessions.id, s.session.id));
   }
   return { user: u, session: s.session };
 }
@@ -85,18 +84,15 @@ async function call(handler: unknown, event: unknown) {
   }
 }
 
-function seedPasskey(userId: string) {
-  getDB()
-    .insert(passkeys)
-    .values({
-      userId,
-      name: "k",
-      credentialId: "cred-1",
-      publicKey: "AQID",
-      deviceType: "singleDevice",
-      backedUp: false,
-    })
-    .run();
+async function seedPasskey(userId: string) {
+  await getDB().insert(passkeys).values({
+    userId,
+    name: "k",
+    credentialId: "cred-1",
+    publicKey: "AQID",
+    deviceType: "singleDevice",
+    backedUp: false,
+  });
 }
 
 describe("passkey api", () => {
@@ -124,14 +120,18 @@ describe("passkey api", () => {
   it("registration needs a recent step-up: none or stale is rejected, fresh works", async () => {
     const u = await createTestUser();
     for (const age of [null, REAUTH_WINDOW_MS + 1000]) {
-      const o = await call(registerOptions, post("/x", {}, sess(u, age)));
+      const o = await call(registerOptions, post("/x", {}, await sess(u, age)));
       expect(o).toMatchObject({
         status: 403,
         body: { code: "reauth_required" },
       });
       const v = await call(
         registerVerify,
-        post("/x", { challengeId: "a", name: "n", credential }, sess(u, age)),
+        post(
+          "/x",
+          { challengeId: "a", name: "n", credential },
+          await sess(u, age),
+        ),
       );
       expect(v).toMatchObject({
         status: 403,
@@ -139,7 +139,7 @@ describe("passkey api", () => {
       });
     }
     expect(
-      (await call(registerOptions, post("/x", {}, sess(u, 1000)))).status,
+      (await call(registerOptions, post("/x", {}, await sess(u, 1000)))).status,
     ).toBe(200);
   });
 
@@ -160,23 +160,26 @@ describe("passkey api", () => {
     const wrongType = post(
       "/x",
       {},
-      { ...sess(u), headers: { origin: ORIGIN, "content-type": "text/plain" } },
+      {
+        ...(await sess(u)),
+        headers: { origin: ORIGIN, "content-type": "text/plain" },
+      },
     );
     expect((await call(registerOptions, wrongType)).status).toBe(415);
-    const bad = post("/x", { nope: 1 }, sess(u));
+    const bad = post("/x", { nope: 1 }, await sess(u));
     expect((await call(registerVerify, bad)).status).toBe(400);
   });
 
   it("registers a passkey: challenge is single-use and bound to the user", async () => {
     const u = await createTestUser();
     const other = await createTestUser();
-    const opts = await call(registerOptions, post("/x", {}, sess(u)));
+    const opts = await call(registerOptions, post("/x", {}, await sess(u)));
     expect(opts.status).toBe(200);
     const { challengeId } = opts.body;
 
     const wrongUser = await call(
       registerVerify,
-      post("/x", { challengeId, name: "n", credential }, sess(other)),
+      post("/x", { challengeId, name: "n", credential }, await sess(other)),
     );
     expect(wrongUser.status).toBe(400);
 
@@ -195,17 +198,17 @@ describe("passkey api", () => {
     });
     const replay = await call(
       registerVerify,
-      post("/x", { challengeId, name: "n", credential }, sess(u)),
+      post("/x", { challengeId, name: "n", credential }, await sess(u)),
     );
     expect(replay.status).toBe(400);
 
-    const fresh = await call(registerOptions, post("/x", {}, sess(u)));
+    const fresh = await call(registerOptions, post("/x", {}, await sess(u)));
     const ok = await call(
       registerVerify,
       post(
         "/x",
         { challengeId: fresh.body.challengeId, name: "Laptop", credential },
-        sess(u),
+        await sess(u),
       ),
     );
     expect(ok.status).toBe(201);
@@ -215,7 +218,7 @@ describe("passkey api", () => {
 
   it("passwordless login issues a session and consumes the challenge", async () => {
     const u = await createTestUser();
-    seedPasskey(u.id);
+    await seedPasskey(u.id);
     const opts = await call(loginOptions, post("/x", { mode: "passwordless" }));
     expect(opts.status).toBe(200);
     verifyAuth.mockResolvedValue({
@@ -230,7 +233,7 @@ describe("passkey api", () => {
     const ok = await call(loginVerify, event);
     expect(ok).toMatchObject({ status: 200, body: { redirectTo: "/bills" } });
     const token = (event.cookies as unknown as FakeCookies).get(SESSION_COOKIE);
-    expect(validateSessionToken(token!)?.user.id).toBe(u.id);
+    expect((await validateSessionToken(token!))?.user.id).toBe(u.id);
 
     const replay = post("/x", {
       challengeId: opts.body.challengeId,
@@ -244,7 +247,7 @@ describe("passkey api", () => {
 
   it("passwordless login fails on bad verification and unknown challenge", async () => {
     const u = await createTestUser();
-    seedPasskey(u.id);
+    await seedPasskey(u.id);
     const opts = await call(loginOptions, post("/x", { mode: "passwordless" }));
     verifyAuth.mockResolvedValue({ verified: false });
     const event = post("/x", {
@@ -273,8 +276,8 @@ describe("passkey api", () => {
   it("second-factor login only accepts the pending user's passkey", async () => {
     const u = await createTestUser();
     const other = await createTestUser();
-    seedPasskey(other.id);
-    const { token } = createPendingLogin(u.id);
+    await seedPasskey(other.id);
+    const { token } = await createPendingLogin(u.id);
     const cookies = { [PENDING_COOKIE]: token };
     // user has no passkey
     expect(
@@ -286,8 +289,8 @@ describe("passkey api", () => {
       ).status,
     ).toBe(400);
 
-    getDB().delete(passkeys).run();
-    seedPasskey(u.id);
+    await getDB().delete(passkeys);
+    await seedPasskey(u.id);
     const opts = await call(
       loginOptions,
       post("/x", { mode: "second_factor" }, { cookies }),
@@ -303,14 +306,14 @@ describe("passkey api", () => {
     const session = (event.cookies as unknown as FakeCookies).get(
       SESSION_COOKIE,
     );
-    expect(validateSessionToken(session!)?.user.id).toBe(u.id);
-    expect(getPendingLogin(token)).toBeNull();
+    expect((await validateSessionToken(session!))?.user.id).toBe(u.id);
+    expect(await getPendingLogin(token)).toBeNull();
   });
 
   it("a failing second-factor passkey does not log in and counts as an attempt", async () => {
     const u = await createTestUser();
-    seedPasskey(u.id);
-    const { token } = createPendingLogin(u.id);
+    await seedPasskey(u.id);
+    const { token } = await createPendingLogin(u.id);
     const cookies = { [PENDING_COOKIE]: token };
     await call(
       loginOptions,
@@ -322,7 +325,7 @@ describe("passkey api", () => {
     expect(
       (event.cookies as unknown as FakeCookies).get(SESSION_COOKIE),
     ).toBeUndefined();
-    expect(getPendingLogin(token)?.attempts).toBe(1);
+    expect((await getPendingLogin(token))?.attempts).toBe(1);
     // the challenge was consumed: replaying without new options fails
     verifyAuth.mockResolvedValue({
       verified: true,
@@ -335,8 +338,8 @@ describe("passkey api", () => {
 
   it("passkey-only users step up with password plus a fresh assertion", async () => {
     const u = await createTestUser();
-    seedPasskey(u.id);
-    const s = sess(u, null);
+    await seedPasskey(u.id);
+    const s = await sess(u, null);
     const opts = await call(stepupOptions, post("/x", {}, s));
     expect(opts.status).toBe(200);
 
@@ -354,7 +357,7 @@ describe("passkey api", () => {
       ),
     );
     expect(badAssertion.status).toBe(400);
-    expect(hasRecentReauth(s.session.id)).toBe(false);
+    expect(await hasRecentReauth(s.session.id)).toBe(false);
 
     verifyAuth.mockResolvedValue({
       verified: true,
@@ -374,8 +377,12 @@ describe("passkey api", () => {
       ),
     );
     expect(badPassword.status).toBe(400);
-    expect(hasRecentReauth(s.session.id)).toBe(false);
+    expect(await hasRecentReauth(s.session.id)).toBe(false);
 
+    verifyAuth.mockResolvedValue({
+      verified: true,
+      authenticationInfo: { newCounter: 2 },
+    });
     const again = await call(stepupOptions, post("/x", {}, s));
     const ok = await call(
       stepupVerify,
@@ -390,19 +397,19 @@ describe("passkey api", () => {
       ),
     );
     expect(ok).toMatchObject({ status: 200, body: { reauthed: true } });
-    expect(hasRecentReauth(s.session.id)).toBe(true);
+    expect(await hasRecentReauth(s.session.id)).toBe(true);
   });
 
   it("step-up challenges are single-use and bound to the caller", async () => {
     const u = await createTestUser();
     const other = await createTestUser();
-    seedPasskey(u.id);
+    await seedPasskey(u.id);
     verifyAuth.mockResolvedValue({
       verified: true,
       authenticationInfo: { newCounter: 1 },
     });
-    const opts = await call(stepupOptions, post("/x", {}, sess(u, null)));
-    const o = sess(other, null);
+    const opts = await call(stepupOptions, post("/x", {}, await sess(u, null)));
+    const o = await sess(other, null);
     const stolen = await call(
       stepupVerify,
       post(
@@ -416,8 +423,8 @@ describe("passkey api", () => {
       ),
     );
     expect(stolen.status).toBe(400);
-    expect(hasRecentReauth(o.session.id)).toBe(false);
-    const s = sess(u, null);
+    expect(await hasRecentReauth(o.session.id)).toBe(false);
+    const s = await sess(u, null);
     const replay = await call(
       stepupVerify,
       post(
@@ -435,14 +442,14 @@ describe("passkey api", () => {
 
   it("users with an authenticator app must use a code, not the passkey path", async () => {
     const u = await createTestUser();
-    seedPasskey(u.id);
+    await seedPasskey(u.id);
     const { startTotpEnrolment, confirmTotpEnrolment } =
       await import("$lib/server/auth/two-factor");
     const { totpCode } = await import("$lib/server/auth/totp");
-    const { secret } = startTotpEnrolment(u.id, u.username);
-    confirmTotpEnrolment(u.id, totpCode(secret, Date.now()));
+    const { secret } = await startTotpEnrolment(u.id, u.username);
+    await confirmTotpEnrolment(u.id, totpCode(secret, Date.now()));
     expect(
-      (await call(stepupOptions, post("/x", {}, sess(u, null)))).status,
+      (await call(stepupOptions, post("/x", {}, await sess(u, null)))).status,
     ).toBe(400);
   });
 

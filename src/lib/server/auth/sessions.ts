@@ -1,6 +1,6 @@
 import type { Cookies } from "@sveltejs/kit";
 import { and, eq, lt, ne } from "drizzle-orm";
-import { getDB, sessions, users } from "$lib/server/db";
+import { first, getDB, sessions, users } from "$lib/server/db";
 import type { SessionInfo, SessionUser } from "./types";
 
 export const SESSION_COOKIE = "kept_session";
@@ -17,14 +17,14 @@ function generateToken(): string {
   );
 }
 
-export function createSession(
+export async function createSession(
   userId: string,
   now: number = Date.now(),
-): { token: string; session: SessionInfo } {
+): Promise<{ token: string; session: SessionInfo }> {
   const token = generateToken();
   const id = hashToken(token);
   const expiresAt = new Date(now + SESSION_LIFETIME_MS);
-  getDB().insert(sessions).values({ id, userId, expiresAt }).run();
+  await getDB().insert(sessions).values({ id, userId, expiresAt });
   return { token, session: { id, expiresAt } };
 }
 
@@ -35,29 +35,31 @@ export interface ValidatedSession {
   refreshed: boolean;
 }
 
-export function validateSessionToken(
+export async function validateSessionToken(
   token: string,
   now: number = Date.now(),
-): ValidatedSession | null {
+): Promise<ValidatedSession | null> {
   const db = getDB();
   const id = hashToken(token);
-  const row = db
-    .select({
-      sessionId: sessions.id,
-      expiresAt: sessions.expiresAt,
-      id: users.id,
-      username: users.username,
-      displayName: users.displayName,
-      role: users.role,
-    })
-    .from(sessions)
-    .innerJoin(users, eq(users.id, sessions.userId))
-    .where(eq(sessions.id, id))
-    .get();
+  const row = await first(
+    db
+      .select({
+        sessionId: sessions.id,
+        expiresAt: sessions.expiresAt,
+        id: users.id,
+        username: users.username,
+        displayName: users.displayName,
+        role: users.role,
+      })
+      .from(sessions)
+      .innerJoin(users, eq(users.id, sessions.userId))
+      .where(eq(sessions.id, id))
+      .limit(1),
+  );
   if (!row) return null;
 
   if (row.expiresAt.getTime() <= now) {
-    db.delete(sessions).where(eq(sessions.id, id)).run();
+    await db.delete(sessions).where(eq(sessions.id, id));
     return null;
   }
 
@@ -65,7 +67,7 @@ export function validateSessionToken(
   let refreshed = false;
   if (expiresAt.getTime() - now < SESSION_REFRESH_THRESHOLD_MS) {
     expiresAt = new Date(now + SESSION_LIFETIME_MS);
-    db.update(sessions).set({ expiresAt }).where(eq(sessions.id, id)).run();
+    await db.update(sessions).set({ expiresAt }).where(eq(sessions.id, id));
     refreshed = true;
   }
 
@@ -81,29 +83,41 @@ export function validateSessionToken(
   };
 }
 
-export function invalidateSession(sessionId: string): void {
-  getDB().delete(sessions).where(eq(sessions.id, sessionId)).run();
+export async function invalidateSession(sessionId: string): Promise<void> {
+  await getDB().delete(sessions).where(eq(sessions.id, sessionId));
 }
 
-export function invalidateUserSessions(
+/**
+ * The delete of a user's sessions as an unexecuted query, so a synchronous
+ * transaction body can `.run()` it on its `tx` while everything else awaits it.
+ */
+export function userSessionsDelete(
+  db: Pick<ReturnType<typeof getDB>, "delete">,
   userId: string,
   exceptSessionId?: string,
-): void {
-  getDB()
+) {
+  return db
     .delete(sessions)
     .where(
       exceptSessionId
         ? and(eq(sessions.userId, userId), ne(sessions.id, exceptSessionId))
         : eq(sessions.userId, userId),
-    )
-    .run();
+    );
 }
 
-export function purgeExpiredSessions(now: number = Date.now()): void {
-  getDB()
+export async function invalidateUserSessions(
+  userId: string,
+  exceptSessionId?: string,
+): Promise<void> {
+  await userSessionsDelete(getDB(), userId, exceptSessionId);
+}
+
+export async function purgeExpiredSessions(
+  now: number = Date.now(),
+): Promise<void> {
+  await getDB()
     .delete(sessions)
-    .where(lt(sessions.expiresAt, new Date(now)))
-    .run();
+    .where(lt(sessions.expiresAt, new Date(now)));
 }
 
 export function cookieSecureOverride():

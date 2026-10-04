@@ -22,12 +22,12 @@ export async function adminConfirmationFailure(
     return null;
   } catch (err) {
     if (err instanceof RateLimitedError) {
-      recordConfirmationRateLimited(admin);
+      await recordConfirmationRateLimited(admin);
       return fail(429, { errors: { form: [err.message] }, values });
     }
     if (err instanceof AuthError) {
       if (err.code === "invalid_credentials") {
-        recordAdminAction(admin, "admin_confirm_failed", {
+        await recordAdminAction(admin, "admin_confirm_failed", {
           details: "reason=password",
         });
         return fail(400, {
@@ -36,7 +36,7 @@ export async function adminConfirmationFailure(
         });
       }
       if (err.code === "invalid_code") {
-        recordAdminAction(admin, "admin_confirm_failed", {
+        await recordAdminAction(admin, "admin_confirm_failed", {
           details: "reason=code",
         });
         return fail(400, {

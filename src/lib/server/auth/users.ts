@@ -1,5 +1,5 @@
 import { and, asc, count, eq, ne } from "drizzle-orm";
-import { getDB, sessions, users, type UserRole } from "$lib/server/db";
+import { first, getDB, sessions, users, type UserRole } from "$lib/server/db";
 import { hashPassword, verifyPassword } from "./password";
 import { passwordChangeLimiter, type LoginRateLimiter } from "./rate-limit";
 import { AuthError, type SessionUser } from "./types";
@@ -20,10 +20,12 @@ export function normalizeUsername(username: string): string {
   return usernameSchema.parse(username);
 }
 
-export function countUsers(): number {
-  return getDB().select({ n: count() }).from(users).get()?.n ?? 0;
+export async function countUsers(): Promise<number> {
+  const row = await first(getDB().select({ n: count() }).from(users));
+  return row?.n ?? 0;
 }
 
+/** Sync: only runs inside the immediate transaction of createUser / createFirstAdmin. */
 function insertUser(
   tx: Pick<ReturnType<typeof getDB>, "select" | "insert">,
   input: NewUser,
@@ -34,6 +36,7 @@ function insertUser(
     .select({ id: users.id })
     .from(users)
     .where(eq(users.username, username))
+    .limit(1)
     .get();
   if (existing) {
     throw new AuthError("username_taken", "Username is already taken.");
@@ -55,25 +58,29 @@ function insertUser(
     .get();
 }
 
-/** Runs inside the transaction of the change, so the audit row commits or rolls back with it. */
+/**
+ * Runs inside the transaction of the change, so the audit row commits or rolls
+ * back with it. May return a log call, which runs only after the commit.
+ */
 export type InTransaction<T> = (
   tx: Pick<ReturnType<typeof getDB>, "insert">,
   subject: T,
-) => void;
+) => void | (() => void);
 
 export async function createUser(
   input: NewUser,
   audit?: InTransaction<SessionUser>,
 ): Promise<SessionUser> {
   const passwordHash = await hashPassword(input.password);
-  return getDB().transaction(
+  const { created, afterCommit } = getDB().transaction(
     (tx) => {
       const created = insertUser(tx, input, passwordHash);
-      audit?.(tx, created);
-      return created;
+      return { created, afterCommit: audit?.(tx, created) };
     },
     { behavior: "immediate" },
   );
+  afterCommit?.();
+  return created;
 }
 
 /**
@@ -83,7 +90,7 @@ export async function createUser(
 export async function createFirstAdmin(
   input: Omit<NewUser, "role">,
 ): Promise<SessionUser> {
-  if (countUsers() > 0) {
+  if ((await countUsers()) > 0) {
     throw new AuthError("setup_closed", "Setup has already been completed.");
   }
   const passwordHash = await hashPassword(input.password);
@@ -112,11 +119,13 @@ export async function changePassword(
   const db = getDB();
   // Throws RateLimitedError after too many wrong current-password guesses.
   const release = limiter.acquireOrThrow(userId, "-");
-  const row = db
-    .select({ passwordHash: users.passwordHash })
-    .from(users)
-    .where(eq(users.id, userId))
-    .get();
+  const row = await first(
+    db
+      .select({ passwordHash: users.passwordHash })
+      .from(users)
+      .where(eq(users.id, userId))
+      .limit(1),
+  );
   if (!row) throw new AuthError("user_not_found", "User not found.");
   if (!(await verifyPassword(current, row.passwordHash))) {
     throw new AuthError(
@@ -138,8 +147,8 @@ export async function changePassword(
   });
 }
 
-export function listUsers(): UserListEntry[] {
-  return getDB()
+export async function listUsers(): Promise<UserListEntry[]> {
+  return await getDB()
     .select({
       id: users.id,
       username: users.username,
@@ -148,63 +157,112 @@ export function listUsers(): UserListEntry[] {
       createdAt: users.createdAt,
     })
     .from(users)
-    .orderBy(asc(users.username))
-    .all();
+    .orderBy(asc(users.username));
 }
 
-type Reader = Pick<ReturnType<typeof getDB>, "select">;
+interface DeletableUser {
+  id: string;
+  username: string;
+  role: UserRole;
+}
 
-/** Throws the AuthError deleteUser would; also used for a cheap check before any credential is spent. */
-export function assertCanDeleteUser(
-  db: Reader,
-  actorId: string,
-  targetId: string,
-): { id: string; username: string; role: UserRole } {
+function assertNotSelf(actorId: string, targetId: string): void {
   if (actorId === targetId) {
     throw new AuthError(
       "cannot_delete_self",
       "You cannot delete your own account.",
     );
   }
-  const target = db
-    .select({ id: users.id, username: users.username, role: users.role })
-    .from(users)
-    .where(eq(users.id, targetId))
-    .get();
+}
+
+function assertDeletable(
+  target: DeletableUser | undefined,
+  adminCount: number,
+): DeletableUser {
   if (!target) throw new AuthError("user_not_found", "User not found.");
-  if (target.role === "admin") {
-    const admins =
-      db.select({ n: count() }).from(users).where(eq(users.role, "admin")).get()
-        ?.n ?? 0;
-    if (admins <= 1) {
-      throw new AuthError(
-        "cannot_delete_last_admin",
-        "The last administrator cannot be deleted.",
-      );
-    }
+  if (target.role === "admin" && adminCount <= 1) {
+    throw new AuthError(
+      "cannot_delete_last_admin",
+      "The last administrator cannot be deleted.",
+    );
   }
   return target;
 }
 
-export function deleteUser(
+/** Throws the AuthError deleteUser would; a cheap check before any credential is spent. */
+export async function assertCanDeleteUser(
   actorId: string,
   targetId: string,
-  audit?: InTransaction<{ id: string; username: string; role: UserRole }>,
-): void {
-  getDB().transaction(
+): Promise<DeletableUser> {
+  assertNotSelf(actorId, targetId);
+  const db = getDB();
+  const target = await first(
+    db
+      .select({ id: users.id, username: users.username, role: users.role })
+      .from(users)
+      .where(eq(users.id, targetId))
+      .limit(1),
+  );
+  const admins =
+    target?.role === "admin"
+      ? ((
+          await first(
+            db
+              .select({ n: count() })
+              .from(users)
+              .where(eq(users.role, "admin")),
+          )
+        )?.n ?? 0)
+      : 0;
+  return assertDeletable(target, admins);
+}
+
+/** Sync twin of assertCanDeleteUser, for the body of deleteUser's transaction. */
+function assertCanDeleteUserInTx(
+  tx: Pick<ReturnType<typeof getDB>, "select">,
+  actorId: string,
+  targetId: string,
+): DeletableUser {
+  assertNotSelf(actorId, targetId);
+  const target = tx
+    .select({ id: users.id, username: users.username, role: users.role })
+    .from(users)
+    .where(eq(users.id, targetId))
+    .limit(1)
+    .get();
+  const admins =
+    target?.role === "admin"
+      ? (tx
+          .select({ n: count() })
+          .from(users)
+          .where(eq(users.role, "admin"))
+          .get()?.n ?? 0)
+      : 0;
+  return assertDeletable(target, admins);
+}
+
+export async function deleteUser(
+  actorId: string,
+  targetId: string,
+  audit?: InTransaction<DeletableUser>,
+): Promise<void> {
+  const afterCommit = getDB().transaction(
     (tx) => {
-      const target = assertCanDeleteUser(tx, actorId, targetId);
+      const target = assertCanDeleteUserInTx(tx, actorId, targetId);
       tx.delete(users).where(eq(users.id, targetId)).run();
-      audit?.(tx, target);
+      return audit?.(tx, target);
     },
     { behavior: "immediate" },
   );
+  afterCommit?.();
 }
 
-export function findUserByUsername(username: string) {
-  return getDB().select().from(users).where(eq(users.username, username)).get();
+export async function findUserByUsername(username: string) {
+  return first(
+    getDB().select().from(users).where(eq(users.username, username)).limit(1),
+  );
 }
 
-export function findUserById(id: string) {
-  return getDB().select().from(users).where(eq(users.id, id)).get();
+export async function findUserById(id: string) {
+  return first(getDB().select().from(users).where(eq(users.id, id)).limit(1));
 }

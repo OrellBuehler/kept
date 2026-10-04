@@ -13,7 +13,43 @@ import svelteConfig from "./svelte.config.js";
  * converted file from regressing until the driver swap (2.7) makes the
  * compiler reject these calls and this list and rule are deleted.
  */
-const CONVERTED_TO_ASYNC = [];
+const CONVERTED_TO_ASYNC = [
+  // 2.2 auth
+  "src/lib/server/auth/**",
+  "src/lib/testing/auth.ts",
+  "src/hooks.server.ts",
+  "src/hooks.server.test.ts",
+  "src/routes/login/**",
+  "src/routes/logout/**",
+  "src/routes/setup/**",
+  "src/routes/api/auth/**",
+  "src/routes/(app)/admin/**",
+  "src/routes/(app)/settings/account/**",
+  "src/routes/(app)/settings/security/**",
+];
+
+/**
+ * The sync terminals stay legal inside the synchronous transaction bodies and
+ * the helpers that only run there (until 2.7 makes those async too). Both take
+ * the transaction as their first parameter, named `tx`, so the ban skips any
+ * call lexically inside a function declared that way.
+ */
+const OUTSIDE_TX_BODY =
+  ":not(:matches(FunctionDeclaration, FunctionExpression, ArrowFunctionExpression)[params.0.name='tx'] *)";
+
+/**
+ * bun-sqlite transactions are synchronous: an async callback commits (or rolls
+ * back) at its first await, and the rest of the body runs outside the
+ * transaction. Applies to every TypeScript file until phase 2.7 swaps the driver.
+ * A later `no-restricted-syntax` block replaces this one wholesale, so any block
+ * that sets the rule for a subset of files must repeat this entry.
+ */
+const asyncTransactionBan = {
+  selector:
+    "CallExpression[callee.property.name='transaction'] > :matches(ArrowFunctionExpression, FunctionExpression)[async=true]",
+  message:
+    "bun-sqlite transactions must be synchronous until phase 2.7: do not pass an async callback to .transaction().",
+};
 
 const syncTerminalBan = CONVERTED_TO_ASYNC.length
   ? [
@@ -22,9 +58,11 @@ const syncTerminalBan = CONVERTED_TO_ASYNC.length
         rules: {
           "no-restricted-syntax": [
             "error",
+            asyncTransactionBan,
             {
               selector:
-                "CallExpression[arguments.length=0] > MemberExpression.callee[property.name=/^(all|get|run)$/]",
+                "CallExpression[arguments.length=0] > MemberExpression.callee[property.name=/^(all|get|run)$/]" +
+                OUTSIDE_TX_BODY,
               message:
                 "Await the query (or use first()) instead of .all()/.get()/.run().",
             },
@@ -102,6 +140,10 @@ export default ts.config(
       "@typescript-eslint/no-misused-promises": "error",
       "@typescript-eslint/await-thenable": "error",
     },
+  },
+  {
+    files: ["src/**/*.ts"],
+    rules: { "no-restricted-syntax": ["error", asyncTransactionBan] },
   },
   ...syncTerminalBan,
 );

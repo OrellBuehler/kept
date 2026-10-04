@@ -40,6 +40,26 @@ export async function first<T>(
   return (await query)[0];
 }
 
+/**
+ * True for a unique-constraint violation, however the driver wraps it: the
+ * error or any `cause` below it carries SQLITE_CONSTRAINT_UNIQUE (SQLite) or
+ * 23505 (PostgreSQL). Check-then-write sequences rely on this instead of an
+ * unguarded read followed by a write.
+ */
+export function isUniqueViolation(err: unknown): boolean {
+  let current: unknown = err;
+  for (
+    let depth = 0;
+    depth < 5 && typeof current === "object" && current;
+    depth++
+  ) {
+    const code = (current as { code?: unknown }).code;
+    if (code === "SQLITE_CONSTRAINT_UNIQUE" || code === "23505") return true;
+    current = (current as { cause?: unknown }).cause;
+  }
+  return false;
+}
+
 export function runMigrations(): void {
   migrateDatabase(getDB());
 }

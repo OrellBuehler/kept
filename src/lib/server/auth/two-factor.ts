@@ -1,6 +1,7 @@
 import { randomInt } from "node:crypto";
 import { and, count, eq, isNotNull, isNull } from "drizzle-orm";
 import {
+  first,
   getDB,
   passkeys,
   recoveryCodes,
@@ -14,10 +15,10 @@ import {
   decryptSecret,
   encryptSecret,
 } from "$lib/server/crypto";
-import { logAuthEvent } from "./events";
+import { logAuthEvent, logAuthEventInTx } from "./events";
 import { verifyPassword } from "./password";
 import { twoFactorManageLimiter, type LoginRateLimiter } from "./rate-limit";
-import { hashToken, invalidateUserSessions } from "./sessions";
+import { hashToken, userSessionsDelete } from "./sessions";
 import { generateTotpSecret, otpauthUri, verifyTotp } from "./totp";
 import { AuthError } from "./types";
 import type { InTransaction } from "./users";
@@ -34,28 +35,41 @@ export interface TwoFactorStatus {
   recoveryCodesRemaining: number;
 }
 
-export function getTwoFactorStatus(userId: string): TwoFactorStatus {
+export async function getTwoFactorStatus(
+  userId: string,
+): Promise<TwoFactorStatus> {
   const db = getDB();
-  const totp = db
-    .select({ confirmedAt: totpCredentials.confirmedAt })
-    .from(totpCredentials)
-    .where(eq(totpCredentials.userId, userId))
-    .get();
+  const totp = await first(
+    db
+      .select({ confirmedAt: totpCredentials.confirmedAt })
+      .from(totpCredentials)
+      .where(eq(totpCredentials.userId, userId))
+      .limit(1),
+  );
   const totpEnabled = !!totp?.confirmedAt;
   const passkeyCount =
-    db
-      .select({ n: count() })
-      .from(passkeys)
-      .where(eq(passkeys.userId, userId))
-      .get()?.n ?? 0;
+    (
+      await first(
+        db
+          .select({ n: count() })
+          .from(passkeys)
+          .where(eq(passkeys.userId, userId)),
+      )
+    )?.n ?? 0;
   const recoveryCodesRemaining = totpEnabled
-    ? (db
-        .select({ n: count() })
-        .from(recoveryCodes)
-        .where(
-          and(eq(recoveryCodes.userId, userId), isNull(recoveryCodes.usedAt)),
+    ? ((
+        await first(
+          db
+            .select({ n: count() })
+            .from(recoveryCodes)
+            .where(
+              and(
+                eq(recoveryCodes.userId, userId),
+                isNull(recoveryCodes.usedAt),
+              ),
+            ),
         )
-        .get()?.n ?? 0)
+      )?.n ?? 0)
     : 0;
   return {
     totpEnabled,
@@ -65,8 +79,8 @@ export function getTwoFactorStatus(userId: string): TwoFactorStatus {
   };
 }
 
-export function hasSecondFactor(userId: string): boolean {
-  return getTwoFactorStatus(userId).enabled;
+export async function hasSecondFactor(userId: string): Promise<boolean> {
+  return (await getTwoFactorStatus(userId)).enabled;
 }
 
 export interface TotpEnrolment {
@@ -80,20 +94,22 @@ function enrolmentFor(username: string, encrypted: string): TotpEnrolment {
 }
 
 /** The unconfirmed secret of an enrolment in progress, if any. */
-export function getPendingTotpEnrolment(
+export async function getPendingTotpEnrolment(
   userId: string,
   username: string,
-): TotpEnrolment | null {
-  const row = getDB()
-    .select()
-    .from(totpCredentials)
-    .where(
-      and(
-        eq(totpCredentials.userId, userId),
-        isNull(totpCredentials.confirmedAt),
-      ),
-    )
-    .get();
+): Promise<TotpEnrolment | null> {
+  const row = await first(
+    getDB()
+      .select()
+      .from(totpCredentials)
+      .where(
+        and(
+          eq(totpCredentials.userId, userId),
+          isNull(totpCredentials.confirmedAt),
+        ),
+      )
+      .limit(1),
+  );
   if (!row) return null;
   try {
     return enrolmentFor(username, row.secret);
@@ -106,10 +122,10 @@ export function getPendingTotpEnrolment(
 }
 
 /** Starts (or restarts) enrolment with a fresh secret. Fails if TOTP is already on. */
-export function startTotpEnrolment(
+export async function startTotpEnrolment(
   userId: string,
   username: string,
-): TotpEnrolment {
+): Promise<TotpEnrolment> {
   const secret = generateTotpSecret();
   const encrypted = encryptSecret(secret);
   getDB().transaction(
@@ -118,6 +134,7 @@ export function startTotpEnrolment(
         .select({ confirmedAt: totpCredentials.confirmedAt })
         .from(totpCredentials)
         .where(eq(totpCredentials.userId, userId))
+        .limit(1)
         .get();
       if (existing?.confirmedAt) {
         throw new AuthError(
@@ -135,16 +152,15 @@ export function startTotpEnrolment(
   return { secret, uri: otpauthUri(secret, username) };
 }
 
-export function cancelTotpEnrolment(userId: string): void {
-  getDB()
+export async function cancelTotpEnrolment(userId: string): Promise<void> {
+  await getDB()
     .delete(totpCredentials)
     .where(
       and(
         eq(totpCredentials.userId, userId),
         isNull(totpCredentials.confirmedAt),
       ),
-    )
-    .run();
+    );
 }
 
 function newRecoveryCode(): string {
@@ -165,6 +181,7 @@ function hashRecoveryCode(code: string): string {
 
 type Tx = Pick<ReturnType<typeof getDB>, "delete" | "insert">;
 
+/** Sync: only runs inside an immediate transaction (a recovery-code set is replaced atomically). */
 function replaceRecoveryCodes(tx: Tx, userId: string): string[] {
   tx.delete(recoveryCodes).where(eq(recoveryCodes.userId, userId)).run();
   const codes = Array.from({ length: RECOVERY_CODE_COUNT }, newRecoveryCode);
@@ -178,21 +195,25 @@ function replaceRecoveryCodes(tx: Tx, userId: string): string[] {
  * Atomically checks `code` against the stored secret and records the matched
  * time step, so the same code (or an older one) is never accepted twice.
  */
-export function consumeTotpCode(
+export async function consumeTotpCode(
   userId: string,
   code: string,
   now: number = Date.now(),
   opts: { confirming?: boolean } = {},
-): boolean {
+): Promise<boolean> {
   return getDB().transaction(
     (tx) => {
       const row = tx
         .select()
         .from(totpCredentials)
         .where(eq(totpCredentials.userId, userId))
+        .limit(1)
         .get();
       if (!row) return false;
       if (!opts.confirming && !row.confirmedAt) return false;
+      // Confirming twice in parallel must not both pass: the check in
+      // confirmTotpEnrolment is not atomic with this one.
+      if (opts.confirming && row.confirmedAt) return false;
       let secret: string;
       try {
         secret = decryptSecret(row.secret);
@@ -218,35 +239,40 @@ export function consumeTotpCode(
 }
 
 /** Confirms enrolment with a code from the app and returns the recovery codes (shown once). */
-export function confirmTotpEnrolment(
+export async function confirmTotpEnrolment(
   userId: string,
   code: string,
   now: number = Date.now(),
-): string[] {
-  const row = getDB()
-    .select({ confirmedAt: totpCredentials.confirmedAt })
-    .from(totpCredentials)
-    .where(eq(totpCredentials.userId, userId))
-    .get();
+): Promise<string[]> {
+  const row = await first(
+    getDB()
+      .select({ confirmedAt: totpCredentials.confirmedAt })
+      .from(totpCredentials)
+      .where(eq(totpCredentials.userId, userId))
+      .limit(1),
+  );
   if (!row || row.confirmedAt) {
     throw new AuthError("totp_not_pending", "No enrolment in progress.");
   }
-  if (!consumeTotpCode(userId, code, now, { confirming: true })) {
+  if (!(await consumeTotpCode(userId, code, now, { confirming: true }))) {
     throw new AuthError("invalid_code", "That code is not valid.");
   }
   const codes = getDB().transaction((tx) => replaceRecoveryCodes(tx, userId), {
     behavior: "immediate",
   });
-  logAuthEvent("totp_enabled", userId);
+  await logAuthEvent("totp_enabled", userId);
   return codes;
 }
 
 /** Atomic use-once: the row is only claimed if it was still unused. */
-export function consumeRecoveryCode(userId: string, input: string): boolean {
+export async function consumeRecoveryCode(
+  userId: string,
+  input: string,
+): Promise<boolean> {
   const normalized = normalizeRecoveryCode(input);
   if (normalized.length !== RECOVERY_LENGTH) return false;
   const db = getDB();
-  const result = db
+  const result = await db
     .update(recoveryCodes)
     .set({ usedAt: new Date() })
     .where(
@@ -256,19 +282,18 @@ export function consumeRecoveryCode(userId: string, input: string): boolean {
         isNull(recoveryCodes.usedAt),
       ),
     )
-    .returning({ id: recoveryCodes.id })
-    .all();
+    .returning({ id: recoveryCodes.id });
   if (result.length !== 1) return false;
-  logAuthEvent("recovery_code_used", userId);
+  await logAuthEvent("recovery_code_used", userId);
   return true;
 }
 
 /** Second-step check: a 6 digit authenticator code, otherwise a recovery code. */
-export function verifySecondFactorCode(
+export async function verifySecondFactorCode(
   userId: string,
   input: string,
   now: number = Date.now(),
-): boolean {
+): Promise<boolean> {
   const code = input.replace(/\s/g, "");
   if (/^\d{6}$/.test(code)) return consumeTotpCode(userId, code, now);
   return consumeRecoveryCode(userId, code);
@@ -283,16 +308,36 @@ async function checkPassword(
   limiter: LoginRateLimiter,
 ): Promise<() => void> {
   const release = limiter.acquireOrThrow(userId, "-");
-  const row = getDB()
-    .select({ passwordHash: users.passwordHash })
-    .from(users)
-    .where(eq(users.id, userId))
-    .get();
-  if (!row) throw new AuthError("user_not_found", "User not found.");
-  if (!(await verifyPassword(password, row.passwordHash))) {
-    throw new AuthError("invalid_credentials", "Password is incorrect.");
+  return refundOnFault(release, async () => {
+    const row = await first(
+      getDB()
+        .select({ passwordHash: users.passwordHash })
+        .from(users)
+        .where(eq(users.id, userId))
+        .limit(1),
+    );
+    if (!row) throw new AuthError("user_not_found", "User not found.");
+    if (!(await verifyPassword(password, row.passwordHash))) {
+      throw new AuthError("invalid_credentials", "Password is incorrect.");
+    }
+    return release;
+  });
+}
+
+/**
+ * Runs `fn` with a limiter attempt held: a wrong credential (an `AuthError`) keeps the
+ * attempt counted, any other failure (a database error) gives it back.
+ */
+async function refundOnFault<T>(
+  release: () => void,
+  fn: () => Promise<T>,
+): Promise<T> {
+  try {
+    return await fn();
+  } catch (err) {
+    if (!(err instanceof AuthError)) release();
+    throw err;
   }
-  return release;
 }
 
 /**
@@ -318,7 +363,7 @@ export async function reauthenticate(
   limiter: LoginRateLimiter,
   now: number,
 ): Promise<void> {
-  const status = getTwoFactorStatus(userId);
+  const status = await getTwoFactorStatus(userId);
   if (!status.totpEnabled && status.passkeyCount > 0) {
     throw new AuthError(
       "passkey_required",
@@ -326,9 +371,14 @@ export async function reauthenticate(
     );
   }
   const release = await checkPassword(userId, password, limiter);
-  if (status.totpEnabled && !verifySecondFactorCode(userId, code, now)) {
-    throw new AuthError("invalid_code", "That code is not valid.");
-  }
+  await refundOnFault(release, async () => {
+    if (
+      status.totpEnabled &&
+      !(await verifySecondFactorCode(userId, code, now))
+    ) {
+      throw new AuthError("invalid_code", "That code is not valid.");
+    }
+  });
   release();
 }
 
@@ -341,7 +391,7 @@ export async function stepUpSession(
   limiter: LoginRateLimiter = twoFactorManageLimiter,
   now: number = Date.now(),
 ): Promise<void> {
-  const status = getTwoFactorStatus(userId);
+  const status = await getTwoFactorStatus(userId);
   if (!status.totpEnabled && status.passkeyCount > 0) {
     throw new AuthError(
       "passkey_required",
@@ -349,31 +399,32 @@ export async function stepUpSession(
     );
   }
   await reauthenticate(userId, password, code, limiter, now);
-  markSessionReauthenticated(userId, sessionId, now);
+  await markSessionReauthenticated(userId, sessionId, now);
 }
 
-export function markSessionReauthenticated(
+export async function markSessionReauthenticated(
   userId: string,
   sessionId: string,
   now: number = Date.now(),
-): void {
-  getDB()
+): Promise<void> {
+  await getDB()
     .update(sessions)
     .set({ reauthAt: new Date(now) })
-    .where(and(eq(sessions.id, sessionId), eq(sessions.userId, userId)))
-    .run();
+    .where(and(eq(sessions.id, sessionId), eq(sessions.userId, userId)));
 }
 
-export function hasRecentReauth(
+export async function hasRecentReauth(
   sessionId: string | undefined,
   now: number = Date.now(),
-): boolean {
+): Promise<boolean> {
   if (!sessionId) return false;
-  const row = getDB()
-    .select({ reauthAt: sessions.reauthAt })
-    .from(sessions)
-    .where(eq(sessions.id, sessionId))
-    .get();
+  const row = await first(
+    getDB()
+      .select({ reauthAt: sessions.reauthAt })
+      .from(sessions)
+      .where(eq(sessions.id, sessionId))
+      .limit(1),
+  );
   return !!row?.reauthAt && now - row.reauthAt.getTime() <= REAUTH_WINDOW_MS;
 }
 
@@ -384,7 +435,7 @@ export async function disableTotp(
   limiter: LoginRateLimiter = twoFactorManageLimiter,
   now: number = Date.now(),
 ): Promise<void> {
-  if (!getTwoFactorStatus(userId).totpEnabled) {
+  if (!(await getTwoFactorStatus(userId)).totpEnabled) {
     throw new AuthError(
       "totp_not_enabled",
       "Authenticator app is not enabled.",
@@ -395,7 +446,7 @@ export async function disableTotp(
     tx.delete(totpCredentials).where(eq(totpCredentials.userId, userId)).run();
     tx.delete(recoveryCodes).where(eq(recoveryCodes.userId, userId)).run();
   });
-  logAuthEvent("totp_disabled", userId);
+  await logAuthEvent("totp_disabled", userId);
 }
 
 export async function regenerateRecoveryCodes(
@@ -405,7 +456,7 @@ export async function regenerateRecoveryCodes(
   limiter: LoginRateLimiter = twoFactorManageLimiter,
   now: number = Date.now(),
 ): Promise<string[]> {
-  if (!getTwoFactorStatus(userId).totpEnabled) {
+  if (!(await getTwoFactorStatus(userId)).totpEnabled) {
     throw new AuthError(
       "totp_not_enabled",
       "Authenticator app is not enabled.",
@@ -415,7 +466,7 @@ export async function regenerateRecoveryCodes(
   const codes = getDB().transaction((tx) => replaceRecoveryCodes(tx, userId), {
     behavior: "immediate",
   });
-  logAuthEvent("recovery_codes_regenerated", userId);
+  await logAuthEvent("recovery_codes_regenerated", userId);
   return codes;
 }
 
@@ -423,18 +474,19 @@ export async function regenerateRecoveryCodes(
  * Admin recovery path (lost device): removes every second factor and pending
  * login of the user and signs their other sessions out.
  */
-export function resetTwoFactor(
+export async function resetTwoFactor(
   actorId: string,
   targetId: string,
   keepSessionId?: string,
   audit?: InTransaction<{ id: string; username: string }>,
-): void {
-  getDB().transaction(
+): Promise<void> {
+  const afterCommit = getDB().transaction(
     (tx) => {
       const target = tx
         .select({ id: users.id, username: users.username })
         .from(users)
         .where(eq(users.id, targetId))
+        .limit(1)
         .get();
       if (!target) throw new AuthError("user_not_found", "User not found.");
       tx.delete(totpCredentials)
@@ -445,29 +497,38 @@ export function resetTwoFactor(
       tx.delete(authChallenges)
         .where(eq(authChallenges.userId, targetId))
         .run();
-      // same connection, so these writes are part of this transaction
-      invalidateUserSessions(
+      userSessionsDelete(
+        tx,
         targetId,
         actorId === targetId ? keepSessionId : undefined,
+      ).run();
+      const logEvent = logAuthEventInTx(
+        tx,
+        "two_factor_reset",
+        targetId,
+        actorId,
       );
-      logAuthEvent("two_factor_reset", targetId, actorId);
-      audit?.(tx, target);
+      const logAudit = audit?.(tx, target);
+      return () => {
+        logEvent();
+        logAudit?.();
+      };
     },
     { behavior: "immediate" },
   );
+  afterCommit();
 }
 
-export function usersWithTwoFactor(): Set<string> {
+export async function usersWithTwoFactor(): Promise<Set<string>> {
   const db = getDB();
   const ids = new Set<string>();
-  for (const r of db
+  for (const r of await db
     .select({ userId: totpCredentials.userId })
     .from(totpCredentials)
-    .where(isNotNull(totpCredentials.confirmedAt))
-    .all()) {
+    .where(isNotNull(totpCredentials.confirmedAt))) {
     ids.add(r.userId);
   }
-  for (const r of db.select({ userId: passkeys.userId }).from(passkeys).all()) {
+  for (const r of await db.select({ userId: passkeys.userId }).from(passkeys)) {
     ids.add(r.userId);
   }
   return ids;

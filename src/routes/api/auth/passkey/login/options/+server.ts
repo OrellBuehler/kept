@@ -40,7 +40,7 @@ export const POST: RequestHandler = async ({
 
   if (body.mode === "passwordless") {
     const options = await beginAuthentication(null, config);
-    const challengeId = createWebauthnChallenge(
+    const challengeId = await createWebauthnChallenge(
       "passkey_login",
       null,
       options.challenge,
@@ -48,17 +48,17 @@ export const POST: RequestHandler = async ({
     return json({ options, challengeId });
   }
 
-  const pending = getPendingLogin(cookies.get(PENDING_COOKIE));
+  const pending = await getPendingLogin(cookies.get(PENDING_COOKIE));
   if (!pending) {
     return json(
       { message: "Your sign-in expired. Start again." },
       { status: 401 },
     );
   }
-  if (getTwoFactorStatus(pending.userId).passkeyCount === 0) {
+  if ((await getTwoFactorStatus(pending.userId)).passkeyCount === 0) {
     return json({ message: "No passkeys registered." }, { status: 400 });
   }
   const options = await beginAuthentication(pending.userId, config);
-  setPendingChallenge(pending.id, options.challenge);
+  await setPendingChallenge(pending.id, options.challenge);
   return json({ options });
 };

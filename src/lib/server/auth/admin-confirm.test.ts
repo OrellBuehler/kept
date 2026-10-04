@@ -62,13 +62,13 @@ describe("confirmAdmin", () => {
         NOW,
       ),
     ).rejects.toMatchObject({ code: "invalid_credentials" });
-    expect(adminConfirmMode(u.id)).toBe("password");
+    expect(await adminConfirmMode(u.id)).toBe("password");
   });
 
   it("with an authenticator app it needs password and a current code", async () => {
     const u = await createTestUser({ role: "admin" });
-    const { secret } = startTotpEnrolment(u.id, u.username);
-    confirmTotpEnrolment(u.id, totpCode(secret, NOW), NOW);
+    const { secret } = await startTotpEnrolment(u.id, u.username);
+    await confirmTotpEnrolment(u.id, totpCode(secret, NOW), NOW);
     const limiter = new LoginRateLimiter();
     const later = NOW + 30_000;
 
@@ -93,18 +93,18 @@ describe("confirmAdmin", () => {
         later,
       ),
     ).resolves.toBeUndefined();
-    expect(adminConfirmMode(u.id)).toBe("totp");
+    expect(await adminConfirmMode(u.id)).toBe("totp");
   });
 
   it("a passkey-only admin needs a recent passkey step-up on the session", async () => {
     const u = await createTestUser({ role: "admin" });
-    addPasskey(u.id);
-    const { session } = createSession(u.id);
+    await addPasskey(u.id);
+    const { session } = await createSession(u.id);
     const limiter = new LoginRateLimiter();
     await expect(
       confirmAdmin(u.id, session.id, { password: u.password }, limiter, NOW),
     ).rejects.toMatchObject({ code: "passkey_required" });
-    markSessionReauthenticated(u.id, session.id, NOW);
+    await markSessionReauthenticated(u.id, session.id, NOW);
     await expect(
       confirmAdmin(
         u.id,
@@ -124,6 +124,6 @@ describe("confirmAdmin", () => {
         NOW + 10 * 60_000,
       ),
     ).rejects.toMatchObject({ code: "passkey_required" });
-    expect(adminConfirmMode(u.id)).toBe("passkey");
+    expect(await adminConfirmMode(u.id)).toBe("passkey");
   });
 });

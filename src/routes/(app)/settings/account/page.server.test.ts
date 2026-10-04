@@ -29,8 +29,8 @@ describe("settings/account", () => {
 
   it("changes the password, keeps this session, drops the others", async () => {
     const a = await createTestUser();
-    const here = loginTestUser(a);
-    const elsewhere = loginTestUser(a);
+    const here = await loginTestUser(a);
+    const elsewhere = await loginTestUser(a);
     const event = createTestEvent({
       user: a,
       session: here.session,
@@ -42,9 +42,9 @@ describe("settings/account", () => {
         value: { success: true },
       },
     );
-    expect(validateSessionToken(here.token)).not.toBeNull();
-    expect(validateSessionToken(elsewhere.token)).toBeNull();
-    const row = findUserByUsername(a.username)!;
+    expect(await validateSessionToken(here.token)).not.toBeNull();
+    expect(await validateSessionToken(elsewhere.token)).toBeNull();
+    const row = (await findUserByUsername(a.username))!;
     expect(await verifyPassword("brand-new-password", row.passwordHash)).toBe(
       true,
     );
@@ -101,9 +101,9 @@ describe("settings/account", () => {
     );
     // a's current password is not b's password, so nothing changes for anyone
     expect(r).toMatchObject({ type: "fail", status: 400 });
-    const rowB = findUserByUsername(b.username)!;
+    const rowB = (await findUserByUsername(b.username))!;
     expect(await verifyPassword(b.password, rowB.passwordHash)).toBe(true);
-    const rowA = findUserByUsername(a.username)!;
+    const rowA = (await findUserByUsername(a.username))!;
     expect(await verifyPassword(a.password, rowA.passwordHash)).toBe(true);
   });
 });

@@ -34,11 +34,11 @@ import type { Actions, PageServerLoad } from "./$types";
 
 export const load: PageServerLoad = async ({ locals }) => {
   const user = requireUser(locals);
-  const pending = getPendingTotpEnrolment(user.id, user.username);
+  const pending = await getPendingTotpEnrolment(user.id, user.username);
   return {
-    status: getTwoFactorStatus(user.id),
-    reauthed: hasRecentReauth(locals.session?.id),
-    passkeys: listPasskeys(user.id),
+    status: await getTwoFactorStatus(user.id),
+    reauthed: await hasRecentReauth(locals.session?.id),
+    passkeys: await listPasskeys(user.id),
     enrolment: pending
       ? {
           secret: pending.secret,
@@ -71,15 +71,15 @@ export const actions: Actions = {
     if (!parsed.ok) return fail(400, { errors: parsed.errors });
     try {
       await reauthenticatePasswordOnly(user.id, parsed.data.password);
-      startTotpEnrolment(user.id, user.username);
+      await startTotpEnrolment(user.id, user.username);
     } catch (err) {
       return reauthFailure(err);
     }
     return { started: true as const };
   },
 
-  cancelTotp: ({ locals }) => {
-    cancelTotpEnrolment(requireUser(locals).id);
+  cancelTotp: async ({ locals }) => {
+    await cancelTotpEnrolment(requireUser(locals).id);
     return { cancelled: true as const };
   },
 
@@ -89,7 +89,10 @@ export const actions: Actions = {
     if (!parsed.ok) return fail(400, { errors: parsed.errors });
     try {
       await reauthenticatePasswordOnly(user.id, parsed.data.password);
-      const recoveryCodes = confirmTotpEnrolment(user.id, parsed.data.code);
+      const recoveryCodes = await confirmTotpEnrolment(
+        user.id,
+        parsed.data.code,
+      );
       return { recoveryCodes };
     } catch (err) {
       return reauthFailure(err);
@@ -102,7 +105,7 @@ export const actions: Actions = {
     if (!parsed.ok) return fail(400, { errors: parsed.errors });
     try {
       await disableTotp(user.id, parsed.data.password, parsed.data.code);
-      invalidateUserSessions(user.id, locals.session?.id);
+      await invalidateUserSessions(user.id, locals.session?.id);
     } catch (err) {
       return reauthFailure(err);
     }
@@ -149,7 +152,7 @@ export const actions: Actions = {
     const parsed = parseForm(renamePasskeySchema, await request.formData());
     if (!parsed.ok) return fail(400, { errors: parsed.errors });
     try {
-      renamePasskey(user.id, parsed.data.id, parsed.data.name);
+      await renamePasskey(user.id, parsed.data.id, parsed.data.name);
     } catch (err) {
       return reauthFailure(err);
     }
@@ -158,7 +161,7 @@ export const actions: Actions = {
 
   deletePasskey: async ({ locals, request }) => {
     const user = requireUser(locals);
-    if (!hasRecentReauth(locals.session?.id)) {
+    if (!(await hasRecentReauth(locals.session?.id))) {
       return fail(403, {
         errors: { form: ["Confirm your password before removing a passkey."] },
       });
@@ -166,8 +169,8 @@ export const actions: Actions = {
     const parsed = parseForm(passkeyIdSchema, await request.formData());
     if (!parsed.ok) return fail(400, { errors: parsed.errors });
     try {
-      deletePasskey(user.id, parsed.data.id);
-      invalidateUserSessions(user.id, locals.session?.id);
+      await deletePasskey(user.id, parsed.data.id);
+      await invalidateUserSessions(user.id, locals.session?.id);
     } catch (err) {
       return reauthFailure(err);
     }

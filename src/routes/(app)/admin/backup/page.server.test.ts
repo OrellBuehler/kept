@@ -66,7 +66,7 @@ describe("backup download", () => {
         status: 403,
       });
     }
-    expect(getDB().select().from(adminAuditLog).all()).toHaveLength(0);
+    expect(await getDB().select().from(adminAuditLog)).toHaveLength(0);
   });
 
   it("the download action needs the admin's password", async () => {
@@ -114,11 +114,9 @@ describe("backup download", () => {
     const res = (await GET(ev({ user: admin, url }))) as Response;
     // the audit row exists before a single byte is read
     expect(
-      getDB()
-        .select()
-        .from(adminAuditLog)
-        .all()
-        .filter((r) => r.action === "backup_download"),
+      (await getDB().select().from(adminAuditLog)).filter(
+        (r) => r.action === "backup_download",
+      ),
     ).toHaveLength(1);
     expect(res.headers.get("content-disposition")).toMatch(
       /^attachment; filename="kept-backup-\d{8}-\d{6}\.db"$/,
@@ -130,7 +128,7 @@ describe("backup download", () => {
     );
     expect(Number(res.headers.get("content-length"))).toBe(bytes.byteLength);
 
-    const rows = getDB().select().from(adminAuditLog).all();
+    const rows = await getDB().select().from(adminAuditLog);
     expect(rows.map((r) => r.action).sort()).toEqual([
       "backup_download",
       "backup_link_issued",
@@ -156,11 +154,9 @@ describe("backup download", () => {
         ),
       );
     }
-    const seen = getDB()
-      .select()
-      .from(adminAuditLog)
-      .all()
-      .map((r) => r.action);
+    const seen = (await getDB().select().from(adminAuditLog)).map(
+      (r) => r.action,
+    );
     expect(seen.filter((a) => a === "admin_confirm_failed")).toHaveLength(5);
     expect(seen.filter((a) => a === "admin_confirm_rate_limited")).toHaveLength(
       1,
@@ -170,7 +166,7 @@ describe("backup download", () => {
 
   it("an administrator with an authenticator app must also give a code", async () => {
     const admin = await createTestUser({ role: "admin" });
-    const [recovery] = enableTotp(admin);
+    const [recovery] = await enableTotp(admin);
     const refused = await outcome(() =>
       actions.download(
         ev({ user: admin, form: { adminPassword: admin.password } }),
@@ -191,14 +187,14 @@ describe("backup download", () => {
 
   it("a passkey-only administrator needs a recent passkey step-up", async () => {
     const admin = await createTestUser({ role: "admin" });
-    addPasskey(admin.id);
+    await addPasskey(admin.id);
     const refused = await outcome(() =>
       actions.download(
         ev({ user: admin, form: { adminPassword: admin.password } }),
       ),
     );
     expect(refused).toMatchObject({ type: "fail", status: 400 });
-    expect(getDB().select().from(adminAuditLog).all()).toHaveLength(0);
+    expect(await getDB().select().from(adminAuditLog)).toHaveLength(0);
   });
 
   it("a token is bound to the admin it was issued to", async () => {

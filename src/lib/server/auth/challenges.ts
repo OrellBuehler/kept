@@ -1,6 +1,11 @@
 import type { Cookies } from "@sveltejs/kit";
-import { and, eq, lt } from "drizzle-orm";
-import { authChallenges, getDB, type AuthChallengeKind } from "$lib/server/db";
+import { and, eq, gte, lt, sql } from "drizzle-orm";
+import {
+  authChallenges,
+  first,
+  getDB,
+  type AuthChallengeKind,
+} from "$lib/server/db";
 import { cookieSecureOverride, hashToken } from "./sessions";
 
 export const PENDING_COOKIE = "kept_pending";
@@ -25,42 +30,44 @@ function newToken(): string {
   );
 }
 
-export function purgeExpiredChallenges(now: number = Date.now()): void {
-  getDB()
+export async function purgeExpiredChallenges(
+  now: number = Date.now(),
+): Promise<void> {
+  await getDB()
     .delete(authChallenges)
-    .where(lt(authChallenges.expiresAt, new Date(now)))
-    .run();
+    .where(lt(authChallenges.expiresAt, new Date(now)));
 }
 
-export function createPendingLogin(
+export async function createPendingLogin(
   userId: string,
   now: number = Date.now(),
-): { token: string; expiresAt: Date } {
-  purgeExpiredChallenges(now);
+): Promise<{ token: string; expiresAt: Date }> {
+  await purgeExpiredChallenges(now);
   const token = newToken();
   const expiresAt = new Date(now + PENDING_LOGIN_TTL_MS);
-  getDB()
+  await getDB()
     .insert(authChallenges)
-    .values({ id: hashToken(token), userId, kind: "login", expiresAt })
-    .run();
+    .values({ id: hashToken(token), userId, kind: "login", expiresAt });
   return { token, expiresAt };
 }
 
-export function getPendingLogin(
+export async function getPendingLogin(
   token: string | undefined,
   now: number = Date.now(),
-): PendingLogin | null {
+): Promise<PendingLogin | null> {
   if (!token) return null;
   const db = getDB();
   const id = hashToken(token);
-  const row = db
-    .select()
-    .from(authChallenges)
-    .where(and(eq(authChallenges.id, id), eq(authChallenges.kind, "login")))
-    .get();
+  const row = await first(
+    db
+      .select()
+      .from(authChallenges)
+      .where(and(eq(authChallenges.id, id), eq(authChallenges.kind, "login")))
+      .limit(1),
+  );
   if (!row || !row.userId) return null;
   if (row.expiresAt.getTime() <= now) {
-    db.delete(authChallenges).where(eq(authChallenges.id, id)).run();
+    await db.delete(authChallenges).where(eq(authChallenges.id, id));
     return null;
   }
   return {
@@ -71,40 +78,81 @@ export function getPendingLogin(
   };
 }
 
-export function deletePendingLogin(id: string): void {
-  getDB().delete(authChallenges).where(eq(authChallenges.id, id)).run();
+export async function deletePendingLogin(id: string): Promise<void> {
+  await getDB().delete(authChallenges).where(eq(authChallenges.id, id));
 }
 
-/** Counts a failed second-factor attempt; the pending login is destroyed after too many. */
-export function recordPendingFailure(pending: PendingLogin): void {
-  const attempts = pending.attempts + 1;
-  if (attempts >= MAX_PENDING_ATTEMPTS) {
-    deletePendingLogin(pending.id);
-    return;
-  }
-  getDB()
+/**
+ * Claims one second-factor attempt before the code is checked. The cap is
+ * enforced by the UPDATE itself, so N parallel guesses (from any address) can
+ * claim at most MAX_PENDING_ATTEMPTS attempts between them; the rest get null.
+ * An exhausted pending login is deleted. Returns the claimed attempt number.
+ */
+export async function claimPendingAttempt(id: string): Promise<number | null> {
+  const db = getDB();
+  const [row] = await db
     .update(authChallenges)
-    .set({ attempts })
-    .where(eq(authChallenges.id, pending.id))
-    .run();
+    .set({ attempts: sql`${authChallenges.attempts} + 1` })
+    .where(
+      and(
+        eq(authChallenges.id, id),
+        eq(authChallenges.kind, "login"),
+        lt(authChallenges.attempts, MAX_PENDING_ATTEMPTS),
+      ),
+    )
+    .returning({ attempts: authChallenges.attempts });
+  if (row) return row.attempts;
+  await db
+    .delete(authChallenges)
+    .where(
+      and(
+        eq(authChallenges.id, id),
+        gte(authChallenges.attempts, MAX_PENDING_ATTEMPTS),
+      ),
+    );
+  return null;
 }
 
-export function setPendingChallenge(id: string, challenge: string): void {
-  getDB()
+/** A claimed attempt turned out wrong; the pending login is destroyed once the cap is reached. */
+export async function failClaimedAttempt(
+  id: string,
+  claimed: number,
+): Promise<void> {
+  if (claimed >= MAX_PENDING_ATTEMPTS) await deletePendingLogin(id);
+}
+
+/**
+ * Consumes the pending login after a successful second factor. True for exactly
+ * one caller: of two parallel valid factors only the one that removes the row
+ * may go on to create a session.
+ */
+export async function consumePendingLogin(id: string): Promise<boolean> {
+  const rows = await getDB()
+    .delete(authChallenges)
+    .where(and(eq(authChallenges.id, id), eq(authChallenges.kind, "login")))
+    .returning({ id: authChallenges.id });
+  return rows.length === 1;
+}
+
+export async function setPendingChallenge(
+  id: string,
+  challenge: string,
+): Promise<void> {
+  await getDB()
     .update(authChallenges)
     .set({ challenge })
-    .where(eq(authChallenges.id, id))
-    .run();
+    .where(eq(authChallenges.id, id));
 }
 
 /** Atomically reads and clears the stored WebAuthn challenge of a pending login. */
-export function takePendingChallenge(id: string): string | null {
+export async function takePendingChallenge(id: string): Promise<string | null> {
   return getDB().transaction(
     (tx) => {
       const row = tx
         .select({ challenge: authChallenges.challenge })
         .from(authChallenges)
         .where(eq(authChallenges.id, id))
+        .limit(1)
         .get();
       if (!row?.challenge) return null;
       tx.update(authChallenges)
@@ -117,15 +165,15 @@ export function takePendingChallenge(id: string): string | null {
   );
 }
 
-export function createWebauthnChallenge(
+export async function createWebauthnChallenge(
   kind: WebauthnKind,
   userId: string | null,
   challenge: string,
   now: number = Date.now(),
-): string {
-  purgeExpiredChallenges(now);
+): Promise<string> {
+  await purgeExpiredChallenges(now);
   const id = crypto.randomUUID();
-  getDB()
+  await getDB()
     .insert(authChallenges)
     .values({
       id,
@@ -133,24 +181,24 @@ export function createWebauthnChallenge(
       kind,
       challenge,
       expiresAt: new Date(now + PASSKEY_CHALLENGE_TTL_MS),
-    })
-    .run();
+    });
   return id;
 }
 
 /** Single use: the row is deleted whether or not the ceremony then succeeds. */
-export function takeWebauthnChallenge(
+export async function takeWebauthnChallenge(
   id: string,
   kind: WebauthnKind,
   userId: string | null,
   now: number = Date.now(),
-): string | null {
+): Promise<string | null> {
   return getDB().transaction(
     (tx) => {
       const row = tx
         .select()
         .from(authChallenges)
         .where(and(eq(authChallenges.id, id), eq(authChallenges.kind, kind)))
+        .limit(1)
         .get();
       if (!row) return null;
       tx.delete(authChallenges).where(eq(authChallenges.id, id)).run();

@@ -9,7 +9,7 @@ import type { RequestHandler } from "./$types";
 
 export const POST: RequestHandler = async ({ locals, request, url }) => {
   const user = requireUser(locals);
-  if (!hasRecentReauth(locals.session?.id)) {
+  if (!(await hasRecentReauth(locals.session?.id))) {
     return json(
       { message: "Confirm your password first.", code: "reauth_required" },
       { status: 403 },
@@ -17,7 +17,7 @@ export const POST: RequestHandler = async ({ locals, request, url }) => {
   }
   await readJsonBody(request, url, z.object({}));
   const options = await beginRegistration(user, webauthnConfig(url));
-  const challengeId = createWebauthnChallenge(
+  const challengeId = await createWebauthnChallenge(
     "passkey_register",
     user.id,
     options.challenge,

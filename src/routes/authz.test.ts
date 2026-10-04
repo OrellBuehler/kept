@@ -500,11 +500,9 @@ describe("authorization", () => {
     );
     expect(created).toEqual({ type: "error", status: 403 });
     expect(deleted).toEqual({ type: "error", status: 403 });
-    expect(
-      listUsers()
-        .map((u) => u.id)
-        .sort(),
-    ).toEqual([admin.id, member.id].sort());
+    expect((await listUsers()).map((u) => u.id).sort()).toEqual(
+      [admin.id, member.id].sort(),
+    );
   });
 
   it("admins can use the admin routes (sanity check of the matrix setup)", async () => {

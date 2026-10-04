@@ -100,14 +100,14 @@ describe("login", () => {
 
   it("invalidates the pre-existing session on login", async () => {
     const u = await createTestUser({ username: "alice" });
-    const old = loginTestUser(u);
+    const old = await loginTestUser(u);
     const event = createTestEvent({
       user: u,
       session: old.session,
       form: { username: "alice", password: u.password },
     });
     await outcome(() => actions.default(event as never));
-    expect(validateSessionToken(old.token)).toBeNull();
+    expect(await validateSessionToken(old.token)).toBeNull();
   });
 
   it("fails validation on empty fields", async () => {

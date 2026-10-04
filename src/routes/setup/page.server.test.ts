@@ -54,7 +54,7 @@ describe("setup", () => {
       status: 303,
       location: "/",
     });
-    const [user] = listUsers();
+    const [user] = await listUsers();
     expect(user).toMatchObject({
       username: "owner",
       role: "admin",
@@ -63,7 +63,7 @@ describe("setup", () => {
     const token = (event.cookies as unknown as FakeCookies).get(
       SESSION_COOKIE,
     )!;
-    expect(validateSessionToken(token)?.user.id).toBe(user.id);
+    expect((await validateSessionToken(token))?.user.id).toBe(user.id);
   });
 
   it("returns field errors and never echoes the password", async () => {
@@ -82,7 +82,7 @@ describe("setup", () => {
     ]);
     expect(data.values).toEqual({ username: "x", displayName: "" });
     expect(JSON.stringify(data)).not.toContain("short");
-    expect(countUsers()).toBe(0);
+    expect(await countUsers()).toBe(0);
   });
 
   it("a second setup attempt does not create another user", async () => {
@@ -97,7 +97,7 @@ describe("setup", () => {
       ),
     );
     expect(second).toMatchObject({ type: "redirect", location: "/login" });
-    expect(listUsers().map((u) => u.username)).toEqual(["owner"]);
+    expect((await listUsers()).map((u) => u.username)).toEqual(["owner"]);
   });
 
   it("concurrent setup attempts create exactly one admin", async () => {
@@ -113,7 +113,7 @@ describe("setup", () => {
     expect(
       results.map((r) => (r as { location: string }).location).sort(),
     ).toEqual(["/", "/login"]);
-    expect(countUsers()).toBe(1);
+    expect(await countUsers()).toBe(1);
   });
 
   it("does not hash a password once setup is done", async () => {
@@ -137,7 +137,7 @@ describe("setup", () => {
       );
     await Promise.all([attempt("first"), attempt("second"), attempt("third")]);
     expect(hashPassword).toHaveBeenCalledTimes(1);
-    expect(countUsers()).toBe(1);
+    expect(await countUsers()).toBe(1);
   });
 
   it("rate limits submissions per ip, not globally", async () => {
@@ -154,7 +154,7 @@ describe("setup", () => {
     const blocked = await bad("198.51.100.1");
     expect(blocked).toMatchObject({ type: "fail", status: 429 });
     expect(hashPassword).not.toHaveBeenCalled();
-    expect(countUsers()).toBe(0);
+    expect(await countUsers()).toBe(0);
     const other = await bad("198.51.100.2");
     expect(other).toMatchObject({ type: "redirect", location: "/" });
   });

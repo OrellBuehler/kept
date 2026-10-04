@@ -68,7 +68,7 @@ async function handleRequest({
   const token = event.cookies.get(SESSION_COOKIE);
   let staleCookie: string | undefined;
   if (token) {
-    const validated = validateSessionToken(token);
+    const validated = await validateSessionToken(token);
     if (validated) {
       event.locals.user = validated.user;
       event.locals.session = validated.session;
@@ -85,7 +85,8 @@ async function handleRequest({
   const { pathname, search } = event.url;
   if (event.locals.user || isPublicPath(pathname)) return resolve(event);
 
-  if (countUsers() === 0) return redirectResponse("/setup", staleCookie);
+  if ((await countUsers()) === 0)
+    return redirectResponse("/setup", staleCookie);
 
   if (isApiPath(pathname)) {
     const res = json({ message: "Authentication required" }, { status: 401 });

@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createTestUser, enableTotp } from "$lib/testing/auth";
 import { useTestDB } from "$lib/testing/db";
 import {
@@ -11,9 +11,29 @@ import {
   warnIfAddressHeaderUnset,
   warnIfProxied,
 } from "./login";
-import { createPendingLogin } from "./challenges";
-import { LoginRateLimiter } from "./rate-limit";
+import { MAX_PENDING_ATTEMPTS, createPendingLogin } from "./challenges";
+import { LoginRateLimiter, MAX_FAILURES_PER_USER_IP } from "./rate-limit";
+import { sessions } from "$lib/server/db";
 import { validateSessionToken } from "./sessions";
+
+type VerifyFn = typeof import("./two-factor").verifySecondFactorCode;
+const verify = vi.hoisted(() => ({
+  real: null as VerifyFn | null,
+  calls: 0,
+  override: null as VerifyFn | null,
+}));
+vi.mock("./two-factor", async (orig) => {
+  const m = await orig<typeof import("./two-factor")>();
+  verify.real = m.verifySecondFactorCode;
+  return {
+    ...m,
+    verifySecondFactorCode: async (...args: Parameters<VerifyFn>) => {
+      verify.calls++;
+      await new Promise((r) => setTimeout(r, 1));
+      return (verify.override ?? m.verifySecondFactorCode)(...args);
+    },
+  };
+});
 
 describe("authenticate", () => {
   useTestDB();
@@ -24,7 +44,7 @@ describe("authenticate", () => {
     const r = await authenticate("alice", u.password, "1.1.1.1", limiter);
     if (!r || !("user" in r)) throw new Error("expected a full login");
     expect(r.user.id).toBe(u.id);
-    expect(validateSessionToken(r.token)?.user.id).toBe(u.id);
+    expect((await validateSessionToken(r.token))?.user.id).toBe(u.id);
   });
 
   it("returns null for a wrong password and for an unknown user alike", async () => {
@@ -417,7 +437,7 @@ describe("recent-success bypass", () => {
 
   it("a password-only step of a 2FA user does not make the address known", async () => {
     const u = await createTestUser({ username: "alice" });
-    enableTotp(u);
+    await enableTotp(u);
     const limiter = new LoginRateLimiter();
     const step = await authenticate(
       "alice",
@@ -440,10 +460,10 @@ describe("recent-success bypass", () => {
 
   it("completing the second factor makes the address known", async () => {
     const u = await createTestUser({ username: "alice" });
-    const [recovery] = enableTotp(u);
+    const [recovery] = await enableTotp(u);
     const limiter = new LoginRateLimiter();
     const second = new LoginRateLimiter();
-    const pending = createPendingLogin(u.id);
+    const pending = await createPendingLogin(u.id);
     const r = await completeSecondFactor(
       pending.token,
       recovery,
@@ -467,9 +487,9 @@ describe("recent-success bypass", () => {
 
   it("a wrong second-factor code leaves the address unknown", async () => {
     const u = await createTestUser({ username: "alice" });
-    enableTotp(u);
+    await enableTotp(u);
     const limiter = new LoginRateLimiter();
-    const pending = createPendingLogin(u.id);
+    const pending = await createPendingLogin(u.id);
     const r = await completeSecondFactor(
       pending.token,
       "000000",
@@ -489,5 +509,115 @@ describe("recent-success bypass", () => {
       sleep,
     );
     expect(sleeps).toHaveLength(1);
+  });
+});
+
+describe("completeSecondFactor under parallel requests", () => {
+  const ctx = useTestDB();
+
+  beforeEach(() => {
+    verify.calls = 0;
+    verify.override = null;
+  });
+  afterEach(() => {
+    verify.override = null;
+  });
+
+  it("verifies at most MAX_PENDING_ATTEMPTS of many parallel wrong codes from different addresses", async () => {
+    const u = await createTestUser({ username: "alice" });
+    await enableTotp(u);
+    const pending = await createPendingLogin(u.id);
+    const results = await Promise.allSettled(
+      Array.from({ length: 10 }, (_, i) =>
+        completeSecondFactor(
+          pending.token,
+          "000000",
+          `198.51.100.${i + 1}`,
+          new LoginRateLimiter(),
+        ),
+      ),
+    );
+    expect(verify.calls).toBe(MAX_PENDING_ATTEMPTS);
+    const wrong = results.filter(
+      (r) => r.status === "fulfilled" && r.value === null,
+    );
+    expect(wrong).toHaveLength(MAX_PENDING_ATTEMPTS);
+    const expired = results.filter(
+      (r) =>
+        r.status === "rejected" &&
+        (r.reason as { code?: string }).code === "pending_expired",
+    );
+    expect(expired).toHaveLength(10 - MAX_PENDING_ATTEMPTS);
+  });
+
+  it("a correct code arriving after the cap is spent is refused unverified", async () => {
+    const u = await createTestUser({ username: "alice" });
+    const [recovery] = await enableTotp(u);
+    const pending = await createPendingLogin(u.id);
+    for (let i = 0; i < MAX_PENDING_ATTEMPTS; i++) {
+      await completeSecondFactor(
+        pending.token,
+        "000000",
+        `198.51.100.${i + 1}`,
+        new LoginRateLimiter(),
+      );
+    }
+    verify.calls = 0;
+    await expect(
+      completeSecondFactor(
+        pending.token,
+        recovery,
+        "198.51.100.99",
+        new LoginRateLimiter(),
+      ),
+    ).rejects.toMatchObject({ code: "pending_expired" });
+    expect(verify.calls).toBe(0);
+  });
+
+  it("two parallel valid factors mint one session", async () => {
+    const u = await createTestUser({ username: "alice" });
+    const [first, second] = await enableTotp(u);
+    const pending = await createPendingLogin(u.id);
+    const results = await Promise.allSettled(
+      [first, second].map((code, i) =>
+        completeSecondFactor(
+          pending.token,
+          code,
+          `198.51.100.${i + 1}`,
+          new LoginRateLimiter(),
+        ),
+      ),
+    );
+    expect(results.filter((r) => r.status === "fulfilled")).toHaveLength(1);
+    const lost = results.find((r) => r.status === "rejected");
+    expect(lost).toMatchObject({
+      reason: { code: "pending_expired" },
+    });
+    expect(await ctx.db.select().from(sessions)).toHaveLength(1);
+  });
+
+  it("gives the limiter slot back when verification throws", async () => {
+    const u = await createTestUser({ username: "alice" });
+    await enableTotp(u);
+    const limiter = new LoginRateLimiter();
+    verify.override = async () => {
+      throw new Error("db down");
+    };
+    for (let i = 0; i < MAX_FAILURES_PER_USER_IP + 2; i++) {
+      const pending = await createPendingLogin(u.id);
+      await expect(
+        completeSecondFactor(pending.token, "000000", "198.51.100.1", limiter),
+      ).rejects.toThrow("db down");
+    }
+    verify.override = null;
+    const second = await createPendingLogin(u.id);
+    expect(
+      await completeSecondFactor(
+        second.token,
+        "000000",
+        "198.51.100.1",
+        limiter,
+      ),
+    ).toBeNull();
   });
 });

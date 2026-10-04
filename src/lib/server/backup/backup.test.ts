@@ -126,7 +126,7 @@ describe("createBackupDownload", () => {
     writeFileSync(path, bytes);
     const copy = new Database(path, { readonly: true });
     expect(copy.query("SELECT count(*) AS n FROM users").get()).toEqual({
-      n: countUsers(),
+      n: await countUsers(),
     });
     copy.close();
 

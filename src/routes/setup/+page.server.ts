@@ -10,8 +10,8 @@ import type { Actions, PageServerLoad } from "./$types";
 
 const VALUE_FIELDS = ["username", "displayName"] as const;
 
-export const load: PageServerLoad = () => {
-  if (countUsers() > 0) redirect(303, "/login");
+export const load: PageServerLoad = async () => {
+  if ((await countUsers()) > 0) redirect(303, "/login");
   return {};
 };
 
@@ -27,7 +27,7 @@ function exclusive<T>(fn: () => Promise<T>): Promise<T> {
 
 export const actions: Actions = {
   default: async ({ request, cookies, getClientAddress }) => {
-    if (countUsers() > 0) redirect(303, "/login");
+    if ((await countUsers()) > 0) redirect(303, "/login");
     const form = await request.formData();
     const values = safeValues(form, VALUE_FIELDS);
     const parsed = parseForm(setupSchema, form);
@@ -50,7 +50,7 @@ export const actions: Actions = {
     try {
       userId = (
         await exclusive(async () => {
-          if (countUsers() > 0) {
+          if ((await countUsers()) > 0) {
             throw new AuthError(
               "setup_closed",
               "Setup has already been completed.",
@@ -67,7 +67,7 @@ export const actions: Actions = {
     }
     release();
 
-    const { token, session } = createSession(userId);
+    const { token, session } = await createSession(userId);
     setSessionCookie(cookies, token, session.expiresAt);
     redirect(303, "/");
   },

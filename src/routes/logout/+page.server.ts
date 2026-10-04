@@ -10,8 +10,8 @@ export const load: PageServerLoad = () => {
 };
 
 export const actions: Actions = {
-  default: ({ locals, cookies }) => {
-    if (locals.session) invalidateSession(locals.session.id);
+  default: async ({ locals, cookies }) => {
+    if (locals.session) await invalidateSession(locals.session.id);
     deleteSessionCookie(cookies);
     redirect(303, "/login");
   },

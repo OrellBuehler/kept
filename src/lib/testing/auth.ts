@@ -37,19 +37,22 @@ export async function createTestUser(
 }
 
 /** A logged-in browser stand-in: real session row plus its token. */
-export function loginTestUser(user: SessionUser) {
-  return createSession(user.id);
+export async function loginTestUser(user: SessionUser) {
+  return await createSession(user.id);
 }
 
 /** Switches an authenticator app on for the user; returns the recovery codes (single use, time independent). */
-export function enableTotp(user: { id: string; username: string }): string[] {
-  const { secret } = startTotpEnrolment(user.id, user.username);
-  return confirmTotpEnrolment(user.id, totpCode(secret, Date.now()));
+export async function enableTotp(user: {
+  id: string;
+  username: string;
+}): Promise<string[]> {
+  const { secret } = await startTotpEnrolment(user.id, user.username);
+  return await confirmTotpEnrolment(user.id, totpCode(secret, Date.now()));
 }
 
 /** Registers a dummy passkey row (never used to sign in) so the user counts as having one. */
-export function addPasskey(userId: string): void {
-  getDB()
+export async function addPasskey(userId: string): Promise<void> {
+  await getDB()
     .insert(passkeys)
     .values({
       userId,
@@ -58,6 +61,5 @@ export function addPasskey(userId: string): void {
       publicKey: "pk",
       deviceType: "singleDevice",
       backedUp: false,
-    })
-    .run();
+    });
 }
