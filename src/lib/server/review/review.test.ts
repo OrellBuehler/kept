@@ -224,6 +224,25 @@ describe("yearReview", () => {
     ]);
   });
 
+  it("reports uncategorised income and expenses as separate changes", async () => {
+    const { tx, user } = await setup();
+    tx(-100, "2024-04-01");
+    tx(200, "2024-04-02");
+    tx(-150, "2025-04-01");
+    tx(300, "2025-04-02");
+
+    const chf = yearReview(user.id, { year: 2025, today: TODAY })
+      .currencies[0]!;
+    expect(chf.changes.map((c) => [c.side, c.categoryId])).toEqual(
+      expect.arrayContaining([
+        ["income", null],
+        ["expense", null],
+      ]),
+    );
+    const keys = chf.changes.map((c) => `${c.side}:${c.categoryId ?? "none"}`);
+    expect(new Set(keys).size).toBe(keys.length);
+  });
+
   it("keeps currencies apart", async () => {
     const { tx, user } = await setup();
     const eur = seedAccount(user.id, { name: "Euro", currency: "EUR" });

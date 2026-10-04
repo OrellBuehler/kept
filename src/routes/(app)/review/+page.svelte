@@ -232,7 +232,7 @@
                 </p>
               {:else}
                 <ul class="divide-y">
-                  {#each c.changes as ch (ch.categoryId ?? "none")}
+                  {#each c.changes as ch (`${ch.side}:${ch.categoryId ?? "none"}`)}
                     <li class="flex items-center justify-between gap-3 py-2">
                       <div class="min-w-0">
                         <p class="truncate text-sm font-medium">{ch.name}</p>
