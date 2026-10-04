@@ -72,7 +72,14 @@ export const secondFactorSchema = z.object({
   redirectTo: z.string().optional(),
 });
 
-export const totpConfirmSchema = z.object({ code: codeSchema });
+export const totpConfirmSchema = z.object({
+  code: codeSchema,
+  password: z.string().min(1, "Enter your password.").max(PASSWORD_MAX),
+});
+
+export const totpStartSchema = z.object({
+  password: z.string().min(1, "Enter your password.").max(PASSWORD_MAX),
+});
 
 export const twoFactorReauthSchema = z.object({
   password: z.string().min(1, "Enter your password.").max(PASSWORD_MAX),

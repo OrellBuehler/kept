@@ -72,7 +72,9 @@ describe("settings/security", () => {
     expect(r.value.passkeys[0]).not.toHaveProperty("publicKey");
 
     await outcome(() =>
-      actions.startTotp(createTestEvent({ user: u }) as never),
+      actions.startTotp(
+        createTestEvent({ user: u, form: { password: u.password } }) as never,
+      ),
     );
     const after = (await outcome(() =>
       load(createTestEvent({ user: u }) as never),
@@ -88,7 +90,10 @@ describe("settings/security", () => {
     const { secret } = startTotpEnrolment(u.id, u.username);
     const bad = await outcome(() =>
       actions.confirmTotp(
-        createTestEvent({ user: u, form: { code: "000000" } }) as never,
+        createTestEvent({
+          user: u,
+          form: { code: "000000", password: u.password },
+        }) as never,
       ),
     );
     expect(bad).toMatchObject({ type: "fail", status: 400 });
@@ -97,7 +102,7 @@ describe("settings/security", () => {
       actions.confirmTotp(
         createTestEvent({
           user: u,
-          form: { code: totpCode(secret, Date.now()) },
+          form: { code: totpCode(secret, Date.now()), password: u.password },
         }) as never,
       ),
     );
@@ -146,9 +151,61 @@ describe("settings/security", () => {
     const { secret } = startTotpEnrolment(u.id, u.username);
     confirmTotpEnrolment(u.id, totpCode(secret, Date.now()));
     const r = await outcome(() =>
-      actions.startTotp(createTestEvent({ user: u }) as never),
+      actions.startTotp(
+        createTestEvent({ user: u, form: { password: u.password } }) as never,
+      ),
     );
     expect(r).toMatchObject({ type: "fail", status: 400 });
+  });
+
+  it("starting enrolment needs the current password", async () => {
+    const u = await createTestUser();
+    for (const form of [
+      {} as Record<string, string>,
+      { password: "nope-nope-nope" },
+    ]) {
+      const r = await outcome(() =>
+        actions.startTotp(createTestEvent({ user: u, form }) as never),
+      );
+      expect(r).toMatchObject({ type: "fail", status: 400 });
+    }
+    expect(
+      (await outcome(() => load(createTestEvent({ user: u }) as never))) as {
+        value: { enrolment: unknown };
+      },
+    ).toMatchObject({ value: { enrolment: null } });
+  });
+
+  it("confirming enrolment needs the current password even with a valid code", async () => {
+    const u = await createTestUser();
+    const { secret } = startTotpEnrolment(u.id, u.username);
+    const code = totpCode(secret, Date.now());
+    for (const form of [
+      { code } as Record<string, string>,
+      { code, password: "nope-nope-nope" },
+    ]) {
+      const r = await outcome(() =>
+        actions.confirmTotp(createTestEvent({ user: u, form }) as never),
+      );
+      expect(r).toMatchObject({ type: "fail", status: 400 });
+    }
+    expect(getTwoFactorStatus(u.id).totpEnabled).toBe(false);
+  });
+
+  it("wrong enrolment passwords are rate limited", async () => {
+    const u = await createTestUser();
+    let last: unknown;
+    for (let i = 0; i < 6; i++) {
+      last = await outcome(() =>
+        actions.startTotp(
+          createTestEvent({
+            user: u,
+            form: { password: "nope-nope-nope" },
+          }) as never,
+        ),
+      );
+    }
+    expect(last).toMatchObject({ type: "fail", status: 429 });
   });
 
   it("renames and deletes only the caller's passkeys", async () => {

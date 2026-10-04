@@ -13,6 +13,7 @@ import {
   renamePasskeySchema,
   stepUpSchema,
   totpConfirmSchema,
+  totpStartSchema,
   twoFactorReauthSchema,
 } from "$lib/server/auth/schemas";
 import {
@@ -23,6 +24,7 @@ import {
   getTwoFactorStatus,
   hasRecentReauth,
   stepUpSession,
+  reauthenticatePasswordOnly,
   regenerateRecoveryCodes,
   startTotpEnrolment,
 } from "$lib/server/auth/two-factor";
@@ -63,9 +65,12 @@ function reauthFailure(err: unknown) {
 }
 
 export const actions: Actions = {
-  startTotp: ({ locals }) => {
+  startTotp: async ({ locals, request }) => {
     const user = requireUser(locals);
+    const parsed = parseForm(totpStartSchema, await request.formData());
+    if (!parsed.ok) return fail(400, { errors: parsed.errors });
     try {
+      await reauthenticatePasswordOnly(user.id, parsed.data.password);
       startTotpEnrolment(user.id, user.username);
     } catch (err) {
       return reauthFailure(err);
@@ -83,6 +88,7 @@ export const actions: Actions = {
     const parsed = parseForm(totpConfirmSchema, await request.formData());
     if (!parsed.ok) return fail(400, { errors: parsed.errors });
     try {
+      await reauthenticatePasswordOnly(user.id, parsed.data.password);
       const recoveryCodes = confirmTotpEnrolment(user.id, parsed.data.code);
       return { recoveryCodes };
     } catch (err) {
