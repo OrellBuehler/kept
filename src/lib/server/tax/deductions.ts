@@ -268,7 +268,11 @@ export function deductionSummary(
           ),
         ),
       )
-      .orderBy(asc(transactions.bookingDate), asc(sql`"transactions"."rowid"`))
+      .orderBy(
+        asc(transactions.bookingDate),
+        asc(transactions.seq),
+        asc(transactions.id),
+      )
       .all();
 
     for (const r of rows) {

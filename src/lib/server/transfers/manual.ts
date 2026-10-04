@@ -576,7 +576,11 @@ export function transferCandidates(
         sql`not exists (select 1 from ${transfers} where ${transfers.status} = 'linked' and (${transfers.outTransactionId} = ${transactions.id} or ${transfers.inTransactionId} = ${transactions.id}))`,
       ),
     )
-    .orderBy(asc(transactions.bookingDate), desc(sql`"transactions"."rowid"`))
+    .orderBy(
+      asc(transactions.bookingDate),
+      desc(transactions.seq),
+      desc(transactions.id),
+    )
     .all();
   const candidates = rows.map((r): TransferCandidate => {
     const expected = counterAmount(tx, { currency: r.currency });

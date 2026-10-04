@@ -1,4 +1,4 @@
-import { and, asc, eq, gte, inArray, lte, sql } from "drizzle-orm";
+import { and, asc, eq, gte, inArray, lte } from "drizzle-orm";
 import type { Minor, ShareBasis } from "$lib/money";
 import { maskIban } from "$lib/iban";
 import { getDB, securities, trades, transactions } from "$lib/server/db";
@@ -51,7 +51,11 @@ export function loadAccountStatement(
     })
     .from(transactions)
     .where(where)
-    .orderBy(asc(transactions.bookingDate), asc(sql`"transactions"."rowid"`))
+    .orderBy(
+      asc(transactions.bookingDate),
+      asc(transactions.seq),
+      asc(transactions.id),
+    )
     .limit(MAX_STATEMENT_TRANSACTIONS + 1)
     .all();
   if (account.tradesMoveCash) {
@@ -74,7 +78,7 @@ export function loadAccountStatement(
           lte(trades.date, to),
         ),
       )
-      .orderBy(asc(trades.date), asc(sql`"trades"."rowid"`))
+      .orderBy(asc(trades.date), asc(trades.seq), asc(trades.id))
       .limit(MAX_STATEMENT_TRANSACTIONS + 1)
       .all();
     rows.push(

@@ -1,4 +1,4 @@
-import { and, asc, eq, isNull, ne, sql } from "drizzle-orm";
+import { and, asc, eq, isNull, ne } from "drizzle-orm";
 import type { AmountSign } from "$lib/category-types";
 import { normalizeIban } from "$lib/iban";
 import { categories, categoryRules, getDB, transactions } from "$lib/server/db";
@@ -86,7 +86,8 @@ export function loadRules(userId: string): CategoryRule[] {
     .orderBy(
       asc(categoryRules.priority),
       asc(categoryRules.createdAt),
-      asc(sql`"category_rules"."rowid"`),
+      asc(categoryRules.seq),
+      asc(categoryRules.id),
     )
     .all();
 }

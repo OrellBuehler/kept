@@ -40,6 +40,7 @@ import { CADENCES, SERIES_STATUSES } from "$lib/recurring-types";
 import type { Minor } from "$lib/money";
 import type { Fixed8 } from "$lib/quantity";
 import { IBAN_DISPLAY, LOCALES } from "$lib/preferences";
+import { nextSeq } from "./seq";
 
 export {
   ACCOUNT_TYPES,
@@ -88,6 +89,9 @@ const timestamps = {
     .default(sql`(unixepoch('subsec') * 1000)`)
     .$onUpdate(() => new Date()),
 };
+
+/** Insertion order; ties between rows with equal sort keys break on it, then on `id`. */
+const seq = () => integer("seq").notNull().$defaultFn(nextSeq);
 
 export const USER_ROLES = ["admin", "member"] as const;
 export type UserRole = (typeof USER_ROLES)[number];
@@ -483,6 +487,7 @@ export const categoryRules = sqliteTable(
     descriptionContains: text("description_contains"),
     counterpartyIban: text("counterparty_iban"),
     amountSign: text("amount_sign", { enum: AMOUNT_SIGNS }),
+    seq: seq(),
     ...timestamps,
   },
   (t) => [
@@ -617,6 +622,7 @@ export const transactions = sqliteTable(
     deductionExcluded: integer("deduction_excluded", { mode: "boolean" })
       .notNull()
       .default(false),
+    seq: seq(),
     ...timestamps,
   },
   (t) => [
@@ -843,6 +849,7 @@ export const taxCredits = sqliteTable(
     amount: minor("amount").notNull(),
     reference: text("reference"),
     description: text("description"),
+    seq: seq(),
     ...timestamps,
   },
   (t) => [
@@ -1249,6 +1256,7 @@ export const trades = sqliteTable(
     splitNew: integer("split_new"),
     splitOld: integer("split_old"),
     note: text("note"),
+    seq: seq(),
     ...timestamps,
   },
   (t) => [
