@@ -1,6 +1,6 @@
 import { requireUser } from "$lib/server/auth/guards";
 import { parseForm } from "$lib/server/forms";
-import { getImportImpact, listImports, undoImport } from "$lib/server/imports";
+import { getImportImpacts, listImports, undoImport } from "$lib/server/imports";
 import { getAccount } from "$lib/server/ledger/accounts";
 import { ledgerFailure, orNotFound } from "$lib/server/ledger/http";
 import { idFormSchema } from "$lib/server/ledger/schemas";
@@ -15,7 +15,10 @@ export const load: PageServerLoad = ({ locals, params }) => {
       account: getAccount(user.id, params.id),
       imports,
       impacts: Object.fromEntries(
-        imports.map((i) => [i.id, getImportImpact(user.id, i.id)]),
+        getImportImpacts(
+          user.id,
+          imports.map((i) => i.id),
+        ),
       ),
     };
   });

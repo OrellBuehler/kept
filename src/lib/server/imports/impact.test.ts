@@ -19,7 +19,12 @@ import { uploadBytes, usePendingDir } from "$lib/testing/imports";
 import { seedAccount } from "$lib/testing/ledger";
 import { seedPortfolio } from "$lib/testing/pillar3a";
 import { confirmImport } from "./confirm";
-import { getImportImpact, hasImportImpact, undoImport } from "./history";
+import {
+  getImportImpact,
+  getImportImpacts,
+  hasImportImpact,
+  undoImport,
+} from "./history";
 import { eq } from "drizzle-orm";
 import { LedgerError } from "$lib/server/ledger/errors";
 
@@ -208,5 +213,69 @@ describe("getImportImpact", () => {
     );
     const other = await createTestUser();
     expect(() => getImportImpact(other.id, done.importId)).toThrow(LedgerError);
+  });
+
+  it("batches several imports and agrees with the single lookup", async () => {
+    const { user, a } = await setup();
+    const first = confirmImport(
+      user.id,
+      uploadBytes(
+        user.id,
+        a.id,
+        buildCamt({ iban: EXAMPLE_IBAN, entries: [entry()] }),
+      ),
+    );
+    const second = confirmImport(
+      user.id,
+      uploadBytes(
+        user.id,
+        a.id,
+        buildCamt({
+          iban: EXAMPLE_IBAN,
+          entries: [
+            entry({
+              ref: "R9",
+              date: "2024-04-01",
+              counterpartyIban: undefined,
+            }),
+          ],
+        }),
+      ),
+    );
+    const impacts = getImportImpacts(user.id, [
+      first.importId,
+      second.importId,
+    ]);
+    expect(impacts.get(first.importId)).toEqual(
+      getImportImpact(user.id, first.importId),
+    );
+    expect(impacts.get(second.importId)).toEqual(
+      getImportImpact(user.id, second.importId),
+    );
+    expect(impacts.get(first.importId)).toMatchObject({
+      transactions: 1,
+      transferLinks: 1,
+      mirrors: 1,
+    });
+    expect(impacts.get(second.importId)).toMatchObject({
+      transactions: 1,
+      transferLinks: 0,
+      mirrors: 0,
+    });
+  });
+
+  it("leaves out unknown ids and other users' imports in the batch", async () => {
+    const { user, a } = await setup();
+    const done = confirmImport(
+      user.id,
+      uploadBytes(
+        user.id,
+        a.id,
+        buildCamt({ iban: EXAMPLE_IBAN, entries: [entry()] }),
+      ),
+    );
+    const other = await createTestUser();
+    expect(getImportImpacts(other.id, [done.importId, "nope"]).size).toBe(0);
+    expect(getImportImpacts(user.id, []).size).toBe(0);
   });
 });

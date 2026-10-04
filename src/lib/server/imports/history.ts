@@ -9,6 +9,7 @@ import {
   or,
   sql,
 } from "drizzle-orm";
+import { alias } from "drizzle-orm/sqlite-core";
 import type { ImportFormat, ImportImpact } from "$lib/ledger-types";
 import type { Minor } from "$lib/money";
 import {
@@ -112,25 +113,45 @@ export function hasImportImpact(impact: ImportImpact): boolean {
   );
 }
 
-export function getImportImpact(
+const emptyImpact = (): ImportImpact => ({
+  transactions: 0,
+  categorized: 0,
+  notes: 0,
+  taxYears: 0,
+  deductionYears: 0,
+  billAllocations: 0,
+  pillar3a: 0,
+  transferLinks: 0,
+  mirrors: 0,
+});
+
+/**
+ * What undoing each of the user's imports would touch, in a constant number of grouped
+ * queries. Ids that are not the user's own imports are left out of the result.
+ */
+export function getImportImpacts(
   userId: string,
-  importId: string,
-): ImportImpact {
+  importIds: string[],
+): Map<string, ImportImpact> {
+  const result = new Map<string, ImportImpact>();
+  if (importIds.length === 0) return result;
   const db = getDB();
-  const found = db
+  const owned = db
     .select({ id: imports.id })
     .from(imports)
-    .where(and(eq(imports.id, importId), eq(imports.userId, userId)))
-    .get();
-  if (!found) throw notFound("Import");
+    .where(and(eq(imports.userId, userId), inArray(imports.id, importIds)))
+    .all();
+  if (owned.length === 0) return result;
+  const ids = owned.map((o) => o.id);
+  for (const id of ids) result.set(id, emptyImpact());
 
-  const rows = and(
+  const mine = and(
     eq(transactions.userId, userId),
-    eq(transactions.importId, importId),
+    inArray(transactions.importId, ids),
   );
-  const ids = db.select({ id: transactions.id }).from(transactions).where(rows);
   const own = db
     .select({
+      importId: transactions.importId,
       transactions: count(),
       categorized: count(transactions.categoryId),
       notes: sql<number>`count(case when trim(coalesce(${transactions.note}, '')) <> '' then 1 end)`,
@@ -138,58 +159,75 @@ export function getImportImpact(
       deductionYears: count(transactions.deductionYear),
     })
     .from(transactions)
-    .where(rows)
-    .get()!;
+    .where(mine)
+    .groupBy(transactions.importId)
+    .all();
+  for (const { importId, ...rest } of own) {
+    Object.assign(result.get(importId!)!, rest);
+  }
+
   const allocations = db
-    .select({ n: countDistinct(billAllocations.transactionId) })
+    .select({
+      importId: transactions.importId,
+      n: countDistinct(billAllocations.transactionId),
+    })
     .from(billAllocations)
-    .where(
-      and(
-        eq(billAllocations.userId, userId),
-        inArray(billAllocations.transactionId, ids),
-      ),
-    )
-    .get()!;
+    .innerJoin(transactions, eq(transactions.id, billAllocations.transactionId))
+    .where(and(eq(billAllocations.userId, userId), mine))
+    .groupBy(transactions.importId)
+    .all();
+  for (const r of allocations) result.get(r.importId!)!.billAllocations = r.n;
+
   const contributions = db
-    .select({ n: countDistinct(pillar3aContributions.transactionId) })
+    .select({
+      importId: transactions.importId,
+      n: countDistinct(pillar3aContributions.transactionId),
+    })
     .from(pillar3aContributions)
-    .where(
-      and(
-        eq(pillar3aContributions.userId, userId),
-        inArray(pillar3aContributions.transactionId, ids),
-      ),
+    .innerJoin(
+      transactions,
+      eq(transactions.id, pillar3aContributions.transactionId),
     )
-    .get()!;
+    .where(and(eq(pillar3aContributions.userId, userId), mine))
+    .groupBy(transactions.importId)
+    .all();
+  for (const r of contributions) result.get(r.importId!)!.pillar3a = r.n;
+
   const links = db
-    .select({ n: count() })
+    .select({ importId: transactions.importId, n: countDistinct(transfers.id) })
     .from(transfers)
-    .where(
-      and(
-        eq(transfers.userId, userId),
-        or(
-          inArray(transfers.outTransactionId, ids),
-          inArray(transfers.inTransactionId, ids),
-        ),
+    .innerJoin(
+      transactions,
+      or(
+        eq(transactions.id, transfers.outTransactionId),
+        eq(transactions.id, transfers.inTransactionId),
       ),
     )
-    .get()!;
+    .where(and(eq(transfers.userId, userId), mine))
+    .groupBy(transactions.importId)
+    .all();
+  for (const r of links) result.get(r.importId!)!.transferLinks = r.n;
+
+  const mirrorRows = alias(transactions, "mirror_rows");
   const mirrors = db
-    .select({ n: count() })
-    .from(transactions)
-    .where(
-      and(
-        eq(transactions.userId, userId),
-        inArray(transactions.mirrorOfId, ids),
-      ),
-    )
-    .get()!;
-  return {
-    ...own,
-    billAllocations: allocations.n,
-    pillar3a: contributions.n,
-    transferLinks: links.n,
-    mirrors: mirrors.n,
-  };
+    .select({ importId: transactions.importId, n: count() })
+    .from(mirrorRows)
+    .innerJoin(transactions, eq(transactions.id, mirrorRows.mirrorOfId))
+    .where(and(eq(mirrorRows.userId, userId), mine))
+    .groupBy(transactions.importId)
+    .all();
+  for (const r of mirrors) result.get(r.importId!)!.mirrors = r.n;
+
+  return result;
+}
+
+export function getImportImpact(
+  userId: string,
+  importId: string,
+): ImportImpact {
+  const impact = getImportImpacts(userId, [importId]).get(importId);
+  if (!impact) throw notFound("Import");
+  return impact;
 }
 
 /**
