@@ -980,6 +980,24 @@ export const paperlessDismissed = sqliteTable(
   ],
 );
 
+/**
+ * The instance key a user's connection had at an address, kept after the connection is gone so
+ * reconnecting to that address reuses it (bills and dismissed refs carry the key).
+ */
+export const paperlessInstances = sqliteTable(
+  "paperless_instances",
+  {
+    id: id(),
+    userId: userId(),
+    baseUrl: text("base_url").notNull(),
+    instanceKey: text("instance_key").notNull(),
+    ...timestamps,
+  },
+  (t) => [
+    uniqueIndex("paperless_instances_user_url_uq").on(t.userId, t.baseUrl),
+  ],
+);
+
 export const paperlessReportUploads = sqliteTable(
   "paperless_report_uploads",
   {

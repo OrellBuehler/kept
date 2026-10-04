@@ -8,6 +8,7 @@ import {
   paperlessConnections,
   paperlessDismissed,
   paperlessDocuments,
+  paperlessInstances,
   type PaperlessBillSource,
   type PaperlessFieldMapping,
 } from "$lib/server/db";
@@ -65,6 +66,37 @@ export function isDismissed(userId: string, ref: string): boolean {
 }
 
 type Tx = Parameters<Parameters<ReturnType<typeof getDB>["transaction"]>[0]>[0];
+
+/** Remembers which key the user's server had at `baseUrl`, so a later reconnect reuses it. */
+function rememberInstance(
+  tx: Tx,
+  userId: string,
+  baseUrl: string,
+  key: string,
+): void {
+  tx.insert(paperlessInstances)
+    .values({ userId, baseUrl, instanceKey: key })
+    .onConflictDoUpdate({
+      target: [paperlessInstances.userId, paperlessInstances.baseUrl],
+      set: { instanceKey: key },
+    })
+    .run();
+}
+
+function rememberedKey(userId: string, baseUrl: string): string | null {
+  return (
+    getDB()
+      .select({ key: paperlessInstances.instanceKey })
+      .from(paperlessInstances)
+      .where(
+        and(
+          eq(paperlessInstances.userId, userId),
+          eq(paperlessInstances.baseUrl, baseUrl),
+        ),
+      )
+      .get()?.key ?? null
+  );
+}
 
 /** Before link rows go away: keeps the documents whose bill the user deleted from coming back. */
 function rememberDismissed(tx: Tx, row: ConnectionRow): void {
@@ -249,7 +281,7 @@ export function saveConnection(
         userId,
         baseUrl,
         tokenEncrypted: encryptSecret(token),
-        instanceKey: instanceKey(baseUrl),
+        instanceKey: rememberedKey(userId, baseUrl) ?? instanceKey(baseUrl),
         allowInsecureTls: input.allowInsecureTls,
         webhookSecretHash: hashSecret(secret),
         webhookToken: newWebhookToken(),
@@ -262,6 +294,9 @@ export function saveConnection(
   const moved = existing.baseUrl !== baseUrl;
   const reset = input.differentInstance === true;
   const row = db.transaction((tx) => {
+    if (moved) {
+      rememberInstance(tx, userId, existing.baseUrl, rowInstanceKey(existing));
+    }
     if (reset) {
       // Another server has other document ids: old links and watermark are meaningless.
       rememberDismissed(tx, existing);
@@ -335,6 +370,7 @@ export function deleteConnection(userId: string): void {
   const row = requireConnectionRow(userId);
   getDB().transaction((tx) => {
     rememberDismissed(tx, row);
+    rememberInstance(tx, userId, row.baseUrl, rowInstanceKey(row));
     tx.delete(paperlessConnections)
       .where(
         and(

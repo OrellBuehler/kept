@@ -809,6 +809,71 @@ describe("syncConnection", () => {
     expect(listBills(user.id)).toHaveLength(2);
   });
 
+  it("reconnecting after a different-server reset reuses the key and creates no duplicates", async () => {
+    fake.addDoc({ id: 95, original: pdfEnergy });
+    fake.prefix = "/other";
+    saveConnection(user.id, {
+      baseUrl: fake.baseUrl,
+      token: null,
+      allowInsecureTls: false,
+      differentInstance: true,
+    });
+    await syncConnection(user.id);
+    const [bill] = listBills(user.id);
+    const key = getConnectionRow(user.id)!.instanceKey;
+
+    deleteConnection(user.id);
+    seedConnection(user.id, fake);
+    expect(getConnectionRow(user.id)!.instanceKey).toBe(key);
+    const r = await syncConnection(user.id);
+
+    expect(r).toMatchObject({ imported: 0, unchanged: 1, failed: 0 });
+    expect(listBills(user.id)).toHaveLength(1);
+    expect(linkOf(95)).toMatchObject({ billId: bill!.id });
+  });
+
+  it("reconnecting at the new address after a move reuses the key and creates no duplicates", async () => {
+    fake.addDoc({ id: 95, original: pdfEnergy });
+    await syncConnection(user.id);
+    const [bill] = listBills(user.id);
+    const key = getConnectionRow(user.id)!.instanceKey;
+    fake.prefix = "/other";
+    saveConnection(user.id, {
+      baseUrl: fake.baseUrl,
+      token: null,
+      allowInsecureTls: false,
+    });
+
+    deleteConnection(user.id);
+    seedConnection(user.id, fake);
+    expect(getConnectionRow(user.id)!.instanceKey).toBe(key);
+    expect(key).not.toBe(instanceKey(fake.baseUrl));
+    const r = await syncConnection(user.id);
+
+    expect(r).toMatchObject({ imported: 0, unchanged: 1, failed: 0 });
+    expect(listBills(user.id)).toHaveLength(1);
+    expect(linkOf(95)).toMatchObject({ billId: bill!.id });
+  });
+
+  it("does not reuse another user's remembered key", async () => {
+    const other = await createTestUser();
+    fake.prefix = "/other";
+    saveConnection(user.id, {
+      baseUrl: fake.baseUrl,
+      token: null,
+      allowInsecureTls: false,
+      differentInstance: true,
+    });
+    const key = getConnectionRow(user.id)!.instanceKey;
+    deleteConnection(user.id);
+
+    seedConnection(other.id, fake);
+    expect(getConnectionRow(other.id)!.instanceKey).toBe(
+      instanceKey(fake.baseUrl),
+    );
+    expect(key).not.toBe(instanceKey(fake.baseUrl));
+  });
+
   describe("for specific documents (webhook)", () => {
     it("reports documents that are not visible yet and imports them once they are", async () => {
       fake.addDoc({ id: 101, original: pdfEnergy, hiddenRequests: 1 });
