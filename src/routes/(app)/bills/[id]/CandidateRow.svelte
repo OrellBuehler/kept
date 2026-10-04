@@ -8,9 +8,12 @@
   import { minorToSignedInput } from "$lib/amount-input";
   import type { FormErrors } from "$lib/form-errors";
   import { submitHandler } from "$lib/form-submit";
-  import { formatDate } from "$lib/format";
+
   import { minor } from "$lib/money";
   import type { CandidateTransaction } from "$lib/server/bills/candidates";
+  import { usePreferences } from "$lib/preferences.svelte";
+
+  const prefs = usePreferences();
 
   let {
     candidate,
@@ -44,7 +47,7 @@
         </span>
       {/if}
       <span class="text-muted-foreground truncate text-xs">
-        {candidate.accountName} · {formatDate(candidate.bookingDate)}
+        {candidate.accountName} · {prefs.date(candidate.bookingDate)}
       </span>
     </div>
     <div class="grid shrink-0 justify-items-end gap-0.5">

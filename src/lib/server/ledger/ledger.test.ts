@@ -11,7 +11,6 @@ import {
 } from "$lib/server/db";
 import { createTestUser } from "$lib/testing/auth";
 import { useTestDB } from "$lib/testing/db";
-import { maskIban } from "$lib/iban";
 import { LEDGER_IBAN_A, LEDGER_IBAN_B } from "$lib/testing/fixtures/ledger";
 import {
   seedAccount,
@@ -169,7 +168,6 @@ describe("accounts", () => {
       archived: false,
       balance: 10000,
       iban: LEDGER_IBAN_A,
-      ibanMasked: maskIban(LEDGER_IBAN_A),
       institution: { id: inst.id, name: "Test Institution", color: null },
       lastBookingDate: null,
       lastImportAt: null,

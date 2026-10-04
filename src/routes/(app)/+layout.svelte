@@ -1,5 +1,8 @@
 <script lang="ts">
   import { page } from "$app/state";
+  import { deserialize } from "$app/forms";
+  import { invalidateAll } from "$app/navigation";
+  import { toast } from "svelte-sonner";
   import { resolve, asset } from "$app/paths";
   import { cn } from "$lib/utils";
   import { userPrefersMode, setMode } from "mode-watcher";
@@ -21,6 +24,10 @@
   import MoonIcon from "@lucide/svelte/icons/moon";
   import CalendarRangeIcon from "@lucide/svelte/icons/calendar-range";
   import MonitorIcon from "@lucide/svelte/icons/monitor";
+  import EyeIcon from "@lucide/svelte/icons/eye";
+  import EyeOffIcon from "@lucide/svelte/icons/eye-off";
+  import { Button } from "$lib/components/ui/button/index.js";
+  import { setPreferences } from "$lib/preferences.svelte";
   import * as Sidebar from "$lib/components/ui/sidebar/index.js";
   import * as DropdownMenu from "$lib/components/ui/dropdown-menu/index.js";
   import AppNav from "$lib/components/app/app-nav.svelte";
@@ -28,6 +35,38 @@
   import type { LayoutProps } from "./$types";
 
   let { data, children }: LayoutProps = $props();
+
+  // svelte-ignore state_referenced_locally
+  const prefs = setPreferences(data.preferences);
+  $effect.pre(() => prefs.sync(data.preferences));
+
+  let blurPending = $state(false);
+
+  async function toggleBlur() {
+    if (blurPending) return;
+    const next = !prefs.blur;
+    blurPending = true;
+    prefs.setBlur(next);
+    try {
+      const body = new FormData();
+      body.set("blurAmounts", String(next));
+      const res = await fetch("/settings/preferences?/setBlur", {
+        method: "POST",
+        headers: { "x-sveltekit-action": "true" },
+        body,
+      });
+      const result = deserialize(await res.text());
+      if (result.type !== "success") throw new Error("setBlur failed");
+    } catch (err) {
+      console.error("Could not save blur preference", err);
+      prefs.setBlur(!next);
+      toast.error("Could not save your preference. Please try again.");
+      blurPending = false;
+      return;
+    }
+    blurPending = false;
+    await invalidateAll();
+  }
 
   const nav: NavItem[] = $derived([
     { href: "/", label: "Dashboard", icon: LayoutDashboardIcon },
@@ -184,6 +223,18 @@
     >
       <Sidebar.Trigger />
       <span class="text-sm font-medium md:hidden">Kept</span>
+      <Button
+        variant="ghost"
+        size="icon"
+        class="ms-auto"
+        onclick={toggleBlur}
+        disabled={blurPending}
+        aria-pressed={prefs.blur}
+        aria-label={prefs.blur ? "Show amounts" : "Hide amounts"}
+        title={prefs.blur ? "Show amounts" : "Hide amounts"}
+      >
+        {#if prefs.blur}<EyeOffIcon />{:else}<EyeIcon />{/if}
+      </Button>
     </header>
     <div class="mx-auto w-full max-w-5xl min-w-0 flex-1 p-4 md:p-8">
       {#key page.url.pathname}

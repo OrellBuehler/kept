@@ -11,7 +11,7 @@
   import { Button } from "$lib/components/ui/button";
   import * as NativeSelect from "$lib/components/ui/native-select";
   import { submitHandler } from "$lib/form-submit";
-  import { formatDate } from "$lib/format";
+  import { usePreferences } from "$lib/preferences.svelte";
   import { DEDUCTION_LABELS, DEDUCTION_TYPES } from "$lib/tax-deductions";
   import type {
     DeductionMappingView,
@@ -22,6 +22,8 @@
     summary,
     mappings,
   }: { summary: DeductionSummary; mappings: DeductionMappingView[] } = $props();
+
+  const prefs = usePreferences();
 
   let error = $state("");
   const action = submitHandler({
@@ -87,7 +89,7 @@
               {#each group.lines as line (line.transactionId)}
                 <li class="flex items-center justify-between gap-2 text-sm">
                   <span class="min-w-0 truncate">
-                    {formatDate(line.date)}
+                    {prefs.date(line.date)}
                     {#if line.label}· {line.label}{/if}
                     {#if line.explicitYear}
                       <span class="text-muted-foreground text-xs">
@@ -134,7 +136,7 @@
                 class="text-muted-foreground flex items-center justify-between gap-2 text-sm"
               >
                 <span class="min-w-0 truncate">
-                  {formatDate(line.date)}
+                  {prefs.date(line.date)}
                   {#if line.label}· {line.label}{/if}
                   · {DEDUCTION_LABELS[line.type]}
                 </span>

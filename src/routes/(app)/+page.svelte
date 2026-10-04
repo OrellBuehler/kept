@@ -11,14 +11,17 @@
   import AccountTypeBadge from "$lib/components/AccountTypeBadge.svelte";
   import CategoryBadge from "$lib/components/CategoryBadge.svelte";
   import NetWorthChart from "$lib/components/dashboard/NetWorthChart.svelte";
-  import { formatDate } from "$lib/format";
-  import { formatAmount, minor, type Minor } from "$lib/money";
+
+  import { minor, type Minor } from "$lib/money";
   import LayoutDashboardIcon from "@lucide/svelte/icons/layout-dashboard";
   import TriangleAlertIcon from "@lucide/svelte/icons/triangle-alert";
   import ArrowUpIcon from "@lucide/svelte/icons/arrow-up";
   import ArrowDownIcon from "@lucide/svelte/icons/arrow-down";
   import MinusIcon from "@lucide/svelte/icons/minus";
   import type { PageProps } from "./$types";
+  import { usePreferences } from "$lib/preferences.svelte";
+
+  const prefs = usePreferences();
 
   let { data }: PageProps = $props();
   const d = $derived(data.dashboard);
@@ -30,20 +33,11 @@
     { value: "all", label: "All" },
   ] as const;
 
-  const monthFormat = new Intl.DateTimeFormat("en", {
-    month: "long",
-    year: "numeric",
-    timeZone: "UTC",
-  });
   function monthLabel(month: string) {
-    return monthFormat.format(new Date(`${month}-01T00:00:00Z`));
+    return prefs.month(month);
   }
-  const monthShort = new Intl.DateTimeFormat("en", {
-    month: "long",
-    timeZone: "UTC",
-  });
   function monthName(month: string) {
-    return monthShort.format(new Date(`${month}-01T00:00:00Z`));
+    return prefs.month(month, "long", false);
   }
 
   function plural(n: number, one: string, many = `${one}s`) {
@@ -86,12 +80,8 @@
     })),
   );
 
-  function delta(cur: number, prev: number, currency: string) {
-    const diff = cur - prev;
-    return {
-      diff,
-      text: formatAmount(minor(Math.abs(diff)), currency),
-    };
+  function delta(cur: number, prev: number) {
+    return { diff: cur - prev };
   }
 
   const bucketRows = $derived([
@@ -132,7 +122,7 @@
 
 <PageHeader
   title="Dashboard"
-  description={`Where things stand on ${formatDate(d.today)}.`}
+  description={`Where things stand on ${prefs.date(d.today)}.`}
   class="mb-6"
 />
 
@@ -248,7 +238,7 @@
             {#each data.forecastAlerts as alert (alert.accountId)}
               <li>
                 <span class="font-medium">{alert.name}</span>
-                on {formatDate(alert.date)}, to
+                on {prefs.date(alert.date)}, to
                 <Amount value={alert.balance} currency={alert.currency} />
               </li>
             {/each}
@@ -296,7 +286,7 @@
             {/if}
             <dl class="space-y-2">
               {#each lines as line (line.label)}
-                {@const dl = delta(line.cur, line.prev, row.currency)}
+                {@const dl = delta(line.cur, line.prev)}
                 <div
                   class={cn(
                     "flex items-baseline justify-between gap-3",
@@ -339,7 +329,10 @@
                         {:else}
                           <ArrowDownIcon class="size-3" aria-hidden="true" />
                         {/if}
-                        {dl.text}
+                        <Amount
+                          value={minor(Math.abs(dl.diff))}
+                          currency={row.currency}
+                        />
                         {dl.diff > 0 ? "more" : "less"} than last month
                       {/if}
                     </span>
@@ -431,7 +424,7 @@
                       {:else}
                         Due in {plural(bill.dueInDays, "day")}
                         <span class="hidden sm:inline">
-                          ({formatDate(bill.dueDate)})
+                          ({prefs.date(bill.dueDate)})
                         </span>
                       {/if}
                     </p>

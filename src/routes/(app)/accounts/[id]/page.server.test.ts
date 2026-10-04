@@ -16,6 +16,7 @@ import {
   getTransaction,
   listTransactions,
 } from "$lib/server/ledger/transactions";
+import { updatePreferences } from "$lib/server/preferences";
 import { actions, load } from "./+page.server";
 
 type LoadData = Exclude<Awaited<ReturnType<typeof load>>, void>;
@@ -102,6 +103,19 @@ describe("account detail page", () => {
       max: "",
     });
     expect(Object.keys(v.filterErrors)).toEqual(["min"]);
+  });
+
+  it("page size defaults to the user's preference unless the query sets one", async () => {
+    const u = await createTestUser();
+    const other = await createTestUser();
+    const acc = seedAccount(u.id);
+    updatePreferences(u.id, { pageSize: 25 });
+    updatePreferences(other.id, { pageSize: 200 });
+    const size = async (query = "") =>
+      ((await loadAs(u, acc.id, query)) as { value: LoadData }).value
+        .transactions.pageSize;
+    expect(await size()).toBe(25);
+    expect(await size("?pageSize=10")).toBe(10);
   });
 
   it("404 for unknown accounts", async () => {

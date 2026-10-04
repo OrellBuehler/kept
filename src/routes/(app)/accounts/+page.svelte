@@ -14,7 +14,7 @@
   import ConfirmActionDialog from "$lib/components/ConfirmActionDialog.svelte";
   import InstitutionLogo from "$lib/components/InstitutionLogo.svelte";
   import InstitutionFormDialog from "$lib/components/InstitutionFormDialog.svelte";
-  import { daysSince, formatAgo, formatDate } from "$lib/format";
+  import { daysSince, formatAgo } from "$lib/format";
   import { minor, type Minor } from "$lib/money";
   import LandmarkIcon from "@lucide/svelte/icons/landmark";
   import MoreHorizontalIcon from "@lucide/svelte/icons/ellipsis";
@@ -23,6 +23,9 @@
   import Trash2Icon from "@lucide/svelte/icons/trash-2";
   import TriangleAlertIcon from "@lucide/svelte/icons/triangle-alert";
   import type { PageData, PageProps } from "./$types";
+  import { usePreferences } from "$lib/preferences.svelte";
+
+  const prefs = usePreferences();
 
   type Account = PageData["accounts"][number];
   type Institution = PageData["institutions"][number];
@@ -257,14 +260,14 @@
                           <Badge variant="outline">Archived</Badge>
                         {/if}
                       </div>
-                      {#if account.ibanMasked}
+                      {#if account.iban && prefs.ibanDisplay !== "hidden"}
                         <span class="text-muted-foreground font-mono text-xs">
-                          {account.ibanMasked}
+                          {prefs.iban(account.iban)}
                         </span>
                       {/if}
                       <span class="text-muted-foreground text-xs">
                         {#if account.lastBookingDate}
-                          Last booking {formatDate(account.lastBookingDate)}
+                          Last booking {prefs.date(account.lastBookingDate)}
                         {:else}
                           No transactions yet
                         {/if}

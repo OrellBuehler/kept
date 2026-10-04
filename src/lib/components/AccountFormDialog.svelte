@@ -13,6 +13,7 @@
   import type { FormErrors } from "$lib/form-errors";
   import { submitHandler } from "$lib/form-submit";
   import type { Minor } from "$lib/money";
+  import { usePreferences } from "$lib/preferences.svelte";
 
   interface EditableAccount {
     institution: { id: string } | null;
@@ -23,6 +24,8 @@
     openingBalance: Minor;
     openingDate: string | null;
   }
+
+  const prefs = usePreferences();
 
   let {
     open = $bindable(false),
@@ -171,7 +174,7 @@
             autocapitalize="characters"
             autocomplete="off"
             class="font-mono uppercase"
-            value={account?.currency ?? "CHF"}
+            value={account?.currency ?? prefs.defaultCurrency}
             disabled={currencyLocked}
             aria-invalid={!!errors.currency}
           />

@@ -12,17 +12,21 @@ export function formatBytes(bytes: number): string {
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
-export function formatPeriod(from: string | null, to: string | null): string {
+export function formatPeriod(
+  from: string | null,
+  to: string | null,
+  locale?: string,
+): string {
   if (from && to) {
     return from === to
-      ? formatDate(from)
-      : `${formatDate(from)} – ${formatDate(to)}`;
+      ? formatDate(from, locale)
+      : `${formatDate(from, locale)} – ${formatDate(to, locale)}`;
   }
-  if (from || to) return formatDate((from ?? to)!);
+  if (from || to) return formatDate((from ?? to)!, locale);
   return "No period";
 }
 
-export function timeAgo(ms: number, now: number): string {
+export function timeAgo(ms: number, now: number, locale?: string): string {
   const seconds = Math.max(0, Math.floor((now - ms) / 1000));
   if (seconds < 60) return "just now";
   const minutes = Math.floor(seconds / 60);
@@ -31,7 +35,7 @@ export function timeAgo(ms: number, now: number): string {
   if (hours < 24) return `${hours} h ago`;
   const days = Math.floor(hours / 24);
   if (days < 30) return `${days} d ago`;
-  return formatDate(new Date(ms).toISOString().slice(0, 10));
+  return formatDate(new Date(ms).toISOString().slice(0, 10), locale);
 }
 
 export function plural(n: number, one: string, many = `${one}s`): string {

@@ -13,8 +13,11 @@
   import DocumentUpload from "$lib/components/bills/DocumentUpload.svelte";
   import { emptyBillValues, type BillFormValues } from "$lib/bill-display";
   import { formatIban } from "$lib/iban";
+  import { usePreferences } from "$lib/preferences.svelte";
   import { formatReference } from "$lib/references";
   import type { PageProps } from "./$types";
+
+  const prefs = usePreferences();
 
   let { data }: PageProps = $props();
 
@@ -25,9 +28,9 @@
 
   const values = $derived.by((): BillFormValues => {
     const d = data.draft;
-    if (!d) return emptyBillValues();
+    if (!d) return emptyBillValues(prefs.defaultCurrency);
     return {
-      ...emptyBillValues(),
+      ...emptyBillValues(prefs.defaultCurrency),
       ...d,
       creditorIban: d.creditorIban ? formatIban(d.creditorIban) : "",
       reference: d.reference ? formatReference(d.reference) : "",

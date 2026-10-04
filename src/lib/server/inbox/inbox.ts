@@ -25,6 +25,7 @@ import { parseCamt053 } from "$lib/server/importers/camt053";
 import { ImportFormatError } from "$lib/server/importers/types";
 import {
   MAPPING_REQUIRED,
+  balanceWarningText,
   buildPreview,
   confirmImport,
   deletePending,
@@ -314,7 +315,11 @@ async function importCandidate(
       });
       return "duplicate";
     }
-    if (preview.warnings.length > 0) return review(preview.warnings.join(" "));
+    const warnings = [
+      ...preview.warnings,
+      ...preview.balanceWarnings.map(balanceWarningText),
+    ];
+    if (warnings.length > 0) return review(warnings.join(" "));
 
     const result = confirmImport(userId, meta.id);
     moveInto(userDir, "processed", c.path, c.name, sha, now);

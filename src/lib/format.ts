@@ -1,13 +1,40 @@
-const dateFormat = new Intl.DateTimeFormat("en-GB", {
-  day: "numeric",
-  month: "short",
-  year: "numeric",
-  timeZone: "UTC",
-});
+const dateFormats = new Map<string, Intl.DateTimeFormat>();
 
 /** Format a `YYYY-MM-DD` booking date for display. */
-export function formatDate(iso: string): string {
-  return dateFormat.format(new Date(`${iso}T00:00:00Z`));
+export function formatDate(iso: string, locale = "en-GB"): string {
+  let fmt = dateFormats.get(locale);
+  if (!fmt) {
+    fmt = new Intl.DateTimeFormat(locale, {
+      day: "numeric",
+      month: "short",
+      year: "numeric",
+      timeZone: "UTC",
+    });
+    dateFormats.set(locale, fmt);
+  }
+  return fmt.format(new Date(`${iso}T00:00:00Z`));
+}
+
+const monthFormats = new Map<string, Intl.DateTimeFormat>();
+
+/** Month label for a `YYYY-MM` string, e.g. "March 2024" or just "March". */
+export function formatMonth(
+  month: string,
+  locale = "en-GB",
+  style: "long" | "short" = "long",
+  withYear = true,
+): string {
+  const key = `${locale}|${style}|${withYear}`;
+  let fmt = monthFormats.get(key);
+  if (!fmt) {
+    fmt = new Intl.DateTimeFormat(locale, {
+      month: style,
+      ...(withYear ? { year: "numeric" } : {}),
+      timeZone: "UTC",
+    });
+    monthFormats.set(key, fmt);
+  }
+  return fmt.format(new Date(`${month}-01T00:00:00Z`));
 }
 
 /** Today's date in the user's local timezone as `YYYY-MM-DD`. */
@@ -34,8 +61,12 @@ export function formatAgo(ms: number, now = Date.now()): string {
 }
 
 /** Date and time of an instant; pass `timeZone: "UTC"` for output that is identical on server and client. */
-export function formatDateTime(ms: number, timeZone?: string): string {
-  return new Intl.DateTimeFormat("en-GB", {
+export function formatDateTime(
+  ms: number,
+  timeZone?: string,
+  locale = "en-GB",
+): string {
+  return new Intl.DateTimeFormat(locale, {
     day: "numeric",
     month: "short",
     year: "numeric",

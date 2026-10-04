@@ -128,6 +128,14 @@ const matrix: Record<string, Entry> = {
       "actions.testChannel": (m, e) => m.actions.testChannel(e),
     },
   },
+  "/src/routes/(app)/settings/preferences/+page.server.ts": {
+    access: "user",
+    handlers: {
+      load: (m, e) => m.load(e),
+      "actions.save": (m, e) => m.actions.save(e),
+      "actions.setBlur": (m, e) => m.actions.setBlur(e),
+    },
+  },
   "/src/routes/(app)/settings/paperless/+page.server.ts": {
     access: "user",
     handlers: {

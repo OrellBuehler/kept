@@ -1,7 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { createTestUser } from "$lib/testing/auth";
 import { useTestDB } from "$lib/testing/db";
-import { maskIban } from "$lib/iban";
 import { LEDGER_IBAN_A } from "$lib/testing/fixtures/ledger";
 import { createTestEvent, outcome } from "$lib/testing/event";
 import { seedAccount, seedInstitution } from "$lib/testing/ledger";
@@ -46,7 +45,7 @@ describe("accounts page", () => {
       expect.objectContaining({
         name: "Main",
         balance: 0,
-        ibanMasked: maskIban(LEDGER_IBAN_A),
+        iban: LEDGER_IBAN_A,
         archived: false,
         institution: {
           id: inst.id,

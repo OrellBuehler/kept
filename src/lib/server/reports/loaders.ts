@@ -1,4 +1,5 @@
 import { and, asc, eq, gte, lte, sql } from "drizzle-orm";
+import { maskIban } from "$lib/iban";
 import { getDB, transactions } from "$lib/server/db";
 import { billViews } from "$lib/server/bills/status";
 import { accountBalances } from "$lib/server/dashboard/accounts";
@@ -62,7 +63,7 @@ export function loadAccountStatement(
     account: {
       name: account.name,
       institutionName: account.institution?.name ?? null,
-      ibanMasked: account.ibanMasked,
+      ibanMasked: account.iban ? maskIban(account.iban) : null,
       currency: account.currency,
     },
     from,
@@ -87,7 +88,10 @@ export function loadNetWorthReport(
 ): NetWorthReportInput {
   return {
     series: netWorthSeries(userId, { today }),
-    balances: accountBalances(userId, today),
+    balances: accountBalances(userId, today).map(({ iban, ...balance }) => ({
+      ...balance,
+      ibanMasked: iban ? maskIban(iban) : null,
+    })),
     asOf: today,
   };
 }

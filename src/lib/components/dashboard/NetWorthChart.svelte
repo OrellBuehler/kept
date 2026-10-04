@@ -1,8 +1,11 @@
 <script lang="ts">
   import { Area, AreaChart, LinearGradient } from "layerchart";
   import * as Chart from "$lib/components/ui/chart/index.js";
-  import { formatDate } from "$lib/format";
-  import { currencyExponent, formatAmount, type Minor } from "$lib/money";
+  import { currencyExponent, type Minor } from "$lib/money";
+  import { cn } from "$lib/utils";
+  import { usePreferences } from "$lib/preferences.svelte";
+
+  const prefs = usePreferences();
 
   type Point = { date: string; amount: Minor };
 
@@ -40,7 +43,7 @@
   });
 
   const compact = $derived(
-    new Intl.NumberFormat("en", {
+    new Intl.NumberFormat(prefs.locale, {
       style: "currency",
       currency,
       notation: "compact",
@@ -48,10 +51,12 @@
     }),
   );
 
-  const dateTick = new Intl.DateTimeFormat("en-GB", {
-    month: "short",
-    timeZone: "UTC",
-  });
+  const dateTick = $derived(
+    new Intl.DateTimeFormat(prefs.locale, {
+      month: "short",
+      timeZone: "UTC",
+    }),
+  );
 
   const config = $derived({
     value: { label: `${label} ${currency}`, color },
@@ -64,7 +69,7 @@
     const amounts = points.map((p) => p.amount);
     const lo = Math.min(...amounts) as Minor;
     const hi = Math.max(...amounts) as Minor;
-    return `${label} in ${currency} from ${formatDate(first.date)} to ${formatDate(last.date)}: ${formatAmount(first.amount, currency)} to ${formatAmount(last.amount, currency)}, lowest ${formatAmount(lo, currency)}, highest ${formatAmount(hi, currency)}.`;
+    return `${label} in ${currency} from ${prefs.date(first.date)} to ${prefs.date(last.date)}: ${prefs.amount(first.amount, currency)} to ${prefs.amount(last.amount, currency)}, lowest ${prefs.amount(lo, currency)}, highest ${prefs.amount(hi, currency)}.`;
   });
 
   function isoOf(d: Date) {
@@ -76,7 +81,11 @@
 <Chart.Container
   {config}
   aria-hidden="true"
-  class="aspect-auto h-52 w-full sm:h-60"
+  class={cn(
+    "aspect-auto h-52 w-full sm:h-60",
+    // Depends on layerchart's internal class names (.lc-axis.placement-left, .lc-text-svg); recheck after upgrading it.
+    prefs.blur && "[&_.lc-axis.placement-left_.lc-text-svg]:blur-sm",
+  )}
 >
   <AreaChart
     data={rows}
@@ -84,7 +93,7 @@
     y="value"
     yDomain={domain}
     series={[{ key: "value", label: config.value.label, color }]}
-    padding={{ left: 48, bottom: 24, top: 8, right: 8 }}
+    padding={{ left: 64, bottom: 24, top: 8, right: 8 }}
     props={{
       area: { line: { class: "stroke-2" } },
       xAxis: {
@@ -121,12 +130,17 @@
     {#snippet tooltip()}
       <Chart.Tooltip
         indicator="dot"
-        labelFormatter={(v: Date) => formatDate(isoOf(v))}
+        labelFormatter={(v: Date) => prefs.date(isoOf(v))}
       >
         {#snippet formatter({ item })}
           <span class="text-muted-foreground">{label}</span>
-          <span class="text-foreground ms-auto font-medium tabular-nums">
-            {formatAmount(item.payload.amount as Minor, currency)}
+          <span
+            class={cn(
+              "text-foreground ms-auto font-medium tabular-nums",
+              prefs.blur && "blur-sm select-none",
+            )}
+          >
+            {prefs.amount(item.payload.amount as Minor, currency)}
           </span>
         {/snippet}
       </Chart.Tooltip>

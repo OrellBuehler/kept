@@ -56,6 +56,8 @@ export interface ImportPreview {
   rows: PreviewRowView[];
   counts: { new: number; duplicate: number; total: number };
   warnings: string[];
+  /** Balance mismatches; amounts are rendered client-side so display preferences apply. */
+  balanceWarnings: BalanceWarning[];
   errors: string[];
   /** Instant (ms) of the most recent import of this exact file into this account. */
   alreadyImportedAt: number | null;
@@ -246,20 +248,49 @@ export function anchoredBalanceAt(
   return minor(later.amount - between);
 }
 
+export type BalanceWarning =
+  | {
+      code: "opening_mismatch";
+      date: string;
+      fileAmount: Minor;
+      ledgerAmount: Minor;
+      currency: string;
+    }
+  | {
+      code: "closing_mismatch";
+      date: string;
+      fileAmount: Minor;
+      ledgerAmount: Minor;
+      currency: string;
+    };
+
+/** Plain-text form, for the persisted import history. */
+export function balanceWarningText(w: BalanceWarning): string {
+  const tail =
+    "This usually means a gap between imports or missing transactions.";
+  return w.code === "opening_mismatch"
+    ? `The file's opening balance (${formatAmount(w.fileAmount, w.currency)} on ${w.date}) does not match the ledger balance at the end of the previous day (${formatAmount(w.ledgerAmount, w.currency)}). ${tail}`
+    : `After this import the ledger balance on ${w.date} would be ${formatAmount(w.ledgerAmount, w.currency)}, but the file's closing balance is ${formatAmount(w.fileAmount, w.currency)}. ${tail}`;
+}
+
 function continuityWarnings(
   input: BalanceInput,
   statement: NormalizedStatement,
   newRows: NormalizedTransaction[],
   currency: string,
-): string[] {
-  const warnings: string[] = [];
+): BalanceWarning[] {
+  const warnings: BalanceWarning[] = [];
   const opening = statement.openingBalance;
   if (opening && hasDataBefore(input, opening.date)) {
     const ledger = anchoredBalanceAt(input, previousDay(opening.date));
     if (ledger !== null && ledger !== opening.amount) {
-      warnings.push(
-        `The file's opening balance (${formatAmount(opening.amount, currency)} on ${opening.date}) does not match the ledger balance at the end of the previous day (${formatAmount(ledger, currency)}). This usually means a gap between imports or missing transactions.`,
-      );
+      warnings.push({
+        code: "opening_mismatch",
+        date: opening.date,
+        fileAmount: opening.amount,
+        ledgerAmount: ledger,
+        currency,
+      });
     }
   }
   const closing = statement.closingBalance;
@@ -276,9 +307,13 @@ function continuityWarnings(
     };
     const ledger = anchoredBalanceAt(after, closing.date);
     if (ledger !== null && ledger !== closing.amount) {
-      warnings.push(
-        `After this import the ledger balance on ${closing.date} would be ${formatAmount(ledger, currency)}, but the file's closing balance is ${formatAmount(closing.amount, currency)}. This usually means a gap between imports or missing transactions.`,
-      );
+      warnings.push({
+        code: "closing_mismatch",
+        date: closing.date,
+        fileAmount: closing.amount,
+        ledgerAmount: ledger,
+        currency,
+      });
     }
   }
   return warnings;
@@ -374,6 +409,7 @@ export function buildPreview(
     },
     format: meta.format,
     fileName: meta.fileName,
+    balanceWarnings: [] as BalanceWarning[],
   };
 
   const alreadyImported = getDB()
@@ -449,8 +485,9 @@ export function buildPreview(
   if (statement.transactions.length === 0) {
     warnings.push("The file contains no transactions.");
   }
+  const balanceWarnings: BalanceWarning[] = [];
   if (errors.length === 0) {
-    warnings.push(
+    balanceWarnings.push(
       ...continuityWarnings(
         loadLedger(userId, account.id),
         statement,
@@ -476,6 +513,7 @@ export function buildPreview(
       total: rows.length,
     },
     warnings,
+    balanceWarnings,
     errors,
     alreadyImportedAt,
   };

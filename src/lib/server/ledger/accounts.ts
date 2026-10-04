@@ -11,7 +11,6 @@ import {
 } from "$lib/server/db";
 import { currentBalances } from "./balances";
 import { LedgerError, notFound } from "./errors";
-import { maskIban } from "$lib/iban";
 import type { AccountInput } from "./schemas";
 
 export interface InstitutionRef {
@@ -27,7 +26,6 @@ export interface AccountView {
   type: AccountType;
   currency: string;
   iban: string | null;
-  ibanMasked: string | null;
   openingBalance: Minor;
   openingDate: string | null;
   archived: boolean;
@@ -117,7 +115,6 @@ function toViews(
     type: r.type,
     currency: r.currency,
     iban: r.iban,
-    ibanMasked: r.iban ? maskIban(r.iban) : null,
     openingBalance: r.openingBalance,
     openingDate: r.openingDate,
     archived: r.archived,

@@ -25,6 +25,7 @@ import { DEDUCTION_TYPES } from "$lib/tax-deductions";
 import { CHANNEL_KINDS } from "$lib/notification-types";
 import { CADENCES, SERIES_STATUSES } from "$lib/recurring-types";
 import type { Minor } from "$lib/money";
+import { IBAN_DISPLAY, LOCALES } from "$lib/preferences";
 
 export { ACCOUNT_TYPES, IMPORT_FORMATS, REFERENCE_TYPES, ROW_SOURCES };
 export type { AccountType, ImportFormat, RowSource } from "$lib/ledger-types";
@@ -830,6 +831,7 @@ export const paperlessReportUploads = sqliteTable(
     index("paperless_report_uploads_user_id_idx").on(t.userId),
   ],
 );
+
 /** Which notification triggers a user has switched on, with their parameters. */
 export const notificationSettings = sqliteTable("notification_settings", {
   id: id(),
@@ -932,4 +934,19 @@ export const forecastAccountSettings = sqliteTable(
     uniqueIndex("forecast_account_settings_account_uq").on(t.accountId),
     index("forecast_account_settings_user_id_idx").on(t.userId),
   ],
+);
+
+export const userPreferences = sqliteTable(
+  "user_preferences",
+  {
+    id: id(),
+    userId: userId(),
+    ibanDisplay: text("iban_display", { enum: IBAN_DISPLAY }).notNull(),
+    blurAmounts: integer("blur_amounts", { mode: "boolean" }).notNull(),
+    locale: text("locale", { enum: LOCALES }).notNull(),
+    defaultCurrency: text("default_currency").notNull(),
+    pageSize: integer("page_size").notNull(),
+    ...timestamps,
+  },
+  (t) => [uniqueIndex("user_preferences_user_id_uq").on(t.userId)],
 );

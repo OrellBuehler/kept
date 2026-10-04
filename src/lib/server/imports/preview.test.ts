@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { maskIban } from "$lib/iban";
-import { formatAmount, minor } from "$lib/money";
+import { minor } from "$lib/money";
 import { createTestUser } from "$lib/testing/auth";
 import { useTestDB } from "$lib/testing/db";
 import {
@@ -19,7 +19,7 @@ import {
 import { seedAccount, seedImportedTransaction } from "$lib/testing/ledger";
 import { parseMappingProfile } from "$lib/server/importers/mapping";
 import { confirmImport } from "./confirm";
-import { buildPreview } from "./preview";
+import { balanceWarningText, buildPreview } from "./preview";
 import { saveCsvProfile } from "./profiles";
 
 useTestDB();
@@ -463,10 +463,16 @@ describe("buildPreview: continuity and repeats", () => {
       ),
     );
     expect(p.errors).toEqual([]);
-    expect(p.warnings).toHaveLength(2);
-    expect(p.warnings[0]).toContain(formatAmount(minor(40000), "CHF"));
-    expect(p.warnings[0]).toContain(formatAmount(minor(15000), "CHF"));
-    expect(p.warnings[0]).toContain(
+    expect(p.warnings).toEqual([]);
+    expect(p.balanceWarnings).toHaveLength(2);
+    expect(p.balanceWarnings[0]).toEqual({
+      code: "opening_mismatch",
+      date: "2024-04-01",
+      fileAmount: minor(40000),
+      ledgerAmount: minor(15000),
+      currency: "CHF",
+    });
+    expect(balanceWarningText(p.balanceWarnings[0]!)).toContain(
       "gap between imports or missing transactions",
     );
   });
@@ -503,9 +509,15 @@ describe("buildPreview: continuity and repeats", () => {
         }),
       ),
     );
-    expect(p.warnings).toHaveLength(1);
-    expect(p.warnings[0]).toContain(formatAmount(minor(13000), "CHF"));
-    expect(p.warnings[0]).toContain(formatAmount(minor(99900), "CHF"));
+    expect(p.balanceWarnings).toEqual([
+      {
+        code: "closing_mismatch",
+        date: "2024-04-30",
+        fileAmount: minor(99900),
+        ledgerAmount: minor(13000),
+        currency: "CHF",
+      },
+    ]);
   });
 
   it("the first import into an empty ledger has nothing to compare against", async () => {

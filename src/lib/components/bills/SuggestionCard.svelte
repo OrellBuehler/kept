@@ -11,9 +11,12 @@
   import { minorToSignedInput } from "$lib/amount-input";
   import type { FormErrors } from "$lib/form-errors";
   import { submitHandler } from "$lib/form-submit";
-  import { formatDate } from "$lib/format";
+
   import type { SuggestionView } from "$lib/server/bills/suggestions";
   import { cn } from "$lib/utils";
+  import { usePreferences } from "$lib/preferences.svelte";
+
+  const prefs = usePreferences();
 
   let {
     suggestion,
@@ -92,7 +95,7 @@
           {:else}
             Open amount
           {/if}
-          {#if bill.dueDate}· due {formatDate(bill.dueDate)}{/if}
+          {#if bill.dueDate}· due {prefs.date(bill.dueDate)}{/if}
         </span>
       </div>
       <ArrowLeftRightIcon
@@ -105,7 +108,7 @@
         {tx.counterpartyName ?? tx.description ?? "Transaction"}
       </span>
       <span class="text-muted-foreground truncate text-xs">
-        {tx.accountName} · {formatDate(tx.bookingDate)}
+        {tx.accountName} · {prefs.date(tx.bookingDate)}
       </span>
       <span class="text-xs">
         <Amount value={tx.amount} currency={tx.currency} flow class="text-xs" />
