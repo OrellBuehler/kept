@@ -7,6 +7,7 @@ import {
   getDB,
   imports,
   institutions,
+  trades,
   transactions,
 } from "$lib/server/db";
 import { currentBalances } from "./balances";
@@ -240,11 +241,16 @@ export function updateAccount(
         .select({ id: balanceSnapshots.id })
         .from(balanceSnapshots)
         .where(eq(balanceSnapshots.accountId, id))
+        .get() ??
+      db
+        .select({ id: trades.id })
+        .from(trades)
+        .where(eq(trades.accountId, id))
         .get();
     if (used) {
       throw new LedgerError(
         "conflict",
-        "The currency cannot change while the account has transactions or balances.",
+        "The currency cannot change while the account has transactions, balances or trades.",
         "currency",
       );
     }
