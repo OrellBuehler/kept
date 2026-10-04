@@ -49,7 +49,7 @@ export async function draftForDocument(
     ? undefined
     : cache.get(key(userId, documentId));
   if (!extraction) {
-    const { bytes } = readDocument(userId, documentId);
+    const { bytes } = await readDocument(userId, documentId);
     try {
       extraction = await extractBillFromPdf(bytes);
     } catch (err) {

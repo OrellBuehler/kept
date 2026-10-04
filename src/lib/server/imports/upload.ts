@@ -28,7 +28,7 @@ export async function startUpload(
       "file",
     );
   }
-  const meta = storePending(userId, {
+  const meta = await storePending(userId, {
     accountId: account.id,
     fileName: file.name,
     bytes: new Uint8Array(await file.arrayBuffer()),

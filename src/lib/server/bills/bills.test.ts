@@ -81,7 +81,7 @@ describe("bills service", () => {
       expectedAccountId: null,
     });
     expect(listBills(u.id)).toHaveLength(1);
-    deleteBill(u.id, bill.id);
+    await deleteBill(u.id, bill.id);
     expect(listBills(u.id)).toHaveLength(0);
     expect((await fails(() => getBill(u.id, bill.id))).code).toBe("not_found");
   });

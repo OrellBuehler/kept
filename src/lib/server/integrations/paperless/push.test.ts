@@ -21,7 +21,7 @@ import { createTestUser, type TestUser } from "$lib/testing/auth";
 import { billInput, seedBill } from "$lib/testing/bills";
 import { useTestDB } from "$lib/testing/db";
 import { EXAMPLE_SCOR } from "$lib/testing/fixtures/bill-identifiers";
-import { useTestDocuments } from "$lib/testing/documents";
+import { useTestStore } from "$lib/testing/store";
 import { startFakePaperless } from "./fake-server";
 import {
   buildPushPlan,
@@ -142,7 +142,7 @@ describe("buildPushPlan", () => {
 
 describe("pushBill", () => {
   useTestDB();
-  useTestDocuments();
+  useTestStore();
   let user: TestUser;
   let pdf: Uint8Array;
   const mapping: PaperlessFieldMapping = {

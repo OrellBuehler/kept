@@ -8,7 +8,7 @@ import {
   MAPPING_REQUIRED,
 } from "$lib/server/imports";
 import { autoMatchQuietly } from "$lib/server/bills/auto-match";
-import { ledgerFailure, orNotFound } from "$lib/server/ledger/http";
+import { ledgerFailure, orNotFoundAsync } from "$lib/server/ledger/http";
 import type { Actions, PageServerLoad } from "./$types";
 
 const PAGE_SIZE = 100;
@@ -18,9 +18,11 @@ const querySchema = z.object({
   filter: z.enum(["all", "new", "replaces_mirror", "duplicate"]).catch("all"),
 });
 
-export const load: PageServerLoad = ({ locals, params, url }) => {
+export const load: PageServerLoad = async ({ locals, params, url }) => {
   const user = requireUser(locals);
-  const preview = orNotFound(() => buildPreview(user.id, params.pendingId));
+  const preview = await orNotFoundAsync(() =>
+    buildPreview(user.id, params.pendingId),
+  );
   const query = querySchema.parse({
     page: url.searchParams.get("page") ?? undefined,
     filter: url.searchParams.get("filter") ?? undefined,
@@ -48,11 +50,11 @@ export const load: PageServerLoad = ({ locals, params, url }) => {
 };
 
 export const actions: Actions = {
-  confirm: ({ locals, params }) => {
+  confirm: async ({ locals, params }) => {
     const user = requireUser(locals);
     let target: string;
     try {
-      const done = confirmImport(user.id, params.pendingId);
+      const done = await confirmImport(user.id, params.pendingId);
       const { paired, replaced, mirrored, needsAmount } = done.transfers;
       const linked = paired + replaced;
       const query = new URLSearchParams({ imported: done.importId });
@@ -67,10 +69,10 @@ export const actions: Actions = {
     redirect(303, target);
   },
 
-  cancel: ({ locals, params }) => {
+  cancel: async ({ locals, params }) => {
     const user = requireUser(locals);
     try {
-      deletePending(user.id, params.pendingId);
+      await deletePending(user.id, params.pendingId);
     } catch (err) {
       return ledgerFailure("cancel", err);
     }

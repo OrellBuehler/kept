@@ -37,7 +37,11 @@ import {
 } from "$lib/server/bills/suggestions";
 import { parseForm, safeValues } from "$lib/server/forms";
 import { listAccounts } from "$lib/server/ledger/accounts";
-import { ledgerFailure, orNotFound } from "$lib/server/ledger/http";
+import {
+  ledgerFailure,
+  orNotFound,
+  orNotFoundAsync,
+} from "$lib/server/ledger/http";
 import type { Actions, PageServerLoad } from "./$types";
 
 function positiveInt(value: string | null): number {
@@ -102,9 +106,9 @@ export const actions: Actions = {
     return { success: true as const, action: "uncancel" as const };
   },
 
-  delete: ({ locals, params }) => {
+  delete: async ({ locals, params }) => {
     const user = requireUser(locals);
-    orNotFound(() => deleteBill(user.id, params.id));
+    await orNotFoundAsync(() => deleteBill(user.id, params.id));
     redirect(303, "/bills");
   },
 
@@ -209,19 +213,21 @@ export const actions: Actions = {
     orNotFound(() => billView(user.id, params.id, { today: todayLocal() }));
     const upload = await readUpload(await request.formData());
     if (!upload.ok) return uploadFailure("attachDocument", upload.message);
-    sweepUnreferencedDocuments(user.id);
+    await sweepUnreferencedDocuments(user.id);
     let storedId: string | null = null;
     try {
-      storedId = storeDocument(
-        user.id,
-        upload.bytes,
-        upload.fileName,
-        upload.mimeType,
+      storedId = (
+        await storeDocument(
+          user.id,
+          upload.bytes,
+          upload.fileName,
+          upload.mimeType,
+        )
       ).id;
-      attachDocument(user.id, params.id, storedId);
+      await attachDocument(user.id, params.id, storedId);
       return { success: true as const, action: "attachDocument" as const };
     } catch (err) {
-      deleteDocumentIfUnused(user.id, storedId);
+      await deleteDocumentIfUnused(user.id, storedId);
       return ledgerFailure("attachDocument", err);
     }
   },

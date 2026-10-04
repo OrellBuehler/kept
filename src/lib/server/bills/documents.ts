@@ -1,16 +1,10 @@
 import { createHash } from "node:crypto";
-import {
-  existsSync,
-  mkdirSync,
-  readFileSync,
-  rmSync,
-  writeFileSync,
-} from "node:fs";
-import { dirname, join, resolve, sep } from "node:path";
 import { and, eq } from "drizzle-orm";
 import type { DocumentSource } from "$lib/bill-types";
 import { documents, getDB } from "$lib/server/db";
+import { safeErrorInfo } from "$lib/server/errors";
 import { LedgerError, notFound } from "$lib/server/ledger/errors";
+import { getStore } from "$lib/server/storage";
 import { MAX_PDF_BYTES } from "./pdf-extract";
 
 export const MAX_DOCUMENT_BYTES = MAX_PDF_BYTES;
@@ -26,30 +20,9 @@ export interface DocumentMeta {
   createdAt: number;
 }
 
-let rootOverride: string | null = null;
-
-/** Tests only: store documents below this directory; pass null to reset. */
-export function setDocumentsRoot(dir: string | null): void {
-  rootOverride = dir;
-}
-
-/** `<dirname(DATABASE_PATH)>/documents`, next to the database file. */
-export function documentsRoot(): string {
-  if (rootOverride !== null) return resolve(rootOverride);
-  const dbPath = process.env.DATABASE_PATH ?? "./data/kept.db";
-  if (dbPath === ":memory:") {
-    throw new Error("Documents need a file-backed DATABASE_PATH");
-  }
-  return resolve(dirname(dbPath), "documents");
-}
-
-function absolutePath(storageKey: string): string {
-  const root = documentsRoot();
-  const full = resolve(root, storageKey);
-  if (!full.startsWith(root + sep)) {
-    throw new Error("Document path escapes the documents directory");
-  }
-  return full;
+/** Blob key of a document; `storageKey` (`<userId>/<id>`) is what the documents table keeps. */
+function blobKey(storageKey: string): string {
+  return `documents/${storageKey}`;
 }
 
 const meta = {
@@ -97,13 +70,13 @@ export function hasPdfMagic(bytes: Uint8Array): boolean {
  * Stores a file for the user. Uploads must be PDFs (checked by content, the declared
  * type is ignored). Identical content (same sha256) is stored once per user.
  */
-export function storeDocument(
+export async function storeDocument(
   userId: string,
   bytes: Uint8Array,
   fileName: string,
   mimeType: string,
   source: DocumentSource = "upload",
-): DocumentMeta {
+): Promise<DocumentMeta> {
   if (bytes.byteLength === 0) {
     throw new LedgerError("invalid", "The file is empty.", "file");
   }
@@ -119,34 +92,36 @@ export function storeDocument(
   }
 
   const sha256 = createHash("sha256").update(bytes).digest("hex");
-  const db = getDB();
-  const existing = db
-    .select({ ...meta, storageKey: documents.storageKey })
-    .from(documents)
-    .where(and(eq(documents.userId, userId), eq(documents.sha256, sha256)))
-    .get();
+  const store = getStore();
+  const storedType = source === "upload" ? PDF_MIME : mimeType;
+  const existing = findBySha256(userId, sha256);
   if (existing) {
-    const path = absolutePath(existing.storageKey);
-    if (!existsSync(path)) {
-      mkdirSync(dirname(path), { recursive: true });
-      writeFileSync(path, bytes);
+    const key = blobKey(existing.storageKey);
+    let restored = false;
+    if (!(await store.has(key))) {
+      await store.put(key, bytes, storedType);
+      restored = true;
     }
-    return toMeta(existing);
+    // A concurrent delete may have removed the row while we awaited the store.
+    const stillThere = findBySha256(userId, sha256);
+    if (stillThere?.id === existing.id) return toMeta(existing);
+    if (restored) await store.delete(key);
+    if (stillThere) return toMeta(stillThere);
+    // Gone: fall through and store it as a new document.
   }
 
   const id = crypto.randomUUID();
-  const storageKey = join(userId, id);
-  const path = absolutePath(storageKey);
-  mkdirSync(dirname(path), { recursive: true });
-  writeFileSync(path, bytes);
+  const storageKey = `${userId}/${id}`;
+  const key = blobKey(storageKey);
+  await store.put(key, bytes, storedType);
   try {
-    const row = db
+    const row = getDB()
       .insert(documents)
       .values({
         id,
         userId,
         fileName: sanitizeFileName(fileName),
-        mimeType: source === "upload" ? PDF_MIME : mimeType,
+        mimeType: storedType,
         size: bytes.byteLength,
         sha256,
         storageKey,
@@ -156,9 +131,22 @@ export function storeDocument(
       .get();
     return toMeta(row);
   } catch (err) {
-    rmSync(path, { force: true });
+    await store.delete(key);
+    // A concurrent upload of the same content won the unique (user, sha256) index.
+    if (safeErrorInfo(err).code === "SQLITE_CONSTRAINT_UNIQUE") {
+      const winner = findBySha256(userId, sha256);
+      if (winner) return toMeta(winner);
+    }
     throw err;
   }
+}
+
+function findBySha256(userId: string, sha256: string) {
+  return getDB()
+    .select({ ...meta, storageKey: documents.storageKey })
+    .from(documents)
+    .where(and(eq(documents.userId, userId), eq(documents.sha256, sha256)))
+    .get();
 }
 
 export function getDocumentMeta(userId: string, id: string): DocumentMeta {
@@ -171,23 +159,26 @@ export function getDocumentMeta(userId: string, id: string): DocumentMeta {
   return toMeta(row);
 }
 
-export function readDocument(
+export async function readDocument(
   userId: string,
   id: string,
-): { meta: DocumentMeta; bytes: Uint8Array } {
+): Promise<{ meta: DocumentMeta; bytes: Uint8Array }> {
   const row = getDB()
     .select({ ...meta, storageKey: documents.storageKey })
     .from(documents)
     .where(and(eq(documents.userId, userId), eq(documents.id, id)))
     .get();
   if (!row) throw notFound("Document");
-  const path = absolutePath(row.storageKey);
-  if (!existsSync(path)) throw notFound("Document file");
-  return { meta: toMeta(row), bytes: new Uint8Array(readFileSync(path)) };
+  const bytes = await getStore().get(blobKey(row.storageKey));
+  if (bytes === null) throw notFound("Document file");
+  return { meta: toMeta(row), bytes };
 }
 
 /** Removes the file and the row; bills that referenced it keep working without a document. */
-export function deleteDocument(userId: string, id: string): void {
+export async function deleteDocument(
+  userId: string,
+  id: string,
+): Promise<void> {
   const row = getDB()
     .select({ storageKey: documents.storageKey })
     .from(documents)
@@ -198,5 +189,5 @@ export function deleteDocument(userId: string, id: string): void {
     .delete(documents)
     .where(and(eq(documents.userId, userId), eq(documents.id, id)))
     .run();
-  rmSync(absolutePath(row.storageKey), { force: true });
+  await getStore().delete(blobKey(row.storageKey));
 }

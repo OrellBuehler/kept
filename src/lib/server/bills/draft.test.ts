@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { createTestUser } from "$lib/testing/auth";
 import { useTestDB } from "$lib/testing/db";
-import { useTestDocuments } from "$lib/testing/documents";
+import { useTestStore } from "$lib/testing/store";
 import { buildBillPdf } from "$lib/testing/fixtures/bills/pdf";
 import {
   QRR,
@@ -57,11 +57,11 @@ describe("billFromExtraction", () => {
 
 describe("draftForDocument", () => {
   useTestDB();
-  useTestDocuments();
+  useTestStore();
 
   it("extracts a stored document and serves the repeat from the cache", async () => {
     const u = await createTestUser();
-    const doc = storeDocument(
+    const doc = await storeDocument(
       u.id,
       await qrPdf(),
       "bill.pdf",
@@ -79,7 +79,7 @@ describe("draftForDocument", () => {
   it("reports an unreadable PDF as a warning without a draft", async () => {
     const u = await createTestUser();
     const pdf = await buildBillPdf({ bodyLines: ["x"], password: "secret" });
-    const doc = storeDocument(u.id, pdf, "locked.pdf", "application/pdf");
+    const doc = await storeDocument(u.id, pdf, "locked.pdf", "application/pdf");
     const r = await draftForDocument(u.id, doc.id);
     expect(r.draft).toBeNull();
     expect(r.extraction.source).toBe("none");

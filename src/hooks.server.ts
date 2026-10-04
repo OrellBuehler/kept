@@ -3,7 +3,9 @@ import { warmDummyHash } from "$lib/server/auth/password";
 import { assertSecretKeyConfigured } from "$lib/server/crypto";
 import { registerBackups } from "$lib/server/backup";
 import { registerInbox } from "$lib/server/inbox";
+import { startPendingSweep } from "$lib/server/imports";
 import { runMigrations } from "$lib/server/db";
+import { getStore, sweepStaleStorageTemp } from "$lib/server/storage";
 import { registerNotifications } from "$lib/server/notifications";
 import { registerPaperless } from "$lib/server/integrations/paperless";
 import { registerMarketData } from "$lib/server/integrations/yahoo-finance";
@@ -20,7 +22,12 @@ import { countUsers } from "$lib/server/auth/users";
 
 export async function init() {
   assertSecretKeyConfigured();
+  getStore();
   runMigrations();
+  startPendingSweep();
+  sweepStaleStorageTemp().catch((err) =>
+    console.error("storage temp cleanup failed: %s", describeError(err)),
+  );
   registerBackups();
   registerInbox();
   await warmDummyHash();

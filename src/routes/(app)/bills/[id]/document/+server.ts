@@ -2,7 +2,7 @@ import { error } from "@sveltejs/kit";
 import { requireUser } from "$lib/server/auth/guards";
 import { getBill } from "$lib/server/bills/bills";
 import { readDocument } from "$lib/server/bills/documents";
-import { orNotFound } from "$lib/server/ledger/http";
+import { orNotFound, orNotFoundAsync } from "$lib/server/ledger/http";
 import type { RequestHandler } from "./$types";
 
 function encodeRfc5987(value: string): string {
@@ -12,11 +12,11 @@ function encodeRfc5987(value: string): string {
   );
 }
 
-export const GET: RequestHandler = ({ locals, params }) => {
+export const GET: RequestHandler = async ({ locals, params }) => {
   const user = requireUser(locals);
   const bill = orNotFound(() => getBill(user.id, params.id));
   if (!bill.documentId) error(404, "This bill has no document.");
-  const { meta, bytes } = orNotFound(() =>
+  const { meta, bytes } = await orNotFoundAsync(() =>
     readDocument(user.id, bill.documentId!),
   );
   return new Response(bytes as BodyInit, {

@@ -1,19 +1,16 @@
+import { useTestStore } from "$lib/testing/store";
 import { describe, expect, it } from "vitest";
 import { createTestUser } from "$lib/testing/auth";
 import { useTestDB } from "$lib/testing/db";
 import { createTestEvent, outcome } from "$lib/testing/event";
 import { EXAMPLE_IBAN } from "$lib/testing/fixtures/bill-identifiers";
-import {
-  SIMPLE_CSV_PROFILE,
-  uploadFixture,
-  usePendingDir,
-} from "$lib/testing/imports";
+import { SIMPLE_CSV_PROFILE, uploadFixture } from "$lib/testing/imports";
 import { seedAccount } from "$lib/testing/ledger";
 import { getCsvProfile } from "$lib/server/imports";
 import { actions, load } from "./+page.server";
 
 useTestDB();
-usePendingDir();
+useTestStore();
 
 type User = Awaited<ReturnType<typeof createTestUser>>;
 
@@ -37,7 +34,7 @@ async function setup() {
 describe("/import/[pendingId]/mapping", () => {
   it("load returns the mapping context with a guessed draft", async () => {
     const { user, account } = await setup();
-    const id = uploadFixture(user.id, account.id, "csv/overlap-a.csv");
+    const id = await uploadFixture(user.id, account.id, "csv/overlap-a.csv");
     const r = await loadAs(user, id);
     expect(r.type).toBe("return");
     expect((r as { value: unknown }).value).toMatchObject({
@@ -56,7 +53,11 @@ describe("/import/[pendingId]/mapping", () => {
 
   it("camt uploads redirect to the preview", async () => {
     const { user, account } = await setup();
-    const id = uploadFixture(user.id, account.id, "camt053/overlap-a.xml");
+    const id = await uploadFixture(
+      user.id,
+      account.id,
+      "camt053/overlap-a.xml",
+    );
     expect(await loadAs(user, id)).toEqual({
       type: "redirect",
       status: 303,
@@ -66,7 +67,7 @@ describe("/import/[pendingId]/mapping", () => {
 
   it("save stores the profile and redirects to the preview", async () => {
     const { user, account } = await setup();
-    const id = uploadFixture(user.id, account.id, "csv/overlap-a.csv");
+    const id = await uploadFixture(user.id, account.id, "csv/overlap-a.csv");
     const r = await save(user, id, {
       name: "My mapping",
       profile: JSON.stringify(SIMPLE_CSV_PROFILE),
@@ -81,7 +82,7 @@ describe("/import/[pendingId]/mapping", () => {
 
   it("save fails with 400 for invalid JSON, invalid profile and blank name", async () => {
     const { user, account } = await setup();
-    const id = uploadFixture(user.id, account.id, "csv/overlap-a.csv");
+    const id = await uploadFixture(user.id, account.id, "csv/overlap-a.csv");
     expect(await save(user, id, { name: "x", profile: "{nope" })).toMatchObject(
       {
         type: "fail",
@@ -113,7 +114,7 @@ describe("/import/[pendingId]/mapping", () => {
 
   it("save reports a missing profile field under errors.profile", async () => {
     const { user, account } = await setup();
-    const id = uploadFixture(user.id, account.id, "csv/overlap-a.csv");
+    const id = await uploadFixture(user.id, account.id, "csv/overlap-a.csv");
     expect(await save(user, id, { name: "x" })).toMatchObject({
       type: "fail",
       status: 400,
@@ -124,7 +125,7 @@ describe("/import/[pendingId]/mapping", () => {
   it("another user cannot load or save a mapping for my upload", async () => {
     const { user, account } = await setup();
     const other = await createTestUser();
-    const id = uploadFixture(user.id, account.id, "csv/overlap-a.csv");
+    const id = await uploadFixture(user.id, account.id, "csv/overlap-a.csv");
     expect(await loadAs(other, id)).toEqual({ type: "error", status: 404 });
     expect(
       await save(other, id, {

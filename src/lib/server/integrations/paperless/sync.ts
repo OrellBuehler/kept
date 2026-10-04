@@ -365,7 +365,10 @@ function findBillByRef(userId: string, ref: string): BillView | null {
 }
 
 /** Deletes a stored integration document once nothing refers to it any more. */
-function releaseDocument(userId: string, documentId: string | null): void {
+async function releaseDocument(
+  userId: string,
+  documentId: string | null,
+): Promise<void> {
   if (documentId === null) return;
   const db = getDB();
   const usedByBill = db
@@ -385,7 +388,7 @@ function releaseDocument(userId: string, documentId: string | null): void {
     .get();
   if (usedByBill || usedByLink) return;
   if (getDocumentMeta(userId, documentId).source === "integration") {
-    deleteDocument(userId, documentId);
+    await deleteDocument(userId, documentId);
   }
 }
 
@@ -673,7 +676,7 @@ async function processDocument(
   }
 
   const fileName = doc.original_file_name ?? `paperless-${doc.id}.pdf`;
-  const stored = storeDocument(
+  const stored = await storeDocument(
     userId,
     bytes,
     fileName,
@@ -685,7 +688,7 @@ async function processDocument(
   if (link && link.status === "imported" && link.billId !== null) {
     const bill = getBill(userId, link.billId);
     const previous = bill.documentId;
-    attachDocument(userId, bill.id, stored.id);
+    await attachDocument(userId, bill.id, stored.id);
     saveLink(row, doc.id, {
       modified,
       status: "imported",
@@ -694,7 +697,7 @@ async function processDocument(
       contentSha256: sha,
     });
     if (previous !== null && previous !== stored.id) {
-      releaseDocument(userId, previous);
+      await releaseDocument(userId, previous);
     }
     return "updated";
   }
@@ -704,7 +707,7 @@ async function processDocument(
     extraction = await extractBillFromPdf(bytes);
   } catch (err) {
     if (!(err instanceof PdfExtractError)) throw err;
-    releaseDocument(userId, stored.id);
+    await releaseDocument(userId, stored.id);
     saveLink(row, doc.id, {
       modified,
       status: "failed",
@@ -717,7 +720,7 @@ async function processDocument(
   const { draft, warnings } = billFromExtraction(extraction);
   const built = buildBillInput({ ...draft });
   if (!built.ok) {
-    releaseDocument(userId, stored.id);
+    await releaseDocument(userId, stored.id);
     saveLink(row, doc.id, {
       modified,
       status: "failed",

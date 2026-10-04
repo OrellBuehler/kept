@@ -1,17 +1,18 @@
+import { useTestStore } from "$lib/testing/store";
 import { eq } from "drizzle-orm";
 import { describe, expect, it } from "vitest";
 import { createTestUser } from "$lib/testing/auth";
 import { useTestDB } from "$lib/testing/db";
 import { createTestEvent, outcome } from "$lib/testing/event";
 import { EXAMPLE_IBAN } from "$lib/testing/fixtures/bill-identifiers";
-import { uploadFixture, usePendingDir } from "$lib/testing/imports";
+import { uploadFixture } from "$lib/testing/imports";
 import { seedAccount } from "$lib/testing/ledger";
 import { getDB, transactions } from "$lib/server/db";
 import { confirmImport, listImports } from "$lib/server/imports";
 import { actions, load } from "./+page.server";
 
 useTestDB();
-usePendingDir();
+useTestStore();
 
 type User = Awaited<ReturnType<typeof createTestUser>>;
 
@@ -29,9 +30,9 @@ const undo = (user: User, accountId: string, form: Record<string, string>) =>
 async function setup() {
   const user = await createTestUser();
   const account = seedAccount(user.id, { iban: EXAMPLE_IBAN });
-  const imp = confirmImport(
+  const imp = await confirmImport(
     user.id,
-    uploadFixture(user.id, account.id, "camt053/overlap-a.xml"),
+    await uploadFixture(user.id, account.id, "camt053/overlap-a.xml"),
   );
   return { user, account, imp };
 }
@@ -39,9 +40,9 @@ async function setup() {
 describe("/accounts/[id]/imports", () => {
   it("load returns the account and its imports, newest first", async () => {
     const { user, account, imp } = await setup();
-    const second = confirmImport(
+    const second = await confirmImport(
       user.id,
-      uploadFixture(user.id, account.id, "camt053/overlap-b.xml"),
+      await uploadFixture(user.id, account.id, "camt053/overlap-b.xml"),
     );
     const r = await loadAs(user, account.id);
     const v = (

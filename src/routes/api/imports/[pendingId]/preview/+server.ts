@@ -42,7 +42,9 @@ export const POST: RequestHandler = async ({
   if (!body.success) error(400, "Expected a JSON object with a profile");
 
   try {
-    return json(mappingContext(user.id, params.pendingId, body.data.profile));
+    return json(
+      await mappingContext(user.id, params.pendingId, body.data.profile),
+    );
   } catch (err) {
     if (err instanceof LedgerError) {
       error(err.code === "not_found" ? 404 : 400, err.message);

@@ -7,7 +7,7 @@ import { getDocumentMeta, storeDocument } from "$lib/server/bills/documents";
 import { createTestUser } from "$lib/testing/auth";
 import { billForm, seedBill } from "$lib/testing/bills";
 import { useTestDB } from "$lib/testing/db";
-import { useTestDocuments } from "$lib/testing/documents";
+import { useTestStore } from "$lib/testing/store";
 import { createTestEvent, outcome } from "$lib/testing/event";
 import { buildBillPdf } from "$lib/testing/fixtures/bills/pdf";
 import {
@@ -63,7 +63,7 @@ const qrPdf = () =>
 
 describe("bill detail page", () => {
   useTestDB();
-  useTestDocuments();
+  useTestStore();
 
   const refForm = (over: Record<string, string> = {}) =>
     billForm({
@@ -410,8 +410,13 @@ describe("bill detail page", () => {
       amount: minor(-1000),
     });
     const alloc = allocate(a.id, billA.id, txA.id, minor(1000), "user");
-    const doc = storeDocument(a.id, await qrPdf(), "a.pdf", "application/pdf");
-    attachDocument(a.id, billA.id, doc.id);
+    const doc = await storeDocument(
+      a.id,
+      await qrPdf(),
+      "a.pdf",
+      "application/pdf",
+    );
+    await attachDocument(a.id, billA.id, doc.id);
 
     const notFound = { type: "error", status: 404 };
     expect(await loadAs(b, billA.id)).toEqual(notFound);

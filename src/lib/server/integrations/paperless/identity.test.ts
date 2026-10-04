@@ -2,7 +2,7 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { listBills } from "$lib/server/bills/bills";
 import { createTestUser, type TestUser } from "$lib/testing/auth";
 import { useTestDB } from "$lib/testing/db";
-import { useTestDocuments } from "$lib/testing/documents";
+import { useTestStore } from "$lib/testing/store";
 import { LedgerError } from "$lib/server/ledger/errors";
 import { getConnectionRow } from "./connection";
 import { startFakePaperless } from "./fake-server";
@@ -44,7 +44,7 @@ async function rejection(promise: Promise<unknown>): Promise<LedgerError> {
 
 describe("saveConnectionVerified", () => {
   useTestDB();
-  useTestDocuments();
+  useTestStore();
   let user: TestUser;
 
   beforeEach(async () => {

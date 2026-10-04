@@ -1,10 +1,11 @@
+import { useTestStore } from "$lib/testing/store";
 import { describe, expect, it } from "vitest";
 import { createTestUser } from "$lib/testing/auth";
 import { useTestDB } from "$lib/testing/db";
 import { createTestEvent, outcome } from "$lib/testing/event";
 import { EXAMPLE_IBAN } from "$lib/testing/fixtures/bill-identifiers";
 import { fixture } from "$lib/testing/fixtures";
-import { SIMPLE_CSV_PROFILE, usePendingDir } from "$lib/testing/imports";
+import { SIMPLE_CSV_PROFILE } from "$lib/testing/imports";
 import { seedAccount, seedInstitution } from "$lib/testing/ledger";
 import { confirmImport, saveCsvProfile } from "$lib/server/imports";
 import { archiveAccount } from "$lib/server/ledger/accounts";
@@ -12,7 +13,7 @@ import { uploadFixture } from "$lib/testing/imports";
 import { actions, load } from "./+page.server";
 
 useTestDB();
-usePendingDir();
+useTestStore();
 
 type User = Awaited<ReturnType<typeof createTestUser>>;
 
@@ -45,9 +46,9 @@ describe("/import load", () => {
     const { user, account } = await setup();
     const archived = seedAccount(user.id, { name: "Old", iban: null });
     archiveAccount(user.id, archived.id);
-    confirmImport(
+    await confirmImport(
       user.id,
-      uploadFixture(user.id, account.id, "camt053/overlap-a.xml"),
+      await uploadFixture(user.id, account.id, "camt053/overlap-a.xml"),
     );
     const r = await loadAs(user, `?account=${account.id}`);
     expect(r.type).toBe("return");
@@ -86,9 +87,9 @@ describe("/import load", () => {
   it("does not show another user's accounts or imports", async () => {
     const { user, account } = await setup();
     const other = await createTestUser();
-    confirmImport(
+    await confirmImport(
       user.id,
-      uploadFixture(user.id, account.id, "camt053/overlap-a.xml"),
+      await uploadFixture(user.id, account.id, "camt053/overlap-a.xml"),
     );
     const r = await loadAs(other);
     const data = (

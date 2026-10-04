@@ -355,17 +355,17 @@ function continuityWarnings(
 
 // --- preview ---------------------------------------------------------------
 
-function parseFile(
+async function parseFile(
   meta: PendingMeta,
-  readBytes: () => Uint8Array,
+  readBytes: () => Promise<Uint8Array>,
   profile: CsvMappingProfile | null,
   account: AccountView,
-): Selection {
+): Promise<Selection> {
   try {
     if (meta.format === "camt053") {
       return selectCamtStatement(
-        cachedParse(meta, "camt", () =>
-          parseCamt053(new TextDecoder("utf-8").decode(readBytes())),
+        await cachedParse(meta, "camt", async () =>
+          parseCamt053(new TextDecoder("utf-8").decode(await readBytes())),
         ),
         account,
       );
@@ -375,16 +375,19 @@ function parseFile(
     }
     const rows =
       meta.format === "xlsx"
-        ? cachedParse(meta, `xlsx:${profile.decimalSeparator}`, () =>
-            readXlsx(readBytes(), {
-              decimalSeparator: profile.decimalSeparator,
-            }),
+        ? await cachedParse(
+            meta,
+            `xlsx:${profile.decimalSeparator}`,
+            async () =>
+              readXlsx(await readBytes(), {
+                decimalSeparator: profile.decimalSeparator,
+              }),
           )
-        : cachedParse(
+        : await cachedParse(
             meta,
             `csv:${profile.delimiter}:${profile.encoding}`,
-            () =>
-              readCsv(readBytes(), {
+            async () =>
+              readCsv(await readBytes(), {
                 delimiter: profile.delimiter,
                 encoding: profile.encoding,
               }),
@@ -426,11 +429,11 @@ function existingExternalIds(
   return found;
 }
 
-export function buildPreview(
+export async function buildPreview(
   userId: string,
   pendingId: string,
   options: PreviewOptions = {},
-): ImportPreview {
+): Promise<ImportPreview> {
   const meta = getPendingMeta(userId, pendingId);
   const account = getAccount(userId, meta.accountId);
   const base = {
@@ -466,9 +469,9 @@ export function buildPreview(
     meta.format === "camt053"
       ? null
       : (options.profile ?? getCsvProfile(userId, account.id)?.profile ?? null);
-  const selection = parseFile(
+  const selection = await parseFile(
     meta,
-    () => readPending(userId, pendingId).bytes,
+    async () => (await readPending(userId, pendingId)).bytes,
     profile,
     account,
   );

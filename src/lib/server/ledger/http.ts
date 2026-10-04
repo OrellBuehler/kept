@@ -33,3 +33,15 @@ export function orNotFound<T>(fn: () => T): T {
     throw err;
   }
 }
+
+/** `orNotFound` for async work. */
+export async function orNotFoundAsync<T>(fn: () => Promise<T>): Promise<T> {
+  try {
+    return await fn();
+  } catch (err) {
+    if (err instanceof LedgerError && err.code === "not_found") {
+      error(404, err.message);
+    }
+    throw err;
+  }
+}

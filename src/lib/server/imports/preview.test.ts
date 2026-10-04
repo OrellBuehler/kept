@@ -1,3 +1,4 @@
+import { useTestStore } from "$lib/testing/store";
 import { describe, expect, it } from "vitest";
 import { maskIban } from "$lib/iban";
 import { minor } from "$lib/money";
@@ -14,7 +15,6 @@ import {
   SIMPLE_CSV_PROFILE,
   uploadBytes,
   uploadFixture,
-  usePendingDir,
 } from "$lib/testing/imports";
 import { seedAccount, seedImportedTransaction } from "$lib/testing/ledger";
 import { parseMappingProfile } from "$lib/server/importers/mapping";
@@ -23,7 +23,7 @@ import { balanceWarningText, buildPreview } from "./preview";
 import { saveCsvProfile } from "./profiles";
 
 useTestDB();
-usePendingDir();
+useTestStore();
 
 async function setup(over: Parameters<typeof seedAccount>[1] = {}) {
   const user = await createTestUser();
@@ -40,9 +40,9 @@ describe("buildPreview: camt.053", () => {
       const { user, account } = await setup(
         name === "v08-basic" ? { iban: IBAN_DE, currency: "EUR" } : {},
       );
-      const p = buildPreview(
+      const p = await buildPreview(
         user.id,
-        uploadFixture(user.id, account.id, `camt053/${name}.xml`),
+        await uploadFixture(user.id, account.id, `camt053/${name}.xml`),
       );
       expect(p.errors).toEqual([]);
       expect(p.format).toBe("camt053");
@@ -61,9 +61,9 @@ describe("buildPreview: camt.053", () => {
 
   it("picks the statement of this account from a multi-account file (IBAN match wins)", async () => {
     const { user, account } = await setup({ iban: IBAN_DE, currency: "EUR" });
-    const p = buildPreview(
+    const p = await buildPreview(
       user.id,
-      uploadFixture(user.id, account.id, "camt053/multi-account.xml"),
+      await uploadFixture(user.id, account.id, "camt053/multi-account.xml"),
     );
     expect(p.errors).toEqual([]);
     expect(p.warnings).toEqual([]);
@@ -74,9 +74,9 @@ describe("buildPreview: camt.053", () => {
 
   it("errors with masked IBANs when several statements and none match", async () => {
     const { user, account } = await setup({ iban: EXAMPLE_IBAN_OTHER });
-    const p = buildPreview(
+    const p = await buildPreview(
       user.id,
-      uploadFixture(user.id, account.id, "camt053/multi-account.xml"),
+      await uploadFixture(user.id, account.id, "camt053/multi-account.xml"),
     );
     expect(p.statement).toBeNull();
     expect(p.rows).toEqual([]);
@@ -89,25 +89,25 @@ describe("buildPreview: camt.053", () => {
 
   it("blocks a single statement for a different IBAN", async () => {
     const { user, account } = await setup({ iban: EXAMPLE_IBAN_OTHER });
-    const p = buildPreview(
+    const p = await buildPreview(
       user.id,
-      uploadFixture(user.id, account.id, "camt053/v04-basic.xml"),
+      await uploadFixture(user.id, account.id, "camt053/v04-basic.xml"),
     );
     expect(p.errors).toHaveLength(1);
     expect(p.errors[0]).toContain(maskIban(EXAMPLE_IBAN));
     expect(p.errors[0]).toContain(maskIban(EXAMPLE_IBAN_OTHER));
     expect(p.errors[0]).not.toContain(EXAMPLE_IBAN);
-    expect(() =>
+    await expect(
       confirmImport(
         user.id,
-        uploadFixture(user.id, account.id, "camt053/v04-basic.xml"),
+        await uploadFixture(user.id, account.id, "camt053/v04-basic.xml"),
       ),
-    ).toThrow(/different IBAN/);
+    ).rejects.toThrow(/different IBAN/);
   });
 
   it("merges several statements of the account, taking the latest closing balance whatever the order", async () => {
     const { user, account } = await setup();
-    const id = uploadBytes(
+    const id = await uploadBytes(
       user.id,
       account.id,
       buildCamtMulti([
@@ -129,7 +129,7 @@ describe("buildPreview: camt.053", () => {
         },
       ]),
     );
-    const p = buildPreview(user.id, id);
+    const p = await buildPreview(user.id, id);
     expect(p.errors).toEqual([]);
     expect(p.counts.total).toBe(2);
     expect(p.statement?.openingBalance).toMatchObject({
@@ -148,9 +148,9 @@ describe("buildPreview: camt.053", () => {
 
   it("warns when the account has no IBAN", async () => {
     const { user, account } = await setup({ iban: null });
-    const p = buildPreview(
+    const p = await buildPreview(
       user.id,
-      uploadFixture(user.id, account.id, "camt053/v04-basic.xml"),
+      await uploadFixture(user.id, account.id, "camt053/v04-basic.xml"),
     );
     expect(p.errors).toEqual([]);
     expect(p.warnings[0]).toMatch(/no IBAN/);
@@ -158,9 +158,9 @@ describe("buildPreview: camt.053", () => {
 
   it("blocks a statement in another currency than the account", async () => {
     const { user, account } = await setup({ iban: IBAN_DE, currency: "CHF" });
-    const p = buildPreview(
+    const p = await buildPreview(
       user.id,
-      uploadFixture(user.id, account.id, "camt053/v08-basic.xml"),
+      await uploadFixture(user.id, account.id, "camt053/v08-basic.xml"),
     );
     expect(p.errors).toEqual([
       "The file is in EUR, but this account is in CHF.",
@@ -169,9 +169,9 @@ describe("buildPreview: camt.053", () => {
 
   it("keeps foreign-currency originals on CHF rows", async () => {
     const { user, account } = await setup();
-    const p = buildPreview(
+    const p = await buildPreview(
       user.id,
-      uploadFixture(user.id, account.id, "camt053/foreign-currency.xml"),
+      await uploadFixture(user.id, account.id, "camt053/foreign-currency.xml"),
     );
     expect(p.errors).toEqual([]);
     expect(p.rows.some((r) => r.tx.originalCurrency === "USD")).toBe(true);
@@ -179,7 +179,7 @@ describe("buildPreview: camt.053", () => {
 
   it("falls back to the first and last booking date when the file declares no period", async () => {
     const { user, account } = await setup();
-    const id = uploadBytes(
+    const id = await uploadBytes(
       user.id,
       account.id,
       buildCamt({
@@ -190,7 +190,7 @@ describe("buildPreview: camt.053", () => {
         ],
       }),
     );
-    const p = buildPreview(user.id, id);
+    const p = await buildPreview(user.id, id);
     expect(p.statement).toMatchObject({
       fromDate: "2024-05-03",
       toDate: "2024-05-20",
@@ -199,9 +199,9 @@ describe("buildPreview: camt.053", () => {
 
   it("keeps the declared period when the file has one", async () => {
     const { user, account } = await setup();
-    const p = buildPreview(
+    const p = await buildPreview(
       user.id,
-      uploadFixture(user.id, account.id, "camt053/overlap-a.xml"),
+      await uploadFixture(user.id, account.id, "camt053/overlap-a.xml"),
     );
     expect(p.statement).toMatchObject({
       fromDate: "2024-07-01",
@@ -211,9 +211,9 @@ describe("buildPreview: camt.053", () => {
 
   it("an empty statement has no rows but keeps its balances and warns", async () => {
     const { user, account } = await setup();
-    const p = buildPreview(
+    const p = await buildPreview(
       user.id,
-      uploadFixture(user.id, account.id, "camt053/empty-statement.xml"),
+      await uploadFixture(user.id, account.id, "camt053/empty-statement.xml"),
     );
     expect(p.errors).toEqual([]);
     expect(p.counts).toEqual({
@@ -228,9 +228,9 @@ describe("buildPreview: camt.053", () => {
 
   it("rows without bank references still get distinct stable ids", async () => {
     const { user, account } = await setup();
-    const p = buildPreview(
+    const p = await buildPreview(
       user.id,
-      uploadFixture(user.id, account.id, "camt053/no-refs.xml"),
+      await uploadFixture(user.id, account.id, "camt053/no-refs.xml"),
     );
     expect(p.errors).toEqual([]);
     const ids = p.rows.map((r) => r.tx.externalId);
@@ -240,14 +240,14 @@ describe("buildPreview: camt.053", () => {
 
   it("reports malformed XML as an error, not an exception", async () => {
     const { user, account } = await setup();
-    const id = uploadBytes(
+    const id = await uploadBytes(
       user.id,
       account.id,
       new TextEncoder().encode(
         '<?xml version="1.0"?><Document xmlns="urn:iso:std:iso:20022:tech:xsd:camt.053.001.04"><BkToCstmrStmt>',
       ),
     );
-    const p = buildPreview(user.id, id);
+    const p = await buildPreview(user.id, id);
     expect(p.errors).toHaveLength(1);
     expect(p.errors[0]).toMatch(/Invalid XML|camt\.053/);
     expect(p.rows).toEqual([]);
@@ -255,17 +255,17 @@ describe("buildPreview: camt.053", () => {
 
   it("marks rows already in the ledger as duplicates", async () => {
     const { user, account } = await setup();
-    const first = buildPreview(
+    const first = await buildPreview(
       user.id,
-      uploadFixture(user.id, account.id, "camt053/v04-basic.xml"),
+      await uploadFixture(user.id, account.id, "camt053/v04-basic.xml"),
     );
     seedImportedTransaction(user.id, account.id, {
       externalId: first.rows[0]!.tx.externalId,
       bookingDate: "2020-01-01",
     });
-    const p = buildPreview(
+    const p = await buildPreview(
       user.id,
-      uploadFixture(user.id, account.id, "camt053/v04-basic.xml"),
+      await uploadFixture(user.id, account.id, "camt053/v04-basic.xml"),
     );
     expect(p.rows[0]!.status).toBe("duplicate");
     expect(p.counts).toEqual({
@@ -287,9 +287,9 @@ describe("buildPreview: camt.053", () => {
     ]) {
       seedImportedTransaction(user.id, account.id, { externalId });
     }
-    const p = buildPreview(
+    const p = await buildPreview(
       user.id,
-      uploadFixture(user.id, account.id, "camt053/overlap-ntryref-a.xml"),
+      await uploadFixture(user.id, account.id, "camt053/overlap-ntryref-a.xml"),
     );
     expect(p.counts).toEqual({
       new: 0,
@@ -302,12 +302,12 @@ describe("buildPreview: camt.053", () => {
 
   it("marks rows matched by their current id differently from legacy matches", async () => {
     const { user, account } = await setup();
-    const pending = uploadFixture(
+    const pending = await uploadFixture(
       user.id,
       account.id,
       "camt053/overlap-ntryref-a.xml",
     );
-    const fresh = buildPreview(user.id, pending);
+    const fresh = await buildPreview(user.id, pending);
     expect(fresh.rows.every((r) => r.matchedBy === null)).toBe(true);
     seedImportedTransaction(user.id, account.id, {
       externalId: fresh.rows[0]!.tx.externalId,
@@ -315,7 +315,7 @@ describe("buildPreview: camt.053", () => {
     seedImportedTransaction(user.id, account.id, {
       externalId: fresh.rows[1]!.tx.legacyExternalIds![0]!,
     });
-    const p = buildPreview(user.id, pending);
+    const p = await buildPreview(user.id, pending);
     expect(p.rows.map((r) => r.matchedBy)).toEqual([
       "id",
       "legacy_id",
@@ -329,9 +329,9 @@ describe("buildPreview: camt.053", () => {
 describe("buildPreview: csv and xlsx", () => {
   it("asks for a mapping when the account has no saved profile", async () => {
     const { user, account } = await setup();
-    const p = buildPreview(
+    const p = await buildPreview(
       user.id,
-      uploadFixture(user.id, account.id, "csv/overlap-a.csv"),
+      await uploadFixture(user.id, account.id, "csv/overlap-a.csv"),
     );
     expect(p.errors).toEqual(["mapping_required"]);
     expect(p.rows).toEqual([]);
@@ -340,9 +340,9 @@ describe("buildPreview: csv and xlsx", () => {
 
   it("parses with the profile argument", async () => {
     const { user, account } = await setup();
-    const p = buildPreview(
+    const p = await buildPreview(
       user.id,
-      uploadFixture(user.id, account.id, "csv/overlap-a.csv"),
+      await uploadFixture(user.id, account.id, "csv/overlap-a.csv"),
       { profile },
     );
     expect(p.errors).toEqual([]);
@@ -358,9 +358,9 @@ describe("buildPreview: csv and xlsx", () => {
   it("falls back to the account's saved profile", async () => {
     const { user, account } = await setup();
     saveCsvProfile(user.id, account.id, "Mine", SIMPLE_CSV_PROFILE);
-    const p = buildPreview(
+    const p = await buildPreview(
       user.id,
-      uploadFixture(user.id, account.id, "csv/overlap-a.csv"),
+      await uploadFixture(user.id, account.id, "csv/overlap-a.csv"),
     );
     expect(p.errors).toEqual([]);
     expect(p.counts.total).toBe(5);
@@ -368,9 +368,9 @@ describe("buildPreview: csv and xlsx", () => {
 
   it("reads xlsx with a profile", async () => {
     const { user, account } = await setup();
-    const p = buildPreview(
+    const p = await buildPreview(
       user.id,
-      uploadFixture(user.id, account.id, "xlsx/statement.xlsx"),
+      await uploadFixture(user.id, account.id, "xlsx/statement.xlsx"),
       { profile },
     );
     expect(p.errors).toEqual([]);
@@ -380,9 +380,9 @@ describe("buildPreview: csv and xlsx", () => {
 
   it("reports row errors with row numbers but without cell values", async () => {
     const { user, account } = await setup();
-    const p = buildPreview(
+    const p = await buildPreview(
       user.id,
-      uploadFixture(user.id, account.id, "csv/bad-rows.csv"),
+      await uploadFixture(user.id, account.id, "csv/bad-rows.csv"),
       { profile: parseMappingProfile(BAD_ROWS_PROFILE) },
     );
     expect(p.errors).toHaveLength(1);
@@ -395,9 +395,9 @@ describe("buildPreview: csv and xlsx", () => {
 
   it("errors when the profile names a column the file lacks", async () => {
     const { user, account } = await setup();
-    const p = buildPreview(
+    const p = await buildPreview(
       user.id,
-      uploadFixture(user.id, account.id, "csv/overlap-a.csv"),
+      await uploadFixture(user.id, account.id, "csv/overlap-a.csv"),
       {
         profile: parseMappingProfile({
           ...SIMPLE_CSV_PROFILE,
@@ -410,9 +410,9 @@ describe("buildPreview: csv and xlsx", () => {
 
   it("blocks a csv in another currency than the account", async () => {
     const { user, account } = await setup({ currency: "EUR" });
-    const p = buildPreview(
+    const p = await buildPreview(
       user.id,
-      uploadFixture(user.id, account.id, "csv/overlap-a.csv"),
+      await uploadFixture(user.id, account.id, "csv/overlap-a.csv"),
       { profile },
     );
     expect(p.errors).toEqual([
@@ -422,14 +422,14 @@ describe("buildPreview: csv and xlsx", () => {
 
   it("overlapping csv files: the second only adds the non-overlapping rows", async () => {
     const { user, account } = await setup();
-    confirmImport(
+    await confirmImport(
       user.id,
-      uploadFixture(user.id, account.id, "csv/overlap-a.csv"),
+      await uploadFixture(user.id, account.id, "csv/overlap-a.csv"),
       { profile },
     );
-    const p = buildPreview(
+    const p = await buildPreview(
       user.id,
-      uploadFixture(user.id, account.id, "csv/overlap-b.csv"),
+      await uploadFixture(user.id, account.id, "csv/overlap-b.csv"),
       { profile },
     );
     expect(p.counts).toEqual({
@@ -446,13 +446,13 @@ describe("buildPreview: csv and xlsx", () => {
 describe("buildPreview: continuity and repeats", () => {
   it("overlapping camt files: second adds only new rows and raises no warning", async () => {
     const { user, account } = await setup();
-    confirmImport(
+    await confirmImport(
       user.id,
-      uploadFixture(user.id, account.id, "camt053/overlap-a.xml"),
+      await uploadFixture(user.id, account.id, "camt053/overlap-a.xml"),
     );
-    const p = buildPreview(
+    const p = await buildPreview(
       user.id,
-      uploadFixture(user.id, account.id, "camt053/overlap-b.xml"),
+      await uploadFixture(user.id, account.id, "camt053/overlap-b.xml"),
     );
     expect(p.errors).toEqual([]);
     expect(p.counts).toEqual({
@@ -466,9 +466,9 @@ describe("buildPreview: continuity and repeats", () => {
 
   it("a clean continuation raises no warning", async () => {
     const { user, account } = await setup();
-    confirmImport(
+    await confirmImport(
       user.id,
-      uploadBytes(
+      await uploadBytes(
         user.id,
         account.id,
         buildCamt({
@@ -481,9 +481,9 @@ describe("buildPreview: continuity and repeats", () => {
         }),
       ),
     );
-    const p = buildPreview(
+    const p = await buildPreview(
       user.id,
-      uploadBytes(
+      await uploadBytes(
         user.id,
         account.id,
         buildCamt({
@@ -502,9 +502,9 @@ describe("buildPreview: continuity and repeats", () => {
 
   it("warns about a gap between imports, naming both amounts", async () => {
     const { user, account } = await setup();
-    confirmImport(
+    await confirmImport(
       user.id,
-      uploadBytes(
+      await uploadBytes(
         user.id,
         account.id,
         buildCamt({
@@ -517,9 +517,9 @@ describe("buildPreview: continuity and repeats", () => {
         }),
       ),
     );
-    const p = buildPreview(
+    const p = await buildPreview(
       user.id,
-      uploadBytes(
+      await uploadBytes(
         user.id,
         account.id,
         buildCamt({
@@ -549,9 +549,9 @@ describe("buildPreview: continuity and repeats", () => {
 
   it("warns when the closing balance disagrees with the ledger after the import", async () => {
     const { user, account } = await setup();
-    confirmImport(
+    await confirmImport(
       user.id,
-      uploadBytes(
+      await uploadBytes(
         user.id,
         account.id,
         buildCamt({
@@ -564,9 +564,9 @@ describe("buildPreview: continuity and repeats", () => {
         }),
       ),
     );
-    const p = buildPreview(
+    const p = await buildPreview(
       user.id,
-      uploadBytes(
+      await uploadBytes(
         user.id,
         account.id,
         buildCamt({
@@ -592,22 +592,22 @@ describe("buildPreview: continuity and repeats", () => {
 
   it("the first import into an empty ledger has nothing to compare against", async () => {
     const { user, account } = await setup();
-    const p = buildPreview(
+    const p = await buildPreview(
       user.id,
-      uploadFixture(user.id, account.id, "camt053/v04-basic.xml"),
+      await uploadFixture(user.id, account.id, "camt053/v04-basic.xml"),
     );
     expect(p.warnings).toEqual([]);
   });
 
   it("reports alreadyImportedAt for the same file, not for a different one", async () => {
     const { user, account } = await setup();
-    confirmImport(
+    await confirmImport(
       user.id,
-      uploadFixture(user.id, account.id, "camt053/overlap-a.xml"),
+      await uploadFixture(user.id, account.id, "camt053/overlap-a.xml"),
     );
-    const same = buildPreview(
+    const same = await buildPreview(
       user.id,
-      uploadFixture(user.id, account.id, "camt053/overlap-a.xml"),
+      await uploadFixture(user.id, account.id, "camt053/overlap-a.xml"),
     );
     expect(same.alreadyImportedAt).toBeGreaterThan(0);
     expect(same.errors).toEqual([]);
@@ -617,9 +617,9 @@ describe("buildPreview: continuity and repeats", () => {
       duplicate: 5,
       total: 5,
     });
-    const other = buildPreview(
+    const other = await buildPreview(
       user.id,
-      uploadFixture(user.id, account.id, "camt053/overlap-b.xml"),
+      await uploadFixture(user.id, account.id, "camt053/overlap-b.xml"),
     );
     expect(other.alreadyImportedAt).toBeNull();
   });
@@ -629,24 +629,28 @@ describe("buildPreview: isolation", () => {
   it("another user cannot preview a pending upload", async () => {
     const { user, account } = await setup();
     const other = await createTestUser();
-    const id = uploadFixture(user.id, account.id, "camt053/v04-basic.xml");
-    expect(() => buildPreview(other.id, id)).toThrow(/not found/);
+    const id = await uploadFixture(
+      user.id,
+      account.id,
+      "camt053/v04-basic.xml",
+    );
+    await expect(buildPreview(other.id, id)).rejects.toThrow(/not found/);
   });
 
   it("duplicates are only detected against the same user's account", async () => {
     const { user, account } = await setup();
     const other = await createTestUser();
     const theirs = seedAccount(other.id, { iban: EXAMPLE_IBAN });
-    const first = buildPreview(
+    const first = await buildPreview(
       user.id,
-      uploadFixture(user.id, account.id, "camt053/v04-basic.xml"),
+      await uploadFixture(user.id, account.id, "camt053/v04-basic.xml"),
     );
     seedImportedTransaction(other.id, theirs.id, {
       externalId: first.rows[0]!.tx.externalId,
     });
-    const p = buildPreview(
+    const p = await buildPreview(
       user.id,
-      uploadFixture(user.id, account.id, "camt053/v04-basic.xml"),
+      await uploadFixture(user.id, account.id, "camt053/v04-basic.xml"),
     );
     expect(p.counts.duplicate).toBe(0);
   });

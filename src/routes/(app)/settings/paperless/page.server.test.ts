@@ -26,7 +26,7 @@ import {
 import { seedAccount } from "$lib/testing/ledger";
 import { createTestUser, type TestUser } from "$lib/testing/auth";
 import { useTestDB } from "$lib/testing/db";
-import { useTestDocuments } from "$lib/testing/documents";
+import { useTestStore } from "$lib/testing/store";
 import { createTestEvent, outcome } from "$lib/testing/event";
 import { actions, load } from "./+page.server";
 
@@ -84,7 +84,7 @@ async function loaded(user: TestUser) {
 
 describe("settings/paperless", () => {
   useTestDB();
-  useTestDocuments();
+  useTestStore();
   let user: TestUser;
 
   beforeEach(async () => {

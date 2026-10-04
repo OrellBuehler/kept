@@ -1,3 +1,4 @@
+import { useTestStore } from "$lib/testing/store";
 import { and, eq } from "drizzle-orm";
 import { describe, expect, it } from "vitest";
 import { minor } from "$lib/money";
@@ -12,17 +13,16 @@ import {
   SIMPLE_CSV_PROFILE,
   uploadBytes,
   uploadFixture,
-  usePendingDir,
 } from "$lib/testing/imports";
 import { seedAccount } from "$lib/testing/ledger";
 import { createCategory } from "$lib/server/categories/categories";
 import { createRule } from "$lib/server/categories/rules";
 import { confirmImport } from "./confirm";
 import { listImports, listRecentImports, undoImport } from "./history";
-import { readPending } from "./pending";
+import { pendingBlobKey, readPending } from "./pending";
 
 useTestDB();
-const pending = usePendingDir();
+const ctx = useTestStore();
 
 async function setup() {
   const user = await createTestUser();
@@ -40,8 +40,12 @@ const txCount = (accountId: string) =>
 describe("confirmImport", () => {
   it("writes the import, its transactions and a closing-balance snapshot", async () => {
     const { user, account } = await setup();
-    const id = uploadFixture(user.id, account.id, "camt053/overlap-a.xml");
-    const r = confirmImport(user.id, id);
+    const id = await uploadFixture(
+      user.id,
+      account.id,
+      "camt053/overlap-a.xml",
+    );
+    const r = await confirmImport(user.id, id);
     expect(r).toMatchObject({
       accountId: account.id,
       newCount: 5,
@@ -104,22 +108,46 @@ describe("confirmImport", () => {
 
   it("removes the pending upload afterwards and cannot be confirmed twice", async () => {
     const { user, account } = await setup();
-    const id = uploadFixture(user.id, account.id, "camt053/overlap-a.xml");
-    confirmImport(user.id, id);
-    expect(() => readPending(user.id, id)).toThrow(/not found/);
-    expect(() => confirmImport(user.id, id)).toThrow(/not found/);
+    const id = await uploadFixture(
+      user.id,
+      account.id,
+      "camt053/overlap-a.xml",
+    );
+    await confirmImport(user.id, id);
+    await expect(readPending(user.id, id)).rejects.toThrow(/not found/);
+    expect(await ctx.store.has(pendingBlobKey(user.id, id))).toBe(false);
+    await expect(confirmImport(user.id, id)).rejects.toThrow(/not found/);
     expect(txCount(account.id)).toBe(5);
+  });
+
+  it("two concurrent confirms of one upload import it once", async () => {
+    const { user, account } = await setup();
+    const id = await uploadFixture(
+      user.id,
+      account.id,
+      "camt053/overlap-a.xml",
+    );
+    const results = await Promise.allSettled([
+      confirmImport(user.id, id),
+      confirmImport(user.id, id),
+    ]);
+    expect(results.map((r) => r.status).sort()).toEqual([
+      "fulfilled",
+      "rejected",
+    ]);
+    expect(txCount(account.id)).toBe(5);
+    expect(getDB().select().from(imports).all()).toHaveLength(1);
   });
 
   it("importing the same file again adds nothing but is recorded", async () => {
     const { user, account } = await setup();
-    confirmImport(
+    await confirmImport(
       user.id,
-      uploadFixture(user.id, account.id, "camt053/overlap-a.xml"),
+      await uploadFixture(user.id, account.id, "camt053/overlap-a.xml"),
     );
-    const again = confirmImport(
+    const again = await confirmImport(
       user.id,
-      uploadFixture(user.id, account.id, "camt053/overlap-a.xml"),
+      await uploadFixture(user.id, account.id, "camt053/overlap-a.xml"),
     );
     expect(again).toMatchObject({ newCount: 0, duplicateCount: 5 });
     expect(txCount(account.id)).toBe(5);
@@ -134,13 +162,13 @@ describe("confirmImport", () => {
 
   it("two overlapping files never duplicate rows", async () => {
     const { user, account } = await setup();
-    confirmImport(
+    await confirmImport(
       user.id,
-      uploadFixture(user.id, account.id, "camt053/overlap-a.xml"),
+      await uploadFixture(user.id, account.id, "camt053/overlap-a.xml"),
     );
-    const b = confirmImport(
+    const b = await confirmImport(
       user.id,
-      uploadFixture(user.id, account.id, "camt053/overlap-b.xml"),
+      await uploadFixture(user.id, account.id, "camt053/overlap-b.xml"),
     );
     expect(b).toMatchObject({ newCount: 2, duplicateCount: 3 });
     expect(txCount(account.id)).toBe(7);
@@ -161,14 +189,14 @@ describe("confirmImport", () => {
   it("re-imports overlapping csv files (hash ids) without duplicates", async () => {
     const { user, account } = await setup();
     const profile = parseMappingProfile(SIMPLE_CSV_PROFILE);
-    confirmImport(
+    await confirmImport(
       user.id,
-      uploadFixture(user.id, account.id, "csv/overlap-a.csv"),
+      await uploadFixture(user.id, account.id, "csv/overlap-a.csv"),
       { profile },
     );
-    const b = confirmImport(
+    const b = await confirmImport(
       user.id,
-      uploadFixture(user.id, account.id, "csv/overlap-b.csv"),
+      await uploadFixture(user.id, account.id, "csv/overlap-b.csv"),
       { profile },
     );
     expect(b).toMatchObject({ newCount: 1, duplicateCount: 4 });
@@ -183,13 +211,13 @@ describe("confirmImport", () => {
         closing: { amount: closing, date: "2024-05-31" },
         entries: [{ date: "2024-05-02", amount: "1.00", sign: "CRDT", ref }],
       });
-    const first = confirmImport(
+    const first = await confirmImport(
       user.id,
-      uploadBytes(user.id, account.id, make("10.00", "U1")),
+      await uploadBytes(user.id, account.id, make("10.00", "U1")),
     );
-    const second = confirmImport(
+    const second = await confirmImport(
       user.id,
-      uploadBytes(user.id, account.id, make("12.00", "U2")),
+      await uploadBytes(user.id, account.id, make("12.00", "U2")),
     );
     const snaps = getDB()
       .select()
@@ -203,26 +231,28 @@ describe("confirmImport", () => {
 
   it("refuses when the preview has errors and writes nothing", async () => {
     const { user, account } = await setup();
-    const csv = uploadFixture(user.id, account.id, "csv/overlap-a.csv");
-    expect(() => confirmImport(user.id, csv)).toThrow(/mapping_required/);
-    const wrongCurrency = uploadFixture(
+    const csv = await uploadFixture(user.id, account.id, "csv/overlap-a.csv");
+    await expect(confirmImport(user.id, csv)).rejects.toThrow(
+      /mapping_required/,
+    );
+    const wrongCurrency = await uploadFixture(
       user.id,
       account.id,
       "camt053/v08-basic.xml",
     );
-    expect(() => confirmImport(user.id, wrongCurrency)).toThrow(
+    await expect(confirmImport(user.id, wrongCurrency)).rejects.toThrow(
       /different IBAN/,
     );
     expect(txCount(account.id)).toBe(0);
     expect(getDB().select().from(imports).all()).toEqual([]);
-    expect(() => readPending(user.id, csv)).not.toThrow();
+    await expect(readPending(user.id, csv)).resolves.toBeDefined();
   });
 
   it("stores the preview warnings with the import", async () => {
     const { user, account } = await setup();
-    confirmImport(
+    await confirmImport(
       user.id,
-      uploadBytes(
+      await uploadBytes(
         user.id,
         account.id,
         buildCamt({
@@ -235,9 +265,9 @@ describe("confirmImport", () => {
         }),
       ),
     );
-    const r = confirmImport(
+    const r = await confirmImport(
       user.id,
-      uploadBytes(
+      await uploadBytes(
         user.id,
         account.id,
         buildCamt({
@@ -257,24 +287,27 @@ describe("confirmImport", () => {
   it("another user cannot confirm someone else's pending upload", async () => {
     const { user, account } = await setup();
     const other = await createTestUser();
-    const id = uploadFixture(user.id, account.id, "camt053/overlap-a.xml");
-    expect(() => confirmImport(other.id, id)).toThrow(/not found/);
+    const id = await uploadFixture(
+      user.id,
+      account.id,
+      "camt053/overlap-a.xml",
+    );
+    await expect(confirmImport(other.id, id)).rejects.toThrow(/not found/);
     expect(txCount(account.id)).toBe(0);
-    expect(() => readPending(user.id, id)).not.toThrow();
-    expect(pending.dir).not.toBe("");
+    await expect(readPending(user.id, id)).resolves.toBeDefined();
   });
 });
 
 describe("listImports / undoImport", () => {
   it("lists newest first with counts and dates", async () => {
     const { user, account } = await setup();
-    const a = confirmImport(
+    const a = await confirmImport(
       user.id,
-      uploadFixture(user.id, account.id, "camt053/overlap-a.xml"),
+      await uploadFixture(user.id, account.id, "camt053/overlap-a.xml"),
     );
-    const b = confirmImport(
+    const b = await confirmImport(
       user.id,
-      uploadFixture(user.id, account.id, "camt053/overlap-b.xml"),
+      await uploadFixture(user.id, account.id, "camt053/overlap-b.xml"),
     );
     const list = listImports(user.id, account.id);
     expect(list.map((i) => i.id)).toEqual([b.importId, a.importId]);
@@ -297,13 +330,13 @@ describe("listImports / undoImport", () => {
 
   it("undo removes the import's rows and snapshot, leaving other imports intact", async () => {
     const { user, account } = await setup();
-    const a = confirmImport(
+    const a = await confirmImport(
       user.id,
-      uploadFixture(user.id, account.id, "camt053/overlap-a.xml"),
+      await uploadFixture(user.id, account.id, "camt053/overlap-a.xml"),
     );
-    const b = confirmImport(
+    const b = await confirmImport(
       user.id,
-      uploadFixture(user.id, account.id, "camt053/overlap-b.xml"),
+      await uploadFixture(user.id, account.id, "camt053/overlap-b.xml"),
     );
     expect(undoImport(user.id, b.importId)).toEqual({
       accountId: account.id,
@@ -335,13 +368,13 @@ describe("listImports / undoImport", () => {
         closing: { amount: closing, date: "2024-05-31" },
         entries: [{ date: "2024-05-02", amount: "1.00", sign: "CRDT", ref }],
       });
-    const older = confirmImport(
+    const older = await confirmImport(
       user.id,
-      uploadBytes(user.id, account.id, make("10.00", "S1")),
+      await uploadBytes(user.id, account.id, make("10.00", "S1")),
     );
-    const newer = confirmImport(
+    const newer = await confirmImport(
       user.id,
-      uploadBytes(user.id, account.id, make("12.00", "S2")),
+      await uploadBytes(user.id, account.id, make("12.00", "S2")),
     );
     undoImport(user.id, older.importId);
     const snap = getDB()
@@ -362,9 +395,9 @@ describe("listImports / undoImport", () => {
   it("another user can neither list nor undo an import", async () => {
     const { user, account } = await setup();
     const other = await createTestUser();
-    const a = confirmImport(
+    const a = await confirmImport(
       user.id,
-      uploadFixture(user.id, account.id, "camt053/overlap-a.xml"),
+      await uploadFixture(user.id, account.id, "camt053/overlap-a.xml"),
     );
     expect(() => listImports(other.id, account.id)).toThrow(/not found/);
     expect(listRecentImports(other.id)).toEqual([]);
@@ -374,9 +407,9 @@ describe("listImports / undoImport", () => {
 
   it("undo checks the account when one is given", async () => {
     const { user, account } = await setup();
-    const a = confirmImport(
+    const a = await confirmImport(
       user.id,
-      uploadFixture(user.id, account.id, "camt053/overlap-a.xml"),
+      await uploadFixture(user.id, account.id, "camt053/overlap-a.xml"),
     );
     expect(() => undoImport(user.id, a.importId, "some-other-account")).toThrow(
       /not found/,
@@ -417,9 +450,9 @@ describe("listImports / undoImport", () => {
       counterpartyIban: null,
       amountSign: "expense",
     });
-    confirmImport(
+    await confirmImport(
       user.id,
-      uploadFixture(user.id, account.id, "camt053/overlap-a.xml"),
+      await uploadFixture(user.id, account.id, "camt053/overlap-a.xml"),
     );
     const rows = getDB()
       .select()

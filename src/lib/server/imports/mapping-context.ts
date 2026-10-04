@@ -132,13 +132,13 @@ function plainObject(value: unknown): Record<string, unknown> | null {
  * untrusted input and is validated here; an invalid draft yields
  * `profile: null`, `preview: []` and `errors`.
  */
-export function mappingContext(
+export async function mappingContext(
   userId: string,
   pendingId: string,
   draftProfile?: unknown,
-): MappingContext {
+): Promise<MappingContext> {
   const meta = getPendingMeta(userId, pendingId);
-  const readBytes = () => readPending(userId, pendingId).bytes;
+  const readBytes = async () => (await readPending(userId, pendingId)).bytes;
   if (meta.format === "camt053") {
     throw new LedgerError(
       "invalid",
@@ -167,11 +167,11 @@ export function mappingContext(
   try {
     rows =
       meta.format === "xlsx"
-        ? cachedParse(meta, `xlsx:${decimalSeparator}`, () =>
-            readXlsx(readBytes(), { decimalSeparator }),
+        ? await cachedParse(meta, `xlsx:${decimalSeparator}`, async () =>
+            readXlsx(await readBytes(), { decimalSeparator }),
           )
-        : cachedParse(meta, `csv:${delimiter}:${encoding}`, () =>
-            readCsv(readBytes(), { delimiter, encoding }),
+        : await cachedParse(meta, `csv:${delimiter}:${encoding}`, async () =>
+            readCsv(await readBytes(), { delimiter, encoding }),
           );
   } catch (err) {
     if (!(err instanceof ImportFormatError)) throw err;

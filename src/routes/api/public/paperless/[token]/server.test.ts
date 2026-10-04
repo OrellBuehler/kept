@@ -9,7 +9,7 @@ import {
 import { resetWebhookState } from "$lib/server/integrations/paperless/webhook";
 import { createTestUser, type TestUser } from "$lib/testing/auth";
 import { useTestDB } from "$lib/testing/db";
-import { useTestDocuments } from "$lib/testing/documents";
+import { useTestStore } from "$lib/testing/store";
 import { createTestEvent } from "$lib/testing/event";
 import { isPublicPath } from "$lib/server/auth/routing";
 import { POST } from "./+server";
@@ -24,7 +24,7 @@ beforeAll(async () => {
 
 describe("POST /api/public/paperless/[token]", () => {
   useTestDB();
-  useTestDocuments();
+  useTestStore();
   let user: TestUser;
   let token: string;
   let secret: string;
