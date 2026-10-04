@@ -215,6 +215,12 @@
                 autocomplete="new-password"
               />
             </FormField>
+            {#if channel?.needsReentry}
+              <label class="flex items-center gap-2 text-sm">
+                <input type="checkbox" name="removeSecret" />
+                Remove the saved secret instead of entering it again
+              </label>
+            {/if}
           {:else if kind === "webhook"}
             <FormField label="URL" for="webhook-url" errors={errors.url}>
               <Input
@@ -241,6 +247,12 @@
                 autocomplete="new-password"
               />
             </FormField>
+            {#if channel?.needsReentry}
+              <label class="flex items-center gap-2 text-sm">
+                <input type="checkbox" name="removeSecret" />
+                Remove the saved secret instead of entering it again
+              </label>
+            {/if}
           {:else}
             <FormField label="Send to" for="email-to" errors={errors.to}>
               <Input

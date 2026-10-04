@@ -231,12 +231,41 @@ describe("settings/notifications", () => {
       ]);
     });
 
-    it("re-saving with a blank token stores the new settings", async () => {
+    it("re-saving with a blank token is refused instead of silently dropping the secret", async () => {
       await brokenChannel();
       const res = await act("saveChannel", user, {
         kind: "ntfy",
         serverUrl: "https://ntfy.example.org",
         topic: "kept2",
+      });
+      expect(res.type).toBe("fail");
+      expect(JSON.stringify(res)).toContain("Enter it again");
+      expect(listChannels(user.id)[0]).toMatchObject({ needsReentry: true });
+    });
+
+    it("re-saving with a new token stores it", async () => {
+      await brokenChannel();
+      const res = await act("saveChannel", user, {
+        kind: "ntfy",
+        serverUrl: "https://ntfy.example.org",
+        topic: "kept2",
+        token: "tk_new",
+      });
+      expect(res.type).toBe("return");
+      expect(listChannels(user.id)[0]).toMatchObject({
+        needsReentry: false,
+        fields: { topic: "kept2" },
+        hasSecret: true,
+      });
+    });
+
+    it("the secret can be removed explicitly", async () => {
+      await brokenChannel();
+      const res = await act("saveChannel", user, {
+        kind: "ntfy",
+        serverUrl: "https://ntfy.example.org",
+        topic: "kept2",
+        removeSecret: "on",
       });
       expect(res.type).toBe("return");
       expect(listChannels(user.id)[0]).toMatchObject({
@@ -244,6 +273,38 @@ describe("settings/notifications", () => {
         fields: { topic: "kept2" },
         hasSecret: false,
       });
+    });
+
+    it("the same rule holds for the webhook signing secret", async () => {
+      vi.stubEnv("KEPT_SECRET_KEY", keyA);
+      await act("saveChannel", user, {
+        kind: "webhook",
+        url: "https://hooks.example.org/k",
+        secret: "sig",
+      });
+      vi.stubEnv("KEPT_SECRET_KEY", keyB);
+      const refused = await act("saveChannel", user, {
+        kind: "webhook",
+        url: "https://hooks.example.org/k",
+      });
+      expect(refused.type).toBe("fail");
+      expect(JSON.stringify(refused)).toContain("secret");
+      const ok = await act("saveChannel", user, {
+        kind: "webhook",
+        url: "https://hooks.example.org/k",
+        removeSecret: "on",
+      });
+      expect(ok.type).toBe("return");
+    });
+
+    it("a first save without a secret is unaffected", async () => {
+      vi.stubEnv("KEPT_SECRET_KEY", keyB);
+      const res = await act("saveChannel", user, {
+        kind: "ntfy",
+        serverUrl: "https://ntfy.example.org",
+        topic: "kept",
+      });
+      expect(res.type).toBe("return");
     });
 
     it("the channel can be removed, and toggling does not throw", async () => {
