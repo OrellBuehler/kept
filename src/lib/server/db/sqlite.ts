@@ -232,6 +232,8 @@ class SqliteBackend implements Backend {
       savepoint: (name) => statement(`SAVEPOINT ${name}`),
       releaseSavepoint: (name) => statement(`RELEASE SAVEPOINT ${name}`),
       rollbackToSavepoint: (name) => statement(`ROLLBACK TO SAVEPOINT ${name}`),
+      // The gate already runs one transaction at a time.
+      lock: async () => {},
       release: () => {
         clearTimeout(watchdog);
         this.#watchdogs.delete(watchdog);
@@ -243,6 +245,10 @@ class SqliteBackend implements Backend {
         this.gate.release(token);
       },
     };
+  }
+
+  async migrate(): Promise<void> {
+    migrateSqlite(this);
   }
 
   async withExclusiveClient<T>(

@@ -2,8 +2,10 @@ import { AsyncLocalStorage } from "node:async_hooks";
 import type { Database } from "bun:sqlite";
 import { describeError } from "$lib/server/errors";
 import type { Backend, BackendTransaction, DB } from "./backend";
+import { readDatabaseConfig, type PostgresDatabaseConfig } from "./config";
 import { dialect } from "./dialect";
-import { migrateSqlite, openSqlite, type SqliteOptions } from "./sqlite";
+import { openPostgres } from "./postgres";
+import { openSqlite, type SqliteOptions } from "./sqlite";
 
 export type { DB };
 /** What a `transaction()` callback receives; the same type as `getDB()`. */
@@ -14,7 +16,9 @@ export interface TransactionOptions {
   /**
    * Names a cross-row invariant that the transaction must hold exclusively
    * (for example a last-admin check). SQLite needs nothing: the gate already
-   * runs one transaction at a time. Other backends take an advisory lock.
+   * runs one transaction at a time. PostgreSQL takes a transaction-scoped
+   * advisory lock on the key, which is only sound under READ COMMITTED (the
+   * default, and the only level the facade uses). Keys are free-form text.
    */
   lock?: string;
 }
@@ -97,9 +101,10 @@ let current: Backend | null = null;
 export function openDatabase(path: string, options?: SqliteOptions): DB {
   // The schema is built for the resolved dialect; opening SQLite under a
   // PostgreSQL schema would write PostgreSQL defaults into SQLite columns.
+  // The process-wide database picks its backend in currentBackend().
   if (dialect !== "sqlite") {
     throw new Error(
-      "DATABASE_URL points at PostgreSQL, which this build does not support yet",
+      "openDatabase() opens SQLite, but DATABASE_URL selects PostgreSQL; use openPostgresDatabase()",
     );
   }
   const backend = openSqlite(path, options);
@@ -107,10 +112,27 @@ export function openDatabase(path: string, options?: SqliteOptions): DB {
   return backend.root;
 }
 
+/**
+ * Opens a PostgreSQL database on its own pool. The process-wide database goes
+ * through `currentBackend()` instead, which shares its pool across reloads of
+ * this module in dev.
+ */
+export function openPostgresDatabase(config: PostgresDatabaseConfig): DB {
+  const backend = openPostgres(config);
+  backends.set(backend.root, backend);
+  return backend.root;
+}
+
 function currentBackend(): Backend {
-  current ??= backendOf(
-    openDatabase(process.env.DATABASE_PATH ?? "./data/kept.db"),
-  );
+  if (current) return current;
+  const config = readDatabaseConfig();
+  if (config.kind === "postgres") {
+    const backend = openPostgres(config, { shared: true });
+    backends.set(backend.root, backend);
+    current = backend;
+  } else {
+    current = backendOf(openDatabase(config.path));
+  }
   return current;
 }
 
@@ -171,18 +193,19 @@ export async function closeDatabase(db: DB): Promise<void> {
   if (current === backend) current = null;
 }
 
-export function migrateDatabase(target: DB): void {
-  migrateSqlite(backendOf(target) as Parameters<typeof migrateSqlite>[0]);
+export async function migrateDatabase(target: DB): Promise<void> {
+  await backendOf(target).migrate();
 }
 
-export function runMigrations(): void {
-  migrateDatabase(getDB());
+export async function runMigrations(): Promise<void> {
+  await migrateDatabase(getDB());
 }
 
 /**
  * Raw access to the connection, for what drizzle cannot express (`VACUUM INTO`
  * backups). The gate is held for the duration, so no query runs meanwhile.
- * Not allowed inside a transaction: it would wait for itself.
+ * Not allowed inside a transaction: it would wait for itself. SQLite only: on
+ * PostgreSQL it rejects (use `pg_dump` or a managed snapshot for backups).
  */
 export async function withExclusiveClient<T>(
   fn: (client: Database) => T | Promise<T>,
@@ -212,16 +235,19 @@ export async function withExclusiveClient<T>(
  */
 export async function transaction<T>(
   fn: (tx: Tx) => Promise<T>,
-  _options: TransactionOptions = {},
+  options: TransactionOptions = {},
 ): Promise<T> {
   const parent = als.getStore();
-  if (parent && route(parent) === "tx") return savepoint(parent, fn);
+  if (parent && route(parent) === "tx") {
+    return savepoint(parent, fn, options.lock);
+  }
 
   const btx = await currentBackend().beginTransaction();
   const tx: Tx0 = { btx, state: "active", savepoints: 0 };
   const frame = newFrame(tx, null);
   let outcome: { ok: true; value: T } | { ok: false; error: unknown };
   try {
+    if (options.lock !== undefined) await btx.lock(options.lock);
     const value = await als.run(frame, () => fn(btx.db));
     tx.state = "finished";
     await btx.commit();
@@ -248,6 +274,7 @@ export async function transaction<T>(
 async function savepoint<T>(
   parent: Frame,
   fn: (tx: Tx) => Promise<T>,
+  lock: string | undefined,
 ): Promise<T> {
   // Siblings queue here, so two savepoints never overlap on the connection:
   // SQLite would undo the earlier one's work along with the later one's.
@@ -256,7 +283,7 @@ async function savepoint<T>(
   parent.lock = new Promise<void>((resolve) => (done = resolve));
   try {
     await turn;
-    return await runSavepoint(parent, fn);
+    return await runSavepoint(parent, fn, lock);
   } finally {
     done();
   }
@@ -265,6 +292,7 @@ async function savepoint<T>(
 async function runSavepoint<T>(
   parent: Frame,
   fn: (tx: Tx) => Promise<T>,
+  lock: string | undefined,
 ): Promise<T> {
   const { tx } = parent;
   if (tx.state === "finished") {
@@ -275,6 +303,9 @@ async function runSavepoint<T>(
   const frame = newFrame(tx, parent);
   await tx.btx.savepoint(name);
   try {
+    // Held until the outer transaction ends, which is what a lock taken by a
+    // nested call must do.
+    if (lock !== undefined) await tx.btx.lock(lock);
     const value = await als.run(frame, () => fn(tx.btx.db));
     frame.status = "released";
     await tx.btx.releaseSavepoint(name);
@@ -367,5 +398,49 @@ export function isUniqueViolation(err: unknown): boolean {
   return false;
 }
 
+/**
+ * Which unique constraint was violated. PostgreSQL names the constraint (the
+ * unique index's name); SQLite names the columns in its message.
+ */
+export interface UniqueTarget {
+  /** The unique index name, as given in the schema (PostgreSQL). */
+  constraint: string;
+  table: string;
+  /** The indexed columns in index order (SQLite). */
+  columns: readonly string[];
+}
+
+/**
+ * True when `err` is a violation of that specific unique constraint, however
+ * the driver wraps it. Reads `message` and `constraint` only to compare them,
+ * never to log.
+ */
+export function isUniqueViolationOn(
+  err: unknown,
+  target: UniqueTarget,
+): boolean {
+  const sqliteMessage = `UNIQUE constraint failed: ${target.columns
+    .map((c) => `${target.table}.${c}`)
+    .join(", ")}`;
+  let cursor: unknown = err;
+  for (
+    let depth = 0;
+    depth < 5 && typeof cursor === "object" && cursor;
+    depth++
+  ) {
+    const { errno, constraint, message, cause } = cursor as {
+      errno?: unknown;
+      constraint?: unknown;
+      message?: unknown;
+      cause?: unknown;
+    };
+    if (errno === "23505" && constraint === target.constraint) return true;
+    if (message === sqliteMessage) return true;
+    cursor = cause;
+  }
+  return false;
+}
+
 export { alias } from "./columns";
+export { escapeLike, likeContains } from "./search";
 export * from "./schema";

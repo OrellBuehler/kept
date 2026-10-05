@@ -14,9 +14,9 @@ import {
 
 let root: DB;
 
-function open(options: Parameters<typeof openDatabase>[1] = {}) {
+async function open(options: Parameters<typeof openDatabase>[1] = {}) {
   root = openDatabase(":memory:", { gateTimeoutMs: 1000, ...options });
-  migrateDatabase(root);
+  await migrateDatabase(root);
   setDB(root);
 }
 
@@ -290,7 +290,7 @@ describe("concurrent savepoints", () => {
 describe("transaction watchdog", () => {
   beforeEach(async () => {
     await closeDatabase(root);
-    open({ gateTimeoutMs: 2000, transactionTimeoutMs: 60 });
+    await open({ gateTimeoutMs: 2000, transactionTimeoutMs: 60 });
   });
 
   it("rolls back a transaction that never settles and frees the gate", async () => {
@@ -360,7 +360,7 @@ describe("closing the database", () => {
     await closeDatabase(root);
     expect(Date.now() - started).toBeLessThan(500);
     setDB(null);
-    open();
+    await open();
   });
 
   it("lets a leaked transaction end after the gate was reset without failing", async () => {
@@ -382,6 +382,6 @@ describe("closing the database", () => {
     expect(outcome).not.toMatch(/does not own/);
     expect(error.mock.calls.flat().join(" ")).not.toMatch(/does not own/);
     setDB(null);
-    open();
+    await open();
   });
 });

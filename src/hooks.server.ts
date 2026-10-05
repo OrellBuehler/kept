@@ -29,7 +29,7 @@ export async function init() {
   assertSecretKeyConfigured();
   getStore();
   warnIfAddressHeaderUnset();
-  runMigrations();
+  await runMigrations();
   startPendingSweep();
   sweepStaleStorageTemp().catch((err) =>
     console.error("storage temp cleanup failed: %s", describeError(err)),
