@@ -15,7 +15,7 @@ suggestions.
 - Amounts are `Minor` from `$lib/money` plus a currency code. Never floats.
 - Every query filters by the current user id. Add a test that another user's data is invisible.
 - Parse all external input with Zod at the boundary; inside, trust the types.
-- Schema changes: edit `src/lib/server/schema.ts`, then `bun run db:generate`, and commit the
+- Schema changes: edit `src/lib/server/db/schema.ts` (columns via `db/columns.ts` only), then `bun run db:generate`, and commit the
   generated migration. Never edit an existing migration.
 - `src/lib/server/integrations/**` may import from the core; the core never imports from it.
 - No empty `catch`. Errors are either handled with a user-visible outcome or rethrown.
