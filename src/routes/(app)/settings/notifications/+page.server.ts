@@ -95,12 +95,12 @@ export const actions: Actions = {
       keepSecret: secretField ?? undefined,
       dropUnreadableSecret: form.get("removeSecret") === "on",
     });
-    if (!saved.ok && secretField) {
+    if (!saved.ok) {
       return fail(400, {
         action: "channel",
         kind,
         errors: {
-          [secretField]: [
+          [secretField ?? "form"]: [
             'The saved secret can no longer be read. Enter it again, or tick "Remove the saved secret".',
           ],
         },
