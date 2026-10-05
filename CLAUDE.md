@@ -112,7 +112,9 @@ src/lib/testing/fixtures/        synthetic sample files for importer tests
   timestamp is read as a Date column (`max(col)`), never as a raw `sql<number>`. Text search uses
   `likeContains()`, not `like`; SQLite-only functions (`strftime`, `ifnull`, `group_concat`, scalar
   `min/max`, `char`, `rowid`) are banned by lint. A cross-row invariant (check, then write across rows)
-  takes `transaction(fn, { lock })`: a no-op on SQLite, an advisory lock on PostgreSQL. Every list a
+  takes `transaction(fn, { lock })`: a no-op on SQLite, an advisory lock on PostgreSQL. One key per
+  transaction (enforced in tests): ledger, transfer, import, trade and snapshot writes share
+  `ledgerLock` (`ledger/lock.ts`), bills and allocations `billsLock`. Every list a
   user sees has a total `ORDER BY`. Migrations: `bun run db:generate` writes both `drizzle/sqlite/` and
   `drizzle/postgres/` (never edit either by hand except for data fix-ups); `DATABASE_URL=postgres://…`
   selects PostgreSQL (see `db/config.ts`). `bun run test:pg` runs the whole suite on PostgreSQL
