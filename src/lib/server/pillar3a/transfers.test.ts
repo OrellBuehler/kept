@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { minor } from "$lib/money";
+import { normalizeReference } from "$lib/references";
 import { createTestUser } from "$lib/testing/auth";
 import { useTestDB } from "$lib/testing/db";
 import { seedAccount, seedImportedTransaction } from "$lib/testing/ledger";
@@ -18,9 +19,12 @@ const NBSP = String.fromCharCode(0xa0);
 const THIN = String.fromCharCode(0x2009);
 
 describe("contribution detection", () => {
-  it("strips only space, tab, LF and CR, like the SQL match", () => {
+  it("strips all whitespace, like normalizeReference and the SQL match", () => {
     expect(matchReference(" ab\t1\n2\r3 ")).toBe("AB123");
-    expect(matchReference(`12${NBSP}34`)).toBe(`12${NBSP}34`);
+    expect(matchReference(`12${NBSP}34${THIN}5`)).toBe("12345");
+    for (const input of [` a${NBSP}b`, "x\v\fy", "\u3000z\ufeff"]) {
+      expect(matchReference(input)).toBe(normalizeReference(input));
+    }
   });
 
   it("agrees with the SQL detection for every reference variant", async () => {
@@ -57,6 +61,7 @@ describe("contribution detection", () => {
       );
     }
     expect(detected.has(txs[1]!.id)).toBe(true);
-    expect(detected.has(txs[3]!.id)).toBe(false);
+    expect(detected.has(txs[3]!.id)).toBe(true);
+    expect(detected.has(txs[4]!.id)).toBe(true);
   });
 });
