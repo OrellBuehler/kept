@@ -329,7 +329,10 @@ export function suggestMatches(
         amount: minor(amount),
         ambiguous: ibanConflict,
       });
-      consumed.set(tx.id, Math.max(consumed.get(tx.id) ?? 0, amount));
+      // A demoted match is only a suggestion; it must not block other bills.
+      if (!ibanConflict) {
+        consumed.set(tx.id, Math.max(consumed.get(tx.id) ?? 0, amount));
+      }
     }
   }
 
