@@ -4,11 +4,13 @@ import { recordAdminAction } from "$lib/server/auth/admin-audit";
 import { requireAdmin } from "$lib/server/auth/guards";
 import { createBackupDownload } from "$lib/server/backup/backup";
 import { getDB } from "$lib/server/db";
+import { dialect } from "$lib/server/db/dialect";
 import type { RequestHandler } from "./$types";
 import { describeError } from "$lib/server/errors";
 
 export const GET: RequestHandler = async ({ locals, url }) => {
   const admin = requireAdmin(locals);
+  if (dialect === "pg") error(404, "Not found");
   if (!consumeDownloadToken(url.searchParams.get("token"), admin.id)) {
     error(403, "Confirm your password on the backup page to download.");
   }

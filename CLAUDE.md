@@ -27,9 +27,10 @@ bun run lint:fix         # eslint --fix
 bun run check            # svelte-kit sync + svelte-check
 bun run test             # vitest (unit, SQLite)
 bun run test:coverage
-bun run test:pg          # the suite on PostgreSQL (needs KEPT_TEST_DATABASE_URL)
+bun run test:pg          # the suite on PostgreSQL (needs KEPT_TEST_DATABASE_URL; CI runs it too)
 bun run build && bun run start
-bun run db:generate      # after editing src/lib/server/db/schema.ts
+bun run db:generate      # after editing src/lib/server/db/schema.ts: writes drizzle/sqlite and drizzle/postgres
+                         # (db:generate:sqlite / db:generate:pg for one dialect)
 bun run leak-guard --all # scan the whole tree for private terms
 bun run security         # semgrep, bun audit, trivy
 ```
@@ -40,16 +41,24 @@ Bun only — never npm, pnpm or yarn. Hooks run via prek: `prek install` once pe
 
 Bun · SvelteKit (`svelte-adapter-bun`) · TypeScript strict · Svelte 5 runes · Tailwind CSS v4 ·
 shadcn-svelte (`$lib/components/ui/`, add with `bunx shadcn-svelte@latest add <name>`) ·
-`@lucide/svelte` · Drizzle ORM on SQLite via `bun:sqlite` · Zod · Vitest · pdfmake for PDF
+`@lucide/svelte` · Drizzle ORM on SQLite (`bun:sqlite`, the default) or PostgreSQL 17+ (`Bun.SQL`) ·
+files on disk or in S3 (`Bun.S3Client`) · Zod · Vitest · pdfmake for PDF
 reports (no Typst, no headless browser).
 
 ## Architecture
 
 ```
 src/lib/money.ts                 Minor-unit money type + parsing/formatting (the only way to handle amounts)
-src/lib/server/db/               getDB() (resolves the open transaction), transaction(), afterCommit(), the SQLite driver + FIFO gate; migrations run on startup
-src/lib/server/db/schema.ts      Drizzle schema — one file, written with db/columns.ts builders; every table has created_at/updated_at
-src/lib/server/auth/             local users (Bun.password argon2id), sessions in SQLite
+src/lib/server/db/index.ts       facade: getDB() (resolves the open transaction), transaction({ lock }), afterCommit(), first(), isUniqueViolation(), likeContains(); runs migrations on startup
+src/lib/server/db/sqlite.ts      SQLite backend (bun:sqlite, WAL, foreign keys) behind a FIFO gate (gate.ts): one connection, one transaction at a time
+src/lib/server/db/postgres.ts    PostgreSQL backend (Bun.SQL pool, advisory locks, migration lock)
+src/lib/server/db/config.ts      readDatabaseConfig(): DATABASE_URL / DATABASE_PATH / KEPT_DB_*, validated with Zod
+src/lib/server/db/dialect.ts     which dialect this process uses ("sqlite" | "pg"), from DATABASE_URL; no bun: imports (drizzle-kit loads it)
+src/lib/server/db/columns.ts     dialect-switched schema builders — the only way to declare columns
+src/lib/server/db/schema.ts      Drizzle schema — one file, written with columns.ts; every table has created_at/updated_at
+src/lib/server/db/search.ts      escapeLike(), likeContains(): portable case-insensitive text search
+src/lib/server/storage/          BlobStore (put/get/has/delete/list) for user files: fs.ts (default), s3.ts, config.ts (KEPT_STORAGE*, KEPT_S3_*), getStore()
+src/lib/server/auth/             local users (Bun.password argon2id), sessions in the database
 src/lib/server/importers/        file format → NormalizedStatement[] (pure, no DB access)
 src/lib/server/imports/          upload → preview → confirm flow, history/undo, CSV mapping profiles
 src/lib/server/ledger/           institutions, accounts, transactions, snapshots, balances
@@ -59,6 +68,7 @@ src/lib/server/events.ts         generic in-process events (integrations subscri
 src/lib/server/integrations/     optional adapters (paperless/) — the core never imports these
 src/lib/server/reports/          pdfmake document builders
 src/lib/{money,iban,references}.ts  client-safe helpers for amounts, IBANs, QRR/SCOR references
+drizzle/{sqlite,postgres}/       generated migrations, one folder per dialect (never edit by hand)
 src/routes/                      UI + API (`src/routes/api/`)
 src/lib/testing/fixtures/        synthetic sample files for importer tests
 ```
@@ -85,15 +95,26 @@ src/lib/testing/fixtures/        synthetic sample files for importer tests
   hang until the gate timeout. `afterCommit` hooks are awaited before `transaction()` returns, so keep
   them short; long I/O belongs in a detached task the hook starts. Work still running when a transaction
   rolls back fails ("rolled back") instead of writing outside it, savepoints started side by side run one
-  after the other, and a transaction open longer than the watchdog (60 s) is rolled back by the database layer.
-  Query builders are never run with `.all()/.get()/.run()/.values()/.execute()` (lint, by receiver type).
+  after the other, and a transaction open longer than the watchdog (60 s) is rolled back by the database layer
+  (PostgreSQL: `transaction_timeout`, `KEPT_DB_TRANSACTION_TIMEOUT_MS`).
+- **Always await queries.** Builders are awaited, never run with `.all()/.get()/.run()/.values()/.execute()`;
+  a forgotten `await` drops the query. Lint enforces both (`no-floating-promises` with `checkThenables`,
+  `kept/no-query-terminals`, by receiver type).
+- **No raw SQL outside the `db/` helpers.** Use drizzle builders and `likeContains()`, `first()`, `alias`. A raw
+  `sql` fragment is allowed only when it is portable and passes `kept/no-pg-only-api` (the lint rule lists
+  what is banned); dialect-specific SQL belongs in `db/`.
+- **User files go only through `BlobStore`** (`getStore()` from `$lib/server/storage`): uploaded bills and
+  pending imports are never written with `node:fs` or an S3 client directly, so both storage backends
+  keep working. The watch folder and scheduled SQLite backups are the only other code that touches user files on disk.
 - **Queries must run on SQLite and PostgreSQL.** Columns come from `db/columns.ts` only; PostgreSQL-only
   drizzle APIs and `::` casts in raw SQL are banned by lint outside `db/`. Aggregates and raw
   `sql<number>` go through `.mapWith(Number)` (PostgreSQL returns int8 and numeric as strings), and a
   timestamp is read as a Date column (`max(col)`), never as a raw `sql<number>`. Text search uses
   `likeContains()`, not `like`; SQLite-only functions (`strftime`, `ifnull`, `group_concat`, scalar
   `min/max`, `char`, `rowid`) are banned by lint. A cross-row invariant (check, then write across rows)
-  takes `transaction(fn, { lock })`: a no-op on SQLite, an advisory lock on PostgreSQL. Every list a
+  takes `transaction(fn, { lock })`: a no-op on SQLite, an advisory lock on PostgreSQL. One key per
+  transaction (enforced in tests): ledger, transfer, import, trade and snapshot writes share
+  `ledgerLock` (`ledger/lock.ts`), bills and allocations `billsLock`. Every list a
   user sees has a total `ORDER BY`. Migrations: `bun run db:generate` writes both `drizzle/sqlite/` and
   `drizzle/postgres/` (never edit either by hand except for data fix-ups); `DATABASE_URL=postgres://…`
   selects PostgreSQL (see `db/config.ts`). `bun run test:pg` runs the whole suite on PostgreSQL

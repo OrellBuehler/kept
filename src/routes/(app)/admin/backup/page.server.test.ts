@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
+  consumeDownloadToken,
   issueDownloadToken,
   resetDownloadTokens,
 } from "$lib/server/auth/admin-confirm";
@@ -39,15 +40,37 @@ describe("backup page", () => {
     const admin = await createTestUser({ role: "admin" });
     expect(await outcome(() => load(ev({ user: admin })))).toEqual({
       type: "return",
-      value: { scheduled: null, confirmMode: "password" },
+      value: {
+        scheduled: null,
+        confirmMode: "password",
+        database: dialect === "pg" ? "postgres" : "sqlite",
+      },
     });
   });
+
+  it.runIf(dialect === "pg")(
+    "explains pg_dump instead of reading KEPT_BACKUP_DIR on PostgreSQL",
+    async () => {
+      process.env.KEPT_BACKUP_DIR = "/nonexistent/backups";
+      const admin = await createTestUser({ role: "admin" });
+      expect(await outcome(() => load(ev({ user: admin })))).toEqual({
+        type: "return",
+        value: {
+          scheduled: null,
+          confirmMode: "password",
+          database: "postgres",
+        },
+      });
+    },
+  );
 });
 
 const tokenFrom = (url: string) =>
   new URL(url, "http://localhost").searchParams.get("token");
 
 describe("backup download", () => {
+  // On PostgreSQL the action and endpoint answer 404 before any confirmation,
+  // so the confirmation flow below is only reachable on SQLite.
   it("rejects members", async () => {
     const member = await createTestUser();
     expect(await outcome(() => GET(ev({ user: member })))).toEqual({
@@ -56,57 +79,91 @@ describe("backup download", () => {
     });
   });
 
-  it("rejects an admin without a confirmed token", async () => {
-    const admin = await createTestUser({ role: "admin" });
-    for (const url of [
-      "http://localhost/admin/backup/download",
-      "http://localhost/admin/backup/download?token=guess",
-    ]) {
-      expect(await outcome(() => GET(ev({ user: admin, url })))).toEqual({
-        type: "error",
-        status: 403,
-      });
-    }
-    expect(await getDB().select().from(adminAuditLog)).toHaveLength(0);
-  });
+  it.skipIf(dialect === "pg")(
+    "rejects an admin without a confirmed token",
+    async () => {
+      const admin = await createTestUser({ role: "admin" });
+      for (const url of [
+        "http://localhost/admin/backup/download",
+        "http://localhost/admin/backup/download?token=guess",
+      ]) {
+        expect(await outcome(() => GET(ev({ user: admin, url })))).toEqual({
+          type: "error",
+          status: 403,
+        });
+      }
+      expect(await getDB().select().from(adminAuditLog)).toHaveLength(0);
+    },
+  );
 
-  it("the download action needs the admin's password", async () => {
-    const admin = await createTestUser({ role: "admin" });
-    for (const form of [
-      {} as Record<string, string>,
-      { adminPassword: "nope-nope" },
-    ]) {
-      const r = await outcome(() =>
-        actions.download(ev({ user: admin, form })),
-      );
-      expect(r).toMatchObject({ type: "fail", status: 400 });
-    }
-    const member = await createTestUser();
-    expect(
-      await outcome(() =>
-        actions.download(
-          ev({ user: member, form: { adminPassword: member.password } }),
+  it.skipIf(dialect === "pg")(
+    "the download action needs the admin's password",
+    async () => {
+      const admin = await createTestUser({ role: "admin" });
+      for (const form of [
+        {} as Record<string, string>,
+        { adminPassword: "nope-nope" },
+      ]) {
+        const r = await outcome(() =>
+          actions.download(ev({ user: admin, form })),
+        );
+        expect(r).toMatchObject({ type: "fail", status: 400 });
+      }
+      const member = await createTestUser();
+      expect(
+        await outcome(() =>
+          actions.download(
+            ev({ user: member, form: { adminPassword: member.password } }),
+          ),
         ),
-      ),
-    ).toEqual({ type: "error", status: 403 });
-  });
+      ).toEqual({ type: "error", status: 403 });
+    },
+  );
 
-  it("wrong passwords on the download action are rate limited", async () => {
-    const admin = await createTestUser({ role: "admin" });
-    let last: unknown;
-    for (let i = 0; i < 6; i++) {
-      last = await outcome(() =>
-        actions.download(
-          ev({ user: admin, form: { adminPassword: "nope-nope-nope" } }),
+  it.skipIf(dialect === "pg")(
+    "wrong passwords on the download action are rate limited",
+    async () => {
+      const admin = await createTestUser({ role: "admin" });
+      let last: unknown;
+      for (let i = 0; i < 6; i++) {
+        last = await outcome(() =>
+          actions.download(
+            ev({ user: admin, form: { adminPassword: "nope-nope-nope" } }),
+          ),
+        );
+      }
+      expect(last).toMatchObject({ type: "fail", status: 429 });
+    },
+  );
+
+  it.runIf(dialect === "pg")(
+    "is not available on PostgreSQL: no link, no download, nothing audited",
+    async () => {
+      const admin = await createTestUser({ role: "admin" });
+      expect(
+        await outcome(() =>
+          actions.download(
+            ev({ user: admin, form: { adminPassword: admin.password } }),
+          ),
         ),
-      );
-    }
-    expect(last).toMatchObject({ type: "fail", status: 429 });
-  });
+      ).toEqual({ type: "error", status: 404 });
+      const token = issueDownloadToken(admin.id);
+      expect(
+        await outcome(() =>
+          GET(
+            ev({
+              user: admin,
+              url: `http://localhost/admin/backup/download?token=${token}`,
+            }),
+          ),
+        ),
+      ).toEqual({ type: "error", status: 404 });
+      // The 404 comes before the link is used up.
+      expect(consumeDownloadToken(token, admin.id)).toBe(true);
+      expect(await getDB().select().from(adminAuditLog)).toHaveLength(0);
+    },
+  );
 
-  // TODO(postgres 3.5): backups are gated off on PostgreSQL (the download
-  // builds a SQLite VACUUM INTO copy). Phase 3.5 adds the PostgreSQL behaviour
-  // and its own test; until then this runs on SQLite only.
   it.skipIf(dialect === "pg")(
     "serves the database once after confirmation and records it",
     async () => {
@@ -152,67 +209,79 @@ describe("backup download", () => {
     },
   );
 
-  it("records failed confirmations and rate-limit hits, but no link", async () => {
-    const admin = await createTestUser({ role: "admin" });
-    for (let i = 0; i < 8; i++) {
-      await outcome(() =>
+  it.skipIf(dialect === "pg")(
+    "records failed confirmations and rate-limit hits, but no link",
+    async () => {
+      const admin = await createTestUser({ role: "admin" });
+      for (let i = 0; i < 8; i++) {
+        await outcome(() =>
+          actions.download(
+            ev({ user: admin, form: { adminPassword: "nope-nope-nope" } }),
+          ),
+        );
+      }
+      const seen = (await getDB().select().from(adminAuditLog)).map(
+        (r) => r.action,
+      );
+      expect(seen.filter((a) => a === "admin_confirm_failed")).toHaveLength(5);
+      expect(
+        seen.filter((a) => a === "admin_confirm_rate_limited"),
+      ).toHaveLength(1);
+      expect(seen).not.toContain("backup_link_issued");
+    },
+  );
+
+  it.skipIf(dialect === "pg")(
+    "an administrator with an authenticator app must also give a code",
+    async () => {
+      const admin = await createTestUser({ role: "admin" });
+      const [recovery] = await enableTotp(admin);
+      const refused = await outcome(() =>
         actions.download(
-          ev({ user: admin, form: { adminPassword: "nope-nope-nope" } }),
+          ev({ user: admin, form: { adminPassword: admin.password } }),
         ),
       );
-    }
-    const seen = (await getDB().select().from(adminAuditLog)).map(
-      (r) => r.action,
-    );
-    expect(seen.filter((a) => a === "admin_confirm_failed")).toHaveLength(5);
-    expect(seen.filter((a) => a === "admin_confirm_rate_limited")).toHaveLength(
-      1,
-    );
-    expect(seen).not.toContain("backup_link_issued");
-  });
+      expect(refused).toMatchObject({ type: "fail", status: 400 });
+      expect(JSON.stringify(refused)).toContain("adminCode");
+      const ok = await outcome(() =>
+        actions.download(
+          ev({
+            user: admin,
+            form: { adminPassword: admin.password, adminCode: recovery },
+          }),
+        ),
+      );
+      expect(ok).toMatchObject({ type: "return" });
+    },
+  );
 
-  it("an administrator with an authenticator app must also give a code", async () => {
-    const admin = await createTestUser({ role: "admin" });
-    const [recovery] = await enableTotp(admin);
-    const refused = await outcome(() =>
-      actions.download(
-        ev({ user: admin, form: { adminPassword: admin.password } }),
-      ),
-    );
-    expect(refused).toMatchObject({ type: "fail", status: 400 });
-    expect(JSON.stringify(refused)).toContain("adminCode");
-    const ok = await outcome(() =>
-      actions.download(
-        ev({
-          user: admin,
-          form: { adminPassword: admin.password, adminCode: recovery },
-        }),
-      ),
-    );
-    expect(ok).toMatchObject({ type: "return" });
-  });
+  it.skipIf(dialect === "pg")(
+    "a passkey-only administrator needs a recent passkey step-up",
+    async () => {
+      const admin = await createTestUser({ role: "admin" });
+      await addPasskey(admin.id);
+      const refused = await outcome(() =>
+        actions.download(
+          ev({ user: admin, form: { adminPassword: admin.password } }),
+        ),
+      );
+      expect(refused).toMatchObject({ type: "fail", status: 400 });
+      expect(await getDB().select().from(adminAuditLog)).toHaveLength(0);
+    },
+  );
 
-  it("a passkey-only administrator needs a recent passkey step-up", async () => {
-    const admin = await createTestUser({ role: "admin" });
-    await addPasskey(admin.id);
-    const refused = await outcome(() =>
-      actions.download(
-        ev({ user: admin, form: { adminPassword: admin.password } }),
-      ),
-    );
-    expect(refused).toMatchObject({ type: "fail", status: 400 });
-    expect(await getDB().select().from(adminAuditLog)).toHaveLength(0);
-  });
-
-  it("a token is bound to the admin it was issued to", async () => {
-    const a = await createTestUser({ role: "admin" });
-    const b = await createTestUser({ role: "admin" });
-    const token = issueDownloadToken(a.id);
-    expect(tokenFrom(`/x?token=${token}`)).toBe(token);
-    expect(
-      await outcome(() =>
-        GET(ev({ user: b, url: `http://localhost/d?token=${token}` })),
-      ),
-    ).toEqual({ type: "error", status: 403 });
-  });
+  it.skipIf(dialect === "pg")(
+    "a token is bound to the admin it was issued to",
+    async () => {
+      const a = await createTestUser({ role: "admin" });
+      const b = await createTestUser({ role: "admin" });
+      const token = issueDownloadToken(a.id);
+      expect(tokenFrom(`/x?token=${token}`)).toBe(token);
+      expect(
+        await outcome(() =>
+          GET(ev({ user: b, url: `http://localhost/d?token=${token}` })),
+        ),
+      ).toEqual({ type: "error", status: 403 });
+    },
+  );
 });

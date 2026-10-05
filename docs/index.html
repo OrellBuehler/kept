@@ -6,7 +6,7 @@
     <title>Kept — self-hosted personal finance</title>
     <meta
       name="description"
-      content="Import your bank statements, match bills to payments, reconcile taxes and keep a balance history — on your own server, in a single SQLite file."
+      content="Import your bank statements, match bills to payments, reconcile taxes and keep a balance history — on your own server, with SQLite by default and PostgreSQL if you prefer."
     />
     <meta
       name="theme-color"
@@ -22,7 +22,7 @@
     <meta property="og:title" content="Kept — self-hosted personal finance" />
     <meta
       property="og:description"
-      content="Your accounts, bills, budgets and taxes on your own server. One Docker container, one SQLite file."
+      content="Your accounts, bills, budgets and taxes on your own server. One Docker container, SQLite by default, PostgreSQL optional."
     />
     <meta property="og:url" content="https://orellbuehler.github.io/kept/" />
     <meta
@@ -2530,7 +2530,7 @@
         <div class="wrap">
           <div class="hero-copy">
             <a class="eyebrow reveal" href="#install"
-              ><b>Self-hosted</b> One container · one SQLite file</a
+              ><b>Self-hosted</b> One container · SQLite by default</a
             >
             <h1 class="reveal" style="--d: 0.08s">
               Your money, <span class="shine">kept</span> on your own server.
@@ -3194,10 +3194,11 @@
                 <li>
                   <svg aria-hidden="true"><use href="#i-check-circle" /></svg>
                   <div>
-                    <b>One SQLite file.</b>
+                    <b>SQLite by default, PostgreSQL optional.</b>
                     <span
-                      >Everything in a single database you can copy, inspect and
-                      back up.</span
+                      >Everything in a single database file you can copy,
+                      inspect and back up, or in your own PostgreSQL 17+
+                      server.</span
                     >
                   </div>
                 </li>
@@ -3206,8 +3207,8 @@
                   <div>
                     <b>Backups built in.</b>
                     <span
-                      >Download a consistent snapshot any time, or let Kept
-                      write one every day.</span
+                      >On SQLite, download a consistent snapshot any time, or
+                      let Kept write one every day.</span
                     >
                   </div>
                 </li>

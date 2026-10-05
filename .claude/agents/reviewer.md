@@ -1,6 +1,6 @@
 ---
 name: reviewer
-description: Read-only reviewer for a Kept change. Checks a diff against CLAUDE.md invariants (money as Minor, user scoping, Zod at boundaries, importer purity, Paperless isolation, Svelte 5 runes, no swallowed errors) and the public-repo privacy rules, runs the verification commands, and reports ranked findings. Use after an implementation step, before committing.
+description: Read-only reviewer for a Kept change. Checks a diff against CLAUDE.md invariants (money as Minor, user scoping, Zod at boundaries, importer purity, Paperless isolation, Svelte 5 runes, no swallowed errors, dialect portability, transaction and lock rules, BlobStore) and the public-repo privacy rules, runs the verification commands, and reports ranked findings. Use after an implementation step, before committing.
 tools: Bash, Read, Grep, Glob
 model: sonnet
 effort: medium
@@ -19,10 +19,16 @@ You review; you never edit files. Read `CLAUDE.md`, then the diff you were point
    date handling; dedupe via `externalId`; matching false positives.
 3. **Security:** every query scoped to the user; input parsed with Zod; no secrets or PII in logs;
    authz on every endpoint and form action.
-4. **Architecture:** importers pure; core never imports `integrations/`; migrations generated,
-   not hand-edited; Svelte 5 runes only.
-5. **Tests:** edge cases named in the task are tested; bug fixes have a failing-first test.
-6. Run `bun run verify` and report the result.
+4. **Architecture:** importers pure; core never imports `integrations/`; migrations generated
+   for both dialects (`drizzle/sqlite/` and `drizzle/postgres/`), not hand-edited; Svelte 5 runes only;
+   user files only through `BlobStore`.
+5. **Database rules:** queries portable to SQLite and PostgreSQL (columns from `db/columns.ts`,
+   `likeContains()`, `.mapWith(Number)` on aggregates, total `ORDER BY`); every query awaited; no raw
+   `sql` outside what the lint rules allow; no network or file I/O inside a `transaction()` body (use
+   `afterCommit()`); a check-then-write across rows takes `transaction(fn, { lock })`; no database
+   error `message` logged (`describeError` / `errorCode` only).
+6. **Tests:** edge cases named in the task are tested; bug fixes have a failing-first test.
+7. Run `bun run verify` (plus `bun run test:pg` when `KEPT_TEST_DATABASE_URL` is available) and report the result.
 
 ## Report
 
