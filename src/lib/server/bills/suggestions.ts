@@ -7,20 +7,30 @@ import {
   getDB,
   matchDismissals,
   transactions,
+  type DB,
 } from "$lib/server/db";
 import { emitBillChanged } from "$lib/server/events";
 import { LedgerError, notFound } from "$lib/server/ledger/errors";
 import {
   allocateInTx,
+  type AllocationTx,
   loadAllocations,
   toMatchTransaction,
 } from "./allocations";
-import { getBill, getBillInTx, listBills, toMatchBill } from "./bills";
+import {
+  getBill,
+  getBillInTx,
+  listBills,
+  listBillsInTx,
+  toMatchBill,
+} from "./bills";
 import { transactionDisplayColumns, type TransactionDisplay } from "./display";
 import {
   autoConfirmable,
   computeBillStatus,
   suggestMatches,
+  type Allocation,
+  type MatchBill,
   type Suggestion,
   type MatchRule,
 } from "./matching";
@@ -73,17 +83,11 @@ function isAuto(s: Suggestion, remaining: Minor | null): boolean {
   return autoConfirmable(s) && (remaining === null || s.amount === remaining);
 }
 
-async function compute(
-  userId: string,
-  onlyBillId?: string,
-  includeDismissed = false,
-): Promise<Computed> {
-  const db = getDB();
-  const allBills = (await listBills(userId)).filter((b) => !b.cancelled);
-  const allocations = await loadAllocations(userId);
-  const matchBills = allBills.map(toMatchBill);
-
-  // Only bills that can still take a payment or refund bound the transaction window.
+/** Only bills that can still take a payment or refund bound the transaction window. */
+function windowFor(
+  matchBills: readonly MatchBill[],
+  allocations: readonly Allocation[],
+): { anyOpen: boolean; since: string | undefined } {
   let lowerBound: string | null = null;
   let unbounded = false;
   let anyOpen = false;
@@ -100,13 +104,21 @@ async function compute(
     if (anchor === null) unbounded = true;
     else if (lowerBound === null || anchor < lowerBound) lowerBound = anchor;
   }
-  if (!anyOpen) return { suggestions: [], truncated: false };
+  return {
+    anyOpen,
+    since:
+      unbounded || lowerBound === null
+        ? undefined
+        : subtractDays(lowerBound, WINDOW_LEAD_DAYS),
+  };
+}
 
-  const since =
-    unbounded || lowerBound === null
-      ? undefined
-      : subtractDays(lowerBound, WINDOW_LEAD_DAYS);
-  const txRows = await db
+function windowQuery(
+  db: Pick<DB, "select">,
+  userId: string,
+  since: string | undefined,
+) {
+  return db
     .select({
       id: transactions.id,
       bookingDate: transactions.bookingDate,
@@ -127,6 +139,21 @@ async function compute(
     )
     .orderBy(desc(transactions.bookingDate), desc(transactions.id))
     .limit(MAX_SUGGESTION_TRANSACTIONS);
+}
+
+async function compute(
+  userId: string,
+  onlyBillId?: string,
+  includeDismissed = false,
+): Promise<Computed> {
+  const db = getDB();
+  const allBills = (await listBills(userId)).filter((b) => !b.cancelled);
+  const allocations = await loadAllocations(userId);
+  const matchBills = allBills.map(toMatchBill);
+
+  const { anyOpen, since } = windowFor(matchBills, allocations);
+  if (!anyOpen) return { suggestions: [], truncated: false };
+  const txRows = await windowQuery(db, userId, since);
   const truncated = txRows.length >= MAX_SUGGESTION_TRANSACTIONS;
   if (truncated) console.warn("suggestion window truncated");
 
@@ -237,6 +264,93 @@ export async function wouldAutoConfirm(
   );
 }
 
+/**
+ * Pairs that automatic matching would confirm on the current state, read inside
+ * the transaction: same rule as `compute`, minus dismissed pairs. Keyed by pair.
+ */
+function freshAutoPlanInTx(
+  tx: AllocationTx,
+  userId: string,
+): Map<string, Minor> {
+  const plan = new Map<string, Minor>();
+  const matchBills = listBillsInTx(tx, userId)
+    .filter((b) => !b.cancelled)
+    .map(toMatchBill);
+  const allocations = tx
+    .select({
+      billId: billAllocations.billId,
+      transactionId: billAllocations.transactionId,
+      amount: billAllocations.amount,
+    })
+    .from(billAllocations)
+    .where(eq(billAllocations.userId, userId))
+    .all();
+  const { anyOpen, since } = windowFor(matchBills, allocations);
+  if (!anyOpen) return plan;
+  const txRows = windowQuery(tx, userId, since).all();
+  const dismissed = new Set(
+    tx
+      .select({
+        billId: matchDismissals.billId,
+        transactionId: matchDismissals.transactionId,
+      })
+      .from(matchDismissals)
+      .where(eq(matchDismissals.userId, userId))
+      .all()
+      .map((d) => pairKey(d.billId, d.transactionId)),
+  );
+  const remainingByBill = new Map(
+    matchBills.map((b) => [b.id, computeBillStatus(b, allocations).remaining]),
+  );
+  for (const s of suggestMatches(
+    matchBills,
+    txRows.map(toMatchTransaction),
+    allocations,
+  )) {
+    const key = pairKey(s.billId, s.transactionId);
+    if (
+      !dismissed.has(key) &&
+      isAuto(s, remainingByBill.get(s.billId) ?? null)
+    ) {
+      plan.set(key, s.amount);
+    }
+  }
+  return plan;
+}
+
+/**
+ * Writes the planned automatic allocations in one transaction. The plan was
+ * computed across awaits, so every pair is re-checked on fresh state first: a
+ * pair that was dismissed, became ambiguous or is no longer an exact match is
+ * skipped (a dismissal is kept, never deleted). Returns the bills that changed.
+ */
+export function writeAutoMatches(
+  userId: string,
+  planned: ReadonlyArray<{ billId: string; transactionId: string }>,
+): string[] {
+  return getDB().transaction((tx) => {
+    const fresh = freshAutoPlanInTx(tx, userId);
+    const billIds: string[] = [];
+    for (const s of planned) {
+      const amount = fresh.get(pairKey(s.billId, s.transactionId));
+      if (amount === undefined) {
+        console.warn("auto-match skipped", "stale");
+        continue;
+      }
+      // Each allocation also re-validates against the allocations of its
+      // transaction, so a payment taken meanwhile is skipped, not double-booked.
+      try {
+        allocateInTx(tx, userId, s.billId, s.transactionId, amount, "auto");
+        billIds.push(s.billId);
+      } catch (err) {
+        if (!(err instanceof LedgerError)) throw err;
+        console.warn("auto-match skipped", err.code);
+      }
+    }
+    return billIds;
+  });
+}
+
 export interface AutoMatchResult {
   /** Allocations created by this run. */
   matched: number;
@@ -262,21 +376,7 @@ export async function runAutoMatching(
       truncated: initial.truncated,
     };
   }
-  // Each allocation re-validates against the allocations of its transaction,
-  // so a payment taken since `compute` ran is skipped, not double-booked.
-  const allocatedBills = getDB().transaction((tx) => {
-    const billIds: string[] = [];
-    for (const s of todo) {
-      try {
-        allocateInTx(tx, userId, s.billId, s.transactionId, s.amount, "auto");
-        billIds.push(s.billId);
-      } catch (err) {
-        if (!(err instanceof LedgerError)) throw err;
-        console.warn("auto-match skipped", err.code);
-      }
-    }
-    return billIds;
-  });
+  const allocatedBills = writeAutoMatches(userId, todo);
   // Announced after the commit, so listeners see the allocations.
   for (const billId of allocatedBills) emitBillChanged(userId, billId);
   const after = await compute(userId);

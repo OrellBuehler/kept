@@ -153,6 +153,20 @@ export async function listBills(userId: string): Promise<BillView[]> {
   return rows.map(toView);
 }
 
+/** Sync twin of `listBills`, for the body of a transaction. */
+export function listBillsInTx(
+  tx: Pick<DB, "select">,
+  userId: string,
+): BillView[] {
+  return tx
+    .select()
+    .from(bills)
+    .where(eq(bills.userId, userId))
+    .orderBy(desc(bills.createdAt), asc(bills.id))
+    .all()
+    .map(toView);
+}
+
 function assertOwnedAccountInTx(
   tx: Pick<DB, "select">,
   userId: string,

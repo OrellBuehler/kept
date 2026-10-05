@@ -11,7 +11,7 @@ import {
 import { seedAccount, seedImportedTransaction } from "$lib/testing/ledger";
 import { LedgerError } from "$lib/server/ledger/errors";
 import { allocate, listBillAllocations } from "./allocations";
-import { getDB, transactions } from "$lib/server/db";
+import { getDB, matchDismissals, transactions } from "$lib/server/db";
 import { clearEventListeners, onBillChanged } from "$lib/server/events";
 import { billView } from "./status";
 import {
@@ -21,6 +21,7 @@ import {
   removeAllocation,
   runAutoMatching,
   undismissSuggestion,
+  writeAutoMatches,
 } from "./suggestions";
 
 const TODAY = "2026-10-01";
@@ -405,5 +406,64 @@ describe("dismissals and removal", () => {
     await undismissSuggestion(a.u.id, bill.id, tx.id);
     await undismissSuggestion(a.u.id, bill.id, tx.id);
     expect(await getSuggestions(a.u.id)).toHaveLength(1);
+  });
+});
+
+describe("auto matching write", () => {
+  useTestDB();
+
+  it("skips a pair dismissed after the plan was computed, and keeps the dismissal", async () => {
+    const { u, account } = await setup();
+    const bill = await qrBill(u.id);
+    const tx = await payment(u.id, account.id, 10000, {
+      reference: EXAMPLE_QRR,
+    });
+    const plan = [{ billId: bill.id, transactionId: tx.id }];
+    await dismissSuggestion(u.id, bill.id, tx.id);
+    expect(writeAutoMatches(u.id, plan)).toEqual([]);
+    expect(await listBillAllocations(u.id, bill.id)).toEqual([]);
+    expect(await getDB().select().from(matchDismissals)).toHaveLength(1);
+  });
+
+  it("skips a pair that became ambiguous after the plan was computed", async () => {
+    const { u, account } = await setup();
+    const bill = await qrBill(u.id);
+    const tx = await payment(u.id, account.id, 10000, {
+      reference: EXAMPLE_QRR,
+    });
+    const plan = [{ billId: bill.id, transactionId: tx.id }];
+    await payment(u.id, account.id, 10000, { reference: EXAMPLE_QRR });
+    expect(writeAutoMatches(u.id, plan)).toEqual([]);
+    expect(await listBillAllocations(u.id, bill.id)).toEqual([]);
+  });
+
+  it("writes a still valid plan and emits once per allocated pair", async () => {
+    const { u, account } = await setup();
+    const a = await qrBill(u.id);
+    const b = await qrBill(u.id, { reference: null, referenceType: null });
+    await payment(u.id, account.id, 10000, { reference: EXAMPLE_QRR });
+    const seen: string[] = [];
+    clearEventListeners();
+    onBillChanged((_userId, billId) => {
+      seen.push(billId);
+    });
+    const res = await runAutoMatching(u.id);
+    expect(res.matched).toBe(1);
+    expect(seen).toEqual([a.id]);
+    expect(seen).not.toContain(b.id);
+    clearEventListeners();
+  });
+
+  it("ignores another user's pair", async () => {
+    const { u, account } = await setup();
+    const bill = await qrBill(u.id);
+    const tx = await payment(u.id, account.id, 10000, {
+      reference: EXAMPLE_QRR,
+    });
+    const other = await createTestUser();
+    expect(
+      writeAutoMatches(other.id, [{ billId: bill.id, transactionId: tx.id }]),
+    ).toEqual([]);
+    expect(await listBillAllocations(u.id, bill.id)).toEqual([]);
   });
 });

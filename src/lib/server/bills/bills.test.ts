@@ -856,4 +856,44 @@ describe("check-then-write", () => {
       "Example Supplier",
     );
   });
+
+  it("a bill-changed listener sees the committed bill, from create and update", async () => {
+    const { u } = await setup();
+    const names: Array<string | null> = [];
+    clearEventListeners();
+    onBillChanged(async (userId, billId) => {
+      names.push((await getBill(userId, billId)).creditorName);
+    });
+    const bill = await createBill(u.id, billInput({ creditorName: "First" }));
+    await updateBill(u.id, bill.id, billInput({ creditorName: "Second" }));
+    await vi.waitFor(() => expect(names).toEqual(["First", "Second"]));
+    clearEventListeners();
+  });
+
+  it("announces nothing when createBill or updateBill fails", async () => {
+    const a = await setup();
+    const b = await setup();
+    const ext = { externalSource: "adapter", externalRef: "ev1" };
+    const bill = await createBill(a.u.id, billInput(), { external: ext });
+    const seen: string[] = [];
+    clearEventListeners();
+    onBillChanged((_userId, billId) => {
+      seen.push(billId);
+    });
+    await expect(
+      createBill(a.u.id, billInput(), { external: ext }),
+    ).rejects.toThrow(LedgerError);
+    await expect(
+      updateBill(
+        a.u.id,
+        bill.id,
+        billInput({ expectedAccountId: b.account.id }),
+      ),
+    ).rejects.toThrow(LedgerError);
+    await expect(updateBill(b.u.id, bill.id, billInput())).rejects.toThrow(
+      LedgerError,
+    );
+    expect(seen).toEqual([]);
+    clearEventListeners();
+  });
 });

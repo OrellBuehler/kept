@@ -28,7 +28,6 @@ import {
   paperlessDocuments,
   paperlessPending,
 } from "$lib/server/db";
-import { LedgerError } from "$lib/server/ledger/errors";
 import type { PaperlessBillSource } from "$lib/server/db";
 import {
   PaperlessClient,
@@ -39,7 +38,6 @@ import {
 import {
   clientForRow,
   rowExternalRef,
-  getConnectionRow,
   isDismissed,
   recordConnectionState,
   rememberServerInfo,
@@ -144,42 +142,39 @@ function parseModified(doc: PaperlessDoc): number {
   return ms;
 }
 
-// One sync per connection at a time; later requests queue behind it.
+// One sync per user (one connection each); later requests queue behind it. The
+// chain is registered before the first await, so a concurrent caller queues
+// behind it and a scheduler tick sees `isSyncing` at once.
 const chains = new Map<string, Promise<unknown>>();
 
-export function isSyncing(connectionId: string): boolean {
-  return chains.has(connectionId);
+export function isSyncing(userId: string): boolean {
+  return chains.has(userId);
 }
 
 export async function syncConnection(
   userId: string,
   options: SyncOptions = {},
 ): Promise<SyncResult> {
-  const row = await requireConnectionRow(userId);
-  const previous = chains.get(row.id) ?? Promise.resolve();
-  const run = () => runSync(userId, row.id, options);
+  const previous = chains.get(userId) ?? Promise.resolve();
+  const run = () => runSync(userId, options);
   const tail = previous.then(run, run);
-  chains.set(row.id, tail);
+  chains.set(userId, tail);
   void tail
     .then(
       () => undefined,
       () => undefined,
     )
     .finally(() => {
-      if (chains.get(row.id) === tail) chains.delete(row.id);
+      if (chains.get(userId) === tail) chains.delete(userId);
     });
   return tail;
 }
 
 async function runSync(
   userId: string,
-  connectionId: string,
   options: SyncOptions,
 ): Promise<SyncResult> {
-  const row = await getConnectionRow(userId);
-  if (!row || row.id !== connectionId) {
-    throw new LedgerError("not_found", "Paperless connection not found.");
-  }
+  const row = await requireConnectionRow(userId);
   const result = emptyResult();
   let client: PaperlessClient | null = null;
   try {

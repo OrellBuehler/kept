@@ -63,7 +63,7 @@ export function loadAllocations(userId: string): Promise<Allocation[]> {
 }
 
 type AllocationTransaction = ReturnType<typeof getTransactionRowInTx>;
-type AllocationTx = Pick<DB, "select" | "insert" | "delete">;
+export type AllocationTx = Pick<DB, "select" | "insert" | "delete">;
 
 /**
  * Reads the bill and the transaction, validates against the existing
@@ -178,16 +178,29 @@ function allocateRow(
     related,
   );
   if (problem !== null) throw new LedgerError("invalid", problem, "amount");
-  // Allocating a pair that was dismissed means the user changed their mind.
-  tx.delete(matchDismissals)
-    .where(
-      and(
-        eq(matchDismissals.userId, userId),
-        eq(matchDismissals.billId, billId),
-        eq(matchDismissals.transactionId, transactionId),
-      ),
-    )
-    .run();
+  const dismissal = and(
+    eq(matchDismissals.userId, userId),
+    eq(matchDismissals.billId, billId),
+    eq(matchDismissals.transactionId, transactionId),
+  );
+  if (origin === "auto") {
+    // A dismissal may have landed after the plan was computed; it wins.
+    const dismissed = tx
+      .select({ id: matchDismissals.id })
+      .from(matchDismissals)
+      .where(dismissal)
+      .get();
+    if (dismissed) {
+      throw new LedgerError(
+        "conflict",
+        "This pair was dismissed.",
+        "transactionId",
+      );
+    }
+  } else {
+    // Allocating a pair that was dismissed means the user changed their mind.
+    tx.delete(matchDismissals).where(dismissal).run();
+  }
   return tx
     .insert(billAllocations)
     .values({ userId, billId, transactionId, amount, origin })

@@ -19,7 +19,6 @@ import { unregisterPaperless, registerPaperless } from "./index";
 import { runCatchUp, startScheduler } from "./scheduler";
 import { isSyncing, syncConnection } from "./sync";
 import { billPdf, seedConnection } from "./testing";
-import { getConnectionRow } from "./connection";
 import { eq } from "drizzle-orm";
 import { getDB, paperlessConnections } from "$lib/server/db";
 
@@ -67,17 +66,16 @@ describe("scheduler", () => {
     await seedConnection(user.id, fake);
     fake.addDoc({ id: 1, original: pdf });
     fake.delayMs = 150;
-    const connectionId = (await getConnectionRow(user.id))!.id;
     const running = syncConnection(user.id);
-    // The sync registers itself once it has looked its connection up.
-    await vi.waitFor(() => expect(isSyncing(connectionId)).toBe(true));
+    // The sync registers itself at once.
+    await vi.waitFor(() => expect(isSyncing(user.id)).toBe(true));
     fake.requests = [];
 
     await runCatchUp();
     expect(fake.requests).toHaveLength(0);
 
     await running;
-    expect(isSyncing(connectionId)).toBe(false);
+    expect(isSyncing(user.id)).toBe(false);
   });
 
   it("a failing connection does not stop the others", async () => {
