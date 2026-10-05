@@ -8,6 +8,9 @@ import {
   matchDismissals,
   transactions,
   type DB,
+  afterCommit,
+  first,
+  transaction,
 } from "$lib/server/db";
 import { emitBillChanged } from "$lib/server/events";
 import { LedgerError, notFound } from "$lib/server/ledger/errors";
@@ -268,36 +271,35 @@ export async function wouldAutoConfirm(
  * Pairs that automatic matching would confirm on the current state, read inside
  * the transaction: same rule as `compute`, minus dismissed pairs. Keyed by pair.
  */
-function freshAutoPlanInTx(
+async function freshAutoPlanInTx(
   tx: AllocationTx,
   userId: string,
-): Map<string, Minor> {
+): Promise<Map<string, Minor>> {
   const plan = new Map<string, Minor>();
-  const matchBills = listBillsInTx(tx, userId)
+  const matchBills = (await listBillsInTx(tx, userId))
     .filter((b) => !b.cancelled)
     .map(toMatchBill);
-  const allocations = tx
+  const allocations = await tx
     .select({
       billId: billAllocations.billId,
       transactionId: billAllocations.transactionId,
       amount: billAllocations.amount,
     })
     .from(billAllocations)
-    .where(eq(billAllocations.userId, userId))
-    .all();
+    .where(eq(billAllocations.userId, userId));
   const { anyOpen, since } = windowFor(matchBills, allocations);
   if (!anyOpen) return plan;
-  const txRows = windowQuery(tx, userId, since).all();
+  const txRows = await windowQuery(tx, userId, since);
   const dismissed = new Set(
-    tx
-      .select({
-        billId: matchDismissals.billId,
-        transactionId: matchDismissals.transactionId,
-      })
-      .from(matchDismissals)
-      .where(eq(matchDismissals.userId, userId))
-      .all()
-      .map((d) => pairKey(d.billId, d.transactionId)),
+    (
+      await tx
+        .select({
+          billId: matchDismissals.billId,
+          transactionId: matchDismissals.transactionId,
+        })
+        .from(matchDismissals)
+        .where(eq(matchDismissals.userId, userId))
+    ).map((d) => pairKey(d.billId, d.transactionId)),
   );
   const remainingByBill = new Map(
     matchBills.map((b) => [b.id, computeBillStatus(b, allocations).remaining]),
@@ -324,12 +326,12 @@ function freshAutoPlanInTx(
  * pair that was dismissed, became ambiguous or is no longer an exact match is
  * skipped (a dismissal is kept, never deleted). Returns the bills that changed.
  */
-export function writeAutoMatches(
+export async function writeAutoMatches(
   userId: string,
   planned: ReadonlyArray<{ billId: string; transactionId: string }>,
-): string[] {
-  return getDB().transaction((tx) => {
-    const fresh = freshAutoPlanInTx(tx, userId);
+): Promise<string[]> {
+  return await transaction(async (tx) => {
+    const fresh = await freshAutoPlanInTx(tx, userId);
     const billIds: string[] = [];
     for (const s of planned) {
       const amount = fresh.get(pairKey(s.billId, s.transactionId));
@@ -340,7 +342,14 @@ export function writeAutoMatches(
       // Each allocation also re-validates against the allocations of its
       // transaction, so a payment taken meanwhile is skipped, not double-booked.
       try {
-        allocateInTx(tx, userId, s.billId, s.transactionId, amount, "auto");
+        await allocateInTx(
+          tx,
+          userId,
+          s.billId,
+          s.transactionId,
+          amount,
+          "auto",
+        );
         billIds.push(s.billId);
       } catch (err) {
         if (!(err instanceof LedgerError)) throw err;
@@ -376,9 +385,10 @@ export async function runAutoMatching(
       truncated: initial.truncated,
     };
   }
-  const allocatedBills = writeAutoMatches(userId, todo);
+  const allocatedBills = await writeAutoMatches(userId, todo);
   // Announced after the commit, so listeners see the allocations.
-  for (const billId of allocatedBills) emitBillChanged(userId, billId);
+  for (const billId of allocatedBills)
+    afterCommit(() => emitBillChanged(userId, billId));
   const after = await compute(userId);
   return {
     matched: allocatedBills.length,
@@ -415,7 +425,7 @@ export async function removeAllocation(
       .values({ userId, billId: row.billId, transactionId: row.transactionId })
       .onConflictDoNothing();
   }
-  emitBillChanged(userId, row.billId);
+  afterCommit(() => emitBillChanged(userId, row.billId));
 }
 
 /** Brings a dismissed pair back as a suggestion. Idempotent. */
@@ -463,23 +473,24 @@ export async function dismissSuggestion(
   billId: string,
   transactionId: string,
 ): Promise<void> {
-  getDB().transaction((tx) => {
-    getBillInTx(tx, userId, billId);
-    const found = tx
-      .select({ id: transactions.id })
-      .from(transactions)
-      .where(
-        and(
-          eq(transactions.userId, userId),
-          eq(transactions.id, transactionId),
-        ),
-      )
-      .limit(1)
-      .get();
+  await transaction(async (tx) => {
+    await getBillInTx(tx, userId, billId);
+    const found = await first(
+      tx
+        .select({ id: transactions.id })
+        .from(transactions)
+        .where(
+          and(
+            eq(transactions.userId, userId),
+            eq(transactions.id, transactionId),
+          ),
+        )
+        .limit(1),
+    );
     if (!found) throw notFound("Transaction");
-    tx.insert(matchDismissals)
+    await tx
+      .insert(matchDismissals)
       .values({ userId, billId, transactionId })
-      .onConflictDoNothing()
-      .run();
+      .onConflictDoNothing();
   });
 }

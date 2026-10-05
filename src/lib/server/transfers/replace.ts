@@ -1,5 +1,5 @@
 import { and, eq, gte, lte, or } from "drizzle-orm";
-import { getDB, transactions, transfers, type DB } from "$lib/server/db";
+import { getDB, transactions, transfers, type DB, first } from "$lib/server/db";
 import {
   LINK_WINDOW_DAYS,
   matchMirrors,
@@ -63,18 +63,18 @@ export async function findReplacements(
   return matchMirrors(rows, mirrors);
 }
 
-/** Sync twin of findReplacements, for the body of a transaction. */
-export function findReplacementsInTx(
+/** `findReplacements` on a transaction you already hold. */
+export async function findReplacementsInTx(
   tx: Pick<DB, "select">,
   userId: string,
   accountId: string,
   rows: readonly IncomingRow[],
-): Map<string, string> {
+): Promise<Map<string, string>> {
   if (rows.length === 0) return new Map();
   const [first, last] = dateRange(rows);
   return matchMirrors(
     rows,
-    mirrorQuery(tx, userId, accountId, first, last).all(),
+    await mirrorQuery(tx, userId, accountId, first, last),
   );
 }
 
@@ -83,42 +83,47 @@ export function findReplacementsInTx(
  * account pair, now at the real row (method `paired`); the mirror's note and
  * category move to the real row; the mirror is deleted.
  */
-export function takeOverMirror(
+export async function takeOverMirror(
   tx: Tx,
   userId: string,
   mirrorId: string,
   realId: string,
-): void {
-  const mirror = tx
-    .select({
-      note: transactions.note,
-      categoryId: transactions.categoryId,
-    })
-    .from(transactions)
-    .where(
-      and(
-        eq(transactions.userId, userId),
-        eq(transactions.id, mirrorId),
-        eq(transactions.source, "mirror"),
-      ),
-    )
-    .get();
-  if (!mirror) return;
-  const row = tx
-    .select()
-    .from(transfers)
-    .where(
-      and(
-        eq(transfers.userId, userId),
-        or(
-          eq(transfers.outTransactionId, mirrorId),
-          eq(transfers.inTransactionId, mirrorId),
+): Promise<void> {
+  const mirror = await first(
+    tx
+      .select({
+        note: transactions.note,
+        categoryId: transactions.categoryId,
+      })
+      .from(transactions)
+      .where(
+        and(
+          eq(transactions.userId, userId),
+          eq(transactions.id, mirrorId),
+          eq(transactions.source, "mirror"),
         ),
-      ),
-    )
-    .get();
+      )
+      .limit(1),
+  );
+  if (!mirror) return;
+  const row = await first(
+    tx
+      .select()
+      .from(transfers)
+      .where(
+        and(
+          eq(transfers.userId, userId),
+          or(
+            eq(transfers.outTransactionId, mirrorId),
+            eq(transfers.inTransactionId, mirrorId),
+          ),
+        ),
+      )
+      .limit(1),
+  );
   if (row) {
-    tx.update(transfers)
+    await tx
+      .update(transfers)
       .set({
         method: "paired",
         outTransactionId:
@@ -126,24 +131,28 @@ export function takeOverMirror(
         inTransactionId:
           row.inTransactionId === mirrorId ? realId : row.inTransactionId,
       })
-      .where(eq(transfers.id, row.id))
-      .run();
+      .where(eq(transfers.id, row.id));
   }
   if (mirror.note !== null || mirror.categoryId !== null) {
-    const keep = tx
-      .select({ note: transactions.note, categoryId: transactions.categoryId })
-      .from(transactions)
-      .where(eq(transactions.id, realId))
-      .get();
-    tx.update(transactions)
+    const keep = await first(
+      tx
+        .select({
+          note: transactions.note,
+          categoryId: transactions.categoryId,
+        })
+        .from(transactions)
+        .where(eq(transactions.id, realId))
+        .limit(1),
+    );
+    await tx
+      .update(transactions)
       .set({
         note: keep?.note ?? mirror.note,
         categoryId: mirror.categoryId ?? keep?.categoryId ?? null,
       })
-      .where(and(eq(transactions.userId, userId), eq(transactions.id, realId)))
-      .run();
+      .where(and(eq(transactions.userId, userId), eq(transactions.id, realId)));
   }
-  tx.delete(transactions)
-    .where(and(eq(transactions.userId, userId), eq(transactions.id, mirrorId)))
-    .run();
+  await tx
+    .delete(transactions)
+    .where(and(eq(transactions.userId, userId), eq(transactions.id, mirrorId)));
 }

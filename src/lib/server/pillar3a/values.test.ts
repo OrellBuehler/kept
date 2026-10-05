@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { minor } from "$lib/money";
-import { getDB } from "$lib/server/db";
+import { transaction } from "$lib/server/db";
 import { isValidQrr } from "$lib/references";
 import { parseForm } from "$lib/server/forms";
 import { createTestUser } from "$lib/testing/auth";
@@ -398,7 +398,9 @@ describe("listYearSettingsInTx", () => {
       deduction: "small",
       earnedIncome: null,
     });
-    const viaTx = getDB().transaction((tx) => listYearSettingsInTx(tx, u.id));
+    const viaTx = await transaction(async (tx) =>
+      listYearSettingsInTx(tx, u.id),
+    );
     expect(viaTx).toEqual(await listYearSettings(u.id));
     expect(viaTx.map((y) => y.year)).toEqual([2026]);
   });

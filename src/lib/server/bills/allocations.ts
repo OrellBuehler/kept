@@ -8,6 +8,9 @@ import {
   matchDismissals,
   transactions,
   type DB,
+  afterCommit,
+  first,
+  transaction,
 } from "$lib/server/db";
 import { emitBillChanged } from "$lib/server/events";
 import { LedgerError } from "$lib/server/ledger/errors";
@@ -62,7 +65,7 @@ export function loadAllocations(userId: string): Promise<Allocation[]> {
     .where(eq(billAllocations.userId, userId));
 }
 
-type AllocationTransaction = ReturnType<typeof getTransactionRowInTx>;
+type AllocationTransaction = Awaited<ReturnType<typeof getTransactionRowInTx>>;
 export type AllocationTx = Pick<DB, "select" | "insert" | "delete">;
 
 /**
@@ -71,20 +74,21 @@ export type AllocationTx = Pick<DB, "select" | "insert" | "delete">;
  * slip between the check and the insert. `amountFor` runs on the bill read
  * inside the transaction (it may throw a LedgerError).
  */
-function allocateAtomically(
+async function allocateAtomically(
   userId: string,
   billId: string,
   transactionId: string,
   amountFor: (bill: BillView) => Minor,
   origin: AllocationOrigin,
-): { id: string } {
-  const created = getDB().transaction((tx) => {
-    const bill = getBillInTx(tx, userId, billId);
+): Promise<{ id: string }> {
+  const created = await transaction(async (tx) => {
+    const bill = await getBillInTx(tx, userId, billId);
     const amount = amountFor(bill);
-    const row = getTransactionRowInTx(tx, userId, transactionId);
-    return allocateRow(tx, userId, bill, row, amount, origin);
+    const row = await getTransactionRowInTx(tx, userId, transactionId);
+    const allocated = await allocateRow(tx, userId, bill, row, amount, origin);
+    afterCommit(() => emitBillChanged(userId, billId));
+    return allocated;
   });
-  emitBillChanged(userId, billId);
   return created;
 }
 
@@ -110,30 +114,30 @@ export async function allocate(
 }
 
 /**
- * Sync twin of `allocate`, for the body of a transaction. It does not announce
- * the change: the caller emits `emitBillChanged` once the transaction committed.
+ * `allocate` on a transaction you already hold. It does not announce
+ * the change: the caller announces it with `afterCommit(() => emitBillChanged(...))`.
  */
-export function allocateInTx(
+export async function allocateInTx(
   tx: AllocationTx,
   userId: string,
   billId: string,
   transactionId: string,
   amount: Minor,
   origin: AllocationOrigin,
-): { id: string } {
-  const bill = getBillInTx(tx, userId, billId);
-  const row = getTransactionRowInTx(tx, userId, transactionId);
-  return allocateRow(tx, userId, bill, row, amount, origin);
+): Promise<{ id: string }> {
+  const bill = await getBillInTx(tx, userId, billId);
+  const row = await getTransactionRowInTx(tx, userId, transactionId);
+  return await allocateRow(tx, userId, bill, row, amount, origin);
 }
 
-function allocateRow(
+async function allocateRow(
   tx: AllocationTx,
   userId: string,
   bill: BillView,
   row: AllocationTransaction,
   amount: Minor,
   origin: AllocationOrigin,
-): { id: string } {
+): Promise<{ id: string }> {
   const billId = bill.id;
   const transactionId = row.id;
   if (row.source === "mirror") {
@@ -143,7 +147,7 @@ function allocateRow(
       "transactionId",
     );
   }
-  const related: Allocation[] = tx
+  const related: Allocation[] = await tx
     .select({
       billId: billAllocations.billId,
       transactionId: billAllocations.transactionId,
@@ -158,8 +162,7 @@ function allocateRow(
           eq(billAllocations.transactionId, transactionId),
         ),
       ),
-    )
-    .all();
+    );
   if (
     related.some(
       (a) => a.billId === billId && a.transactionId === transactionId,
@@ -185,11 +188,13 @@ function allocateRow(
   );
   if (origin === "auto") {
     // A dismissal may have landed after the plan was computed; it wins.
-    const dismissed = tx
-      .select({ id: matchDismissals.id })
-      .from(matchDismissals)
-      .where(dismissal)
-      .get();
+    const dismissed = await first(
+      tx
+        .select({ id: matchDismissals.id })
+        .from(matchDismissals)
+        .where(dismissal)
+        .limit(1),
+    );
     if (dismissed) {
       throw new LedgerError(
         "conflict",
@@ -199,13 +204,14 @@ function allocateRow(
     }
   } else {
     // Allocating a pair that was dismissed means the user changed their mind.
-    tx.delete(matchDismissals).where(dismissal).run();
+    await tx.delete(matchDismissals).where(dismissal);
   }
-  return tx
-    .insert(billAllocations)
-    .values({ userId, billId, transactionId, amount, origin })
-    .returning({ id: billAllocations.id })
-    .get();
+  return (await first(
+    tx
+      .insert(billAllocations)
+      .values({ userId, billId, transactionId, amount, origin })
+      .returning({ id: billAllocations.id }),
+  ))!;
 }
 
 /** Like `allocate`, with the amount typed in the bill's currency (may be negative for refunds). */

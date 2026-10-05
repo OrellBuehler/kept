@@ -1,6 +1,12 @@
 import { and, eq } from "drizzle-orm";
 import { ZodError } from "zod";
-import { accounts, csvProfiles, first, getDB } from "$lib/server/db";
+import {
+  accounts,
+  csvProfiles,
+  first,
+  getDB,
+  transaction,
+} from "$lib/server/db";
 import {
   parseMappingProfile,
   type CsvMappingProfile,
@@ -95,28 +101,30 @@ export async function saveCsvProfile(
   const serialized = JSON.stringify(parsed.profile);
   // Ownership check and upsert share one transaction; the unique index on the
   // account makes the upsert itself atomic.
-  const row = getDB().transaction((tx) => {
-    const owned = tx
-      .select({ id: accounts.id })
-      .from(accounts)
-      .where(and(eq(accounts.userId, userId), eq(accounts.id, accountId)))
-      .limit(1)
-      .get();
+  const row = await transaction(async (tx) => {
+    const owned = await first(
+      tx
+        .select({ id: accounts.id })
+        .from(accounts)
+        .where(and(eq(accounts.userId, userId), eq(accounts.id, accountId)))
+        .limit(1),
+    );
     if (!owned) throw notFound("Account");
-    return tx
-      .insert(csvProfiles)
-      .values({
-        userId,
-        accountId,
-        name: trimmed,
-        profile: serialized,
-      })
-      .onConflictDoUpdate({
-        target: csvProfiles.accountId,
-        set: { name: trimmed, profile: serialized },
-      })
-      .returning()
-      .get();
+    return (await first(
+      tx
+        .insert(csvProfiles)
+        .values({
+          userId,
+          accountId,
+          name: trimmed,
+          profile: serialized,
+        })
+        .onConflictDoUpdate({
+          target: csvProfiles.accountId,
+          set: { name: trimmed, profile: serialized },
+        })
+        .returning(),
+    ))!;
   });
   return {
     name: row.name,

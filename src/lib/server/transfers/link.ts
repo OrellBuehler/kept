@@ -8,6 +8,8 @@ import {
   transactions,
   transfers,
   type DB,
+  first,
+  transaction,
 } from "$lib/server/db";
 import {
   LINK_WINDOW_DAYS,
@@ -19,7 +21,7 @@ import {
   type PlannedLink,
 } from "./plan";
 
-/** A transaction (or the database): what the synchronous in-transaction helpers write through. */
+/** A transaction (or the database): what the in-transaction helpers write through. */
 export type Tx = Pick<DB, "select" | "insert" | "update" | "delete">;
 type Reader = Pick<DB, "select">;
 
@@ -64,13 +66,13 @@ export async function loadPlanAccounts(userId: string): Promise<PlanAccount[]> {
   return toPlanAccounts(await q.withPortfolios, await q.accounts);
 }
 
-/** Sync twin of loadPlanAccounts, for the body of a transaction. */
-export function loadPlanAccountsInTx(
+/** `loadPlanAccounts` on a transaction you already hold. */
+export async function loadPlanAccountsInTx(
   tx: Reader,
   userId: string,
-): PlanAccount[] {
+): Promise<PlanAccount[]> {
   const q = planAccountQueries(tx, userId);
-  return toPlanAccounts(q.withPortfolios.all(), q.accounts.all());
+  return toPlanAccounts(await q.withPortfolios, await q.accounts);
 }
 
 /**
@@ -108,21 +110,20 @@ const planColumns = {
  * for linked and dismissed rows, `pending` for rows that wait for an amount
  * (those may still pair with a real counterpart).
  */
-export function transferClaims(
+export async function transferClaims(
   tx: Tx,
   userId: string,
-): { taken: Set<string>; pending: Set<string> } {
+): Promise<{ taken: Set<string>; pending: Set<string> }> {
   const taken = new Set<string>();
   const pending = new Set<string>();
-  for (const r of tx
+  for (const r of await tx
     .select({
       out: transfers.outTransactionId,
       in: transfers.inTransactionId,
       status: transfers.status,
     })
     .from(transfers)
-    .where(eq(transfers.userId, userId))
-    .all()) {
+    .where(eq(transfers.userId, userId))) {
     const into = r.status === "needs_amount" ? pending : taken;
     if (r.out) into.add(r.out);
     if (r.in) into.add(r.in);
@@ -153,12 +154,12 @@ export interface LinkResult {
 
 const NONE: LinkResult = { paired: 0, mirrored: 0, needsAmount: 0 };
 
-function loadSources(
+async function loadSources(
   tx: Tx,
   userId: string,
   scope: LinkScope,
   accountList: readonly PlanAccount[],
-): PlanTransaction[] {
+): Promise<PlanTransaction[]> {
   const base = [
     eq(transactions.userId, userId),
     ne(transactions.source, "mirror"),
@@ -166,12 +167,11 @@ function loadSources(
     scope.from ? gte(transactions.bookingDate, scope.from) : undefined,
     scope.to ? lte(transactions.bookingDate, scope.to) : undefined,
   ];
-  const pick = (extra: ReturnType<typeof eq> | undefined) =>
-    tx
+  const pick = async (extra: ReturnType<typeof eq> | undefined) =>
+    await tx
       .select(planColumns)
       .from(transactions)
-      .where(and(...base, extra))
-      .all();
+      .where(and(...base, extra));
 
   const scoped =
     scope.transactionIds !== undefined ||
@@ -181,11 +181,11 @@ function loadSources(
   const add = (rows: PlanTransaction[]) => {
     for (const r of rows) found.set(r.id, r);
   };
-  if (!scoped) add(pick(undefined));
+  if (!scoped) add(await pick(undefined));
   if (scope.transactionIds) {
     for (let i = 0; i < scope.transactionIds.length; i += CHUNK) {
       add(
-        pick(
+        await pick(
           inArray(
             transactions.id,
             scope.transactionIds.slice(i, i + CHUNK) as string[],
@@ -195,13 +195,13 @@ function loadSources(
     }
   }
   if (scope.sourceAccountId !== undefined) {
-    add(pick(eq(transactions.accountId, scope.sourceAccountId)));
+    add(await pick(eq(transactions.accountId, scope.sourceAccountId)));
   }
   if (scope.targetAccountId !== undefined) {
     const iban = accountList.find((a) => a.id === scope.targetAccountId)?.iban;
     if (iban) {
       add(
-        pick(
+        await pick(
           sql`upper(replace(${transactions.counterpartyIban}, ' ', '')) = ${iban}`,
         ),
       );
@@ -210,25 +210,25 @@ function loadSources(
   return [...found.values()];
 }
 
-function loadCandidates(
+async function loadCandidates(
   tx: Tx,
   userId: string,
   sources: readonly PlanTransaction[],
   accountList: readonly PlanAccount[],
-): PlanTransaction[] {
+): Promise<PlanTransaction[]> {
   const byIban = accountsByIban(accountList);
   const targetIds = new Set<string>();
-  let first = "9999-12-31";
-  let last = "0000-01-01";
+  let earliest = "9999-12-31";
+  let latest = "0000-01-01";
   for (const s of sources) {
     const target = byIban.get(normalizeIban(s.counterpartyIban!));
     if (!target) continue;
     targetIds.add(target.id);
-    if (s.bookingDate < first) first = s.bookingDate;
-    if (s.bookingDate > last) last = s.bookingDate;
+    if (s.bookingDate < earliest) earliest = s.bookingDate;
+    if (s.bookingDate > latest) latest = s.bookingDate;
   }
   if (targetIds.size === 0) return [];
-  return tx
+  return await tx
     .select(planColumns)
     .from(transactions)
     .where(
@@ -236,16 +236,20 @@ function loadCandidates(
         eq(transactions.userId, userId),
         ne(transactions.source, "mirror"),
         inArray(transactions.accountId, [...targetIds]),
-        gte(transactions.bookingDate, shiftDate(first, -LINK_WINDOW_DAYS)),
-        lte(transactions.bookingDate, shiftDate(last, LINK_WINDOW_DAYS)),
+        gte(transactions.bookingDate, shiftDate(earliest, -LINK_WINDOW_DAYS)),
+        lte(transactions.bookingDate, shiftDate(latest, LINK_WINDOW_DAYS)),
       ),
-    )
-    .all();
+    );
 }
 
 /** Deletes the needs-amount rows of these transactions: their counter-side exists now. */
-function dropWaiting(tx: Tx, userId: string, ids: readonly string[]): void {
-  tx.delete(transfers)
+async function dropWaiting(
+  tx: Tx,
+  userId: string,
+  ids: readonly string[],
+): Promise<void> {
+  await tx
+    .delete(transfers)
     .where(
       and(
         eq(transfers.userId, userId),
@@ -255,15 +259,14 @@ function dropWaiting(tx: Tx, userId: string, ids: readonly string[]): void {
           inArray(transfers.inTransactionId, ids as string[]),
         ),
       ),
-    )
-    .run();
+    );
 }
 
-function apply(tx: Tx, userId: string, link: PlannedLink): void {
+async function apply(tx: Tx, userId: string, link: PlannedLink): Promise<void> {
   if (link.kind === "pair") {
-    dropWaiting(tx, userId, [link.sourceId, link.candidateId]);
+    await dropWaiting(tx, userId, [link.sourceId, link.candidateId]);
   } else if (link.kind === "mirror") {
-    dropWaiting(tx, userId, [link.sourceId]);
+    await dropWaiting(tx, userId, [link.sourceId]);
   }
   let outId = link.outTransactionId;
   let inId = link.inTransactionId;
@@ -273,60 +276,61 @@ function apply(tx: Tx, userId: string, link: PlannedLink): void {
     method = "mirrored";
     const m = link.mirror;
     const externalId = `mirror:${link.sourceId}`;
-    const created = tx
-      .insert(transactions)
-      .values({
-        userId,
-        accountId: m.accountId,
-        importId: null,
-        source: "mirror",
-        externalId,
-        mirrorOfId: link.sourceId,
-        bookingDate: m.bookingDate,
-        valueDate: m.valueDate,
-        amount: minor(m.amount),
-        currency: m.currency,
-        counterpartyName: m.counterpartyName,
-        counterpartyIban: m.counterpartyIban,
-        description: m.description,
-        reference: m.reference,
-        referenceType: m.referenceType,
-        reversal: false,
-      })
-      .onConflictDoNothing({
-        target: [transactions.accountId, transactions.externalId],
-      })
-      .returning({ id: transactions.id })
-      .get();
+    const created = await first(
+      tx
+        .insert(transactions)
+        .values({
+          userId,
+          accountId: m.accountId,
+          importId: null,
+          source: "mirror",
+          externalId,
+          mirrorOfId: link.sourceId,
+          bookingDate: m.bookingDate,
+          valueDate: m.valueDate,
+          amount: minor(m.amount),
+          currency: m.currency,
+          counterpartyName: m.counterpartyName,
+          counterpartyIban: m.counterpartyIban,
+          description: m.description,
+          reference: m.reference,
+          referenceType: m.referenceType,
+          reversal: false,
+        })
+        .onConflictDoNothing({
+          target: [transactions.accountId, transactions.externalId],
+        })
+        .returning({ id: transactions.id }),
+    );
     const mirrorId =
       created?.id ??
-      tx
-        .select({ id: transactions.id })
-        .from(transactions)
-        .where(
-          and(
-            eq(transactions.accountId, m.accountId),
-            eq(transactions.externalId, externalId),
-          ),
-        )
-        .get()!.id;
+      (await first(
+        tx
+          .select({ id: transactions.id })
+          .from(transactions)
+          .where(
+            and(
+              eq(transactions.accountId, m.accountId),
+              eq(transactions.externalId, externalId),
+            ),
+          )
+          .limit(1),
+      ))!.id;
     if (outId === null) outId = mirrorId;
     else inId = mirrorId;
   } else if (link.kind === "needs_amount") {
     status = "needs_amount";
     method = "mirrored";
   }
-  tx.insert(transfers)
-    .values({
-      userId,
-      outTransactionId: outId,
-      inTransactionId: inId,
-      status,
-      method,
-      fromAccountId: link.fromAccountId,
-      toAccountId: link.toAccountId,
-    })
-    .run();
+  await tx.insert(transfers).values({
+    userId,
+    outTransactionId: outId,
+    inTransactionId: inId,
+    status,
+    method,
+    fromAccountId: link.fromAccountId,
+    toAccountId: link.toAccountId,
+  });
 }
 
 /**
@@ -342,29 +346,29 @@ export async function linkTransfers(
   userId: string,
   scope: LinkScope = {},
 ): Promise<LinkResult> {
-  return getDB().transaction((tx) => linkTransfersInTx(tx, userId, scope));
+  return await transaction(async (tx) => linkTransfersInTx(tx, userId, scope));
 }
 
-/** Sync twin of linkTransfers, for the body of a transaction. */
-export function linkTransfersInTx(
+/** `linkTransfers` on a transaction you already hold. */
+export async function linkTransfersInTx(
   tx: Tx,
   userId: string,
   scope: LinkScope = {},
-): LinkResult {
-  const accountList = loadPlanAccountsInTx(tx, userId);
-  const sources = loadSources(tx, userId, scope, accountList);
+): Promise<LinkResult> {
+  const accountList = await loadPlanAccountsInTx(tx, userId);
+  const sources = await loadSources(tx, userId, scope, accountList);
   if (sources.length === 0) return { ...NONE };
-  const { taken, pending } = transferClaims(tx, userId);
+  const { taken, pending } = await transferClaims(tx, userId);
   const plan = planLinks({
     sources,
-    candidates: loadCandidates(tx, userId, sources, accountList),
+    candidates: await loadCandidates(tx, userId, sources, accountList),
     accounts: accountList,
     taken,
     pending,
   });
   const result = { ...NONE };
   for (const link of plan) {
-    apply(tx, userId, link);
+    await apply(tx, userId, link);
     if (link.kind === "pair") result.paired += 1;
     else if (link.kind === "mirror") result.mirrored += 1;
     else result.needsAmount += 1;
@@ -378,16 +382,16 @@ export function linkTransfersInTx(
  * a late counterpart pairs with what is already there. Runs inside the
  * transaction that wrote the rows.
  */
-export function linkAfterWrite(
+export async function linkAfterWrite(
   tx: Tx,
   userId: string,
   accountId: string,
   transactionIds: readonly string[],
   dates: readonly string[],
-): LinkResult {
+): Promise<LinkResult> {
   if (transactionIds.length === 0) return { ...NONE };
   const sorted = [...dates].sort();
-  return linkTransfersInTx(tx, userId, {
+  return await linkTransfersInTx(tx, userId, {
     transactionIds,
     targetAccountId: accountId,
     from: shiftDate(sorted[0]!, -LINK_WINDOW_DAYS),

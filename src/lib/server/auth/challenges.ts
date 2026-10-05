@@ -5,6 +5,7 @@ import {
   first,
   getDB,
   type AuthChallengeKind,
+  transaction,
 } from "$lib/server/db";
 import { cookieSecureOverride, hashToken } from "./sessions";
 
@@ -146,23 +147,21 @@ export async function setPendingChallenge(
 
 /** Atomically reads and clears the stored WebAuthn challenge of a pending login. */
 export async function takePendingChallenge(id: string): Promise<string | null> {
-  return getDB().transaction(
-    (tx) => {
-      const row = tx
+  return await transaction(async (tx) => {
+    const row = await first(
+      tx
         .select({ challenge: authChallenges.challenge })
         .from(authChallenges)
         .where(eq(authChallenges.id, id))
-        .limit(1)
-        .get();
-      if (!row?.challenge) return null;
-      tx.update(authChallenges)
-        .set({ challenge: null })
-        .where(eq(authChallenges.id, id))
-        .run();
-      return row.challenge;
-    },
-    { behavior: "immediate" },
-  );
+        .limit(1),
+    );
+    if (!row?.challenge) return null;
+    await tx
+      .update(authChallenges)
+      .set({ challenge: null })
+      .where(eq(authChallenges.id, id));
+    return row.challenge;
+  });
 }
 
 export async function createWebauthnChallenge(
@@ -192,22 +191,20 @@ export async function takeWebauthnChallenge(
   userId: string | null,
   now: number = Date.now(),
 ): Promise<string | null> {
-  return getDB().transaction(
-    (tx) => {
-      const row = tx
+  return await transaction(async (tx) => {
+    const row = await first(
+      tx
         .select()
         .from(authChallenges)
         .where(and(eq(authChallenges.id, id), eq(authChallenges.kind, kind)))
-        .limit(1)
-        .get();
-      if (!row) return null;
-      tx.delete(authChallenges).where(eq(authChallenges.id, id)).run();
-      if (row.expiresAt.getTime() <= now) return null;
-      if (row.userId !== userId) return null;
-      return row.challenge;
-    },
-    { behavior: "immediate" },
-  );
+        .limit(1),
+    );
+    if (!row) return null;
+    await tx.delete(authChallenges).where(eq(authChallenges.id, id));
+    if (row.expiresAt.getTime() <= now) return null;
+    if (row.userId !== userId) return null;
+    return row.challenge;
+  });
 }
 
 export function setPendingCookie(

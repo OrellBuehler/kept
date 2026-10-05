@@ -12,6 +12,7 @@ import {
   portfolios,
   portfolioValues,
   type DB,
+  transaction,
 } from "$lib/server/db";
 import { LedgerError, notFound } from "$lib/server/ledger/errors";
 import type { PortfolioCloseInput, PortfolioInput } from "./schemas";
@@ -48,18 +49,23 @@ const columns = {
 
 type Reader = Pick<DB, "select">;
 
-/** Sync: the account must be the user's own and a pillar 3a account. Runs in the portfolio write transactions. */
-function assertPillar3aAccount(tx: Reader, userId: string, accountId: string) {
-  const account = tx
-    .select({
-      id: accounts.id,
-      type: accounts.type,
-      depositIban: accounts.depositIban,
-    })
-    .from(accounts)
-    .where(and(eq(accounts.userId, userId), eq(accounts.id, accountId)))
-    .limit(1)
-    .get();
+/** The account must be the user's own and a pillar 3a account. Runs in the portfolio write transactions. */
+async function assertPillar3aAccount(
+  tx: Reader,
+  userId: string,
+  accountId: string,
+) {
+  const account = await first(
+    tx
+      .select({
+        id: accounts.id,
+        type: accounts.type,
+        depositIban: accounts.depositIban,
+      })
+      .from(accounts)
+      .where(and(eq(accounts.userId, userId), eq(accounts.id, accountId)))
+      .limit(1),
+  );
   if (!account) throw notFound("Account");
   if (account.type !== "pillar_3a") {
     throw new LedgerError(
@@ -186,8 +192,8 @@ const referenceTaken = () =>
     "depositReference",
   );
 
-/** Sync: runs inside the transaction of createPortfolio / updatePortfolio. */
-function assertReference(
+/** Runs inside the transaction of createPortfolio / updatePortfolio. */
+async function assertReference(
   tx: Reader,
   userId: string,
   depositIban: string | null,
@@ -196,17 +202,17 @@ function assertReference(
 ) {
   if (reference === null) return;
   assertReferenceFits(depositIban, reference);
-  const clash = tx
-    .select({ id: portfolios.id })
-    .from(portfolios)
-    .where(
-      and(
-        eq(portfolios.userId, userId),
-        eq(portfolios.depositReference, reference),
-      ),
-    )
-    .all()
-    .find((r) => r.id !== exceptId);
+  const clash = (
+    await tx
+      .select({ id: portfolios.id })
+      .from(portfolios)
+      .where(
+        and(
+          eq(portfolios.userId, userId),
+          eq(portfolios.depositReference, reference),
+        ),
+      )
+  ).find((r) => r.id !== exceptId);
   if (clash) throw referenceTaken();
 }
 
@@ -236,26 +242,36 @@ export async function createPortfolio(
 ): Promise<PortfolioView> {
   let id: string;
   try {
-    id = getDB().transaction((tx) => {
-      const account = assertPillar3aAccount(tx, userId, accountId);
-      assertReference(tx, userId, account.depositIban, input.depositReference);
+    id = await transaction(async (tx) => {
+      const account = await assertPillar3aAccount(tx, userId, accountId);
+      await assertReference(
+        tx,
+        userId,
+        account.depositIban,
+        input.depositReference,
+      );
       const sortOrder =
         input.sortOrder ??
-        (tx
-          .select({ m: sql<number | null>`max(${portfolios.sortOrder})` })
-          .from(portfolios)
-          .where(
-            and(
-              eq(portfolios.userId, userId),
-              eq(portfolios.accountId, accountId),
-            ),
+        ((
+          await first(
+            tx
+              .select({ m: sql<number | null>`max(${portfolios.sortOrder})` })
+              .from(portfolios)
+              .where(
+                and(
+                  eq(portfolios.userId, userId),
+                  eq(portfolios.accountId, accountId),
+                ),
+              )
+              .limit(1),
           )
-          .get()?.m ?? -1) + 1;
-      return tx
-        .insert(portfolios)
-        .values({ ...input, sortOrder, userId, accountId })
-        .returning({ id: portfolios.id })
-        .get().id;
+        )?.m ?? -1) + 1;
+      return (await first(
+        tx
+          .insert(portfolios)
+          .values({ ...input, sortOrder, userId, accountId })
+          .returning({ id: portfolios.id }),
+      ))!.id;
     });
   } catch (err) {
     mapReferenceViolation(err, input.depositReference);
@@ -269,20 +285,25 @@ export async function updatePortfolio(
   input: PortfolioInput,
 ): Promise<PortfolioView> {
   try {
-    getDB().transaction((tx) => {
-      const current = tx
-        .select({
-          accountId: portfolios.accountId,
-          closedOn: portfolios.closedOn,
-          sortOrder: portfolios.sortOrder,
-        })
-        .from(portfolios)
-        .where(and(eq(portfolios.userId, userId), eq(portfolios.id, id)))
-        .limit(1)
-        .get();
+    await transaction(async (tx) => {
+      const current = await first(
+        tx
+          .select({
+            accountId: portfolios.accountId,
+            closedOn: portfolios.closedOn,
+            sortOrder: portfolios.sortOrder,
+          })
+          .from(portfolios)
+          .where(and(eq(portfolios.userId, userId), eq(portfolios.id, id)))
+          .limit(1),
+      );
       if (!current) throw notFound("Portfolio");
-      const account = assertPillar3aAccount(tx, userId, current.accountId);
-      assertReference(
+      const account = await assertPillar3aAccount(
+        tx,
+        userId,
+        current.accountId,
+      );
+      await assertReference(
         tx,
         userId,
         account.depositIban,
@@ -291,10 +312,10 @@ export async function updatePortfolio(
       );
       assertDates(input.openedOn, current.closedOn);
       const { sortOrder, ...rest } = input;
-      tx.update(portfolios)
+      await tx
+        .update(portfolios)
         .set({ ...rest, sortOrder: sortOrder ?? current.sortOrder })
-        .where(and(eq(portfolios.userId, userId), eq(portfolios.id, id)))
-        .run();
+        .where(and(eq(portfolios.userId, userId), eq(portfolios.id, id)));
     });
   } catch (err) {
     mapReferenceViolation(err, input.depositReference);
@@ -308,19 +329,20 @@ export async function closePortfolio(
   id: string,
   input: PortfolioCloseInput,
 ): Promise<PortfolioView> {
-  getDB().transaction((tx) => {
-    const current = tx
-      .select({ openedOn: portfolios.openedOn })
-      .from(portfolios)
-      .where(and(eq(portfolios.userId, userId), eq(portfolios.id, id)))
-      .limit(1)
-      .get();
+  await transaction(async (tx) => {
+    const current = await first(
+      tx
+        .select({ openedOn: portfolios.openedOn })
+        .from(portfolios)
+        .where(and(eq(portfolios.userId, userId), eq(portfolios.id, id)))
+        .limit(1),
+    );
     if (!current) throw notFound("Portfolio");
     assertDates(current.openedOn, input.closedOn);
-    tx.update(portfolios)
+    await tx
+      .update(portfolios)
       .set({ closedOn: input.closedOn, closeReason: input.closeReason })
-      .where(and(eq(portfolios.userId, userId), eq(portfolios.id, id)))
-      .run();
+      .where(and(eq(portfolios.userId, userId), eq(portfolios.id, id)));
   });
   return await getPortfolio(userId, id);
 }
@@ -342,35 +364,38 @@ export async function deletePortfolio(
   userId: string,
   id: string,
 ): Promise<void> {
-  getDB().transaction((tx) => {
-    const found = tx
-      .select({ id: portfolios.id })
-      .from(portfolios)
-      .where(and(eq(portfolios.userId, userId), eq(portfolios.id, id)))
-      .limit(1)
-      .get();
+  await transaction(async (tx) => {
+    const found = await first(
+      tx
+        .select({ id: portfolios.id })
+        .from(portfolios)
+        .where(and(eq(portfolios.userId, userId), eq(portfolios.id, id)))
+        .limit(1),
+    );
     if (!found) throw notFound("Portfolio");
     const used =
-      tx
-        .select({ id: portfolioValues.id })
-        .from(portfolioValues)
-        .where(eq(portfolioValues.portfolioId, id))
-        .limit(1)
-        .get() ??
-      tx
-        .select({ id: pillar3aContributions.id })
-        .from(pillar3aContributions)
-        .where(eq(pillar3aContributions.portfolioId, id))
-        .limit(1)
-        .get();
+      (await first(
+        tx
+          .select({ id: portfolioValues.id })
+          .from(portfolioValues)
+          .where(eq(portfolioValues.portfolioId, id))
+          .limit(1),
+      )) ??
+      (await first(
+        tx
+          .select({ id: pillar3aContributions.id })
+          .from(pillar3aContributions)
+          .where(eq(pillar3aContributions.portfolioId, id))
+          .limit(1),
+      ));
     if (used) {
       throw new LedgerError(
         "conflict",
         "This portfolio has values or contributions. Close it instead of deleting it.",
       );
     }
-    tx.delete(portfolios)
-      .where(and(eq(portfolios.userId, userId), eq(portfolios.id, id)))
-      .run();
+    await tx
+      .delete(portfolios)
+      .where(and(eq(portfolios.userId, userId), eq(portfolios.id, id)));
   });
 }

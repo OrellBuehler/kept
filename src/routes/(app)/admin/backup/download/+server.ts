@@ -18,7 +18,7 @@ export const GET: RequestHandler = async ({ locals, url }) => {
   });
   let download;
   try {
-    download = createBackupDownload(getDB());
+    download = await createBackupDownload(getDB());
   } catch (err) {
     console.error("backup download failed", describeError(err));
     await recordAdminAction(admin, "backup_download", {

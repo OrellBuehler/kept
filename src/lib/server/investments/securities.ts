@@ -7,6 +7,7 @@ import {
   securities,
   securityPrices,
   trades,
+  transaction,
 } from "$lib/server/db";
 import { LedgerError, notFound } from "$lib/server/ledger/errors";
 import type { SecurityInput } from "./schemas";
@@ -71,29 +72,31 @@ export async function createSecurity(
  * The checks and the writes share one transaction, so a trade or a manual
  * price added in between cannot slip past the currency guard.
  */
-function updateSecurityInTx(
+async function updateSecurityInTx(
   tx: Tx,
   userId: string,
   id: string,
   input: SecurityInput,
 ) {
-  const current = tx
-    .select(columns)
-    .from(securities)
-    .where(and(eq(securities.userId, userId), eq(securities.id, id)))
-    .limit(1)
-    .get();
+  const current = await first(
+    tx
+      .select(columns)
+      .from(securities)
+      .where(and(eq(securities.userId, userId), eq(securities.id, id)))
+      .limit(1),
+  );
   if (!current) throw notFound("Security");
   const currencyChanged = input.currency !== current.currency;
   const symbolChanged = input.symbol !== current.symbol;
 
   if (currencyChanged) {
-    const used = tx
-      .select({ id: trades.id })
-      .from(trades)
-      .where(and(eq(trades.userId, userId), eq(trades.securityId, id)))
-      .limit(1)
-      .get();
+    const used = await first(
+      tx
+        .select({ id: trades.id })
+        .from(trades)
+        .where(and(eq(trades.userId, userId), eq(trades.securityId, id)))
+        .limit(1),
+    );
     if (used) {
       throw new LedgerError(
         "conflict",
@@ -101,17 +104,18 @@ function updateSecurityInTx(
         "currency",
       );
     }
-    const manual = tx
-      .select({ id: securityPrices.id })
-      .from(securityPrices)
-      .where(
-        and(
-          eq(securityPrices.securityId, id),
-          eq(securityPrices.source, "manual"),
-        ),
-      )
-      .limit(1)
-      .get();
+    const manual = await first(
+      tx
+        .select({ id: securityPrices.id })
+        .from(securityPrices)
+        .where(
+          and(
+            eq(securityPrices.securityId, id),
+            eq(securityPrices.source, "manual"),
+          ),
+        )
+        .limit(1),
+    );
     if (manual) {
       throw new LedgerError(
         "conflict",
@@ -121,19 +125,19 @@ function updateSecurityInTx(
     }
   }
 
-  tx.update(securities)
+  await tx
+    .update(securities)
     .set(input)
-    .where(and(eq(securities.userId, userId), eq(securities.id, id)))
-    .run();
+    .where(and(eq(securities.userId, userId), eq(securities.id, id)));
   if (currencyChanged || symbolChanged) {
-    tx.delete(securityPrices)
+    await tx
+      .delete(securityPrices)
       .where(
         and(
           eq(securityPrices.securityId, id),
           eq(securityPrices.source, "provider"),
         ),
-      )
-      .run();
+      );
   }
 }
 
@@ -142,7 +146,7 @@ export async function updateSecurity(
   id: string,
   input: SecurityInput,
 ): Promise<SecurityView> {
-  getDB().transaction((tx) => updateSecurityInTx(tx, userId, id, input));
+  await transaction(async (tx) => updateSecurityInTx(tx, userId, id, input));
   return await getSecurity(userId, id);
 }
 
@@ -151,28 +155,30 @@ export async function deleteSecurity(
   userId: string,
   id: string,
 ): Promise<void> {
-  getDB().transaction((tx) => {
-    const found = tx
-      .select({ id: securities.id })
-      .from(securities)
-      .where(and(eq(securities.userId, userId), eq(securities.id, id)))
-      .limit(1)
-      .get();
+  await transaction(async (tx) => {
+    const found = await first(
+      tx
+        .select({ id: securities.id })
+        .from(securities)
+        .where(and(eq(securities.userId, userId), eq(securities.id, id)))
+        .limit(1),
+    );
     if (!found) throw notFound("Security");
-    const used = tx
-      .select({ id: trades.id })
-      .from(trades)
-      .where(and(eq(trades.userId, userId), eq(trades.securityId, id)))
-      .limit(1)
-      .get();
+    const used = await first(
+      tx
+        .select({ id: trades.id })
+        .from(trades)
+        .where(and(eq(trades.userId, userId), eq(trades.securityId, id)))
+        .limit(1),
+    );
     if (used) {
       throw new LedgerError(
         "conflict",
         "The security cannot be deleted while it has trades.",
       );
     }
-    tx.delete(securities)
-      .where(and(eq(securities.userId, userId), eq(securities.id, id)))
-      .run();
+    await tx
+      .delete(securities)
+      .where(and(eq(securities.userId, userId), eq(securities.id, id)));
   });
 }

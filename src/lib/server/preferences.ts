@@ -4,7 +4,7 @@ import {
   preferencesSchema,
   type Preferences,
 } from "$lib/preferences";
-import { first, getDB, userPreferences } from "$lib/server/db";
+import { first, getDB, userPreferences, transaction } from "$lib/server/db";
 
 type PreferencesRow = typeof userPreferences.$inferSelect;
 
@@ -50,21 +50,22 @@ export async function updatePreferences(
   userId: string,
   patch: Partial<Preferences>,
 ): Promise<Preferences> {
-  return getDB().transaction((tx) => {
-    const row = tx
-      .select()
-      .from(userPreferences)
-      .where(eq(userPreferences.userId, userId))
-      .limit(1)
-      .get();
+  return await transaction(async (tx) => {
+    const row = await first(
+      tx
+        .select()
+        .from(userPreferences)
+        .where(eq(userPreferences.userId, userId))
+        .limit(1),
+    );
     const next = { ...toPreferences(row), ...patch };
-    tx.insert(userPreferences)
+    await tx
+      .insert(userPreferences)
       .values({ userId, ...next })
       .onConflictDoUpdate({
         target: userPreferences.userId,
         set: { ...next, updatedAt: new Date() },
-      })
-      .run();
+      });
     return next;
   });
 }

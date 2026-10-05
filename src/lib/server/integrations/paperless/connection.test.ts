@@ -1,5 +1,6 @@
 import { afterAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { decryptSecret } from "$lib/server/crypto";
+import * as dbModule from "$lib/server/db";
 import { getDB, paperlessConnections } from "$lib/server/db";
 import { LedgerError } from "$lib/server/ledger/errors";
 import { createTestUser } from "$lib/testing/auth";
@@ -181,7 +182,7 @@ describe("connection", () => {
 
   it("reports a connection created by a concurrent save as a conflict", async () => {
     const u = await createTestUser();
-    vi.spyOn(getDB(), "transaction").mockImplementationOnce(() => {
+    vi.spyOn(dbModule, "transaction").mockImplementationOnce(async () => {
       throw Object.assign(new Error("constraint"), {
         code: "SQLITE_CONSTRAINT_UNIQUE",
       });

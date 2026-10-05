@@ -1,7 +1,7 @@
 import { and, eq, inArray, ne, or } from "drizzle-orm";
 import { normalizeIban } from "$lib/iban";
 import { minor } from "$lib/money";
-import { transactions, transfers } from "$lib/server/db";
+import { transactions, transfers, first } from "$lib/server/db";
 import {
   linkAfterWrite,
   loadPlanAccountsInTx,
@@ -25,19 +25,24 @@ import {
  * is removed, both rows staying; a link that still fits stays. Then the row is
  * linked again where it can be.
  */
-export function resyncSource(
+export async function resyncSource(
   tx: Tx,
   userId: string,
   transactionId: string,
   previousIban: string | null,
-): LinkResult {
-  const source = tx
-    .select()
-    .from(transactions)
-    .where(
-      and(eq(transactions.userId, userId), eq(transactions.id, transactionId)),
-    )
-    .get();
+): Promise<LinkResult> {
+  const source = await first(
+    tx
+      .select()
+      .from(transactions)
+      .where(
+        and(
+          eq(transactions.userId, userId),
+          eq(transactions.id, transactionId),
+        ),
+      )
+      .limit(1),
+  );
   if (!source || source.source === "mirror") {
     return { paired: 0, mirrored: 0, needsAmount: 0 };
   }
@@ -47,7 +52,7 @@ export function resyncSource(
       ? null
       : normalizeIban(source.counterpartyIban));
 
-  const rows = tx
+  const rows = await tx
     .select()
     .from(transfers)
     .where(
@@ -58,9 +63,8 @@ export function resyncSource(
           eq(transfers.inTransactionId, transactionId),
         ),
       ),
-    )
-    .all();
-  const plan = loadPlanAccountsInTx(tx, userId);
+    );
+  const plan = await loadPlanAccountsInTx(tx, userId);
   const home = plan.find((a) => a.id === source.accountId);
   const target = source.counterpartyIban
     ? accountsByIban(plan).get(normalizeIban(source.counterpartyIban))
@@ -82,22 +86,24 @@ export function resyncSource(
         target !== undefined &&
         target.id !== dismissedTarget
       ) {
-        tx.delete(transfers).where(eq(transfers.id, t.id)).run();
+        await tx.delete(transfers).where(eq(transfers.id, t.id));
       }
       continue;
     }
     if (t.status === "needs_amount") {
-      tx.delete(transfers).where(eq(transfers.id, t.id)).run();
+      await tx.delete(transfers).where(eq(transfers.id, t.id));
       continue;
     }
     if (t.method !== "mirrored" && mirrorId !== null) {
-      const peer = tx
-        .select()
-        .from(transactions)
-        .where(
-          and(eq(transactions.userId, userId), eq(transactions.id, mirrorId)),
-        )
-        .get();
+      const peer = await first(
+        tx
+          .select()
+          .from(transactions)
+          .where(
+            and(eq(transactions.userId, userId), eq(transactions.id, mirrorId)),
+          )
+          .limit(1),
+      );
       const peerAccount = peer
         ? plan.find((a) => a.id === peer.accountId)
         : undefined;
@@ -108,17 +114,19 @@ export function resyncSource(
         (t.method === "manual"
           ? manualLinkIsConsistent(source, home, peer, peerAccount, plan)
           : pairIsConsistent(source, home, peer, peerAccount));
-      if (!fits) tx.delete(transfers).where(eq(transfers.id, t.id)).run();
+      if (!fits) await tx.delete(transfers).where(eq(transfers.id, t.id));
       continue;
     }
     if (t.method !== "mirrored" || mirrorId === null) continue;
-    const mirror = tx
-      .select()
-      .from(transactions)
-      .where(
-        and(eq(transactions.id, mirrorId), eq(transactions.source, "mirror")),
-      )
-      .get();
+    const mirror = await first(
+      tx
+        .select()
+        .from(transactions)
+        .where(
+          and(eq(transactions.id, mirrorId), eq(transactions.source, "mirror")),
+        )
+        .limit(1),
+    );
     if (!mirror) continue;
     // Unknown for a foreign-currency mirror whose amount was entered by hand: it keeps that amount.
     const derived = target ? counterAmount(source, target) : null;
@@ -131,10 +139,11 @@ export function resyncSource(
       Math.sign(amount) !== -Math.sign(source.amount) ||
       !canMirrorOnto(target, source.bookingDate)
     ) {
-      tx.delete(transactions).where(eq(transactions.id, mirror.id)).run();
+      await tx.delete(transactions).where(eq(transactions.id, mirror.id));
       continue;
     }
-    tx.update(transactions)
+    await tx
+      .update(transactions)
       .set({
         bookingDate: source.bookingDate,
         valueDate: source.valueDate,
@@ -145,8 +154,7 @@ export function resyncSource(
         reference: source.reference,
         referenceType: source.referenceType,
       })
-      .where(eq(transactions.id, mirror.id))
-      .run();
+      .where(eq(transactions.id, mirror.id));
   }
   return linkAfterWrite(
     tx,
@@ -163,15 +171,15 @@ export function resyncSource(
  * source to name the receiving account; a pair needs both rows to still fit
  * (see `pairIsConsistent`). Links made by hand stay. Returns how many went.
  */
-export function revalidateLinks(
+export async function revalidateLinks(
   tx: Tx,
   userId: string,
   accountId: string,
-): number {
-  const plan = loadPlanAccountsInTx(tx, userId);
+): Promise<number> {
+  const plan = await loadPlanAccountsInTx(tx, userId);
   const byIban = accountsByIban(plan);
   const byId = new Map(plan.map((a) => [a.id, a]));
-  const rows = tx
+  const rows = await tx
     .select()
     .from(transfers)
     .where(
@@ -184,8 +192,7 @@ export function revalidateLinks(
           eq(transfers.toAccountId, accountId),
         ),
       ),
-    )
-    .all();
+    );
   const ids = [
     ...new Set(
       rows
@@ -195,7 +202,7 @@ export function revalidateLinks(
   ];
   const loaded = new Map<string, typeof transactions.$inferSelect>();
   for (let i = 0; i < ids.length; i += 500) {
-    for (const t of tx
+    for (const t of await tx
       .select()
       .from(transactions)
       .where(
@@ -203,8 +210,7 @@ export function revalidateLinks(
           eq(transactions.userId, userId),
           inArray(transactions.id, ids.slice(i, i + 500)),
         ),
-      )
-      .all()) {
+      )) {
       loaded.set(t.id, t);
     }
   }
@@ -233,10 +239,10 @@ export function revalidateLinks(
         byIban.get(normalizeIban(source.counterpartyIban))?.id === receiving;
     }
     if (valid) continue;
-    tx.delete(transfers).where(eq(transfers.id, t.id)).run();
+    await tx.delete(transfers).where(eq(transfers.id, t.id));
     for (const m of [out, into]) {
       if (m?.source === "mirror") {
-        tx.delete(transactions).where(eq(transactions.id, m.id)).run();
+        await tx.delete(transactions).where(eq(transactions.id, m.id));
       }
     }
     removed += 1;

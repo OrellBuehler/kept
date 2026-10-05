@@ -87,10 +87,7 @@ export async function invalidateSession(sessionId: string): Promise<void> {
   await getDB().delete(sessions).where(eq(sessions.id, sessionId));
 }
 
-/**
- * The delete of a user's sessions as an unexecuted query, so a synchronous
- * transaction body can `.run()` it on its `tx` while everything else awaits it.
- */
+/** The delete of a user's sessions as an unexecuted query: await it on the connection or transaction at hand. */
 export function userSessionsDelete(
   db: Pick<ReturnType<typeof getDB>, "delete">,
   userId: string,

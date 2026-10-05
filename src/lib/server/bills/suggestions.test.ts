@@ -420,7 +420,7 @@ describe("auto matching write", () => {
     });
     const plan = [{ billId: bill.id, transactionId: tx.id }];
     await dismissSuggestion(u.id, bill.id, tx.id);
-    expect(writeAutoMatches(u.id, plan)).toEqual([]);
+    expect(await writeAutoMatches(u.id, plan)).toEqual([]);
     expect(await listBillAllocations(u.id, bill.id)).toEqual([]);
     expect(await getDB().select().from(matchDismissals)).toHaveLength(1);
   });
@@ -433,7 +433,7 @@ describe("auto matching write", () => {
     });
     const plan = [{ billId: bill.id, transactionId: tx.id }];
     await payment(u.id, account.id, 10000, { reference: EXAMPLE_QRR });
-    expect(writeAutoMatches(u.id, plan)).toEqual([]);
+    expect(await writeAutoMatches(u.id, plan)).toEqual([]);
     expect(await listBillAllocations(u.id, bill.id)).toEqual([]);
   });
 
@@ -462,7 +462,9 @@ describe("auto matching write", () => {
     });
     const other = await createTestUser();
     expect(
-      writeAutoMatches(other.id, [{ billId: bill.id, transactionId: tx.id }]),
+      await writeAutoMatches(other.id, [
+        { billId: bill.id, transactionId: tx.id },
+      ]),
     ).toEqual([]);
     expect(await listBillAllocations(u.id, bill.id)).toEqual([]);
   });

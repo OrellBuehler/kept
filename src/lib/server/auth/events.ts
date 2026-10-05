@@ -1,6 +1,11 @@
-import { authEvents, getDB, type AuthEventType } from "$lib/server/db";
+import {
+  afterCommit,
+  authEvents,
+  getDB,
+  type AuthEventType,
+} from "$lib/server/db";
 
-/** The insert of a security event as an unexecuted query, so a synchronous transaction body can `.run()` it. */
+/** The insert of a security event as an unexecuted query. */
 export function authEventInsert(
   db: Pick<ReturnType<typeof getDB>, "insert">,
   type: AuthEventType,
@@ -25,15 +30,15 @@ export async function logAuthEvent(
 }
 
 /**
- * Sync twin for the body of a transaction: the row commits or rolls back with it.
- * Returns the log call, which the caller makes once the transaction has committed.
+ * On a transaction you already hold: the row commits or rolls back with it.
+ * The log line is written once the transaction has committed.
  */
-export function logAuthEventInTx(
+export async function logAuthEventInTx(
   tx: Pick<ReturnType<typeof getDB>, "insert">,
   type: AuthEventType,
   userId: string,
   actorId: string = userId,
-): () => void {
-  authEventInsert(tx, type, userId, actorId).run();
-  return () => logEvent(type, userId, actorId);
+): Promise<void> {
+  await authEventInsert(tx, type, userId, actorId);
+  afterCommit(() => logEvent(type, userId, actorId));
 }

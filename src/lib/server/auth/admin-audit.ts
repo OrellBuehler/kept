@@ -4,6 +4,9 @@ import {
   getDB,
   type AdminAction,
   type UserRole,
+  afterCommit,
+  first,
+  transaction,
 } from "$lib/server/db";
 import { WINDOW_MS } from "./rate-limit";
 import { AuthError } from "./types";
@@ -67,49 +70,49 @@ export async function recordAdminAction(
 }
 
 /**
- * Sync twin for the body of the action's own transaction, so the change and its
- * audit row commit together. Returns the log call, which the caller makes once
- * the transaction has committed.
+ * On the action's own transaction, so the change and its audit row commit
+ * together. The log line is written once the transaction has committed.
  */
-export function recordAdminActionInTx(
+export async function recordAdminActionInTx(
   tx: AuditDb,
   actor: Person,
   action: AdminAction,
   opts: { target?: Person; details?: string } = {},
-): () => void {
-  auditInsert(tx, actor, action, opts).run();
-  return () => logAction(actor, action, opts);
+): Promise<void> {
+  await auditInsert(tx, actor, action, opts);
+  afterCommit(() => logAction(actor, action, opts));
 }
 
 /**
  * A confirmation attempt was refused for being over the rate limit. Written at
  * most once per limiter window per administrator so a flood cannot fill the table.
- * The look-up and the insert share one synchronous transaction: with an await in
- * between, parallel refusals would all see "none yet" and all write.
+ * The look-up and the insert share one transaction (locked per administrator):
+ * run apart, parallel refusals would all see "none yet" and all write.
  */
 export async function recordConfirmationRateLimited(
   actor: Person,
   now: number = Date.now(),
 ): Promise<void> {
-  const written = getDB().transaction(
-    (tx) => {
-      const recent = tx
-        .select({ id: adminAuditLog.id })
-        .from(adminAuditLog)
-        .where(
-          and(
-            eq(adminAuditLog.actorUserId, actor.id),
-            eq(adminAuditLog.action, "admin_confirm_rate_limited"),
-            gt(adminAuditLog.createdAt, new Date(now - WINDOW_MS)),
-          ),
-        )
-        .limit(1)
-        .get();
+  const written = await transaction(
+    async (tx) => {
+      const recent = await first(
+        tx
+          .select({ id: adminAuditLog.id })
+          .from(adminAuditLog)
+          .where(
+            and(
+              eq(adminAuditLog.actorUserId, actor.id),
+              eq(adminAuditLog.action, "admin_confirm_rate_limited"),
+              gt(adminAuditLog.createdAt, new Date(now - WINDOW_MS)),
+            ),
+          )
+          .limit(1),
+      );
       if (recent) return false;
-      auditInsert(tx, actor, "admin_confirm_rate_limited", {}).run();
+      await auditInsert(tx, actor, "admin_confirm_rate_limited", {});
       return true;
     },
-    { behavior: "immediate" },
+    { lock: `admin-confirm-rate-limited:${actor.id}` },
   );
   if (written) logAction(actor, "admin_confirm_rate_limited", {});
 }

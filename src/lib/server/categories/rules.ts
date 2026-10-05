@@ -8,6 +8,7 @@ import {
   getDB,
   transactions,
   type DB,
+  transaction,
 } from "$lib/server/db";
 import { LedgerError, notFound } from "$lib/server/ledger/errors";
 import type { RuleInput } from "./schemas";
@@ -134,18 +135,19 @@ async function getRule(userId: string, id: string): Promise<CategoryRule> {
   return row;
 }
 
-/** Sync: runs inside the transaction of createRule / updateRule. */
-function assertCategory(
+/** Runs inside the transaction of createRule / updateRule. */
+async function assertCategory(
   tx: Pick<DB, "select">,
   userId: string,
   categoryId: string,
 ) {
-  const found = tx
-    .select({ id: categories.id })
-    .from(categories)
-    .where(and(eq(categories.userId, userId), eq(categories.id, categoryId)))
-    .limit(1)
-    .get();
+  const found = await first(
+    tx
+      .select({ id: categories.id })
+      .from(categories)
+      .where(and(eq(categories.userId, userId), eq(categories.id, categoryId)))
+      .limit(1),
+  );
   if (!found) {
     throw new LedgerError("invalid", "Choose a category.", "categoryId");
   }
@@ -155,13 +157,14 @@ export async function createRule(
   userId: string,
   input: RuleInput,
 ): Promise<CategoryRule> {
-  return getDB().transaction((tx) => {
-    assertCategory(tx, userId, input.categoryId);
-    return tx
-      .insert(categoryRules)
-      .values({ userId, ...normalized(input) })
-      .returning(ruleColumns)
-      .get();
+  return await transaction(async (tx) => {
+    await assertCategory(tx, userId, input.categoryId);
+    return (await first(
+      tx
+        .insert(categoryRules)
+        .values({ userId, ...normalized(input) })
+        .returning(ruleColumns),
+    ))!;
   });
 }
 
@@ -170,19 +173,20 @@ export async function updateRule(
   id: string,
   input: RuleInput,
 ): Promise<CategoryRule> {
-  getDB().transaction((tx) => {
-    const found = tx
-      .select({ id: categoryRules.id })
-      .from(categoryRules)
-      .where(and(eq(categoryRules.userId, userId), eq(categoryRules.id, id)))
-      .limit(1)
-      .get();
+  await transaction(async (tx) => {
+    const found = await first(
+      tx
+        .select({ id: categoryRules.id })
+        .from(categoryRules)
+        .where(and(eq(categoryRules.userId, userId), eq(categoryRules.id, id)))
+        .limit(1),
+    );
     if (!found) throw notFound("Rule");
-    assertCategory(tx, userId, input.categoryId);
-    tx.update(categoryRules)
+    await assertCategory(tx, userId, input.categoryId);
+    await tx
+      .update(categoryRules)
       .set(normalized(input))
-      .where(and(eq(categoryRules.userId, userId), eq(categoryRules.id, id)))
-      .run();
+      .where(and(eq(categoryRules.userId, userId), eq(categoryRules.id, id)));
   });
   return await getRule(userId, id);
 }
@@ -227,23 +231,24 @@ export async function applyRulesToUncategorized(
       ),
     );
   if (rules.length === 0) return { scanned: rows.length, categorized: 0 };
-  return db.transaction((tx) => {
+  return await transaction(async (tx) => {
     let categorized = 0;
     for (const row of rows) {
       const categoryId = categorize(rules, row);
       if (categoryId === null) continue;
-      categorized += tx
-        .update(transactions)
-        .set({ categoryId })
-        .where(
-          and(
-            eq(transactions.userId, userId),
-            eq(transactions.id, row.id),
-            isNull(transactions.categoryId),
-          ),
-        )
-        .returning({ id: transactions.id })
-        .all().length;
+      categorized += (
+        await tx
+          .update(transactions)
+          .set({ categoryId })
+          .where(
+            and(
+              eq(transactions.userId, userId),
+              eq(transactions.id, row.id),
+              isNull(transactions.categoryId),
+            ),
+          )
+          .returning({ id: transactions.id })
+      ).length;
     }
     return { scanned: rows.length, categorized };
   });

@@ -1,8 +1,10 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { minor } from "$lib/money";
 import { createTestUser } from "$lib/testing/auth";
 import { useTestDB } from "$lib/testing/db";
+import { afterCommit, getDB, transactions } from "$lib/server/db";
 import { seedAccount, seedImportedTransaction } from "$lib/testing/ledger";
+import * as detect from "./detect";
 import {
   confirmSeries,
   dismissSeries,
@@ -47,7 +49,7 @@ async function setup() {
       await pay(`2026-${String(i + 1).padStart(2, "0")}-${day}`, a, name, over);
     }
   };
-  return { user, pay, months };
+  return { user, account, pay, months };
 }
 
 describe("syncRecurring", () => {
@@ -84,6 +86,61 @@ describe("syncRecurring", () => {
     await months("Example Streaming", [-1290, -1290, -1290]);
     await Promise.all([syncRecurring(user.id), syncRecurring(user.id)]);
     expect(await listRecurring(user.id)).toHaveLength(1);
+  });
+
+  it("detects outside any transaction, so the database stays free meanwhile", async () => {
+    const { user, months } = await setup();
+    await months("Example Streaming", [-1290, -1290, -1290]);
+    const real = detect.detectSeries;
+    let insideTransaction: boolean | null = null;
+    const spy = vi.spyOn(detect, "detectSeries").mockImplementation((rows) => {
+      // afterCommit runs at once outside a transaction and is deferred inside one.
+      let ran = false;
+      afterCommit(() => {
+        ran = true;
+      });
+      insideTransaction = !ran;
+      return real(rows);
+    });
+    await syncRecurring(user.id);
+    spy.mockRestore();
+    expect(insideTransaction).toBe(false);
+    expect(await listRecurring(user.id)).toHaveLength(1);
+  });
+
+  it("detects again when the transactions changed while it was detecting", async () => {
+    const { user, account, months } = await setup();
+    await months("Example Streaming", [-1290, -1290, -1290]);
+    const real = detect.detectSeries;
+    let calls = 0;
+    let late: Promise<unknown> = Promise.resolve();
+    const spy = vi.spyOn(detect, "detectSeries").mockImplementation((rows) => {
+      const detected = real(rows);
+      if (++calls === 1) {
+        // A write lands after detection read its rows, before the result is applied.
+        late = getDB()
+          .insert(transactions)
+          .values({
+            userId: user.id,
+            accountId: account.id,
+            source: "manual",
+            externalId: "late",
+            bookingDate: "2026-04-05",
+            amount: minor(-1290),
+            currency: "CHF",
+            counterpartyName: "Example Streaming",
+            reversal: false,
+          })
+          .then(() => undefined);
+      }
+      return detected;
+    });
+    await syncRecurring(user.id);
+    spy.mockRestore();
+    await late;
+    expect(calls).toBe(2);
+    const [series] = await listRecurring(user.id);
+    expect(series).toMatchObject({ lastDate: "2026-04-05", occurrences: 4 });
   });
 
   it("flags a price change and an overdue payment", async () => {

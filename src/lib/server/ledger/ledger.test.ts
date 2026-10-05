@@ -8,6 +8,7 @@ import {
   getDB,
   imports,
   transactions,
+  transaction,
 } from "$lib/server/db";
 import { createTestUser } from "$lib/testing/auth";
 import { useTestDB } from "$lib/testing/db";
@@ -881,18 +882,18 @@ describe("checks and writes share a transaction", () => {
       description: "Example",
     });
     const view = await getTransaction(u.id, row.id);
-    const plain = getDB().transaction((tx) =>
+    const plain = await transaction(async (tx) =>
       getTransactionRowInTx(tx, u.id, row.id),
     );
     const expected: Record<string, unknown> = { ...view };
     delete expected.mirrorOf;
     delete expected.transfer;
     expect(plain).toMatchObject(expected);
-    expect(() =>
-      getDB().transaction((tx) => getTransactionRowInTx(tx, other.id, row.id)),
-    ).toThrow(expect.objectContaining({ code: "not_found" }));
-    expect(() =>
-      getDB().transaction((tx) => getTransactionRowInTx(tx, u.id, "missing")),
-    ).toThrow(expect.objectContaining({ code: "not_found" }));
+    await expect(
+      transaction(async (tx) => getTransactionRowInTx(tx, other.id, row.id)),
+    ).rejects.toMatchObject({ code: "not_found" });
+    await expect(
+      transaction(async (tx) => getTransactionRowInTx(tx, u.id, "missing")),
+    ).rejects.toMatchObject({ code: "not_found" });
   });
 });

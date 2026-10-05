@@ -11,6 +11,11 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createTestUser } from "$lib/testing/auth";
 import { useTestDB } from "$lib/testing/db";
+import {
+  closeDatabase,
+  openDatabase,
+  withExclusiveClient,
+} from "$lib/server/db";
 import { countUsers } from "$lib/server/auth/users";
 import {
   backupFileName,
@@ -80,7 +85,7 @@ describe("writeBackup", () => {
   it("produces a restorable copy of the live database", async () => {
     await createTestUser({ username: "alice" });
     const path = join(dir, "copy.db");
-    writeBackup(ctx.db, path);
+    await writeBackup(ctx.db, path);
 
     const copy = new Database(path, { readonly: true });
     expect(copy.query("PRAGMA integrity_check").get()).toEqual({
@@ -89,19 +94,19 @@ describe("writeBackup", () => {
     expect(copy.query("SELECT username FROM users").all()).toEqual([
       { username: "alice" },
     ]);
-    const live = ctx.db.$client
-      .query("SELECT count(*) AS n FROM __drizzle_migrations")
-      .get();
+    const live = await withExclusiveClient((client) =>
+      client.query("SELECT count(*) AS n FROM __drizzle_migrations").get(),
+    );
     expect(
       copy.query("SELECT count(*) AS n FROM __drizzle_migrations").get(),
     ).toEqual(live);
     copy.close();
   });
 
-  it("refuses to overwrite an existing file", () => {
+  it("refuses to overwrite an existing file", async () => {
     const path = join(dir, "copy.db");
     writeFileSync(path, "x");
-    expect(() => writeBackup(ctx.db, path)).toThrow(/already exists/);
+    await expect(writeBackup(ctx.db, path)).rejects.toThrow(/already exists/);
   });
 });
 
@@ -109,7 +114,7 @@ describe("createBackupDownload", () => {
   it("streams a valid database and removes the temp directory afterwards", async () => {
     await createTestUser();
     const tmpRoot = mkdtempSync(join(dir, "tmp-"));
-    const download = createBackupDownload(
+    const download = await createBackupDownload(
       ctx.db,
       at("2026-01-02T03:04:05Z"),
       tmpRoot,
@@ -135,7 +140,7 @@ describe("createBackupDownload", () => {
 
   it("removes the temp directory when the client cancels", async () => {
     const tmpRoot = mkdtempSync(join(dir, "tmp-"));
-    const download = createBackupDownload(ctx.db, new Date(), tmpRoot);
+    const download = await createBackupDownload(ctx.db, new Date(), tmpRoot);
     expect(readdirSync(tmpRoot)).toHaveLength(1);
     await download.stream.cancel();
     await vi.waitFor(() => expect(readdirSync(tmpRoot)).toEqual([]));
@@ -189,9 +194,13 @@ describe("runScheduledBackup", () => {
   it("creates the directory, writes the backup and prunes", async () => {
     await createTestUser();
     const config = { dir: join(dir, "nested", "backups"), keep: 2 };
-    runScheduledBackup(ctx.db, config, at("2026-01-01T00:00:00Z"));
-    runScheduledBackup(ctx.db, config, at("2026-01-02T00:00:00Z"));
-    const name = runScheduledBackup(ctx.db, config, at("2026-01-03T00:00:00Z"));
+    await runScheduledBackup(ctx.db, config, at("2026-01-01T00:00:00Z"));
+    await runScheduledBackup(ctx.db, config, at("2026-01-02T00:00:00Z"));
+    const name = await runScheduledBackup(
+      ctx.db,
+      config,
+      at("2026-01-03T00:00:00Z"),
+    );
 
     expect(name).toBe("kept-backup-20260103-000000.db");
     expect(readdirSync(config.dir).sort()).toEqual([
@@ -205,19 +214,15 @@ describe("runScheduledBackup", () => {
     copy.close();
   });
 
-  it("leaves no partial file and keeps old backups when writing fails", () => {
+  it("leaves no partial file and keeps old backups when writing fails", async () => {
     const config = { dir, keep: 1 };
-    runScheduledBackup(ctx.db, config, at("2026-01-01T00:00:00Z"));
-    const broken = {
-      $client: {
-        run: () => {
-          throw new Error("disk full");
-        },
-      },
-    };
-    expect(() =>
-      runScheduledBackup(broken as never, config, at("2026-01-02T00:00:00Z")),
-    ).toThrow("disk full");
+    await runScheduledBackup(ctx.db, config, at("2026-01-01T00:00:00Z"));
+    // A closed handle makes VACUUM INTO fail after the partial path was chosen.
+    const broken = openDatabase(":memory:");
+    await closeDatabase(broken);
+    await expect(
+      runScheduledBackup(broken, config, at("2026-01-02T00:00:00Z")),
+    ).rejects.toThrow();
     expect(readdirSync(dir)).toEqual(["kept-backup-20260101-000000.db"]);
   });
 });

@@ -6,6 +6,7 @@ import {
   getDB,
   portfolios,
   portfolioValues,
+  transaction,
 } from "$lib/server/db";
 import { LedgerError, notFound } from "$lib/server/ledger/errors";
 import type { PortfolioValueEntry } from "./schemas";
@@ -43,13 +44,14 @@ export async function setValues(
   const db = getDB();
   // The checks and the upserts are one unit: a portfolio cannot be closed or
   // removed between validating the entry and writing it.
-  db.transaction((tx) => {
-    const account = tx
-      .select({ id: accounts.id })
-      .from(accounts)
-      .where(and(eq(accounts.userId, userId), eq(accounts.id, accountId)))
-      .limit(1)
-      .get();
+  await transaction(async (tx) => {
+    const account = await first(
+      tx
+        .select({ id: accounts.id })
+        .from(accounts)
+        .where(and(eq(accounts.userId, userId), eq(accounts.id, accountId)))
+        .limit(1),
+    );
     if (!account) throw notFound("Account");
     if (entries.length === 0) {
       throw new LedgerError("invalid", "Enter at least one value.");
@@ -61,18 +63,18 @@ export async function setValues(
       );
     }
     const owned = new Map(
-      tx
-        .select({ id: portfolios.id, closedOn: portfolios.closedOn })
-        .from(portfolios)
-        .where(
-          and(
-            eq(portfolios.userId, userId),
-            eq(portfolios.accountId, accountId),
-            inArray(portfolios.id, ids),
-          ),
-        )
-        .all()
-        .map((p) => [p.id, p.closedOn]),
+      (
+        await tx
+          .select({ id: portfolios.id, closedOn: portfolios.closedOn })
+          .from(portfolios)
+          .where(
+            and(
+              eq(portfolios.userId, userId),
+              eq(portfolios.accountId, accountId),
+              inArray(portfolios.id, ids),
+            ),
+          )
+      ).map((p) => [p.id, p.closedOn]),
     );
     for (const e of entries) {
       if (!owned.has(e.portfolioId)) throw notFound("Portfolio");
@@ -89,7 +91,8 @@ export async function setValues(
       }
     }
     for (const e of entries) {
-      tx.insert(portfolioValues)
+      await tx
+        .insert(portfolioValues)
         .values({
           userId,
           portfolioId: e.portfolioId,
@@ -100,8 +103,7 @@ export async function setValues(
         .onConflictDoUpdate({
           target: [portfolioValues.portfolioId, portfolioValues.date],
           set: { amount: e.amount, note, updatedAt: new Date() },
-        })
-        .run();
+        });
     }
   });
   return await db

@@ -18,6 +18,7 @@ import {
   type DB,
   type PaperlessBillSource,
   type PaperlessFieldMapping,
+  transaction,
 } from "$lib/server/db";
 import {
   PrivateNetworkError,
@@ -83,47 +84,50 @@ export async function isDismissed(
   return found !== undefined;
 }
 
-type Tx = Parameters<Parameters<ReturnType<typeof getDB>["transaction"]>[0]>[0];
+type Tx = Pick<DB, "select" | "insert" | "update" | "delete">;
 
 /** Remembers which key the user's server had at `baseUrl`, so a later reconnect reuses it. */
-function rememberInstance(
+async function rememberInstance(
   tx: Tx,
   userId: string,
   baseUrl: string,
   key: string,
-): void {
-  tx.insert(paperlessInstances)
+): Promise<void> {
+  await tx
+    .insert(paperlessInstances)
     .values({ userId, baseUrl, instanceKey: key })
     .onConflictDoUpdate({
       target: [paperlessInstances.userId, paperlessInstances.baseUrl],
       set: { instanceKey: key },
-    })
-    .run();
+    });
 }
 
-function rememberedKey(
+async function rememberedKey(
   tx: Pick<DB, "select">,
   userId: string,
   baseUrl: string,
-): string | null {
+): Promise<string | null> {
   return (
-    tx
-      .select({ key: paperlessInstances.instanceKey })
-      .from(paperlessInstances)
-      .where(
-        and(
-          eq(paperlessInstances.userId, userId),
-          eq(paperlessInstances.baseUrl, baseUrl),
-        ),
+    (
+      await first(
+        tx
+          .select({ key: paperlessInstances.instanceKey })
+          .from(paperlessInstances)
+          .where(
+            and(
+              eq(paperlessInstances.userId, userId),
+              eq(paperlessInstances.baseUrl, baseUrl),
+            ),
+          )
+          .limit(1),
       )
-      .limit(1)
-      .get()?.key ?? null
+    )?.key ?? null
   );
 }
 
 /** Before link rows go away: keeps the documents whose bill the user deleted from coming back. */
-function rememberDismissed(tx: Tx, row: ConnectionRow): void {
-  const dismissed = tx
+async function rememberDismissed(tx: Tx, row: ConnectionRow): Promise<void> {
+  const dismissed = await tx
     .select({ paperlessId: paperlessDocuments.paperlessId })
     .from(paperlessDocuments)
     .where(
@@ -133,18 +137,17 @@ function rememberDismissed(tx: Tx, row: ConnectionRow): void {
         eq(paperlessDocuments.status, "imported"),
         isNull(paperlessDocuments.billId),
       ),
-    )
-    .all();
+    );
   if (dismissed.length === 0) return;
-  tx.insert(paperlessDismissed)
+  await tx
+    .insert(paperlessDismissed)
     .values(
       dismissed.map((d) => ({
         userId: row.userId,
         externalRef: rowExternalRef(row, d.paperlessId),
       })),
     )
-    .onConflictDoNothing()
-    .run();
+    .onConflictDoNothing();
 }
 
 /** Everything the UI may see: no token, no secret hash. */
@@ -222,12 +225,12 @@ export async function getConnectionRow(
   return (await first(userConnectionQuery(getDB(), userId))) ?? null;
 }
 
-/** Sync twin of `getConnectionRow`, for the body of a transaction. */
-function getConnectionRowInTx(
+/** `getConnectionRow` on a transaction you already hold. */
+async function getConnectionRowInTx(
   tx: Pick<DB, "select">,
   userId: string,
-): ConnectionRow | null {
-  return userConnectionQuery(tx, userId).get() ?? null;
+): Promise<ConnectionRow | null> {
+  return (await first(userConnectionQuery(tx, userId))) ?? null;
 }
 
 export async function getConnection(
@@ -334,7 +337,7 @@ export async function saveConnection(
     }
   }
   try {
-    return getDB().transaction((tx) =>
+    return await transaction(async (tx) =>
       saveConnectionInTx(tx, userId, input, baseUrl, token),
     );
   } catch (err) {
@@ -348,33 +351,35 @@ export async function saveConnection(
   }
 }
 
-function saveConnectionInTx(
+async function saveConnectionInTx(
   tx: Tx,
   userId: string,
   input: SaveConnectionInput,
   baseUrl: string,
   token: string | null,
-): SaveConnectionResult {
-  const existing = getConnectionRowInTx(tx, userId);
+): Promise<SaveConnectionResult> {
+  const existing = await getConnectionRowInTx(tx, userId);
 
   if (!existing) {
     if (token === null) {
       throw new LedgerError("invalid", "Enter the access token.", "token");
     }
     const secret = newWebhookSecret();
-    const row = tx
-      .insert(paperlessConnections)
-      .values({
-        userId,
-        baseUrl,
-        tokenEncrypted: encryptSecret(token),
-        instanceKey: rememberedKey(tx, userId, baseUrl) ?? instanceKey(baseUrl),
-        allowInsecureTls: input.allowInsecureTls,
-        webhookSecretHash: hashSecret(secret),
-        webhookToken: newWebhookToken(),
-      })
-      .returning()
-      .get();
+    const row = (await first(
+      tx
+        .insert(paperlessConnections)
+        .values({
+          userId,
+          baseUrl,
+          tokenEncrypted: encryptSecret(token),
+          instanceKey:
+            (await rememberedKey(tx, userId, baseUrl)) ?? instanceKey(baseUrl),
+          allowInsecureTls: input.allowInsecureTls,
+          webhookSecretHash: hashSecret(secret),
+          webhookToken: newWebhookToken(),
+        })
+        .returning(),
+    ))!;
     return { connection: toView(row), webhookSecret: secret };
   }
 
@@ -388,22 +393,28 @@ function saveConnectionInTx(
   const moved = existing.baseUrl !== baseUrl;
   const reset = input.differentInstance === true;
   if (moved) {
-    rememberInstance(tx, userId, existing.baseUrl, rowInstanceKey(existing));
+    await rememberInstance(
+      tx,
+      userId,
+      existing.baseUrl,
+      rowInstanceKey(existing),
+    );
   }
   if (reset) {
     // Another server has other document ids: old links and watermark are meaningless.
-    rememberDismissed(tx, existing);
-    tx.delete(paperlessDocuments)
+    await rememberDismissed(tx, existing);
+    await tx
+      .delete(paperlessDocuments)
       .where(
         and(
           eq(paperlessDocuments.userId, userId),
           eq(paperlessDocuments.connectionId, existing.id),
         ),
-      )
-      .run();
+      );
   } else if (moved) {
     // Same server under a new address: bills keep their links, only their stored urls follow.
-    tx.update(bills)
+    await tx
+      .update(bills)
       .set({
         externalUrl: sql`${baseUrl} || substr(${bills.externalUrl}, length(${existing.baseUrl}) + 1)`,
       })
@@ -413,30 +424,30 @@ function saveConnectionInTx(
           eq(bills.externalSource, "paperless"),
           sql`substr(${bills.externalUrl}, 1, length(${existing.baseUrl}) + 1) = ${existing.baseUrl + "/"}`,
         ),
-      )
-      .run();
+      );
   }
-  const row = tx
-    .update(paperlessConnections)
-    .set({
-      baseUrl,
-      instanceKey: reset ? newInstanceKey() : rowInstanceKey(existing),
-      allowInsecureTls: input.allowInsecureTls,
-      ...(token !== null ? { tokenEncrypted: encryptSecret(token) } : {}),
-      ...(moved || reset
-        ? { apiVersion: null, serverVersion: null, lastSyncAt: null }
-        : {}),
-      ...(reset ? { lastSyncModified: null } : {}),
-      ...(moved || reset || token !== null ? { lastError: null } : {}),
-    })
-    .where(
-      and(
-        eq(paperlessConnections.userId, userId),
-        eq(paperlessConnections.id, existing.id),
-      ),
-    )
-    .returning()
-    .get();
+  const row = (await first(
+    tx
+      .update(paperlessConnections)
+      .set({
+        baseUrl,
+        instanceKey: reset ? newInstanceKey() : rowInstanceKey(existing),
+        allowInsecureTls: input.allowInsecureTls,
+        ...(token !== null ? { tokenEncrypted: encryptSecret(token) } : {}),
+        ...(moved || reset
+          ? { apiVersion: null, serverVersion: null, lastSyncAt: null }
+          : {}),
+        ...(reset ? { lastSyncModified: null } : {}),
+        ...(moved || reset || token !== null ? { lastError: null } : {}),
+      })
+      .where(
+        and(
+          eq(paperlessConnections.userId, userId),
+          eq(paperlessConnections.id, existing.id),
+        ),
+      )
+      .returning(),
+  ))!;
   return { connection: toView(row), webhookSecret: null };
 }
 
@@ -454,19 +465,19 @@ export async function rotateWebhookSecret(userId: string): Promise<string> {
 
 /** Removes the connection and its link rows. Bills and their stored documents stay. */
 export async function deleteConnection(userId: string): Promise<void> {
-  getDB().transaction((tx) => {
-    const row = getConnectionRowInTx(tx, userId);
+  await transaction(async (tx) => {
+    const row = await getConnectionRowInTx(tx, userId);
     if (!row) throw notFound("Paperless connection");
-    rememberDismissed(tx, row);
-    rememberInstance(tx, userId, row.baseUrl, rowInstanceKey(row));
-    tx.delete(paperlessConnections)
+    await rememberDismissed(tx, row);
+    await rememberInstance(tx, userId, row.baseUrl, rowInstanceKey(row));
+    await tx
+      .delete(paperlessConnections)
       .where(
         and(
           eq(paperlessConnections.userId, userId),
           eq(paperlessConnections.id, row.id),
         ),
-      )
-      .run();
+      );
   });
 }
 

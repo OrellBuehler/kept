@@ -2,7 +2,7 @@ import { asc, eq } from "drizzle-orm";
 import { describe, expect, it } from "vitest";
 import { createTestUser } from "$lib/testing/auth";
 import { useTestDB } from "$lib/testing/db";
-import { first, isUniqueViolation, users } from "./db";
+import { first, isUniqueViolation, users } from "./index";
 
 describe("first", () => {
   const ctx = useTestDB();
