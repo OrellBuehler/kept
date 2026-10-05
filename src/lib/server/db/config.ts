@@ -28,26 +28,27 @@ export interface PostgresDatabaseConfig {
 
 export type DatabaseConfig = SqliteDatabaseConfig | PostgresDatabaseConfig;
 
+/** Digits only: `Number()` would also accept `1e1`, `0x10` or `+5`. */
+const wholeNumber = (what: string) =>
+  z
+    .string()
+    .regex(/^\d{1,9}$/, `must be ${what}`)
+    .transform(Number);
+
 const timeoutMs = (fallback: number) =>
-  z.coerce
-    .number()
-    .int("must be a whole number of milliseconds")
-    .min(0)
-    .max(24 * 60 * 60 * 1000)
+  wholeNumber("a whole number of milliseconds")
+    .pipe(z.number().max(24 * 60 * 60 * 1000))
     .default(fallback);
 
 const postgresSchema = z.object({
   DATABASE_URL: z
     .string()
     .refine(
-      (v) => URL.canParse(v),
-      "must be a valid postgres:// or postgresql:// URL",
+      (v) => URL.canParse(v) && new URL(v).hostname !== "",
+      "must be a valid postgres:// or postgresql:// URL with a host",
     ),
-  KEPT_DB_POOL_MAX: z.coerce
-    .number()
-    .int("must be a whole number")
-    .min(1)
-    .max(500)
+  KEPT_DB_POOL_MAX: wholeNumber("a whole number")
+    .pipe(z.number().min(1).max(500))
     .default(DEFAULT_POOL_MAX),
   KEPT_DB_STATEMENT_TIMEOUT_MS: timeoutMs(DEFAULT_STATEMENT_TIMEOUT_MS),
   KEPT_DB_TRANSACTION_TIMEOUT_MS: timeoutMs(DEFAULT_PG_TRANSACTION_TIMEOUT_MS),

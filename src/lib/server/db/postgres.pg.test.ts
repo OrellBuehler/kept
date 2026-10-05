@@ -390,6 +390,48 @@ describe.skipIf(!enabled)("postgres backend", () => {
       expect(await countUsers()).toBe(1);
     });
 
+    it("starts with both timeouts disabled and applies none", async () => {
+      await start({
+        KEPT_DB_POOL_MAX: "1",
+        KEPT_DB_STATEMENT_TIMEOUT_MS: "0",
+        KEPT_DB_TRANSACTION_TIMEOUT_MS: "0",
+      });
+      const [row] = await getDB()
+        .select({
+          statement: sql<string>`current_setting('statement_timeout')`,
+          transaction: sql<string>`current_setting('transaction_timeout')`,
+        })
+        .from(one);
+      expect(row).toEqual({ statement: "0", transaction: "0" });
+    });
+
+    const preparedStatements = async () => {
+      for (let i = 0; i < 3; i++) {
+        await getDB()
+          .select({ x: sql`1` })
+          .from(users)
+          .where(eq(users.username, `name${i}`));
+      }
+      const [row] = await getDB()
+        .select({
+          n: sql<number>`(select count(*) from pg_prepared_statements)`.mapWith(
+            Number,
+          ),
+        })
+        .from(one);
+      return row!.n;
+    };
+
+    it("uses prepared statements by default", async () => {
+      await start({ KEPT_DB_POOL_MAX: "1" });
+      expect(await preparedStatements()).toBeGreaterThan(0);
+    });
+
+    it("prepares no statements with KEPT_DB_PREPARE=false", async () => {
+      await start({ KEPT_DB_POOL_MAX: "1", KEPT_DB_PREPARE: "false" });
+      expect(await preparedStatements()).toBe(0);
+    });
+
     it("reuses one pool for the process-wide database across module reloads", () => {
       const config = configFor(name);
       const a = openPostgres(config, { shared: true });

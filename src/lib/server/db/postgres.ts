@@ -58,15 +58,22 @@ function instance(client: Queryable): DB {
  * as startup parameters hold for each connection of the pool, which `SET`
  * would not (it affects one connection only).
  */
-function connectionParams(
+export function connectionParams(
   config: PostgresDatabaseConfig,
   suffix = "",
 ): Record<string, string | number> {
   const params: Record<string, string | number> = {
     application_name: `${config.applicationName}${suffix}`.slice(0, 63),
-    statement_timeout: config.statementTimeoutMs,
-    transaction_timeout: config.transactionTimeoutMs,
   };
+  // A disabled timeout is left out rather than sent as 0: a pooler such as
+  // PgBouncer rejects startup parameters it does not know, and servers before
+  // 17 do not know transaction_timeout.
+  if (config.statementTimeoutMs > 0) {
+    params.statement_timeout = config.statementTimeoutMs;
+  }
+  if (config.transactionTimeoutMs > 0) {
+    params.transaction_timeout = config.transactionTimeoutMs;
+  }
   return params;
 }
 
@@ -316,6 +323,22 @@ export function openPostgres(
 }
 
 /**
+ * `transaction_timeout` exists from PostgreSQL 17. The pool sends it as a
+ * startup parameter, which an older server rejects, so say what to do about it
+ * before the first pooled connection is attempted.
+ */
+export function assertTransactionTimeoutSupported(
+  serverVersionNum: number,
+  config: PostgresDatabaseConfig,
+): void {
+  if (config.transactionTimeoutMs > 0 && serverVersionNum < 170000) {
+    throw new Error(
+      "PostgreSQL 17 or newer is required, or set KEPT_DB_TRANSACTION_TIMEOUT_MS=0",
+    );
+  }
+}
+
+/**
  * Applies the pending migrations. Rolling deploys can overlap, so a session
  * advisory lock on a reserved connection makes concurrent runners take turns
  * (without it the second one fails on the history table's unique key). The
@@ -339,14 +362,12 @@ export async function migratePostgres(
     ),
   });
   try {
-    const lockConnection = await client.reserve().catch((error: unknown) => {
-      // 42704: the server does not know transaction_timeout (older than 17).
-      if (safeErrorInfo(error).sqlState === "42704") {
-        throw new Error("PostgreSQL 17 or newer is required");
-      }
-      throw error;
-    });
+    const lockConnection = await client.reserve();
     try {
+      const [version] = (await lockConnection.unsafe(
+        "select current_setting('server_version_num') as v",
+      )) as { v: string }[];
+      assertTransactionTimeoutSupported(Number(version!.v), config);
       await lockConnection.unsafe(
         "select pg_advisory_lock(hashtextextended($1, 0))",
         [MIGRATION_LOCK_KEY],

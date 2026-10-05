@@ -89,6 +89,11 @@ describe("readDatabaseConfig", () => {
     ["KEPT_DB_POOL_MAX", "0"],
     ["KEPT_DB_POOL_MAX", "2.5"],
     ["KEPT_DB_POOL_MAX", "many"],
+    ["KEPT_DB_POOL_MAX", "1e1"],
+    ["KEPT_DB_POOL_MAX", "0x10"],
+    ["KEPT_DB_POOL_MAX", "+5"],
+    ["KEPT_DB_STATEMENT_TIMEOUT_MS", "1e3"],
+    ["KEPT_DB_TRANSACTION_TIMEOUT_MS", "1e3"],
     ["KEPT_DB_STATEMENT_TIMEOUT_MS", "-1"],
     ["KEPT_DB_TRANSACTION_TIMEOUT_MS", "1.5"],
     ["KEPT_DB_APPLICATION_NAME", "has space"],
@@ -112,6 +117,16 @@ describe("readDatabaseConfig", () => {
     const message = failure({ DATABASE_URL: value });
     expect(message).toContain("DATABASE_URL");
     expect(message).not.toContain(value);
+  });
+
+  it.each([
+    "postgres:///kept",
+    "postgres://kept:pw@/kept",
+    "postgres://:5432/kept",
+  ])("rejects %s, which names no host", (value) => {
+    const message = failure({ DATABASE_URL: value });
+    expect(message).toContain("DATABASE_URL");
+    expect(message).not.toContain("pw");
   });
 
   it("rejects a postgres URL that does not parse", () => {
