@@ -2,6 +2,8 @@ import { describe, expect, it, vi } from "vitest";
 import { first, users } from "$lib/server/db";
 import { createTestUser } from "$lib/testing/auth";
 import { useTestDB } from "$lib/testing/db";
+import { useTestStore } from "$lib/testing/store";
+import { storeDocument } from "$lib/server/bills/documents";
 import { verifyPassword } from "./password";
 import { createSession, validateSessionToken } from "./sessions";
 import { recordAdminActionInTx } from "./admin-audit";
@@ -27,6 +29,7 @@ async function codeOf(p: Promise<unknown> | (() => unknown)) {
 
 describe("users", () => {
   const ctx = useTestDB();
+  const blobs = useTestStore();
 
   it("counts users", async () => {
     expect(await countUsers()).toBe(0);
@@ -202,6 +205,45 @@ describe("users", () => {
       expect(
         await codeOf(async () => await deleteUser(admin.id, "missing")),
       ).toBe("user_not_found");
+    });
+
+    it("removes the deleted user's document blobs and only theirs", async () => {
+      const admin = await createTestUser({ role: "admin" });
+      const member = await createTestUser();
+      const pdf = (x: string) => new TextEncoder().encode(`%PDF-1.4\n${x}`);
+      await storeDocument(member.id, pdf("m"), "m.pdf", "application/pdf");
+      const kept = await storeDocument(admin.id, pdf("a"), "a.pdf", "x");
+      await deleteUser(admin.id, member.id);
+      const keys = (await Array.fromAsync(blobs.store.list(""))).map(
+        (i) => i.key,
+      );
+      expect(keys).toEqual([`documents/${admin.id}/${kept.id}`]);
+    });
+
+    it("still deletes the user and logs when the blobs cannot be removed", async () => {
+      const admin = await createTestUser({ role: "admin" });
+      const member = await createTestUser();
+      await blobs.store.put(`documents/${member.id}/x`, new Uint8Array([1]));
+      vi.spyOn(blobs.store, "list").mockImplementation(() => {
+        throw new Error("s3 down");
+      });
+      const err = vi.spyOn(console, "error").mockImplementation(() => {});
+      await deleteUser(admin.id, member.id);
+      expect(err).toHaveBeenCalled();
+      vi.restoreAllMocks();
+      expect((await listUsers()).map((u) => u.id)).toEqual([admin.id]);
+    });
+
+    it("keeps the blobs when the user delete is rolled back", async () => {
+      const admin = await createTestUser({ role: "admin" });
+      const member = await createTestUser();
+      await blobs.store.put(`documents/${member.id}/x`, new Uint8Array([1]));
+      await expect(
+        deleteUser(admin.id, member.id, () => {
+          throw new Error("audit failed");
+        }),
+      ).rejects.toThrow("audit failed");
+      expect(await blobs.store.has(`documents/${member.id}/x`)).toBe(true);
     });
 
     it("invalidates the deleted user's sessions", async () => {
