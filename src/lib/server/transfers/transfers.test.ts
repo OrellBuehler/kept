@@ -1438,6 +1438,35 @@ describe("keeping links valid", () => {
           note: "kept",
         }),
       ]);
+
+      await updateTransaction(
+        user.id,
+        out.id,
+        edit(out, { amount: m(-10000) }),
+      );
+      expect(await allTransfers()).toEqual([
+        expect.objectContaining({
+          status: "linked",
+          outTransactionId: out.id,
+          inTransactionId: mirror.id,
+          fromAccountId: a.id,
+          toAccountId: b.id,
+        }),
+      ]);
+
+      await updateTransaction(user.id, out.id, edit(out, { amount: m(10000) }));
+      const [flipped] = await allTransfers();
+      await unlink(user.id, flipped!.id);
+      expect(await rowsOf(b.id)).toEqual([]);
+      expect(await allTransfers()).toEqual([
+        expect.objectContaining({
+          status: "dismissed",
+          outTransactionId: null,
+          inTransactionId: out.id,
+          fromAccountId: b.id,
+          toAccountId: a.id,
+        }),
+      ]);
     });
 
     it("keeps the link of a taken-over mirror through revalidateLinks and a resync", async () => {
