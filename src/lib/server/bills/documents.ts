@@ -2,8 +2,10 @@ import { createHash } from "node:crypto";
 import { and, eq, inArray, type SQL } from "drizzle-orm";
 import type { DocumentSource } from "$lib/bill-types";
 import { documents, first, getDB, isUniqueViolation } from "$lib/server/db";
+import { detach } from "$lib/server/detached";
 import { describeError } from "$lib/server/errors";
 import { LedgerError, notFound } from "$lib/server/ledger/errors";
+import { runExclusive } from "$lib/server/scheduling";
 import { getStore } from "$lib/server/storage";
 import { MAX_PDF_BYTES } from "./pdf-extract";
 
@@ -99,12 +101,19 @@ async function maintainDocuments(now: number): Promise<void> {
   if (now - lastOrphanSweep < ORPHAN_SWEEP_INTERVAL_MS) return;
   lastOrphanSweep = now;
   try {
-    await sweepOrphanedDocuments(now);
+    await runExclusive("document orphan sweep", async () => {
+      await sweepOrphanedDocuments(now);
+    });
   } catch (err) {
     // Housekeeping must not fail an upload; the next upload retries.
     lastOrphanSweep = 0;
     console.error("document orphan sweep failed: %s", describeError(err));
   }
+}
+
+/** Housekeeping at startup; detached, so shutdown drains it. Failures are logged and retried by the next upload. */
+export function startDocumentSweep(): void {
+  detach(maintainDocuments(Date.now()));
 }
 
 /**
@@ -198,7 +207,7 @@ export async function storeDocument(
     throw new LedgerError("invalid", "The file is not a PDF.", "file");
   }
 
-  void maintainDocuments(Date.now());
+  detach(maintainDocuments(Date.now()));
   const sha256 = createHash("sha256").update(bytes).digest("hex");
   const store = getStore();
   const storedType = source === "upload" ? PDF_MIME : mimeType;

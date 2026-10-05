@@ -76,7 +76,7 @@ afterEach(() => {
 });
 
 const NOW = Date.UTC(2025, 0, 15, 12, 0, 0);
-const scan = (settleMs = 10_000) => scanInbox(config, { now: NOW, settleMs });
+const scan = () => scanInbox(config, { now: NOW });
 
 function drop(
   username: string,

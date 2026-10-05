@@ -25,6 +25,7 @@ import {
   hasPdfMagic,
   readDocument,
   DOCUMENT_ORPHAN_GRACE_MS,
+  startDocumentSweep,
   deleteDocumentBlobsOf,
   sanitizeFileName,
   storeDocument,
@@ -521,6 +522,18 @@ describe("document blob cleanup", () => {
       await blobs.store.put(`documents/${b.id}/${doc.id}`, pdf("k"));
       expect(await sweepOrphanedDocuments(later())).toBe(1);
       expect(await keys()).toEqual([`documents/${a.id}/${doc.id}`]);
+    });
+
+    it("startDocumentSweep removes orphans in the background and does not throw on failure", async () => {
+      await blobs.store.put("documents/gone-user/orphan", pdf("o"));
+      vi.useFakeTimers({ toFake: ["Date"] });
+      try {
+        vi.setSystemTime(later() + 2 * 60 * 60 * 1000);
+        startDocumentSweep();
+        await vi.waitFor(async () => expect(await keys()).toEqual([]));
+      } finally {
+        vi.useRealTimers();
+      }
     });
 
     it("deletes a bounded batch per run", async () => {
