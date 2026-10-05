@@ -6,6 +6,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { createTestUser } from "$lib/testing/auth";
 import { useTestDB } from "$lib/testing/db";
 import { useTestStore } from "$lib/testing/store";
+import { describeError, errorCode } from "$lib/server/errors";
 import { LedgerError } from "$lib/server/ledger/errors";
 import { bills, documents, getDB, first } from "$lib/server/db";
 import { createStore, readStorageConfig, setStore } from "$lib/server/storage";
@@ -460,6 +461,8 @@ describe("document blob cleanup", () => {
     ).catch((e: unknown) => e);
     expect(failure).toBeInstanceOf(Error);
     expect((failure as Error).message).not.toBe("cleanup");
+    expect(errorCode(failure)).not.toBe("");
+    expect(describeError(failure)).toMatch(/FOREIGN|CONSTRAINT|23503/i);
     expect(err).toHaveBeenCalled();
     vi.restoreAllMocks();
   });
@@ -525,6 +528,21 @@ describe("document blob cleanup", () => {
         await blobs.store.put(`documents/u/o${i}`, pdf("o"));
       expect(await sweepOrphanedDocuments(later(), 2)).toBe(2);
       expect(await keys()).toHaveLength(3);
+    });
+
+    it("stops after 20 consecutive delete failures", async () => {
+      for (let i = 0; i < 30; i++)
+        await blobs.store.put(
+          `documents/u/o${String(i).padStart(2, "0")}`,
+          pdf(),
+        );
+      const del = vi
+        .spyOn(blobs.store, "delete")
+        .mockRejectedValue(new Error("denied"));
+      vi.spyOn(console, "error").mockImplementation(() => {});
+      expect(await sweepOrphanedDocuments(later())).toBe(0);
+      expect(del).toHaveBeenCalledTimes(20);
+      vi.restoreAllMocks();
     });
 
     it("logs a failed delete and continues", async () => {

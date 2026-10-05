@@ -214,7 +214,8 @@ A Kept install has up to three things to back up, and what covers which depends 
 
 Kept's own backups cover the SQLite database only. Whichever backend you use, restore the files that belong to
 the same moment as the database (bills show their PDFs only if the files are there) and use the same
-`KEPT_SECRET_KEY`, otherwise stored integration tokens can't be decrypted.
+`KEPT_SECRET_KEY`, otherwise stored integration tokens can't be decrypted. Restore the database and the stored files together: files
+with no matching database row are deleted by the cleanup after a 24 hour grace period.
 
 **SQLite and local files.** The database holds everything (including institution logos) except uploaded bill
 PDFs, which live next to it in `/data/documents`. Back up the whole `/data` volume, and keep `KEPT_SECRET_KEY`

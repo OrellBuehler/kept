@@ -28,10 +28,11 @@ function blobKey(storageKey: string): string {
 }
 
 /** A blob younger than this is never swept: its row may not be written yet. */
-export const DOCUMENT_ORPHAN_GRACE_MS = 60 * 60 * 1000;
+export const DOCUMENT_ORPHAN_GRACE_MS = 24 * 60 * 60 * 1000;
 const ORPHAN_SWEEP_INTERVAL_MS = 60 * 60 * 1000;
 const ORPHAN_BATCH = 500;
 const OWNER_LOOKUP_CHUNK = 200;
+const MAX_CONSECUTIVE_DELETE_FAILURES = 20;
 let lastOrphanSweep = 0;
 
 /**
@@ -74,12 +75,21 @@ export async function sweepOrphanedDocuments(
   }
   await check();
   let removed = 0;
+  let failures = 0;
   for (const key of orphans.slice(0, limit)) {
     try {
       await store.delete(key);
       removed++;
+      failures = 0;
     } catch (err) {
       console.error("document orphan delete failed: %s", describeError(err));
+      if (++failures >= MAX_CONSECUTIVE_DELETE_FAILURES) {
+        console.error(
+          "document orphan sweep stopped after %d consecutive delete failures",
+          failures,
+        );
+        break;
+      }
     }
   }
   return removed;
@@ -188,7 +198,7 @@ export async function storeDocument(
     throw new LedgerError("invalid", "The file is not a PDF.", "file");
   }
 
-  await maintainDocuments(Date.now());
+  void maintainDocuments(Date.now());
   const sha256 = createHash("sha256").update(bytes).digest("hex");
   const store = getStore();
   const storedType = source === "upload" ? PDF_MIME : mimeType;
