@@ -28,7 +28,7 @@ bun run check            # svelte-kit sync + svelte-check
 bun run test             # vitest (unit)
 bun run test:coverage
 bun run build && bun run start
-bun run db:generate      # after editing src/lib/server/schema.ts
+bun run db:generate      # after editing src/lib/server/db/schema.ts
 bun run leak-guard --all # scan the whole tree for private terms
 bun run security         # semgrep, bun audit, trivy
 ```
@@ -47,7 +47,7 @@ reports (no Typst, no headless browser).
 ```
 src/lib/money.ts                 Minor-unit money type + parsing/formatting (the only way to handle amounts)
 src/lib/server/db/               getDB() (resolves the open transaction), transaction(), afterCommit(), the SQLite driver + FIFO gate; migrations run on startup
-src/lib/server/schema.ts         Drizzle schema — one file, every table has created_at/updated_at
+src/lib/server/db/schema.ts      Drizzle schema — one file, written with db/columns.ts builders; every table has created_at/updated_at
 src/lib/server/auth/             local users (Bun.password argon2id), sessions in SQLite
 src/lib/server/importers/        file format → NormalizedStatement[] (pure, no DB access)
 src/lib/server/imports/          upload → preview → confirm flow, history/undo, CSV mapping profiles
@@ -86,6 +86,10 @@ src/lib/testing/fixtures/        synthetic sample files for importer tests
   rolls back fails ("rolled back") instead of writing outside it, savepoints started side by side run one
   after the other, and a transaction open longer than the watchdog (60 s) is rolled back by the database layer.
   Query builders are never run with `.all()/.get()/.run()/.values()/.execute()` (lint, by receiver type).
+- **Queries must run on SQLite and PostgreSQL.** Columns come from `db/columns.ts` only; PostgreSQL-only
+  drizzle APIs and `::` casts in raw SQL are banned by lint outside `db/`. Aggregates and raw
+  `sql<number>` go through `.mapWith(Number)` (PostgreSQL returns int8 and numeric as strings).
+  Migrations: `bun run db:generate` writes `drizzle/sqlite/`; PostgreSQL uses `drizzle.pg.config.ts`.
 - **No swallowed errors.** No empty `catch`, no `catch { return null }` without logging and a
   user-visible outcome.
 - Never log transaction descriptions, counterparties, IBANs or amounts.

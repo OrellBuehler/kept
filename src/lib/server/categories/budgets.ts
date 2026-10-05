@@ -207,7 +207,7 @@ async function ownSpend(
           categoryId: transactions.categoryId,
           parentId: categories.parentId,
           currency: transactions.currency,
-          total: sql<number>`sum(${transactions.amount})`,
+          total: sql<number>`sum(${transactions.amount})`.mapWith(Number),
         })
         .from(transactions)
         .innerJoin(categories, eq(categories.id, transactions.categoryId))

@@ -5,7 +5,7 @@ import { useTestDB } from "$lib/testing/db";
 import { useTestStore } from "$lib/testing/store";
 import { eq } from "drizzle-orm";
 import { getDB } from "$lib/server/db";
-import { paperlessConnections } from "$lib/server/schema";
+import { paperlessConnections } from "$lib/server/db/schema";
 import { LedgerError } from "$lib/server/ledger/errors";
 import { getConnectionRow } from "./connection";
 import { startFakePaperless } from "./fake-server";

@@ -1,15 +1,24 @@
 import type { Database } from "bun:sqlite";
-import type { SqliteRemoteDatabase } from "drizzle-orm/sqlite-proxy";
-import type * as schema from "../schema";
+import type { PgDatabase, PgQueryResultHKT } from "drizzle-orm/pg-core";
+import type * as schema from "./schema";
 
 /**
- * The query surface application code gets. `transaction`/`batch` are replaced
- * by the facade's `transaction()`, and the raw `run/all/get/values` shortcuts
- * are left out so every query is a builder that is awaited.
+ * The query surface application code gets, typed as pg-core: the schema is
+ * written once against the dialect-switched builders, and the process holds
+ * either a genuine sqlite or a genuine pg database behind this type. That
+ * leaves only the subset of drizzle that works on both; lint bans the pg-only
+ * calls the type would still allow.
+ *
+ * `transaction` is replaced by the facade's `transaction()`. `execute`,
+ * `selectDistinctOn` and `refreshMaterializedView` do not exist on SQLite.
  */
 export type DB = Omit<
-  SqliteRemoteDatabase<typeof schema>,
-  "transaction" | "batch" | "run" | "all" | "get" | "values" | "$cache"
+  PgDatabase<PgQueryResultHKT, typeof schema>,
+  | "transaction"
+  | "execute"
+  | "selectDistinctOn"
+  | "refreshMaterializedView"
+  | "$cache"
 >;
 
 export interface BackendTransaction {

@@ -12,8 +12,9 @@
  * `db.insert(table)` returns has neither, so its own `.values(row)` is fine.
  * A receiver typed `any` cannot be told apart and is skipped.
  */
+import { isQueryType } from "./query-types.js";
+
 const TERMINALS = new Set(["all", "get", "run", "values", "execute"]);
-const MARKERS = ["getSQL", "toSQL"];
 
 /** @type {import("eslint").Rule.RuleModule} */
 export default {
@@ -33,13 +34,7 @@ export default {
       );
     }
     const checker = services.program.getTypeChecker();
-
-    /** @param {import("typescript").Type} type */
-    function isQuery(type) {
-      if (type.isUnion()) return type.types.some(isQuery);
-      const apparent = checker.getApparentType(type);
-      return MARKERS.some((m) => checker.getPropertyOfType(apparent, m));
-    }
+    const isQuery = (type) => isQueryType(checker, type);
 
     return {
       CallExpression(node) {

@@ -234,8 +234,11 @@ export async function withdrawnThisPeriod(
   const rows = await getDB()
     .select({
       accountId: transactions.accountId,
-      year: sql<number>`coalesce(sum(${debit}), 0)`,
-      month: sql<number>`coalesce(sum(case when ${transactions.bookingDate} >= ${monthStart} then ${debit} else 0 end), 0)`,
+      year: sql<number>`coalesce(sum(${debit}), 0)`.mapWith(Number),
+      month:
+        sql<number>`coalesce(sum(case when ${transactions.bookingDate} >= ${monthStart} then ${debit} else 0 end), 0)`.mapWith(
+          Number,
+        ),
     })
     .from(transactions)
     .where(

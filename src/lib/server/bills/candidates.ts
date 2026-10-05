@@ -112,7 +112,7 @@ export async function candidateTransactions(
 
   const total = (await first(
     db
-      .select({ n: sql<number>`count(*)` })
+      .select({ n: sql<number>`count(*)`.mapWith(Number) })
       .from(transactions)
       .where(where)
       .limit(1),

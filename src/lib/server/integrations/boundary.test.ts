@@ -58,7 +58,7 @@ describe("integration boundary", () => {
     const offenders = files
       .filter((f) => !mayImportIntegrations(f.path))
       .filter((f) => !f.path.endsWith(".test.ts"))
-      .filter((f) => f.path !== "lib/server/schema.ts")
+      .filter((f) => f.path !== "lib/server/db/schema.ts")
       .filter((f) => /paperless/i.test(f.text))
       .map((f) => f.path);
     expect(offenders).toEqual([]);

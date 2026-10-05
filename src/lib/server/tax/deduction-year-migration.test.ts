@@ -4,8 +4,8 @@ import { describe, expect, it } from "vitest";
 import { eq } from "drizzle-orm";
 import { minor } from "$lib/money";
 import { createCategory } from "$lib/server/categories/categories";
-import { categories, deductionYearMigration } from "$lib/server/schema";
-import { transactions } from "$lib/server/schema";
+import { categories, deductionYearMigration } from "$lib/server/db/schema";
+import { transactions } from "$lib/server/db/schema";
 import { createTestUser } from "$lib/testing/auth";
 import { useTestDB } from "$lib/testing/db";
 import { seedAccount, seedImportedTransaction } from "$lib/testing/ledger";
@@ -19,7 +19,7 @@ import { addTaxCredit, upsertTaxYear } from "./tax";
 import { taxCreditInputSchema, taxYearInputSchema } from "./schemas";
 import { first, withExclusiveClient } from "$lib/server/db";
 
-const dir = join(process.cwd(), "drizzle");
+const dir = join(process.cwd(), "drizzle", "sqlite");
 const file = readdirSync(dir).find((f) =>
   f.startsWith("0021_reclassify_deduction_years"),
 )!;

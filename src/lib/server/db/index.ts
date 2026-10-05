@@ -2,6 +2,7 @@ import { AsyncLocalStorage } from "node:async_hooks";
 import type { Database } from "bun:sqlite";
 import { describeError } from "$lib/server/errors";
 import type { Backend, BackendTransaction, DB } from "./backend";
+import { dialect } from "./dialect";
 import { migrateSqlite, openSqlite, type SqliteOptions } from "./sqlite";
 
 export type { DB };
@@ -94,6 +95,13 @@ const backends = new WeakMap<object, Backend>();
 let current: Backend | null = null;
 
 export function openDatabase(path: string, options?: SqliteOptions): DB {
+  // The schema is built for the resolved dialect; opening SQLite under a
+  // PostgreSQL schema would write PostgreSQL defaults into SQLite columns.
+  if (dialect !== "sqlite") {
+    throw new Error(
+      "DATABASE_URL points at PostgreSQL, which this build does not support yet",
+    );
+  }
   const backend = openSqlite(path, options);
   backends.set(backend.root, backend);
   return backend.root;
@@ -359,4 +367,5 @@ export function isUniqueViolation(err: unknown): boolean {
   return false;
 }
 
-export * from "../schema";
+export { alias } from "./columns";
+export * from "./schema";
