@@ -173,6 +173,10 @@ docker start kept
 ```
 
 Restore a backup taken by the same or an older version of Kept; pending migrations run on start.
+
+**PostgreSQL installs** do not use the download or `KEPT_BACKUP_DIR` (it is ignored with a log line, and
+the download endpoint answers 404). Back the database up with `pg_dump` or your provider's managed
+snapshots, and back up file storage (`KEPT_STORAGE_DIR` or the S3 bucket) separately.
 A backup from a newer version than the running image is not supported. Restore the matching
 `documents` folder too if bills must show their PDFs, and use the same `KEPT_SECRET_KEY`,
 otherwise stored integration tokens can't be decrypted. Check that you can sign in before deleting
