@@ -4,6 +4,7 @@ import { z } from "zod";
 import { IMPORT_FORMATS } from "$lib/ledger-types";
 import { MAX_UPLOAD_BYTES } from "$lib/import-constants";
 import { first, getDB, pendingImports, type DB } from "$lib/server/db";
+import { detach } from "$lib/server/detached";
 import { describeError } from "$lib/server/errors";
 import { LedgerError, notFound } from "$lib/server/ledger/errors";
 import { getStore } from "$lib/server/storage";
@@ -114,16 +115,23 @@ export function detectFormat(
   return "csv";
 }
 
+export const PURGE_BATCH_SIZE = 50;
+
 /**
- * Removes every expired upload (row and blob) of all users. A blob that cannot be
- * removed keeps its row, so the next purge retries it.
+ * Removes expired uploads (row and blob) of all users, at most one batch per
+ * call so a slow store cannot stall housekeeping indefinitely; the next call
+ * continues. A blob that cannot be removed is logged and left to
+ * `sweepOrphanedPending`; its row is deleted regardless, so failing blobs
+ * cannot fill the batch forever.
  */
 export async function purgeExpired(now = Date.now()): Promise<void> {
   const db = getDB();
   const expired = await db
     .select({ id: pendingImports.id, userId: pendingImports.userId })
     .from(pendingImports)
-    .where(lt(pendingImports.expiresAt, new Date(now)));
+    .where(lt(pendingImports.expiresAt, new Date(now)))
+    .orderBy(pendingImports.expiresAt)
+    .limit(PURGE_BATCH_SIZE);
   const store = getStore();
   for (const { id, userId } of expired) {
     try {
@@ -134,7 +142,6 @@ export async function purgeExpired(now = Date.now()): Promise<void> {
         id,
         describeError(err),
       );
-      continue;
     }
     await db.delete(pendingImports).where(eq(pendingImports.id, id));
   }
@@ -184,6 +191,24 @@ export async function sweepOrphanedPending(now = Date.now()): Promise<number> {
 const ORPHAN_SWEEP_INTERVAL_MS = PENDING_TTL_MS;
 let lastOrphanSweep = 0;
 
+let maintaining = false;
+
+/** Housekeeping off the upload path; failures are logged and retried by the next upload. */
+function maintainInBackground(now: number): void {
+  if (maintaining) return;
+  maintaining = true;
+  detach(
+    maintain(now)
+      .catch((err: unknown) => {
+        lastOrphanSweep = 0;
+        console.error("pending import cleanup failed: %s", describeError(err));
+      })
+      .finally(() => {
+        maintaining = false;
+      }),
+  );
+}
+
 async function maintain(now: number): Promise<void> {
   await purgeExpired(now);
   if (now - lastOrphanSweep >= ORPHAN_SWEEP_INTERVAL_MS) {
@@ -194,10 +219,7 @@ async function maintain(now: number): Promise<void> {
 
 /** Housekeeping at startup; failures are logged and retried by the next upload. */
 export function startPendingSweep(): void {
-  maintain(Date.now()).catch((err) => {
-    lastOrphanSweep = 0;
-    console.error("pending import cleanup failed: %s", describeError(err));
-  });
+  maintainInBackground(Date.now());
 }
 
 export async function storePending(
@@ -213,13 +235,7 @@ export async function storePending(
   }
   const format = detectFormat(input.bytes);
   const now = Date.now();
-  try {
-    await maintain(now);
-  } catch (err) {
-    // Housekeeping must not fail an upload; expired rows are retried next time.
-    lastOrphanSweep = 0;
-    console.error("pending import cleanup failed: %s", describeError(err));
-  }
+  maintainInBackground(now);
   const id = randomBytes(24).toString("base64url");
   const key = pendingBlobKey(userId, id);
   const store = getStore();
@@ -241,7 +257,15 @@ export async function storePending(
       .returning(columns);
     return toMeta(row!);
   } catch (err) {
-    await store.delete(key);
+    try {
+      await store.delete(key);
+    } catch (cleanupErr) {
+      // The orphan sweep reclaims the blob; the insert error is the one to report.
+      console.error(
+        "could not remove the file of a failed upload: %s",
+        describeError(cleanupErr),
+      );
+    }
     throw err;
   }
 }
@@ -322,5 +346,14 @@ export async function deletePending(
   pendingId: string,
 ): Promise<void> {
   if (!(await deletePendingRow(userId, pendingId))) throw notFound("Upload");
-  await deletePendingBlob(userId, pendingId);
+  try {
+    await deletePendingBlob(userId, pendingId);
+  } catch (err) {
+    // The row is gone, so the cancel succeeded; the orphan sweep removes the file.
+    console.error(
+      "could not delete pending import file %s: %s",
+      pendingId,
+      describeError(err),
+    );
+  }
 }

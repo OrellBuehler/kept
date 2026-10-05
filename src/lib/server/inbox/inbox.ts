@@ -30,12 +30,14 @@ import {
   balanceWarningText,
   buildPreview,
   confirmImport,
+  PreviewStaleError,
   deletePending,
   detectFormat,
   startUpload,
 } from "$lib/server/imports";
 import { listAccounts, type AccountView } from "$lib/server/ledger/accounts";
 import { LedgerError } from "$lib/server/ledger/errors";
+import { autoMatchQuietly } from "$lib/server/bills/auto-match";
 import { describeError } from "$lib/server/errors";
 
 export const DEFAULT_INTERVAL_SECONDS = 60;
@@ -328,6 +330,7 @@ async function importCandidate(
     if (warnings.length > 0) return await review(warnings.join(" "));
 
     const result = await confirmImport(userId, meta.id);
+    await autoMatchQuietly(userId);
     moveInto(userDir, "processed", c.path, c.name, sha, now);
     await saveEntry(userId, c.name, sha, {
       status: "imported",
@@ -381,6 +384,10 @@ async function processFile(ctx: ScanContext, c: Candidate): Promise<Outcome> {
   try {
     return await importCandidate(ctx, c, bytes, sha);
   } catch (err) {
+    if (err instanceof PreviewStaleError) {
+      // Transient: leave the file where it is so the next scan retries it.
+      return "skipped";
+    }
     if (
       err instanceof Rejected ||
       err instanceof LedgerError ||

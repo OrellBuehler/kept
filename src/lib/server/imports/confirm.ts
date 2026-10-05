@@ -12,14 +12,31 @@ import type { CsvMappingProfile } from "$lib/server/importers/mapping";
 import { categorize, loadRules } from "$lib/server/categories/rules";
 import { LedgerError, notFound } from "$lib/server/ledger/errors";
 import { linkAfterWrite } from "$lib/server/transfers/link";
-import { takeOverMirror } from "$lib/server/transfers/replace";
+import {
+  findReplacementsInTx,
+  takeOverMirror,
+} from "$lib/server/transfers/replace";
 import {
   deletePendingBlob,
   deletePendingRowInTx,
   getPendingMeta,
 } from "./pending";
-import { balanceWarningText, buildPreview } from "./preview";
+import {
+  TRADES_MOVE_CASH_MESSAGE,
+  balanceWarningText,
+  buildPreview,
+} from "./preview";
 import { describeError } from "$lib/server/errors";
+
+/** The account changed between building the preview and writing it; a fresh preview may succeed. */
+export class PreviewStaleError extends LedgerError {
+  constructor() {
+    super(
+      "conflict",
+      "The account changed since the preview was built. Please review the upload again.",
+    );
+  }
+}
 
 export interface ConfirmResult {
   importId: string;
@@ -76,7 +93,12 @@ export async function confirmImport(
       // also take, so neither can commit between this check and the rows below.
       const account = await first(
         tx
-          .select({ archived: accounts.archived })
+          .select({
+            archived: accounts.archived,
+            currency: accounts.currency,
+            iban: accounts.iban,
+            tradesMoveCash: accounts.tradesMoveCash,
+          })
           .from(accounts)
           .where(and(eq(accounts.userId, userId), eq(accounts.id, accountId)))
           .limit(1),
@@ -87,6 +109,17 @@ export async function confirmImport(
           "invalid",
           "This account is archived; unarchive it to import into it.",
         );
+      }
+      if (account.tradesMoveCash) {
+        throw new LedgerError("invalid", TRADES_MOVE_CASH_MESSAGE);
+      }
+      // The preview was built outside the lock; what it validated must still hold.
+      if (
+        account.currency !== preview.account.currency ||
+        // Only camt statements are checked against the account IBAN.
+        (preview.format === "camt053" && account.iban !== preview.account.iban)
+      ) {
+        throw new PreviewStaleError();
       }
       const imp = (await first(
         tx
@@ -187,13 +220,29 @@ export async function confirmImport(
       }
 
       // Real rows take over the mirrors they match, then everything new is linked.
+      // Mirrors are matched again under the lock: one may have appeared (or gone)
+      // since the preview.
       const idOf = new Map(insertedRows.map((r) => [r.externalId, r.id]));
+      const replacements = await findReplacementsInTx(
+        tx,
+        userId,
+        accountId,
+        newRows
+          .filter((r) => idOf.has(r.tx.externalId))
+          .map((r) => ({
+            key: r.tx.externalId,
+            bookingDate: r.tx.bookingDate,
+            amount: r.tx.amount,
+            counterpartyIban: r.tx.counterpartyIban,
+            reference: r.tx.reference,
+            description: r.tx.description,
+          })),
+      );
       let replaced = 0;
-      for (const row of newRows) {
-        const id = idOf.get(row.tx.externalId);
-        if (row.mirrorId === null || id === undefined) continue;
-        await takeOverMirror(tx, userId, row.mirrorId, id);
-        replaced += 1;
+      for (const [externalId, mirrorId] of replacements) {
+        const id = idOf.get(externalId);
+        if (id === undefined) continue;
+        if (await takeOverMirror(tx, userId, mirrorId, id)) replaced += 1;
       }
       const linked = await linkAfterWrite(
         tx,
