@@ -83,6 +83,10 @@ export async function violations() {
   sql`insert or replace into ${t} (id) values ('a')`; // @ban 1 0 1
   sql`max(${t.id}, ${t.id})`; // @ban 1 0 1
   sql`${t.id} like ${"a%"}`; // @ban 1 0 1
+  sql`lower(${t.id}) like lower(${"a"}) and ${t.id} like ${"b"}`; // @ban 1 0 1
+  sql`lower(${t.id}) like ${"a"}`; // @ban 1 0 1
+  sql`/* lower(x) like lower(y) */ ${t.id} like ${"a"}`; // @ban 1 0 1
+  sql`select 1 -- fine\n, ${t.id}::text`; // @ban 1 0 1
   return [
     like,
     notLike,

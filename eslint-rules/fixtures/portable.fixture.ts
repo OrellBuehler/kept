@@ -51,6 +51,22 @@ export async function portable(table: PgTable) {
     .from(t)
     .where(sql`lower(${t.id}) like lower(${"a%"}) escape '\\'`);
   await db.select({ id: sql`cast(${t.id} as text)` }).from(t);
+  await db
+    .select({ id: t.id })
+    .from(t)
+    .where(sql`lower(coalesce(${t.id}, '')) like lower(${"a%"}) escape '\\'`);
+  await db
+    .select({ id: t.id })
+    .from(t)
+    .where(sql`lower(${t.id}) not like lower(${"a%"}) escape '\\'`);
+  await db
+    .select({ id: t.id })
+    .from(t)
+    .where(
+      sql`lower(${t.id}) like lower(${"a%"}) and lower(${t.id}) like lower(${"%b"})`,
+    );
+  await db.select({ id: sql`1 -- a plain like, ::int and strftime` }).from(t);
+  await db.select({ id: sql`1 /* ${t.id} ilike glob rowid */ + 1` }).from(t);
   const tag = Symbol.for("x");
   const list = z.string().array();
   const many = z.array(z.string());

@@ -14,7 +14,7 @@
  * - index options that only exist on PostgreSQL: `.using()`, `.concurrently()`,
  *   `.with()`, `.onOnly()` on an index, and `.asc()`, `.desc()`,
  *   `.nullsFirst()`, `.nullsLast()`, `.op()` on an indexed column;
- * - raw SQL (`sql\`...\``, `sql.raw("...")`) with `ilike`, `distinct on`,
+ * - raw SQL (`sql\`...\``, `sql.raw("...")`; SQL comments are ignored) with `ilike`, `distinct on`,
  *   `for update` / `for share`, or `::` casts; with functions only SQLite has
  *   (`strftime`, `ifnull`, `group_concat`, `datetime(`, `unixepoch`, `rowid`,
  *   `glob`, `char(`, `insert or replace`, a two-argument scalar `min`/`max`);
@@ -116,15 +116,62 @@ const RAW_SQL = [
   ],
 ];
 
-/** `lower(x) like lower(y)`: the one spelling of LIKE that both databases answer alike. */
-const LOWERED_LIKE = /lower\([^)]*\)\s+like\s+lower\(/i;
-const PLAIN_LIKE = /\blike\b/i;
+/**
+ * The text with SQL line (`--`) and block comments removed, so words inside a
+ * comment are not mistaken for SQL. String literals are kept (and skipped
+ * over, so a `--` inside one starts no comment).
+ */
+function withoutComments(text) {
+  let out = "";
+  for (let i = 0; i < text.length;) {
+    const c = text[i];
+    if (c === "'") {
+      let end = i + 1;
+      while (end < text.length) {
+        if (text[end] === "'" && text[end + 1] === "'") end += 2;
+        else if (text[end] === "'") break;
+        else end++;
+      }
+      out += text.slice(i, end + 1);
+      i = end + 1;
+    } else if (c === "-" && text[i + 1] === "-") {
+      const eol = text.indexOf("\n", i);
+      i = eol === -1 ? text.length : eol;
+    } else if (c === "/" && text[i + 1] === "*") {
+      const close = text.indexOf("*/", i + 2);
+      out += " ";
+      i = close === -1 ? text.length : close + 2;
+    } else {
+      out += c;
+      i++;
+    }
+  }
+  return out;
+}
 
-function rawSqlProblem(text) {
+/**
+ * Each LIKE must read `lower(<expr>) [not] like lower(<expr>)`, the one
+ * spelling both databases answer alike. `<expr>` may hold one level of
+ * parentheses, as in `lower(coalesce(col, ''))`.
+ */
+const LOWERED_BEFORE = /\blower\s*\((?:[^()]|\([^()]*\))*\)\s+(?:not\s+)?$/i;
+const LOWERED_AFTER = /^\s*lower\s*\(/i;
+
+function hasPlainLike(text) {
+  for (const match of text.matchAll(/\blike\b/gi)) {
+    const before = text.slice(0, match.index);
+    const after = text.slice(match.index + match[0].length);
+    if (!LOWERED_BEFORE.test(before) || !LOWERED_AFTER.test(after)) return true;
+  }
+  return false;
+}
+
+function rawSqlProblem(source) {
+  const text = withoutComments(source);
   for (const [pattern, reason] of RAW_SQL) {
     if (pattern.test(text)) return reason;
   }
-  if (PLAIN_LIKE.test(text) && !LOWERED_LIKE.test(text)) {
+  if (hasPlainLike(text)) {
     return "a plain LIKE is case-insensitive on SQLite and case-sensitive on PostgreSQL; use lower(col) like lower(?)";
   }
   return null;
