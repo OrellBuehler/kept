@@ -6,55 +6,17 @@ import ts from "typescript-eslint";
 import svelteConfig from "./svelte.config.js";
 
 /**
- * Temporary ban on the synchronous bun-sqlite terminals `.all()`, `.get()` and
- * `.run()` everywhere in `src/`: every query is awaited (or goes through
- * `first()`), so the driver swap (2.7) only has to touch the transaction
- * bodies. It keeps converted code from regressing until 2.7 makes the compiler
- * reject these calls and this rule is deleted.
+ * Query builders are awaited, never executed through their sync-style terminals:
+ * `.get()` skips first() (and its limit), `.run()` hides the result shape, and
+ * none of them exists on every database backend. The facade's `DB` type
+ * already omits them on the connection itself; this covers the builders.
  */
-const SYNC_TERMINAL_BAN_FILES = ["src/**"];
-
-/**
- * The sync terminals stay legal inside the synchronous transaction bodies and
- * the helpers that only run there (until 2.7 makes those async too). Both take
- * the transaction as their first parameter, named `tx`, so the ban skips any
- * call lexically inside a function declared that way.
- */
-const OUTSIDE_TX_BODY =
-  ":not(:matches(FunctionDeclaration, FunctionExpression, ArrowFunctionExpression)[params.0.name='tx'] *)";
-
-/**
- * bun-sqlite transactions are synchronous: an async callback commits (or rolls
- * back) at its first await, and the rest of the body runs outside the
- * transaction. Applies to every TypeScript file until phase 2.7 swaps the driver.
- * A later `no-restricted-syntax` block replaces this one wholesale, so any block
- * that sets the rule for a subset of files must repeat this entry.
- */
-const asyncTransactionBan = {
+const queryTerminalBan = {
   selector:
-    "CallExpression[callee.property.name='transaction'] > :matches(ArrowFunctionExpression, FunctionExpression)[async=true]",
+    "CallExpression[arguments.length=0] > MemberExpression.callee[property.name=/^(all|get|run|execute)$/]",
   message:
-    "bun-sqlite transactions must be synchronous until phase 2.7: do not pass an async callback to .transaction().",
+    "Await the query (or use first()) instead of .all()/.get()/.run()/.execute().",
 };
-
-const syncTerminalBan = [
-  {
-    files: SYNC_TERMINAL_BAN_FILES,
-    rules: {
-      "no-restricted-syntax": [
-        "error",
-        asyncTransactionBan,
-        {
-          selector:
-            "CallExpression[arguments.length=0] > MemberExpression.callee[property.name=/^(all|get|run)$/]" +
-            OUTSIDE_TX_BODY,
-          message:
-            "Await the query (or use first()) instead of .all()/.get()/.run().",
-        },
-      ],
-    },
-  },
-];
 
 export default ts.config(
   {
@@ -127,13 +89,12 @@ export default ts.config(
   },
   {
     files: ["src/**/*.ts"],
-    rules: { "no-restricted-syntax": ["error", asyncTransactionBan] },
+    rules: { "no-restricted-syntax": ["error", queryTerminalBan] },
   },
-  ...syncTerminalBan,
   {
-    // Raw bun:sqlite statements (`db.query(sql).get()`), not drizzle builders:
-    // this test inspects a backup file with the driver directly.
+    // Raw bun:sqlite statements (`copy.query(sql).get()`), not drizzle
+    // builders: this test inspects a backup file with the driver directly.
     files: ["src/lib/server/backup/backup.test.ts"],
-    rules: { "no-restricted-syntax": ["error", asyncTransactionBan] },
+    rules: { "no-restricted-syntax": "off" },
   },
 );

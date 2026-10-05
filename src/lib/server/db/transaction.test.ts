@@ -152,6 +152,23 @@ describe("transaction", () => {
     ).toThrow(/use transaction\(\)/);
   });
 
+  it("leaves the sync-style shortcuts off the facade's type", () => {
+    // Compile-time only: never called, the directives are the assertions.
+    const never = (db: DB) => {
+      // @ts-expect-error run() is not part of DB: queries are awaited builders
+      void db.run;
+      // @ts-expect-error all() is not part of DB
+      void db.all;
+      // @ts-expect-error get() is not part of DB
+      void db.get;
+      // @ts-expect-error values() is not part of DB
+      void db.values;
+      // @ts-expect-error batch() is not part of DB
+      void db.batch;
+    };
+    expect(never).toBeTypeOf("function");
+  });
+
   it("serialises read-modify-write transactions without lost updates", async () => {
     await getDB()
       .insert(users)
