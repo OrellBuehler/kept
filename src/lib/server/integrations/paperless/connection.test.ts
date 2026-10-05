@@ -69,9 +69,9 @@ describe("connection", () => {
 
   it("stores the token encrypted and the webhook secret only as a hash", async () => {
     const u = await createTestUser();
-    const { connection, webhookSecret } = save(u.id);
+    const { connection, webhookSecret } = await save(u.id);
 
-    const row = getConnectionRow(u.id)!;
+    const row = (await getConnectionRow(u.id))!;
     expect(row.tokenEncrypted).not.toContain("test-token");
     expect(decryptSecret(row.tokenEncrypted)).toBe("test-token");
     expect(webhookSecret).toMatch(/^[\w-]{40,}$/);
@@ -94,9 +94,9 @@ describe("connection", () => {
 
   it("validates address and token", async () => {
     const u = await createTestUser();
-    const fails = (over: Record<string, unknown>) => {
+    const fails = async (over: Record<string, unknown>) => {
       try {
-        save(u.id, over);
+        await save(u.id, over);
       } catch (err) {
         return err instanceof LedgerError
           ? `${err.code}:${err.field}`
@@ -104,39 +104,41 @@ describe("connection", () => {
       }
       return "none";
     };
-    expect(fails({ baseUrl: "ftp://x.example" })).toBe("invalid:baseUrl");
-    expect(fails({ baseUrl: "https://a:b@x.example" })).toBe("invalid:baseUrl");
-    expect(fails({ token: "" })).toBe("invalid:token");
-    expect(fails({ token: null })).toBe("invalid:token");
-    expect(fails({ token: "has space" })).toBe("invalid:token");
-    expect(fails({ token: "line\nbreak" })).toBe("invalid:token");
-    expect(getConnection(u.id)).toBeNull();
+    expect(await fails({ baseUrl: "ftp://x.example" })).toBe("invalid:baseUrl");
+    expect(await fails({ baseUrl: "https://a:b@x.example" })).toBe(
+      "invalid:baseUrl",
+    );
+    expect(await fails({ token: "" })).toBe("invalid:token");
+    expect(await fails({ token: null })).toBe("invalid:token");
+    expect(await fails({ token: "has space" })).toBe("invalid:token");
+    expect(await fails({ token: "line\nbreak" })).toBe("invalid:token");
+    expect(await getConnection(u.id)).toBeNull();
   });
 
   it("keeps the old token when the field is left blank and replaces it otherwise", async () => {
     const u = await createTestUser();
-    save(u.id);
-    const first = getConnectionRow(u.id)!;
+    await save(u.id);
+    const first = (await getConnectionRow(u.id))!;
 
-    const again = save(u.id, { token: "", allowInsecureTls: true });
+    const again = await save(u.id, { token: "", allowInsecureTls: true });
     expect(again.webhookSecret).toBeNull();
-    const kept = getConnectionRow(u.id)!;
+    const kept = (await getConnectionRow(u.id))!;
     expect(kept.id).toBe(first.id);
     expect(kept.tokenEncrypted).toBe(first.tokenEncrypted);
     expect(kept.webhookToken).toBe(first.webhookToken);
     expect(kept.allowInsecureTls).toBe(true);
 
-    save(u.id, { token: "new-token" });
-    expect(decryptSecret(getConnectionRow(u.id)!.tokenEncrypted)).toBe(
+    await save(u.id, { token: "new-token" });
+    expect(decryptSecret((await getConnectionRow(u.id))!.tokenEncrypted)).toBe(
       "new-token",
     );
   });
 
   it("rotating the secret invalidates the old one", async () => {
     const u = await createTestUser();
-    const { webhookSecret } = save(u.id);
-    const fresh = rotateWebhookSecret(u.id);
-    const row = getConnectionRow(u.id)!;
+    const { webhookSecret } = await save(u.id);
+    const fresh = await rotateWebhookSecret(u.id);
+    const row = (await getConnectionRow(u.id))!;
     expect(fresh).not.toBe(webhookSecret);
     expect(secretMatches(row, webhookSecret!)).toBe(false);
     expect(secretMatches(row, fresh)).toBe(true);
@@ -145,27 +147,67 @@ describe("connection", () => {
   it("isolates users: one connection each, distinct webhook tokens, no cross access", async () => {
     const a = await createTestUser();
     const b = await createTestUser();
-    save(a.id);
-    expect(getConnection(b.id)).toBeNull();
-    expect(() => deleteConnection(b.id)).toThrow(LedgerError);
-    expect(() => setEnabled(b.id, false)).toThrow(LedgerError);
-    expect(() => rotateWebhookSecret(b.id)).toThrow(LedgerError);
+    await save(a.id);
+    expect(await getConnection(b.id)).toBeNull();
+    await expect(deleteConnection(b.id)).rejects.toThrow(LedgerError);
+    await expect(setEnabled(b.id, false)).rejects.toThrow(LedgerError);
+    await expect(rotateWebhookSecret(b.id)).rejects.toThrow(LedgerError);
 
-    save(b.id);
-    const rowA = getConnectionRow(a.id)!;
-    const rowB = getConnectionRow(b.id)!;
+    await save(b.id);
+    const rowA = (await getConnectionRow(a.id))!;
+    const rowB = (await getConnectionRow(b.id))!;
     expect(rowA.webhookToken).not.toBe(rowB.webhookToken);
-    expect(getConnectionByWebhookToken(rowA.webhookToken)!.userId).toBe(a.id);
-    expect(getConnectionByWebhookToken(rowB.webhookToken)!.userId).toBe(b.id);
-    expect(getConnectionByWebhookToken("nope")).toBeNull();
-    deleteConnection(a.id);
-    expect(getConnection(b.id)).not.toBeNull();
-    expect(getDB().select().from(paperlessConnections).all()).toHaveLength(1);
+    expect((await getConnectionByWebhookToken(rowA.webhookToken))!.userId).toBe(
+      a.id,
+    );
+    expect((await getConnectionByWebhookToken(rowB.webhookToken))!.userId).toBe(
+      b.id,
+    );
+    expect(await getConnectionByWebhookToken("nope")).toBeNull();
+    await deleteConnection(a.id);
+    expect(await getConnection(b.id)).not.toBeNull();
+    expect(await getDB().select().from(paperlessConnections)).toHaveLength(1);
+  });
+
+  it("two concurrent first saves leave one connection, and only one learns the webhook secret", async () => {
+    const u = await createTestUser();
+    const [x, y] = await Promise.all([save(u.id), save(u.id)]);
+    expect(
+      [x.webhookSecret, y.webhookSecret].filter((v) => v !== null),
+    ).toHaveLength(1);
+    expect(x.connection.id).toBe(y.connection.id);
+    expect(await getDB().select().from(paperlessConnections)).toHaveLength(1);
+  });
+
+  it("reports a connection created by a concurrent save as a conflict", async () => {
+    const u = await createTestUser();
+    vi.spyOn(getDB(), "transaction").mockImplementationOnce(() => {
+      throw Object.assign(new Error("constraint"), {
+        code: "SQLITE_CONSTRAINT_UNIQUE",
+      });
+    });
+    await expect(save(u.id)).rejects.toMatchObject({ code: "conflict" });
+    vi.restoreAllMocks();
+    expect(await getConnection(u.id)).toBeNull();
+    await expect(save(u.id)).resolves.toBeDefined();
+  });
+
+  it("rolls back address bookkeeping when the save is refused", async () => {
+    const u = await createTestUser();
+    await save(u.id);
+    const before = (await getConnectionRow(u.id))!;
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    await expect(
+      save(u.id, { baseUrl: "http://other.example", token: "bad token" }),
+    ).rejects.toThrow(LedgerError);
+    const after = (await getConnectionRow(u.id))!;
+    expect(after.baseUrl).toBe(before.baseUrl);
+    expect(after.instanceKey).toBe(before.instanceKey);
   });
 
   it("tests the connection and records version information", async () => {
     const u = await createTestUser();
-    save(u.id);
+    await save(u.id);
     const r = await testConnection(u.id);
     expect(r).toEqual({
       serverVersion: "2.20.3",
@@ -173,7 +215,7 @@ describe("connection", () => {
       maxApiVersion: 10,
       warnings: [],
     });
-    expect(getConnection(u.id)).toMatchObject({
+    expect(await getConnection(u.id)).toMatchObject({
       serverVersion: "2.20.3",
       apiVersion: 9,
       lastError: null,
@@ -185,29 +227,29 @@ describe("connection", () => {
 
   it("warns about servers older than 2.16 and remembers a negotiated version 10", async () => {
     const u = await createTestUser();
-    save(u.id);
+    await save(u.id);
     fake.serverVersion = "2.10.1";
     fake.accepted = [10];
     const r = await testConnection(u.id);
     expect(r.warnings[0]).toContain("2.10.1");
     expect(r.apiVersion).toBe(10);
-    expect(getConnection(u.id)!.apiVersion).toBe(10);
+    expect((await getConnection(u.id))!.apiVersion).toBe(10);
   });
 
   it("stores a failure code when the test fails", async () => {
     const u = await createTestUser();
-    save(u.id);
+    await save(u.id);
     fake.token = "rotated";
     vi.spyOn(console, "error").mockImplementation(() => {});
     await expect(testConnection(u.id)).rejects.toMatchObject({
       code: "unauthorized",
     });
-    expect(getConnection(u.id)!.lastError).toBe("unauthorized");
+    expect((await getConnection(u.id))!.lastError).toBe("unauthorized");
   });
 
   it("lists tags, saved views (flagging unsupported ones) and custom fields", async () => {
     const u = await createTestUser();
-    save(u.id);
+    await save(u.id);
     expect((await listTags(u.id)).map((t) => t.name)).toEqual([
       "Bills",
       "Receipts",
@@ -232,7 +274,7 @@ describe("connection", () => {
 
   it("surfaces a 403 on custom fields so the UI can ask for ids by hand", async () => {
     const u = await createTestUser();
-    save(u.id);
+    await save(u.id);
     fake.customFieldsStatus = 403;
     await expect(listCustomFields(u.id)).rejects.toMatchObject({
       code: "forbidden",
@@ -242,7 +284,7 @@ describe("connection", () => {
 
   it("resolves tag and saved view names and reports unknown ids", async () => {
     const u = await createTestUser();
-    save(u.id);
+    await save(u.id);
     expect((await resolveSource(u.id, "tag", 2)).label).toBe("Receipts");
     const view = await resolveSource(u.id, "saved_view", 6);
     expect(view.label).toBe("Search");

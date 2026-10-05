@@ -55,7 +55,7 @@ async function setup() {
 }
 
 const rowsOf = async (accountId: string) =>
-  await getDB()
+  getDB()
     .select()
     .from(transactions)
     .where(eq(transactions.accountId, accountId));
@@ -142,7 +142,7 @@ describe("getImportImpact", () => {
       .update(transactions)
       .set({ deductionYear: 2025 })
       .where(eq(transactions.id, r4!.id));
-    const bill = seedBill(user.id);
+    const bill = await seedBill(user.id);
     await db.insert(billAllocations).values({
       userId: user.id,
       billId: bill.id,

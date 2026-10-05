@@ -20,8 +20,8 @@ export async function runCatchUp(
   options: { jitterMs?: number } = {},
 ): Promise<void> {
   const jitter = options.jitterMs ?? 0;
-  for (const row of listEnabledConnections()) {
-    if (isSyncing(row.id)) continue;
+  for (const row of await listEnabledConnections()) {
+    if (isSyncing(row.userId)) continue;
     try {
       if (jitter > 0) await sleep(Math.random() * jitter);
       const result = await syncConnection(row.userId);

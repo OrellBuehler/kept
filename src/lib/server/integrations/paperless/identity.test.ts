@@ -58,7 +58,7 @@ describe("saveConnectionVerified", () => {
       f.token = "test-token";
     }
     user = await createTestUser();
-    seedConnection(user.id, fake);
+    await seedConnection(user.id, fake);
     fake.addDoc({ id: 95, original: pdfEnergy });
     fake.addDoc({ id: 96, original: pdfWater });
     await syncConnection(user.id);
@@ -66,20 +66,20 @@ describe("saveConnectionVerified", () => {
 
   it("keeps the links when the new address serves the same documents", async () => {
     other.addDoc({ id: 95, original: pdfEnergy });
-    const before = getConnectionRow(user.id)!;
+    const before = (await getConnectionRow(user.id))!;
 
     await move(user.id, other.baseUrl);
 
-    expect(getConnectionRow(user.id)).toMatchObject({
+    expect(await getConnectionRow(user.id)).toMatchObject({
       baseUrl: other.baseUrl,
       instanceKey: before.instanceKey,
     });
-    expect(listBills(user.id)).toHaveLength(2);
+    expect(await listBills(user.id)).toHaveLength(2);
   });
 
   it("never contacts a private address the user may not use", async () => {
     other.addDoc({ id: 95, original: pdfEnergy });
-    const before = getConnectionRow(user.id)!;
+    const before = (await getConnectionRow(user.id))!;
 
     const err = await rejection(
       move(user.id, other.baseUrl, { allowPrivateNetwork: false }),
@@ -87,36 +87,35 @@ describe("saveConnectionVerified", () => {
 
     expect(err.field).toBe("baseUrl");
     expect(other.requests).toHaveLength(0);
-    expect(getConnectionRow(user.id)!.baseUrl).toBe(before.baseUrl);
+    expect((await getConnectionRow(user.id))!.baseUrl).toBe(before.baseUrl);
   });
 
   it("asks for the token again instead of failing when the stored one cannot be decrypted", async () => {
     other.addDoc({ id: 95, original: pdfEnergy });
-    getDB()
+    await getDB()
       .update(paperlessConnections)
       .set({ tokenEncrypted: "v1.broken.broken" })
-      .where(eq(paperlessConnections.userId, user.id))
-      .run();
+      .where(eq(paperlessConnections.userId, user.id));
 
     const err = await rejection(move(user.id, other.baseUrl));
 
     expect(err.field).toBe("token");
     expect(err.message).toContain("KEPT_SECRET_KEY");
     expect(other.requests).toHaveLength(0);
-    expect(getConnectionRow(user.id)!.baseUrl).toBe(fake.baseUrl);
+    expect((await getConnectionRow(user.id))!.baseUrl).toBe(fake.baseUrl);
   });
 
   it("accepts the move when only some sampled documents still match", async () => {
     other.addDoc({ id: 96, original: pdfWater });
     await move(user.id, other.baseUrl);
-    expect(getConnectionRow(user.id)!.baseUrl).toBe(other.baseUrl);
+    expect((await getConnectionRow(user.id))!.baseUrl).toBe(other.baseUrl);
   });
 
   it("refuses an address whose documents are missing", async () => {
     const err = await rejection(move(user.id, other.baseUrl));
     expect(err.field).toBe("baseUrl");
     expect(err.message).toContain("different Paperless server");
-    expect(getConnectionRow(user.id)!.baseUrl).toBe(fake.baseUrl);
+    expect((await getConnectionRow(user.id))!.baseUrl).toBe(fake.baseUrl);
   });
 
   it("refuses an address that serves other content under the same numbers", async () => {
@@ -125,14 +124,14 @@ describe("saveConnectionVerified", () => {
     const err = await rejection(move(user.id, other.baseUrl));
     expect(err.field).toBe("baseUrl");
     expect(err.message).toContain("different Paperless server");
-    expect(getConnectionRow(user.id)!.baseUrl).toBe(fake.baseUrl);
+    expect((await getConnectionRow(user.id))!.baseUrl).toBe(fake.baseUrl);
   });
 
   it("reports an unreachable address instead of keeping the links", async () => {
     const err = await rejection(move(user.id, "http://127.0.0.1:1"));
     expect(err.field).toBe("baseUrl");
     expect(err.message).toContain("could not be reached");
-    expect(getConnectionRow(user.id)!.baseUrl).toBe(fake.baseUrl);
+    expect((await getConnectionRow(user.id))!.baseUrl).toBe(fake.baseUrl);
   });
 
   it("reports a rejected token on the new address", async () => {
@@ -146,7 +145,7 @@ describe("saveConnectionVerified", () => {
   it("does not check anything when the user says it is a different server", async () => {
     await move(user.id, other.baseUrl, { differentInstance: true });
     expect(other.requests).toHaveLength(0);
-    expect(getConnectionRow(user.id)!.baseUrl).toBe(other.baseUrl);
+    expect((await getConnectionRow(user.id))!.baseUrl).toBe(other.baseUrl);
   });
 
   it("does not check when the address is unchanged", async () => {
@@ -157,18 +156,18 @@ describe("saveConnectionVerified", () => {
 
   it("does not check a connection without imported documents", async () => {
     const fresh = await createTestUser();
-    seedConnection(fresh.id, fake);
+    await seedConnection(fresh.id, fake);
     await move(fresh.id, other.baseUrl);
     expect(other.requests).toHaveLength(0);
-    expect(getConnectionRow(fresh.id)!.baseUrl).toBe(other.baseUrl);
+    expect((await getConnectionRow(fresh.id))!.baseUrl).toBe(other.baseUrl);
   });
 
   it("only samples the current user's documents", async () => {
     const fresh = await createTestUser();
-    seedConnection(fresh.id, fake);
+    await seedConnection(fresh.id, fake);
     await move(fresh.id, other.baseUrl);
     expect(other.requests).toHaveLength(0);
-    expect(getConnectionRow(user.id)!.baseUrl).toBe(fake.baseUrl);
+    expect((await getConnectionRow(user.id))!.baseUrl).toBe(fake.baseUrl);
   });
 
   it("samples at most three documents", async () => {

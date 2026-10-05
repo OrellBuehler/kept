@@ -17,7 +17,7 @@ import {
 import type { FakePaperless } from "./fake-server";
 
 /** Test helper: connect `userId` to the fake server and pick a source. */
-export function seedConnection(
+export async function seedConnection(
   userId: string,
   fake: FakePaperless,
   options: {
@@ -25,18 +25,18 @@ export function seedConnection(
     mapping?: PaperlessFieldMapping;
   } = {},
 ) {
-  const saved = saveConnection(userId, {
+  const saved = await saveConnection(userId, {
     baseUrl: fake.baseUrl,
     token: fake.token,
     allowInsecureTls: false,
   });
   if (options.source !== null) {
-    setBillSourceRow(
+    await setBillSourceRow(
       userId,
       options.source ?? { kind: "tag", id: 1, label: "Bills" },
     );
   }
-  if (options.mapping) setFieldMapping(userId, options.mapping);
+  if (options.mapping) await setFieldMapping(userId, options.mapping);
   return saved;
 }
 

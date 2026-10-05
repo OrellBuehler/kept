@@ -116,7 +116,7 @@ export async function buildReport(
     };
   }
   if (kind === "bills") {
-    const input = loadBillsReport(userId, today);
+    const input = await loadBillsReport(userId, today);
     return {
       bytes: await billsReport(input),
       fileName,

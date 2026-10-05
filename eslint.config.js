@@ -50,6 +50,14 @@ const CONVERTED_TO_ASYNC = [
   "src/lib/testing/imports.ts",
   "src/routes/(app)/import/**",
   "src/routes/api/imports/**",
+  // 2.5 bills, paperless
+  "src/lib/server/bills/**",
+  "src/lib/server/integrations/paperless/**",
+  "src/lib/server/net/**",
+  "src/lib/testing/bills.ts",
+  "src/routes/(app)/bills/**",
+  "src/routes/(app)/settings/paperless/**",
+  "src/routes/api/public/paperless/**",
 ];
 
 /**

@@ -71,7 +71,7 @@ describe("new bill page", () => {
       actions.create(createTestEvent({ user: u, form: billForm() }) as never),
     );
     expect(created.type).toBe("redirect");
-    expect(listBills(u.id)).toHaveLength(1);
+    expect(await listBills(u.id)).toHaveLength(1);
   });
 
   it("a bill created for an already booked payment is Paid on the next detail load", async () => {
@@ -96,7 +96,7 @@ describe("new bill page", () => {
       ),
     );
     expect(created.type).toBe("redirect");
-    const [bill] = listBills(u.id);
+    const [bill] = await listBills(u.id);
     const detail = await detailLoad(
       createTestEvent({
         user: u,
@@ -169,7 +169,7 @@ describe("new bill page", () => {
       ),
     );
     expect(created.type).toBe("redirect");
-    const [bill] = listBills(u.id);
+    const [bill] = await listBills(u.id);
     expect(created).toMatchObject({
       status: 303,
       location: `/bills/${bill!.id}`,
@@ -241,7 +241,7 @@ describe("new bill page", () => {
       ),
     );
     expect(ok.type).toBe("redirect");
-    expect(getBill(u.id, listBills(u.id)[0]!.id)).toMatchObject({
+    expect(await getBill(u.id, (await listBills(u.id))[0]!.id)).toMatchObject({
       amount: null,
       documentId: null,
       extraction: null,
@@ -276,10 +276,10 @@ describe("new bill page", () => {
       type: "fail",
       data: { errors: { expectedAccountId: [expect.any(String)] } },
     });
-    expect(listBills(b.id)).toEqual([]);
+    expect(await listBills(b.id)).toEqual([]);
   });
 });
 
-function listBillsCount(userId: string) {
-  return Promise.resolve(listBills(userId).length);
+async function listBillsCount(userId: string) {
+  return (await listBills(userId)).length;
 }

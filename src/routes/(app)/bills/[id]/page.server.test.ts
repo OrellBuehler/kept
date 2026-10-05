@@ -83,7 +83,7 @@ describe("bill detail page", () => {
   it("update auto-matches a transaction that carries the bill's new reference", async () => {
     const u = await createTestUser();
     const account = await seedAccount(u.id);
-    const bill = seedBill(u.id);
+    const bill = await seedBill(u.id);
     await seedImportedTransaction(u.id, account.id, {
       amount: minor(-10000),
       bookingDate: "2026-09-10",
@@ -100,13 +100,13 @@ describe("bill detail page", () => {
         ),
       ),
     ).toMatchObject({ type: "return" });
-    expect(listBillAllocations(u.id, bill.id)).toHaveLength(1);
+    expect(await listBillAllocations(u.id, bill.id)).toHaveLength(1);
     expect(await statusOf(u, bill.id)).toBe("paid");
   });
 
   it("a failing auto-match never fails update", async () => {
     const u = await createTestUser();
-    const bill = seedBill(u.id);
+    const bill = await seedBill(u.id);
     failMatching();
     expect(
       await outcome(() =>
@@ -124,7 +124,7 @@ describe("bill detail page", () => {
   it("the detail load never writes: a payment that arrived after the bill was saved stays a suggestion", async () => {
     const u = await createTestUser();
     const account = await seedAccount(u.id);
-    const bill = seedBill(u.id, {
+    const bill = await seedBill(u.id, {
       reference: EXAMPLE_QRR,
       referenceType: "QRR",
     });
@@ -134,7 +134,7 @@ describe("bill detail page", () => {
       reference: EXAMPLE_QRR,
     });
     expect(await statusOf(u, bill.id)).toBe("open");
-    expect(listBillAllocations(u.id, bill.id)).toEqual([]);
+    expect(await listBillAllocations(u.id, bill.id)).toEqual([]);
     const v = (await loadAs(u, bill.id)) as unknown as {
       value: { suggestions: { auto: boolean }[] };
     };
@@ -150,7 +150,7 @@ describe("bill detail page", () => {
       bookingDate: "2026-09-10",
       reference: EXAMPLE_QRR,
     });
-    const bill = seedBill(u.id, {
+    const bill = await seedBill(u.id, {
       reference: EXAMPLE_QRR,
       referenceType: "QRR",
     });
@@ -160,7 +160,7 @@ describe("bill detail page", () => {
   it("load returns the bill, allocations, suggestions, candidates, accounts and document", async () => {
     const u = await createTestUser();
     const account = await seedAccount(u.id, { name: "Checking" });
-    const bill = seedBill(u.id, { dueDate: "2000-01-01" });
+    const bill = await seedBill(u.id, { dueDate: "2000-01-01" });
     const tx = await seedImportedTransaction(u.id, account.id, {
       amount: minor(-4000),
       counterpartyName: "Sample Payee",
@@ -208,7 +208,7 @@ describe("bill detail page", () => {
 
   it("updates, cancels, uncancels and deletes", async () => {
     const u = await createTestUser();
-    const bill = seedBill(u.id);
+    const bill = await seedBill(u.id);
     const bad = await run("update", u, bill.id, billForm({ amount: "-1" }));
     expect(bad).toMatchObject({
       type: "fail",
@@ -218,26 +218,26 @@ describe("bill detail page", () => {
     expect(
       await run("update", u, bill.id, billForm({ notes: "hello" })),
     ).toEqual({ type: "return", value: { success: true, action: "update" } });
-    expect(getBill(u.id, bill.id)).toMatchObject({
+    expect(await getBill(u.id, bill.id)).toMatchObject({
       notes: "hello",
       creditorIban: EXAMPLE_IBAN,
     });
     await run("cancel", u, bill.id);
-    expect(getBill(u.id, bill.id).cancelled).toBe(true);
+    expect((await getBill(u.id, bill.id)).cancelled).toBe(true);
     await run("uncancel", u, bill.id);
-    expect(getBill(u.id, bill.id).cancelled).toBe(false);
+    expect((await getBill(u.id, bill.id)).cancelled).toBe(false);
     expect(await run("delete", u, bill.id)).toEqual({
       type: "redirect",
       status: 303,
       location: "/bills",
     });
-    expect(listBills(u.id)).toEqual([]);
+    expect(await listBills(u.id)).toEqual([]);
   });
 
   it("allocates, rejects bad amounts and removes allocations", async () => {
     const u = await createTestUser();
     const account = await seedAccount(u.id);
-    const bill = seedBill(u.id);
+    const bill = await seedBill(u.id);
     const tx = await seedImportedTransaction(u.id, account.id, {
       amount: minor(-4000),
     });
@@ -260,14 +260,14 @@ describe("bill detail page", () => {
         amount: "40.00",
       }),
     ).toEqual({ type: "return", value: { success: true, action: "allocate" } });
-    const [alloc] = listBillAllocations(u.id, bill.id);
+    const [alloc] = await listBillAllocations(u.id, bill.id);
     expect(
       await run("removeAllocation", u, bill.id, { allocationId: alloc!.id }),
     ).toEqual({
       type: "return",
       value: { success: true, action: "removeAllocation" },
     });
-    expect(listBillAllocations(u.id, bill.id)).toEqual([]);
+    expect(await listBillAllocations(u.id, bill.id)).toEqual([]);
     expect(await run("removeAllocation", u, bill.id, {})).toMatchObject({
       type: "fail",
       status: 400,
@@ -277,7 +277,7 @@ describe("bill detail page", () => {
   it("dismisses a suggestion and brings it back with undismiss", async () => {
     const u = await createTestUser();
     const account = await seedAccount(u.id);
-    const bill = seedBill(u.id);
+    const bill = await seedBill(u.id);
     const tx = await seedImportedTransaction(u.id, account.id, {
       amount: minor(-4000),
     });
@@ -307,7 +307,7 @@ describe("bill detail page", () => {
   it("dismisses a suggestion for this bill", async () => {
     const u = await createTestUser();
     const account = await seedAccount(u.id);
-    const bill = seedBill(u.id);
+    const bill = await seedBill(u.id);
     const tx = await seedImportedTransaction(u.id, account.id, {
       amount: minor(-4000),
     });
@@ -321,7 +321,7 @@ describe("bill detail page", () => {
 
   it("attaches a document, serves it and re-extracts without saving", async () => {
     const u = await createTestUser();
-    const bill = seedBill(u.id, { creditorName: "Keep Me" });
+    const bill = await seedBill(u.id, { creditorName: "Keep Me" });
     const attach = async (file: File) => {
       const event = createTestEvent({ user: u, params: { id: bill.id } });
       const body = new FormData();
@@ -348,8 +348,8 @@ describe("bill detail page", () => {
       type: "return",
       value: { success: true, action: "attachDocument" },
     });
-    const docId = getBill(u.id, bill.id).documentId!;
-    expect(getDocumentMeta(u.id, docId).fileName).toBe("Bill (1).pdf");
+    const docId = (await getBill(u.id, bill.id)).documentId!;
+    expect((await getDocumentMeta(u.id, docId)).fileName).toBe("Bill (1).pdf");
 
     const res = (await GET(
       createTestEvent({ user: u, params: { id: bill.id } }) as never,
@@ -377,9 +377,9 @@ describe("bill detail page", () => {
         extraction: { source: "qr" },
       },
     });
-    expect(getBill(u.id, bill.id).creditorName).toBe("Keep Me");
+    expect((await getBill(u.id, bill.id)).creditorName).toBe("Keep Me");
 
-    const none = seedBill(u.id);
+    const none = await seedBill(u.id);
     expect(await run("reextract", u, none.id)).toMatchObject({
       type: "fail",
       status: 400,
@@ -388,7 +388,7 @@ describe("bill detail page", () => {
 
   it("the document endpoint 404s for a bill without one", async () => {
     const u = await createTestUser();
-    const bill = seedBill(u.id);
+    const bill = await seedBill(u.id);
     expect(
       await outcome(() =>
         GET(createTestEvent({ user: u, params: { id: bill.id } }) as never),
@@ -401,8 +401,8 @@ describe("bill detail page", () => {
     const b = await createTestUser();
     const accountA = await seedAccount(a.id);
     const accountB = await seedAccount(b.id);
-    const billA = seedBill(a.id);
-    const billB = seedBill(b.id);
+    const billA = await seedBill(a.id);
+    const billB = await seedBill(b.id);
     const txA = await seedImportedTransaction(a.id, accountA.id, {
       amount: minor(-1000),
     });
@@ -459,11 +459,11 @@ describe("bill detail page", () => {
       ),
     ).toEqual(notFound);
 
-    expect(getBill(a.id, billA.id)).toMatchObject({
+    expect(await getBill(a.id, billA.id)).toMatchObject({
       cancelled: false,
       documentId: doc.id,
     });
-    expect(listBillAllocations(a.id, billA.id)).toHaveLength(1);
-    expect(getDocumentMeta(a.id, doc.id).id).toBe(doc.id);
+    expect(await listBillAllocations(a.id, billA.id)).toHaveLength(1);
+    expect((await getDocumentMeta(a.id, doc.id)).id).toBe(doc.id);
   });
 });

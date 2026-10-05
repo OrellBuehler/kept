@@ -23,7 +23,7 @@ import {
 import { autoMatchQuietly } from "$lib/server/bills/auto-match";
 import { parseForm, safeValues } from "$lib/server/forms";
 import { listAccounts } from "$lib/server/ledger/accounts";
-import { ledgerFailure, orNotFound } from "$lib/server/ledger/http";
+import { ledgerFailure, orNotFoundAsync } from "$lib/server/ledger/http";
 import type { Actions, PageServerLoad } from "./$types";
 
 export const load: PageServerLoad = async ({ locals, url }) => {
@@ -35,7 +35,7 @@ export const load: PageServerLoad = async ({ locals, url }) => {
   if (!documentId) {
     return { accounts, draft: null, documentId: null, extraction: null };
   }
-  orNotFound(() => getDocumentMeta(user.id, documentId));
+  await orNotFoundAsync(() => getDocumentMeta(user.id, documentId));
   const { draft, extraction } = await draftForDocument(user.id, documentId);
   return { accounts, draft, documentId, extraction };
 };
@@ -92,11 +92,12 @@ export const actions: Actions = {
       const extraction = documentId
         ? (await draftForDocument(user.id, documentId)).extraction
         : null;
-      id = createBill(user.id, parsed.data, { documentId, extraction }).id;
+      id = (await createBill(user.id, parsed.data, { documentId, extraction }))
+        .id;
     } catch (err) {
       return ledgerFailure("create", err, values);
     }
-    autoMatchQuietly(user.id);
+    await autoMatchQuietly(user.id);
     redirect(303, `/bills/${id}`);
   },
 };

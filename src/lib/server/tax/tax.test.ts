@@ -33,7 +33,7 @@ const pay = async (
   bookingDate: string,
   over = {},
 ) =>
-  await seedImportedTransaction(userId, accountId, {
+  seedImportedTransaction(userId, accountId, {
     amount: minor(-cents),
     bookingDate,
     ...over,
@@ -170,14 +170,14 @@ describe("tax reconciliation", () => {
 
   it("counts payments allocated to bills tagged with the year", async () => {
     const { user, account } = await setup();
-    const bill = seedBill(user.id, {
+    const bill = await seedBill(user.id, {
       creditorName: "Example Tax Office",
       amount: minor(120000),
       taxYear: 2025,
     });
     const tx = await pay(user.id, account.id, 120000, "2025-04-01");
     await allocate(user.id, bill.id, tx.id, minor(120000), "user");
-    seedBill(user.id, { taxYear: 2025, amount: minor(5000) });
+    await seedBill(user.id, { taxYear: 2025, amount: minor(5000) });
 
     const lines = await paymentLines(user.id, 2025);
     expect(lines).toHaveLength(1);
@@ -192,7 +192,10 @@ describe("tax reconciliation", () => {
 
   it("counts a transaction once when it is tagged and its bill is too", async () => {
     const { user, account } = await setup();
-    const bill = seedBill(user.id, { amount: minor(120000), taxYear: 2025 });
+    const bill = await seedBill(user.id, {
+      amount: minor(120000),
+      taxYear: 2025,
+    });
     const tx = await pay(user.id, account.id, 120000, "2025-04-01");
     await allocate(user.id, bill.id, tx.id, minor(120000), "user");
     await setTransactionTaxYear(user.id, tx.id, 2025);
@@ -205,7 +208,10 @@ describe("tax reconciliation", () => {
 
   it("does not count a transaction tagged with another year through a bill", async () => {
     const { user, account } = await setup();
-    const bill = seedBill(user.id, { amount: minor(120000), taxYear: 2025 });
+    const bill = await seedBill(user.id, {
+      amount: minor(120000),
+      taxYear: 2025,
+    });
     const tx = await pay(user.id, account.id, 120000, "2025-04-01");
     await allocate(user.id, bill.id, tx.id, minor(120000), "user");
     await setTransactionTaxYear(user.id, tx.id, 2024);
@@ -321,7 +327,7 @@ describe("tax reconciliation", () => {
       (await pay(user.id, account.id, 1000, "2025-03-10")).id,
       2025,
     );
-    seedBill(user.id, { taxYear: 2023 });
+    await seedBill(user.id, { taxYear: 2023 });
 
     const list = await listTaxYears(user.id);
     expect(list.map((y) => y.year)).toEqual([2025, 2024, 2023]);
@@ -371,7 +377,7 @@ describe("tax user scoping", () => {
       (await pay(a.id, accA.id, 1000, "2025-03-10")).id,
       2025,
     );
-    seedBill(a.id, { taxYear: 2022 });
+    await seedBill(a.id, { taxYear: 2022 });
     await upsertTaxYear(a.id, yearInput());
     await addTaxCredit(a.id, 2025, credit("2025-03-11", "10.00"));
 
@@ -418,7 +424,7 @@ describe("tax user scoping", () => {
   it("does not count another user's allocation against my bill", async () => {
     const { user: a, account: accA } = await setup();
     const { user: b } = await setup();
-    const bill = seedBill(b.id, { taxYear: 2025, amount: minor(1000) });
+    const bill = await seedBill(b.id, { taxYear: 2025, amount: minor(1000) });
     const tx = await pay(a.id, accA.id, 1000, "2025-03-10");
     await expect(
       allocate(b.id, bill.id, tx.id, minor(1000), "user"),

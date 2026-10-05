@@ -251,7 +251,7 @@ describe("loaders and buildReport", () => {
       openingDate: "2026-01-01",
     });
     const tx = async (bookingDate: string, amount: number) =>
-      await seedImportedTransaction(u.id, a.id, {
+      seedImportedTransaction(u.id, a.id, {
         bookingDate,
         amount: m(amount),
       });
@@ -424,7 +424,7 @@ describe("loaders and buildReport", () => {
   it("builds every kind with file name and title", async () => {
     const u = await createTestUser();
     const a = await seedAccount(u.id, { name: "Household" });
-    seedBill(u.id, { dueDate: "2026-10-01" });
+    await seedBill(u.id, { dueDate: "2026-10-01" });
     const statement = await buildReport(
       u.id,
       "statement",
@@ -445,12 +445,15 @@ describe("loaders and buildReport", () => {
     const u = await createTestUser();
     const other = await createTestUser();
     await seedAccount(other.id, { name: "Foreign Account" });
-    seedBill(other.id, {
+    await seedBill(other.id, {
       creditorName: "Foreign Creditor",
       dueDate: "2026-10-01",
     });
-    seedBill(u.id, { creditorName: "Own Creditor", dueDate: "2026-10-01" });
-    expect(loadBillsReport(u.id, TODAY).bills).toHaveLength(1);
+    await seedBill(u.id, {
+      creditorName: "Own Creditor",
+      dueDate: "2026-10-01",
+    });
+    expect((await loadBillsReport(u.id, TODAY)).bills).toHaveLength(1);
     expect((await loadNetWorthReport(u.id, TODAY)).balances).toEqual([]);
     const bills = await pdfText(
       (await buildReport(u.id, "bills", {}, TODAY)).bytes,
@@ -466,13 +469,16 @@ describe("loaders and buildReport", () => {
   it("bills report reflects allocations (paid bills drop out)", async () => {
     const u = await createTestUser();
     const a = await seedAccount(u.id);
-    const bill = seedBill(u.id, { amount: m(1000), dueDate: "2026-10-01" });
+    const bill = await seedBill(u.id, {
+      amount: m(1000),
+      dueDate: "2026-10-01",
+    });
     const tx = await seedImportedTransaction(u.id, a.id, {
       bookingDate: "2026-10-02",
       amount: m(-1000),
     });
     await allocate(u.id, bill.id, tx.id, m(1000), "user");
-    expect(billViews(u.id, { today: TODAY })[0]!.status).toBe("paid");
+    expect((await billViews(u.id, { today: TODAY }))[0]!.status).toBe("paid");
     const text = await pdfText(
       (await buildReport(u.id, "bills", {}, TODAY)).bytes,
     );

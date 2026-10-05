@@ -63,7 +63,10 @@ interface AllocationRow extends Allocation {
   bookingDate: string;
 }
 
-function loadAllocationRows(userId: string, billId?: string): AllocationRow[] {
+function loadAllocationRows(
+  userId: string,
+  billId?: string,
+): Promise<AllocationRow[]> {
   return getDB()
     .select({
       billId: billAllocations.billId,
@@ -78,8 +81,7 @@ function loadAllocationRows(userId: string, billId?: string): AllocationRow[] {
         eq(billAllocations.userId, userId),
         billId ? eq(billAllocations.billId, billId) : undefined,
       ),
-    )
-    .all();
+    );
 }
 
 function withStatus(
@@ -107,28 +109,30 @@ function withStatus(
 }
 
 /** Status is always derived from the current allocations, never stored. */
-export function billViews(
+export async function billViews(
   userId: string,
   { today }: { today: string },
-): BillWithStatus[] {
+): Promise<BillWithStatus[]> {
   const byBill = new Map<string, AllocationRow[]>();
-  for (const a of loadAllocationRows(userId)) {
+  const [allocations, bills] = await Promise.all([
+    loadAllocationRows(userId),
+    listBills(userId),
+  ]);
+  for (const a of allocations) {
     const list = byBill.get(a.billId);
     if (list) list.push(a);
     else byBill.set(a.billId, [a]);
   }
-  return listBills(userId).map((b) =>
-    withStatus(b, byBill.get(b.id) ?? [], today),
-  );
+  return bills.map((b) => withStatus(b, byBill.get(b.id) ?? [], today));
 }
 
-export function billView(
+export async function billView(
   userId: string,
   id: string,
   { today }: { today: string },
-): BillWithStatus {
-  const bill = getBill(userId, id);
-  return withStatus(bill, loadAllocationRows(userId, id), today);
+): Promise<BillWithStatus> {
+  const bill = await getBill(userId, id);
+  return withStatus(bill, await loadAllocationRows(userId, id), today);
 }
 
 function byDue(a: BillWithStatus, b: BillWithStatus): number {

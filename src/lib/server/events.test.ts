@@ -44,10 +44,10 @@ describe("event bus", () => {
     const u = await createTestUser();
     const seen: Array<[string, string]> = [];
     onBillChanged((user, bill) => void seen.push([user, bill]));
-    const bill = seedBill(u.id);
-    updateBill(u.id, bill.id, billInput({ creditorName: "Renamed" }));
-    cancelBill(u.id, bill.id);
-    uncancelBill(u.id, bill.id);
+    const bill = await seedBill(u.id);
+    await updateBill(u.id, bill.id, billInput({ creditorName: "Renamed" }));
+    await cancelBill(u.id, bill.id);
+    await uncancelBill(u.id, bill.id);
     expect(seen).toEqual([
       [u.id, bill.id],
       [u.id, bill.id],
@@ -62,11 +62,16 @@ describe("event bus", () => {
     onBillChanged(() => {
       throw new Error("listener bug");
     });
-    const bill = seedBill(u.id);
+    const bill = await seedBill(u.id);
     expect(bill.id).toBeTruthy();
     expect(
-      updateBill(u.id, bill.id, billInput({ creditorName: "Still works" }))
-        .creditorName,
+      (
+        await updateBill(
+          u.id,
+          bill.id,
+          billInput({ creditorName: "Still works" }),
+        )
+      ).creditorName,
     ).toBe("Still works");
   });
 });

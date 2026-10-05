@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { and, eq, sql } from "drizzle-orm";
+import { and, eq, notExists, sql } from "drizzle-orm";
 import { z } from "zod";
 import { autoMatchQuietly } from "$lib/server/bills/auto-match";
 import {
@@ -10,8 +10,7 @@ import {
 } from "$lib/server/bills/bills";
 import { billFromExtraction, pdfErrorMessage } from "$lib/server/bills/draft";
 import {
-  deleteDocument,
-  getDocumentMeta,
+  deleteDocumentWhere,
   hasPdfMagic,
   storeDocument,
 } from "$lib/server/bills/documents";
@@ -23,11 +22,12 @@ import {
 import { billInputSchema, type BillInput } from "$lib/server/bills/schemas";
 import {
   bills,
+  documents,
+  first,
   getDB,
   paperlessDocuments,
   paperlessPending,
 } from "$lib/server/db";
-import { LedgerError } from "$lib/server/ledger/errors";
 import type { PaperlessBillSource } from "$lib/server/db";
 import {
   PaperlessClient,
@@ -38,7 +38,6 @@ import {
 import {
   clientForRow,
   rowExternalRef,
-  getConnectionRow,
   isDismissed,
   recordConnectionState,
   rememberServerInfo,
@@ -143,46 +142,43 @@ function parseModified(doc: PaperlessDoc): number {
   return ms;
 }
 
-// One sync per connection at a time; later requests queue behind it.
+// One sync per user (one connection each); later requests queue behind it. The
+// chain is registered before the first await, so a concurrent caller queues
+// behind it and a scheduler tick sees `isSyncing` at once.
 const chains = new Map<string, Promise<unknown>>();
 
-export function isSyncing(connectionId: string): boolean {
-  return chains.has(connectionId);
+export function isSyncing(userId: string): boolean {
+  return chains.has(userId);
 }
 
 export async function syncConnection(
   userId: string,
   options: SyncOptions = {},
 ): Promise<SyncResult> {
-  const row = requireConnectionRow(userId);
-  const previous = chains.get(row.id) ?? Promise.resolve();
-  const run = () => runSync(userId, row.id, options);
+  const previous = chains.get(userId) ?? Promise.resolve();
+  const run = () => runSync(userId, options);
   const tail = previous.then(run, run);
-  chains.set(row.id, tail);
+  chains.set(userId, tail);
   void tail
     .then(
       () => undefined,
       () => undefined,
     )
     .finally(() => {
-      if (chains.get(row.id) === tail) chains.delete(row.id);
+      if (chains.get(userId) === tail) chains.delete(userId);
     });
   return tail;
 }
 
 async function runSync(
   userId: string,
-  connectionId: string,
   options: SyncOptions,
 ): Promise<SyncResult> {
-  const row = getConnectionRow(userId);
-  if (!row || row.id !== connectionId) {
-    throw new LedgerError("not_found", "Paperless connection not found.");
-  }
+  const row = await requireConnectionRow(userId);
   const result = emptyResult();
   let client: PaperlessClient | null = null;
   try {
-    client = clientForRow(row);
+    client = await clientForRow(row);
     await sync(userId, row, client, options, result);
   } catch (err) {
     const code =
@@ -196,9 +192,9 @@ async function runSync(
     result.error = code;
   }
   // New or changed bills may match payments that are already booked.
-  if (result.imported + result.updated > 0) autoMatchQuietly(userId);
-  if (client) rememberServerInfo(row, client);
-  recordConnectionState(row, {
+  if (result.imported + result.updated > 0) await autoMatchQuietly(userId);
+  if (client) await rememberServerInfo(row, client);
+  await recordConnectionState(row, {
     lastError: result.error,
     lastSyncAt: new Date(),
   });
@@ -278,24 +274,26 @@ async function sync(
   } finally {
     // Only documents that were handled move the watermark; a halted run retries the rest.
     if (highWater !== row.lastSyncModified) {
-      recordConnectionState(row, { lastSyncModified: highWater });
+      await recordConnectionState(row, { lastSyncModified: highWater });
     }
   }
 }
 
-function findLink(row: ConnectionRow, paperlessId: number) {
+async function findLink(row: ConnectionRow, paperlessId: number) {
   return (
-    getDB()
-      .select()
-      .from(paperlessDocuments)
-      .where(
-        and(
-          eq(paperlessDocuments.userId, row.userId),
-          eq(paperlessDocuments.connectionId, row.id),
-          eq(paperlessDocuments.paperlessId, paperlessId),
-        ),
-      )
-      .get() ?? null
+    (await first(
+      getDB()
+        .select()
+        .from(paperlessDocuments)
+        .where(
+          and(
+            eq(paperlessDocuments.userId, row.userId),
+            eq(paperlessDocuments.connectionId, row.id),
+            eq(paperlessDocuments.paperlessId, paperlessId),
+          ),
+        )
+        .limit(1),
+    )) ?? null
   );
 }
 
@@ -308,7 +306,12 @@ interface LinkValues {
   contentSha256?: string | null;
 }
 
-function saveLink(row: ConnectionRow, paperlessId: number, v: LinkValues) {
+/** An upsert on the unique (connection, document) index: atomic, so no read precedes it. */
+async function saveLink(
+  row: ConnectionRow,
+  paperlessId: number,
+  v: LinkValues,
+): Promise<void> {
   const set = {
     modified: v.modified,
     status: v.status,
@@ -319,7 +322,7 @@ function saveLink(row: ConnectionRow, paperlessId: number, v: LinkValues) {
       ? { contentSha256: v.contentSha256 }
       : {}),
   };
-  getDB()
+  await getDB()
     .insert(paperlessDocuments)
     .values({
       userId: row.userId,
@@ -333,12 +336,15 @@ function saveLink(row: ConnectionRow, paperlessId: number, v: LinkValues) {
     .onConflictDoUpdate({
       target: [paperlessDocuments.connectionId, paperlessDocuments.paperlessId],
       set,
-    })
-    .run();
+    });
 }
 
-function touchModified(link: { id: string }, userId: string, modified: number) {
-  getDB()
+async function touchModified(
+  link: { id: string },
+  userId: string,
+  modified: number,
+): Promise<void> {
+  await getDB()
     .update(paperlessDocuments)
     .set({ modified })
     .where(
@@ -346,51 +352,66 @@ function touchModified(link: { id: string }, userId: string, modified: number) {
         eq(paperlessDocuments.userId, userId),
         eq(paperlessDocuments.id, link.id),
       ),
-    )
-    .run();
+    );
 }
 
-function findBillByRef(userId: string, ref: string): BillView | null {
-  const found = getDB()
-    .select({ id: bills.id })
-    .from(bills)
-    .where(
-      and(
-        eq(bills.userId, userId),
-        eq(bills.externalSource, EXTERNAL_SOURCE),
-        eq(bills.externalRef, ref),
-      ),
-    )
-    .get();
+async function findBillByRef(
+  userId: string,
+  ref: string,
+): Promise<BillView | null> {
+  const found = await first(
+    getDB()
+      .select({ id: bills.id })
+      .from(bills)
+      .where(
+        and(
+          eq(bills.userId, userId),
+          eq(bills.externalSource, EXTERNAL_SOURCE),
+          eq(bills.externalRef, ref),
+        ),
+      )
+      .limit(1),
+  );
   return found ? getBill(userId, found.id) : null;
 }
 
-/** Deletes a stored integration document once nothing refers to it any more. */
+/**
+ * Deletes a stored integration document once nothing refers to it any more. The
+ * reference checks are part of the delete statement, so a bill or link created
+ * since the caller looked keeps its document.
+ */
 async function releaseDocument(
   userId: string,
   documentId: string | null,
 ): Promise<void> {
   if (documentId === null) return;
   const db = getDB();
-  const usedByBill = db
-    .select({ id: bills.id })
-    .from(bills)
-    .where(and(eq(bills.userId, userId), eq(bills.documentId, documentId)))
-    .get();
-  const usedByLink = db
-    .select({ id: paperlessDocuments.id })
-    .from(paperlessDocuments)
-    .where(
-      and(
-        eq(paperlessDocuments.userId, userId),
-        eq(paperlessDocuments.documentId, documentId),
+  await deleteDocumentWhere(
+    userId,
+    documentId,
+    and(
+      eq(documents.source, "integration"),
+      notExists(
+        db
+          .select({ one: sql`1` })
+          .from(bills)
+          .where(
+            and(eq(bills.userId, userId), eq(bills.documentId, documents.id)),
+          ),
       ),
-    )
-    .get();
-  if (usedByBill || usedByLink) return;
-  if (getDocumentMeta(userId, documentId).source === "integration") {
-    await deleteDocument(userId, documentId);
-  }
+      notExists(
+        db
+          .select({ one: sql`1` })
+          .from(paperlessDocuments)
+          .where(
+            and(
+              eq(paperlessDocuments.userId, userId),
+              eq(paperlessDocuments.documentId, documents.id),
+            ),
+          ),
+      ),
+    ),
+  );
 }
 
 const BLANKABLE = [
@@ -504,9 +525,13 @@ const GAVE_UP_MESSAGE =
   "Paperless repeatedly failed to serve this document; it is retried when the document changes.";
 
 /** Counts a failed attempt; true once the document has used up its attempts or its time. */
-function recordAttempt(row: ConnectionRow, paperlessId: number): boolean {
+async function recordAttempt(
+  row: ConnectionRow,
+  paperlessId: number,
+): Promise<boolean> {
   const now = new Date();
-  const saved = getDB()
+  // One upsert on the unique (connection, document) index: the count is bumped atomically.
+  const [saved] = await getDB()
     .insert(paperlessPending)
     .values({
       userId: row.userId,
@@ -519,16 +544,18 @@ function recordAttempt(row: ConnectionRow, paperlessId: number): boolean {
       target: [paperlessPending.connectionId, paperlessPending.paperlessId],
       set: { attempts: sql`${paperlessPending.attempts} + 1` },
     })
-    .returning()
-    .get();
+    .returning();
   return (
-    saved.attempts >= MAX_DOCUMENT_ATTEMPTS ||
-    now.getTime() - saved.firstFailedAt.getTime() >= MAX_DOCUMENT_RETRY_MS
+    saved!.attempts >= MAX_DOCUMENT_ATTEMPTS ||
+    now.getTime() - saved!.firstFailedAt.getTime() >= MAX_DOCUMENT_RETRY_MS
   );
 }
 
-function clearAttempts(row: ConnectionRow, paperlessId: number): void {
-  getDB()
+async function clearAttempts(
+  row: ConnectionRow,
+  paperlessId: number,
+): Promise<void> {
+  await getDB()
     .delete(paperlessPending)
     .where(
       and(
@@ -536,8 +563,7 @@ function clearAttempts(row: ConnectionRow, paperlessId: number): void {
         eq(paperlessPending.connectionId, row.id),
         eq(paperlessPending.paperlessId, paperlessId),
       ),
-    )
-    .run();
+    );
 }
 
 async function handle(
@@ -553,7 +579,7 @@ async function handle(
   try {
     outcome = await processDocument(userId, row, client, doc);
     if (outcome !== "unchanged") state.networkStreak = [];
-    clearAttempts(row, doc.id);
+    await clearAttempts(row, doc.id);
   } catch (err) {
     // Only problems with the connection itself stop the run; a document Paperless
     // cannot serve is recorded and the run continues with the next one. The list
@@ -564,7 +590,7 @@ async function handle(
       if (state.networkStreak.length >= NETWORK_STREAK_LIMIT) {
         // The connection is down, so the earlier documents in the streak were
         // not at fault: their attempts must not count toward the cap.
-        for (const id of state.networkStreak) clearAttempts(row, id);
+        for (const id of state.networkStreak) await clearAttempts(row, id);
         throw err;
       }
     } else {
@@ -574,7 +600,7 @@ async function handle(
       }
     }
     if (isTransientError(err)) {
-      if (!recordAttempt(row, doc.id)) {
+      if (!(await recordAttempt(row, doc.id))) {
         // No link is saved: the document stays pending and the watermark holds
         // (see sync), so the next run tries it again.
         console.warn("paperless document will be retried", errorCode(err));
@@ -584,8 +610,8 @@ async function handle(
       // Out of attempts: fail it like any other document Paperless cannot serve,
       // which also lets the watermark move on.
       console.error("paperless document gave up", errorCode(err));
-      clearAttempts(row, doc.id);
-      saveLink(row, doc.id, {
+      await clearAttempts(row, doc.id);
+      await saveLink(row, doc.id, {
         modified: parseModified(doc),
         status: "failed",
         error: GAVE_UP_MESSAGE,
@@ -593,14 +619,14 @@ async function handle(
       result.failed++;
       return;
     }
-    clearAttempts(row, doc.id);
+    await clearAttempts(row, doc.id);
     const reason =
       err instanceof PaperlessError ? DOCUMENT_REASONS[err.code] : undefined;
     if (reason === undefined) {
       console.error("paperless document failed", errorCode(err));
     }
     const skip = reason?.status === "skipped";
-    saveLink(row, doc.id, {
+    await saveLink(row, doc.id, {
       modified: parseModified(doc),
       status: skip ? "skipped" : "failed",
       error: reason?.message ?? "The document could not be processed.",
@@ -621,11 +647,11 @@ async function processDocument(
   doc: PaperlessDoc,
 ): Promise<Outcome> {
   const modified = parseModified(doc);
-  const link = findLink(row, doc.id);
+  const link = await findLink(row, doc.id);
   if (link && link.modified >= modified) return "unchanged";
   if (link?.lastPushedHash?.startsWith("ro:")) {
     // The document changed in Paperless: its permissions may have too.
-    getDB()
+    await getDB()
       .update(paperlessDocuments)
       .set({ lastPushedHash: null })
       .where(
@@ -633,25 +659,24 @@ async function processDocument(
           eq(paperlessDocuments.userId, userId),
           eq(paperlessDocuments.id, link.id),
         ),
-      )
-      .run();
+      );
   }
   // The user deleted the bill that came from this document: do not bring it back for metadata changes.
   if (link && link.status === "imported" && link.billId === null) {
-    touchModified(link, userId, modified);
+    await touchModified(link, userId, modified);
     return "unchanged";
   }
 
   const ref = rowExternalRef(row, doc.id);
-  if (!link && isDismissed(userId, ref)) {
-    saveLink(row, doc.id, { modified, status: "imported", billId: null });
+  if (!link && (await isDismissed(userId, ref))) {
+    await saveLink(row, doc.id, { modified, status: "imported", billId: null });
     return "unchanged";
   }
   if (!link) {
-    const existing = findBillByRef(userId, ref);
+    const existing = await findBillByRef(userId, ref);
     if (existing) {
       // Seen before (e.g. after reconnecting): link it instead of importing a duplicate.
-      saveLink(row, doc.id, {
+      await saveLink(row, doc.id, {
         modified,
         status: "imported",
         billId: existing.id,
@@ -663,7 +688,7 @@ async function processDocument(
 
   const bytes = await fetchPdf(client, doc);
   if (bytes === null || !hasPdfMagic(bytes)) {
-    saveLink(row, doc.id, {
+    await saveLink(row, doc.id, {
       modified,
       status: "skipped",
       error: "The document is not a PDF.",
@@ -672,7 +697,7 @@ async function processDocument(
   }
   const sha = createHash("sha256").update(bytes).digest("hex");
   if (link && link.status === "imported" && link.contentSha256 === sha) {
-    touchModified(link, userId, modified);
+    await touchModified(link, userId, modified);
     return "unchanged";
   }
 
@@ -687,10 +712,10 @@ async function processDocument(
 
   // The file of an already imported document changed: swap the stored file, keep the bill.
   if (link && link.status === "imported" && link.billId !== null) {
-    const bill = getBill(userId, link.billId);
+    const bill = await getBill(userId, link.billId);
     const previous = bill.documentId;
     await attachDocument(userId, bill.id, stored.id);
-    saveLink(row, doc.id, {
+    await saveLink(row, doc.id, {
       modified,
       status: "imported",
       billId: bill.id,
@@ -709,7 +734,7 @@ async function processDocument(
   } catch (err) {
     if (!(err instanceof PdfExtractError)) throw err;
     await releaseDocument(userId, stored.id);
-    saveLink(row, doc.id, {
+    await saveLink(row, doc.id, {
       modified,
       status: "failed",
       error: pdfErrorMessage(err.code),
@@ -722,7 +747,7 @@ async function processDocument(
   const built = buildBillInput({ ...draft });
   if (!built.ok) {
     await releaseDocument(userId, stored.id);
-    saveLink(row, doc.id, {
+    await saveLink(row, doc.id, {
       modified,
       status: "failed",
       error: built.reason,
@@ -731,7 +756,7 @@ async function processDocument(
     return "failed";
   }
 
-  const bill = createBill(userId, built.input, {
+  const bill = await createBill(userId, built.input, {
     documentId: stored.id,
     extraction: { source: extraction.source, warnings },
     external: {
@@ -740,7 +765,7 @@ async function processDocument(
       externalUrl: client.documentUrl(doc.id),
     },
   });
-  saveLink(row, doc.id, {
+  await saveLink(row, doc.id, {
     modified,
     status: "imported",
     billId: bill.id,

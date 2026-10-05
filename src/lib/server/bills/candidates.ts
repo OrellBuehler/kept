@@ -1,6 +1,12 @@
 import { and, desc, eq, ne, or, sql } from "drizzle-orm";
 import { minor, type Minor } from "$lib/money";
-import { accounts, billAllocations, getDB, transactions } from "$lib/server/db";
+import {
+  accounts,
+  billAllocations,
+  first,
+  getDB,
+  transactions,
+} from "$lib/server/db";
 import { parseMoneyInput } from "$lib/server/ledger/schemas";
 import { getBill } from "./bills";
 import { transactionDisplayColumns, type TransactionDisplay } from "./display";
@@ -35,14 +41,14 @@ function escapeLike(value: string): string {
  * invoice (and outgoing for a credit note) are offered only while the bill is
  * overpaid, as refunds of the surplus. Searchable by counterparty, description, reference or amount.
  */
-export function candidateTransactions(
+export async function candidateTransactions(
   userId: string,
   billId: string,
   opts: { q?: string; page?: number; pageSize?: number } = {},
-): CandidatePage {
-  const bill = getBill(userId, billId);
+): Promise<CandidatePage> {
+  const bill = await getBill(userId, billId);
   const db = getDB();
-  const billAllocs: Allocation[] = db
+  const billAllocs: Allocation[] = await db
     .select({
       billId: billAllocations.billId,
       transactionId: billAllocations.transactionId,
@@ -54,8 +60,7 @@ export function candidateTransactions(
         eq(billAllocations.userId, userId),
         eq(billAllocations.billId, billId),
       ),
-    )
-    .all();
+    );
   const { status, settled, remaining } = computeBillStatus(
     toMatchBill(bill),
     billAllocs,
@@ -105,22 +110,23 @@ export function candidateTransactions(
     search,
   );
 
-  const total = db
-    .select({ n: sql<number>`count(*)` })
-    .from(transactions)
-    .where(where)
-    .get()!.n;
+  const total = (await first(
+    db
+      .select({ n: sql<number>`count(*)` })
+      .from(transactions)
+      .where(where)
+      .limit(1),
+  ))!.n;
   const pageCount = Math.max(1, Math.ceil(total / pageSize));
   const page = Math.min(requested, pageCount);
-  const rows = db
+  const rows = await db
     .select({ ...transactionDisplayColumns, used })
     .from(transactions)
     .innerJoin(accounts, eq(accounts.id, transactions.accountId))
     .where(where)
     .orderBy(desc(transactions.bookingDate), desc(transactions.id))
     .limit(pageSize)
-    .offset((page - 1) * pageSize)
-    .all();
+    .offset((page - 1) * pageSize);
 
   const items = rows.map(({ used: usedAbs, ...tx }): CandidateTransaction => {
     const free = Math.abs(tx.amount) - Number(usedAbs);

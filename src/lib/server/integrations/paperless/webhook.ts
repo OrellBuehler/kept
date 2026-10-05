@@ -75,7 +75,7 @@ export async function handleWebhook(input: {
   readBody: () => Promise<unknown>;
   now?: number;
 }): Promise<WebhookOutcome> {
-  const row = getConnectionByWebhookToken(input.token);
+  const row = await getConnectionByWebhookToken(input.token);
   if (!row || !row.enabled) return { status: 404 };
   const now = input.now ?? Date.now();
   const failed = recent(failures, row.id, now);

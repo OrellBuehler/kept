@@ -4,6 +4,7 @@ import { z } from "zod";
 import type { Minor } from "$lib/money";
 import { toDecimalString } from "$lib/money";
 import {
+  first,
   getDB,
   paperlessConnections,
   paperlessDocuments,
@@ -134,27 +135,31 @@ export async function pushBill(
   billId: string,
 ): Promise<PushResult> {
   const db = getDB();
-  const link = db
-    .select()
-    .from(paperlessDocuments)
-    .where(
-      and(
-        eq(paperlessDocuments.userId, userId),
-        eq(paperlessDocuments.billId, billId),
-      ),
-    )
-    .get();
+  const link = await first(
+    db
+      .select()
+      .from(paperlessDocuments)
+      .where(
+        and(
+          eq(paperlessDocuments.userId, userId),
+          eq(paperlessDocuments.billId, billId),
+        ),
+      )
+      .limit(1),
+  );
   if (!link) return skipped("not_linked");
-  const row = db
-    .select()
-    .from(paperlessConnections)
-    .where(
-      and(
-        eq(paperlessConnections.userId, userId),
-        eq(paperlessConnections.id, link.connectionId),
-      ),
-    )
-    .get();
+  const row = await first(
+    db
+      .select()
+      .from(paperlessConnections)
+      .where(
+        and(
+          eq(paperlessConnections.userId, userId),
+          eq(paperlessConnections.id, link.connectionId),
+        ),
+      )
+      .limit(1),
+  );
   if (!row || !row.enabled) return skipped("disabled");
   const mapping = row.fieldMapping;
   if (
@@ -167,7 +172,7 @@ export async function pushBill(
     return skipped("no_mapping");
   }
 
-  const bill = billView(userId, billId, { today: todayLocal() });
+  const bill = await billView(userId, billId, { today: todayLocal() });
   const plan = buildPushPlan(bill, mapping);
   if (Object.keys(plan.values).length === 0) {
     return skipped("nothing_to_push", plan.notes);
@@ -181,7 +186,7 @@ export async function pushBill(
     return skipped("read_only", plan.notes);
   }
 
-  const client = clientForRow(row);
+  const client = await clientForRow(row);
   const query = { fields: "id,modified,user_can_change" };
   let meta: z.output<typeof metaSchema>;
   try {
@@ -189,15 +194,15 @@ export async function pushBill(
       query,
     });
     if (meta.user_can_change === false) {
-      db.update(paperlessDocuments)
+      await db
+        .update(paperlessDocuments)
         .set({ lastPushedHash: `ro:${hash}` })
         .where(
           and(
             eq(paperlessDocuments.userId, userId),
             eq(paperlessDocuments.id, link.id),
           ),
-        )
-        .run();
+        );
       return skipped("read_only", plan.notes);
     }
     await client.json("documents/bulk_edit", z.unknown(), {
@@ -217,17 +222,17 @@ export async function pushBill(
     }
     throw err;
   }
-  rememberServerInfo(row, client);
+  await rememberServerInfo(row, client);
 
-  db.update(paperlessDocuments)
+  await db
+    .update(paperlessDocuments)
     .set({ lastPushedHash: hash })
     .where(
       and(
         eq(paperlessDocuments.userId, userId),
         eq(paperlessDocuments.id, link.id),
       ),
-    )
-    .run();
+    );
 
   // The write bumped `modified`; remember it so the next sync does not re-import our own change.
   try {
@@ -238,15 +243,15 @@ export async function pushBill(
     );
     const ms = after.modified ? Date.parse(after.modified) : NaN;
     if (Number.isFinite(ms)) {
-      db.update(paperlessDocuments)
+      await db
+        .update(paperlessDocuments)
         .set({ modified: ms })
         .where(
           and(
             eq(paperlessDocuments.userId, userId),
             eq(paperlessDocuments.id, link.id),
           ),
-        )
-        .run();
+        );
     }
   } catch (err) {
     if (!(err instanceof PaperlessError)) throw err;
@@ -274,12 +279,14 @@ export function pushBillSafely(
       if (err instanceof LedgerError && err.code === "not_found") return null;
       const code = errorCode(err);
       console.error("paperless push failed", code);
-      const row = getDB()
-        .select()
-        .from(paperlessConnections)
-        .where(eq(paperlessConnections.userId, userId))
-        .get();
-      if (row) recordConnectionState(row, { lastError: `push_${code}` });
+      const row = await first(
+        getDB()
+          .select()
+          .from(paperlessConnections)
+          .where(eq(paperlessConnections.userId, userId))
+          .limit(1),
+      );
+      if (row) await recordConnectionState(row, { lastError: `push_${code}` });
       return null;
     }
   };
@@ -293,7 +300,7 @@ export function pushBillSafely(
 
 /** Re-checks every linked bill; only those whose values changed touch the network. */
 export async function pushAllLinked(userId: string): Promise<number> {
-  const links = getDB()
+  const links = await getDB()
     .select({ billId: paperlessDocuments.billId })
     .from(paperlessDocuments)
     .where(
@@ -301,8 +308,7 @@ export async function pushAllLinked(userId: string): Promise<number> {
         eq(paperlessDocuments.userId, userId),
         isNotNull(paperlessDocuments.billId),
       ),
-    )
-    .all();
+    );
   let pushed = 0;
   for (const l of links) {
     const result = await pushBillSafely(userId, l.billId!);

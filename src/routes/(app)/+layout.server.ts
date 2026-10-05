@@ -4,11 +4,11 @@ import { localToday } from "$lib/server/ledger/balances";
 import { getPreferences } from "$lib/server/preferences";
 import type { LayoutServerLoad } from "./$types";
 
-export const load: LayoutServerLoad = ({ locals }) => {
+export const load: LayoutServerLoad = async ({ locals }) => {
   const user = requireUser(locals);
   return {
     user,
-    overdueBills: overdueBillCount(user.id, localToday()),
+    overdueBills: await overdueBillCount(user.id, localToday()),
     preferences: getPreferences(user.id),
   };
 };

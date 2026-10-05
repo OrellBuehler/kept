@@ -71,6 +71,9 @@ export function unprojectedBills(
   return { noDueDate, noAmount };
 }
 
-export function loadBills(userId: string, today: string): BillWithStatus[] {
+export function loadBills(
+  userId: string,
+  today: string,
+): Promise<BillWithStatus[]> {
   return billViews(userId, { today });
 }

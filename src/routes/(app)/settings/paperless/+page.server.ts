@@ -97,8 +97,8 @@ const NOTES = {
 
 export const load: PageServerLoad = async ({ locals, url }) => {
   const user = requireUser(locals);
-  const view = getConnection(user.id);
-  const uploads = listUploads(user.id);
+  const view = await getConnection(user.id);
+  const uploads = await listUploads(user.id);
   if (!view) {
     return {
       connection: null,
@@ -115,22 +115,22 @@ export const load: PageServerLoad = async ({ locals, url }) => {
     };
   }
   const { webhookToken, ...connection } = view;
-  const recentDocuments = getDB()
-    .select()
-    .from(paperlessDocuments)
-    .where(eq(paperlessDocuments.userId, user.id))
-    .orderBy(desc(paperlessDocuments.updatedAt))
-    .limit(20)
-    .all()
-    .map((d) => ({
-      id: d.id,
-      paperlessId: d.paperlessId,
-      status: d.status,
-      error: d.error,
-      billId: d.billId,
-      updatedAt: d.updatedAt.getTime(),
-      paperlessUrl: `${connection.baseUrl}/documents/${d.paperlessId}/details`,
-    }));
+  const recentDocuments = (
+    await getDB()
+      .select()
+      .from(paperlessDocuments)
+      .where(eq(paperlessDocuments.userId, user.id))
+      .orderBy(desc(paperlessDocuments.updatedAt))
+      .limit(20)
+  ).map((d) => ({
+    id: d.id,
+    paperlessId: d.paperlessId,
+    status: d.status,
+    error: d.error,
+    billId: d.billId,
+    updatedAt: d.updatedAt.getTime(),
+    paperlessUrl: `${connection.baseUrl}/documents/${d.paperlessId}/details`,
+  }));
   return {
     connection,
     minVersion: MIN_PAPERLESS_VERSION,
@@ -187,8 +187,8 @@ const reportFormSchema = z.object({
   to: z.string().trim().optional(),
 });
 
-function secretRecipe(origin: string, userId: string, secret: string) {
-  const view = getConnection(userId);
+async function secretRecipe(origin: string, userId: string, secret: string) {
+  const view = await getConnection(userId);
   if (!view) return null;
   return workflowRecipe({
     origin,
@@ -226,7 +226,7 @@ export const actions: Actions = {
         action: "save" as const,
         webhookSecret,
         recipe: webhookSecret
-          ? secretRecipe(url.origin, user.id, webhookSecret)
+          ? await secretRecipe(url.origin, user.id, webhookSecret)
           : null,
         test,
       };
@@ -266,7 +266,7 @@ export const actions: Actions = {
           values,
         });
       }
-      setBillSourceRow(user.id, {
+      await setBillSourceRow(user.id, {
         kind: parsed.data.kind,
         id: parsed.data.id,
         label,
@@ -299,22 +299,22 @@ export const actions: Actions = {
       return fail(400, { action: "setMapping", errors: parsed.errors, values });
     }
     try {
-      setFieldMapping(user.id, parsed.data);
+      await setFieldMapping(user.id, parsed.data);
       return { success: true as const, action: "setMapping" as const };
     } catch (err) {
       return actionFailure("setMapping", err, values);
     }
   },
 
-  rotateSecret: ({ locals, url }) => {
+  rotateSecret: async ({ locals, url }) => {
     const user = requireUser(locals);
     try {
-      const webhookSecret = rotateWebhookSecret(user.id);
+      const webhookSecret = await rotateWebhookSecret(user.id);
       return {
         success: true as const,
         action: "rotateSecret" as const,
         webhookSecret,
-        recipe: secretRecipe(url.origin, user.id, webhookSecret),
+        recipe: await secretRecipe(url.origin, user.id, webhookSecret),
       };
     } catch (err) {
       return actionFailure("rotateSecret", err);
@@ -338,10 +338,10 @@ export const actions: Actions = {
     }
   },
 
-  disconnect: ({ locals }) => {
+  disconnect: async ({ locals }) => {
     const user = requireUser(locals);
     try {
-      deleteConnection(user.id);
+      await deleteConnection(user.id);
       return { success: true as const, action: "disconnect" as const };
     } catch (err) {
       return actionFailure("disconnect", err);
@@ -352,7 +352,7 @@ export const actions: Actions = {
     const user = requireUser(locals);
     const form = await request.formData();
     const values = safeValues(form, ["kind", "account", "from", "to"]);
-    if (!getConnection(user.id)) {
+    if (!(await getConnection(user.id))) {
       return fail(400, {
         action: "uploadReport",
         errors: { form: ["Connect Paperless first."] },
@@ -404,7 +404,7 @@ export const actions: Actions = {
       });
     }
     try {
-      setEnabled(user.id, parsed.data.enabled);
+      await setEnabled(user.id, parsed.data.enabled);
       return { success: true as const, action: "toggle" as const };
     } catch (err) {
       return actionFailure("toggle", err);

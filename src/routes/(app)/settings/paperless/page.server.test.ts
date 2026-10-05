@@ -132,7 +132,9 @@ describe("settings/paperless", () => {
       fake.requests = [];
       const result = await syncConnection(user.id);
       expect(result.error).toBe("token_unreadable");
-      expect(getConnectionRow(user.id)?.lastError).toBe("token_unreadable");
+      expect((await getConnectionRow(user.id))?.lastError).toBe(
+        "token_unreadable",
+      );
       expect(fake.requests).toHaveLength(0);
     });
 
@@ -155,7 +157,7 @@ describe("settings/paperless", () => {
       await brokenConnection();
       const r = await act("disconnect", user);
       expect(r.type).toBe("return");
-      expect(getConnectionRow(user.id)).toBeNull();
+      expect(await getConnectionRow(user.id)).toBeNull();
     });
   });
 
@@ -173,7 +175,7 @@ describe("settings/paperless", () => {
         const data = failure(await act("save", user, { baseUrl, token: "t" }));
         expect(data.errors.baseUrl?.[0]).toContain("private network");
       }
-      expect(getConnectionRow(user.id)).toBeNull();
+      expect(await getConnectionRow(user.id)).toBeNull();
     });
 
     it("are accepted for administrators", async () => {
@@ -229,7 +231,7 @@ describe("settings/paperless", () => {
     expect((r.test as { error: string }).error).toContain(
       "could not be reached",
     );
-    expect(getConnectionRow(user.id)).toBeTruthy();
+    expect(await getConnectionRow(user.id)).toBeTruthy();
   });
 
   it("save creates the connection, returns the webhook secret once and never the token", async () => {
@@ -243,7 +245,7 @@ describe("settings/paperless", () => {
         .headers["X-Kept-Secret"],
     ).toBe(secret);
 
-    const row = getConnectionRow(user.id)!;
+    const row = (await getConnectionRow(user.id))!;
     expect(row.allowInsecureTls).toBe(true);
     expect(row.tokenEncrypted).not.toContain("test-token");
     expect(decryptSecret(row.tokenEncrypted)).toBe("test-token");
@@ -278,9 +280,9 @@ describe("settings/paperless", () => {
 
   it("save keeps the instance on an address change unless told it is a different one", async () => {
     await connect();
-    const first = getConnectionRow(user.id)!;
+    const first = (await getConnectionRow(user.id))!;
     await connect({ baseUrl: `${fake.origin}/moved` });
-    expect(getConnectionRow(user.id)).toMatchObject({
+    expect(await getConnectionRow(user.id)).toMatchObject({
       instanceKey: first.instanceKey,
       baseUrl: `${fake.origin}/moved`,
     });
@@ -288,7 +290,9 @@ describe("settings/paperless", () => {
       baseUrl: `${fake.origin}/new`,
       differentInstance: "on",
     });
-    expect(getConnectionRow(user.id)!.instanceKey).not.toBe(first.instanceKey);
+    expect((await getConnectionRow(user.id))!.instanceKey).not.toBe(
+      first.instanceKey,
+    );
   });
 
   it("save refuses an address change to a server that does not have the linked documents", async () => {
@@ -298,7 +302,7 @@ describe("settings/paperless", () => {
     value(await act("syncNow", user));
     const bad = failure(await connect({ baseUrl: "http://127.0.0.1:1" }));
     expect(bad.errors.baseUrl?.[0]).toContain("could not be reached");
-    expect(getConnectionRow(user.id)!.baseUrl).toBe(fake.baseUrl);
+    expect((await getConnectionRow(user.id))!.baseUrl).toBe(fake.baseUrl);
   });
 
   it("save validates and keeps the stored token when the field is blank", async () => {
@@ -314,13 +318,13 @@ describe("settings/paperless", () => {
       failure(await act("save", user, { baseUrl: fake.baseUrl, token: "" }))
         .errors.token,
     ).toBeTruthy();
-    expect(getConnectionRow(user.id)).toBeNull();
+    expect(await getConnectionRow(user.id)).toBeNull();
 
     await connect();
-    const before = getConnectionRow(user.id)!;
+    const before = (await getConnectionRow(user.id))!;
     const again = value(await connect({ token: "" }));
     expect(again.webhookSecret).toBeNull();
-    expect(getConnectionRow(user.id)!.tokenEncrypted).toBe(
+    expect((await getConnectionRow(user.id))!.tokenEncrypted).toBe(
       before.tokenEncrypted,
     );
 
@@ -365,14 +369,14 @@ describe("settings/paperless", () => {
   it("setSource stores a tag or a supported saved view and rejects the rest", async () => {
     await connect();
     value(await act("setSource", user, { kind: "tag", id: "1" }));
-    expect(getConnectionRow(user.id)!.billSource).toEqual({
+    expect((await getConnectionRow(user.id))!.billSource).toEqual({
       kind: "tag",
       id: 1,
       label: "Bills",
     });
 
     value(await act("setSource", user, { kind: "saved_view", id: "5" }));
-    expect(getConnectionRow(user.id)!.billSource).toEqual({
+    expect((await getConnectionRow(user.id))!.billSource).toEqual({
       kind: "saved_view",
       id: 5,
       label: "Open",
@@ -394,7 +398,7 @@ describe("settings/paperless", () => {
       failure(await act("setSource", user, { kind: "tag", id: "abc" })).errors
         .id,
     ).toBeTruthy();
-    expect(getConnectionRow(user.id)!.billSource).toMatchObject({
+    expect((await getConnectionRow(user.id))!.billSource).toMatchObject({
       kind: "saved_view",
       id: 5,
     });
@@ -414,7 +418,7 @@ describe("settings/paperless", () => {
         statusValue_cancelled: "",
       }),
     );
-    expect(getConnectionRow(user.id)!.fieldMapping).toEqual({
+    expect((await getConnectionRow(user.id))!.fieldMapping).toEqual({
       amount: 10,
       dueDate: 11,
       reference: null,
@@ -439,17 +443,17 @@ describe("settings/paperless", () => {
   it("setMapping never wipes the mapping without an explicit clear", async () => {
     await connect();
     value(await act("setMapping", user, { intent: "save", amount: "10" }));
-    const stored = getConnectionRow(user.id)!.fieldMapping;
+    const stored = (await getConnectionRow(user.id))!.fieldMapping;
     // An empty post (no intent) and an empty save are both rejected.
     expect(failure(await act("setMapping", user, {})).errors).toBeTruthy();
     expect(
       failure(await act("setMapping", user, { intent: "save", amount: "" }))
         .errors.form,
     ).toBeTruthy();
-    expect(getConnectionRow(user.id)!.fieldMapping).toEqual(stored);
+    expect((await getConnectionRow(user.id))!.fieldMapping).toEqual(stored);
 
     value(await act("setMapping", user, { intent: "clear" }));
-    expect(getConnectionRow(user.id)!.fieldMapping).toEqual({
+    expect((await getConnectionRow(user.id))!.fieldMapping).toEqual({
       amount: null,
       dueDate: null,
       reference: null,
@@ -461,7 +465,7 @@ describe("settings/paperless", () => {
   it("rotateSecret returns a new secret once and the old one stops working", async () => {
     const first = value(await connect()).webhookSecret as string;
     const r = value(await act("rotateSecret", user));
-    const row = getConnectionRow(user.id)!;
+    const row = (await getConnectionRow(user.id))!;
     expect(r.webhookSecret).not.toBe(first);
     expect(secretMatches(row, first)).toBe(false);
     expect(secretMatches(row, r.webhookSecret as string)).toBe(true);
@@ -479,14 +483,14 @@ describe("settings/paperless", () => {
     fake.addDoc({ id: 5, original: pdf });
     const r = value(await act("syncNow", user));
     expect(r.result).toMatchObject({ imported: 1, error: null });
-    expect(listBills(user.id)).toHaveLength(1);
+    expect(await listBills(user.id)).toHaveLength(1);
 
     const data = await loaded(user);
     expect(data.recentDocuments).toHaveLength(1);
     expect(data.recentDocuments[0]).toMatchObject({
       paperlessId: 5,
       status: "imported",
-      billId: listBills(user.id)[0]!.id,
+      billId: (await listBills(user.id))[0]!.id,
     });
     expect(data.recentDocuments[0].paperlessUrl).toBe(
       `${fake.baseUrl}/documents/5/details`,
@@ -500,20 +504,22 @@ describe("settings/paperless", () => {
     value(await act("setSource", user, { kind: "tag", id: "1" }));
     fake.addDoc({ id: 5, original: pdf });
     await act("syncNow", user);
-    const bill = listBills(user.id)[0]!;
+    const bill = (await listBills(user.id))[0]!;
 
     value(await act("toggle", user, { enabled: "false" }));
-    expect(getConnectionRow(user.id)!.enabled).toBe(false);
+    expect((await getConnectionRow(user.id))!.enabled).toBe(false);
     value(await act("toggle", user, { enabled: "true" }));
-    expect(getConnectionRow(user.id)!.enabled).toBe(true);
+    expect((await getConnectionRow(user.id))!.enabled).toBe(true);
     expect(
       failure(await act("toggle", user, { enabled: "maybe" })).errors.enabled,
     ).toBeTruthy();
 
     value(await act("disconnect", user));
-    expect(getConnectionRow(user.id)).toBeNull();
-    expect(getDB().select().from(paperlessDocuments).all()).toHaveLength(0);
-    expect(getBill(user.id, bill.id).externalUrl).toBe(bill.externalUrl);
+    expect(await getConnectionRow(user.id)).toBeNull();
+    expect(await getDB().select().from(paperlessDocuments)).toHaveLength(0);
+    expect((await getBill(user.id, bill.id)).externalUrl).toBe(
+      bill.externalUrl,
+    );
     expect((await loaded(user)).connection).toBeNull();
   });
 
@@ -543,11 +549,11 @@ describe("settings/paperless", () => {
 
   it("keeps users apart", async () => {
     const other = await createTestUser();
-    seedConnection(other.id, fake);
+    await seedConnection(other.id, fake);
     await connect();
     value(await act("setSource", user, { kind: "tag", id: "1" }));
-    const mine = getConnectionRow(user.id)!;
-    const theirs = getConnectionRow(other.id)!;
+    const mine = (await getConnectionRow(user.id))!;
+    const theirs = (await getConnectionRow(other.id))!;
 
     const view = await loaded(other);
     expect(view.connection.id).toBe(theirs.id);
@@ -557,9 +563,9 @@ describe("settings/paperless", () => {
     value(await act("toggle", other, { enabled: "false" }));
     value(await act("rotateSecret", other));
     value(await act("disconnect", other));
-    const remaining = getDB().select().from(paperlessConnections).all();
+    const remaining = await getDB().select().from(paperlessConnections);
     expect(remaining.map((c) => c.userId)).toEqual([user.id]);
-    expect(getConnectionRow(user.id)).toMatchObject({
+    expect(await getConnectionRow(user.id)).toMatchObject({
       enabled: true,
       webhookSecretHash: mine.webhookSecretHash,
     });
@@ -653,7 +659,7 @@ describe("settings/paperless", () => {
       );
       expect(noConn.errors.form).toBeTruthy();
       // With a connection, a foreign account id is a 404.
-      seedConnection(other.id, fake);
+      await seedConnection(other.id, fake);
       const foreign = await act("uploadReport", other, {
         kind: "statement",
         account: mine.id,

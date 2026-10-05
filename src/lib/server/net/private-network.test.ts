@@ -124,9 +124,9 @@ describe("privateNetworkAllowedForUser", () => {
   it("follows the stored role and treats unknown users as members", async () => {
     const admin = await createTestUser({ role: "admin" });
     const member = await createTestUser();
-    expect(privateNetworkAllowedForUser(admin.id, {})).toBe(true);
-    expect(privateNetworkAllowedForUser(member.id, {})).toBe(false);
-    expect(privateNetworkAllowedForUser("missing", {})).toBe(false);
+    expect(await privateNetworkAllowedForUser(admin.id, {})).toBe(true);
+    expect(await privateNetworkAllowedForUser(member.id, {})).toBe(false);
+    expect(await privateNetworkAllowedForUser("missing", {})).toBe(false);
   });
 });
 

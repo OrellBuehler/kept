@@ -88,8 +88,11 @@ function toUpcoming(b: BillWithStatus): UpcomingBill {
   };
 }
 
-export function billsSummary(userId: string, today: string): BillsSummary {
-  const groups = groupBills(billViews(userId, { today }), { today });
+export async function billsSummary(
+  userId: string,
+  today: string,
+): Promise<BillsSummary> {
+  const groups = groupBills(await billViews(userId, { today }), { today });
   const upcoming = [...groups.dueSoon, ...groups.openOther]
     .sort((a, b) => {
       if (a.dueDate === b.dueDate) return a.id < b.id ? -1 : 1;
@@ -104,13 +107,16 @@ export function billsSummary(userId: string, today: string): BillsSummary {
     dueSoon: bucketOf(groups.dueSoon, "pay"),
     awaitingRefund: bucketOf(groups.awaitingRefund, "refund"),
     upcoming,
-    unmatchedSuggestions: getSuggestions(userId).length,
+    unmatchedSuggestions: (await getSuggestions(userId)).length,
   };
 }
 
 /** Number of overdue bills (for the navigation badge). */
-export function overdueBillCount(userId: string, today: string): number {
-  return billViews(userId, { today }).filter((b) => b.overdue).length;
+export async function overdueBillCount(
+  userId: string,
+  today: string,
+): Promise<number> {
+  return (await billViews(userId, { today })).filter((b) => b.overdue).length;
 }
 
 export interface UnmatchedHint {

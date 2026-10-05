@@ -73,7 +73,7 @@ async function verifySameServer(
   baseUrl: string,
   input: SaveConnectionInput,
 ): Promise<void> {
-  const samples = getDB()
+  const samples = await getDB()
     .select({
       paperlessId: paperlessDocuments.paperlessId,
       contentSha256: paperlessDocuments.contentSha256,
@@ -89,8 +89,7 @@ async function verifySameServer(
       ),
     )
     .orderBy(desc(paperlessDocuments.modified))
-    .limit(SAMPLE_SIZE)
-    .all();
+    .limit(SAMPLE_SIZE);
   // Nothing recorded to compare with, and no link that could go wrong.
   if (samples.length === 0) return;
 
@@ -130,7 +129,7 @@ export async function saveConnectionVerified(
   userId: string,
   input: SaveConnectionInput,
 ): Promise<SaveConnectionResult> {
-  const existing = getConnectionRow(userId);
+  const existing = await getConnectionRow(userId);
   // Without a new token the stored one is used for the check; if it cannot be read, ask for it.
   if (existing && !input.token?.trim() && isTokenUnreadable(existing)) {
     throw new LedgerError(
@@ -151,5 +150,5 @@ export async function saveConnectionVerified(
       await verifySameServer(existing, baseUrl, input);
     }
   }
-  return saveConnection(userId, input);
+  return await saveConnection(userId, input);
 }

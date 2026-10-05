@@ -8,11 +8,14 @@ import {
 } from "$lib/server/crypto";
 import {
   bills,
+  first,
   getDB,
+  isUniqueViolation,
   paperlessConnections,
   paperlessDismissed,
   paperlessDocuments,
   paperlessInstances,
+  type DB,
   type PaperlessBillSource,
   type PaperlessFieldMapping,
 } from "$lib/server/db";
@@ -61,17 +64,22 @@ export function rowExternalRef(
   return `${rowInstanceKey(row)}:${paperlessId}`;
 }
 
-export function isDismissed(userId: string, ref: string): boolean {
-  const found = getDB()
-    .select({ id: paperlessDismissed.id })
-    .from(paperlessDismissed)
-    .where(
-      and(
-        eq(paperlessDismissed.userId, userId),
-        eq(paperlessDismissed.externalRef, ref),
-      ),
-    )
-    .get();
+export async function isDismissed(
+  userId: string,
+  ref: string,
+): Promise<boolean> {
+  const found = await first(
+    getDB()
+      .select({ id: paperlessDismissed.id })
+      .from(paperlessDismissed)
+      .where(
+        and(
+          eq(paperlessDismissed.userId, userId),
+          eq(paperlessDismissed.externalRef, ref),
+        ),
+      )
+      .limit(1),
+  );
   return found !== undefined;
 }
 
@@ -93,9 +101,13 @@ function rememberInstance(
     .run();
 }
 
-function rememberedKey(userId: string, baseUrl: string): string | null {
+function rememberedKey(
+  tx: Pick<DB, "select">,
+  userId: string,
+  baseUrl: string,
+): string | null {
   return (
-    getDB()
+    tx
       .select({ key: paperlessInstances.instanceKey })
       .from(paperlessInstances)
       .where(
@@ -104,6 +116,7 @@ function rememberedKey(userId: string, baseUrl: string): string | null {
           eq(paperlessInstances.baseUrl, baseUrl),
         ),
       )
+      .limit(1)
       .get()?.key ?? null
   );
 }
@@ -195,50 +208,67 @@ const newInstanceKey = () => randomBytes(6).toString("hex");
 const newWebhookToken = () => randomBytes(24).toString("base64url");
 const newWebhookSecret = () => randomBytes(32).toString("base64url");
 
-export function getConnectionRow(userId: string): ConnectionRow | null {
-  return (
-    getDB()
-      .select()
-      .from(paperlessConnections)
-      .where(eq(paperlessConnections.userId, userId))
-      .get() ?? null
-  );
+function userConnectionQuery(tx: Pick<DB, "select">, userId: string) {
+  return tx
+    .select()
+    .from(paperlessConnections)
+    .where(eq(paperlessConnections.userId, userId))
+    .limit(1);
 }
 
-export function getConnection(userId: string): ConnectionView | null {
-  const row = getConnectionRow(userId);
+export async function getConnectionRow(
+  userId: string,
+): Promise<ConnectionRow | null> {
+  return (await first(userConnectionQuery(getDB(), userId))) ?? null;
+}
+
+/** Sync twin of `getConnectionRow`, for the body of a transaction. */
+function getConnectionRowInTx(
+  tx: Pick<DB, "select">,
+  userId: string,
+): ConnectionRow | null {
+  return userConnectionQuery(tx, userId).get() ?? null;
+}
+
+export async function getConnection(
+  userId: string,
+): Promise<ConnectionView | null> {
+  const row = await getConnectionRow(userId);
   return row ? toView(row) : null;
 }
 
-export function hasPaperlessConnection(userId: string): boolean {
-  return getConnectionRow(userId) !== null;
+export async function hasPaperlessConnection(userId: string): Promise<boolean> {
+  return (await getConnectionRow(userId)) !== null;
 }
 
-export function requireConnectionRow(userId: string): ConnectionRow {
-  const row = getConnectionRow(userId);
+export async function requireConnectionRow(
+  userId: string,
+): Promise<ConnectionRow> {
+  const row = await getConnectionRow(userId);
   if (!row) throw notFound("Paperless connection");
   return row;
 }
 
 /** The connection a webhook URL token belongs to (public endpoint; no user context yet). */
-export function getConnectionByWebhookToken(
+export async function getConnectionByWebhookToken(
   token: string,
-): ConnectionRow | null {
+): Promise<ConnectionRow | null> {
   return (
-    getDB()
-      .select()
-      .from(paperlessConnections)
-      .where(eq(paperlessConnections.webhookToken, token))
-      .get() ?? null
+    (await first(
+      getDB()
+        .select()
+        .from(paperlessConnections)
+        .where(eq(paperlessConnections.webhookToken, token))
+        .limit(1),
+    )) ?? null
   );
 }
 
-export function listEnabledConnections(): ConnectionRow[] {
+export function listEnabledConnections(): Promise<ConnectionRow[]> {
   return getDB()
     .select()
     .from(paperlessConnections)
-    .where(eq(paperlessConnections.enabled, true))
-    .all();
+    .where(eq(paperlessConnections.enabled, true));
 }
 
 export const tokenSchema = z
@@ -267,11 +297,15 @@ export interface SaveConnectionResult {
   webhookSecret: string | null;
 }
 
-/** Creates the user's connection or updates it (one per user). */
-export function saveConnection(
+/**
+ * Creates the user's connection or updates it (one per user). The lookup of the
+ * current row, the instance-key bookkeeping and the write share one transaction.
+ * A second connection created concurrently is caught by the unique user index.
+ */
+export async function saveConnection(
   userId: string,
   input: SaveConnectionInput,
-): SaveConnectionResult {
+): Promise<SaveConnectionResult> {
   let baseUrl: string;
   try {
     baseUrl = normalizeBaseUrl(input.baseUrl);
@@ -299,21 +333,42 @@ export function saveConnection(
       );
     }
   }
-  const db = getDB();
-  const existing = getConnectionRow(userId);
+  try {
+    return getDB().transaction((tx) =>
+      saveConnectionInTx(tx, userId, input, baseUrl, token),
+    );
+  } catch (err) {
+    if (isUniqueViolation(err)) {
+      throw new LedgerError(
+        "conflict",
+        "The Paperless connection was changed at the same time. Reload and try again.",
+      );
+    }
+    throw err;
+  }
+}
+
+function saveConnectionInTx(
+  tx: Tx,
+  userId: string,
+  input: SaveConnectionInput,
+  baseUrl: string,
+  token: string | null,
+): SaveConnectionResult {
+  const existing = getConnectionRowInTx(tx, userId);
 
   if (!existing) {
     if (token === null) {
       throw new LedgerError("invalid", "Enter the access token.", "token");
     }
     const secret = newWebhookSecret();
-    const row = db
+    const row = tx
       .insert(paperlessConnections)
       .values({
         userId,
         baseUrl,
         tokenEncrypted: encryptSecret(token),
-        instanceKey: rememberedKey(userId, baseUrl) ?? instanceKey(baseUrl),
+        instanceKey: rememberedKey(tx, userId, baseUrl) ?? instanceKey(baseUrl),
         allowInsecureTls: input.allowInsecureTls,
         webhookSecretHash: hashSecret(secret),
         webhookToken: newWebhookToken(),
@@ -332,82 +387,76 @@ export function saveConnection(
   }
   const moved = existing.baseUrl !== baseUrl;
   const reset = input.differentInstance === true;
-  const row = db.transaction((tx) => {
-    if (moved) {
-      rememberInstance(tx, userId, existing.baseUrl, rowInstanceKey(existing));
-    }
-    if (reset) {
-      // Another server has other document ids: old links and watermark are meaningless.
-      rememberDismissed(tx, existing);
-      tx.delete(paperlessDocuments)
-        .where(
-          and(
-            eq(paperlessDocuments.userId, userId),
-            eq(paperlessDocuments.connectionId, existing.id),
-          ),
-        )
-        .run();
-    } else if (moved) {
-      // Same server under a new address: bills keep their links, only their stored urls follow.
-      tx.update(bills)
-        .set({
-          externalUrl: sql`${baseUrl} || substr(${bills.externalUrl}, length(${existing.baseUrl}) + 1)`,
-        })
-        .where(
-          and(
-            eq(bills.userId, userId),
-            eq(bills.externalSource, "paperless"),
-            sql`substr(${bills.externalUrl}, 1, length(${existing.baseUrl}) + 1) = ${existing.baseUrl + "/"}`,
-          ),
-        )
-        .run();
-    }
-    return tx
-      .update(paperlessConnections)
+  if (moved) {
+    rememberInstance(tx, userId, existing.baseUrl, rowInstanceKey(existing));
+  }
+  if (reset) {
+    // Another server has other document ids: old links and watermark are meaningless.
+    rememberDismissed(tx, existing);
+    tx.delete(paperlessDocuments)
+      .where(
+        and(
+          eq(paperlessDocuments.userId, userId),
+          eq(paperlessDocuments.connectionId, existing.id),
+        ),
+      )
+      .run();
+  } else if (moved) {
+    // Same server under a new address: bills keep their links, only their stored urls follow.
+    tx.update(bills)
       .set({
-        baseUrl,
-        instanceKey: reset ? newInstanceKey() : rowInstanceKey(existing),
-        allowInsecureTls: input.allowInsecureTls,
-        ...(token !== null ? { tokenEncrypted: encryptSecret(token) } : {}),
-        ...(moved || reset
-          ? { apiVersion: null, serverVersion: null, lastSyncAt: null }
-          : {}),
-        ...(reset ? { lastSyncModified: null } : {}),
-        ...(moved || reset || token !== null ? { lastError: null } : {}),
+        externalUrl: sql`${baseUrl} || substr(${bills.externalUrl}, length(${existing.baseUrl}) + 1)`,
       })
       .where(
         and(
-          eq(paperlessConnections.userId, userId),
-          eq(paperlessConnections.id, existing.id),
+          eq(bills.userId, userId),
+          eq(bills.externalSource, "paperless"),
+          sql`substr(${bills.externalUrl}, 1, length(${existing.baseUrl}) + 1) = ${existing.baseUrl + "/"}`,
         ),
       )
-      .returning()
-      .get();
-  });
+      .run();
+  }
+  const row = tx
+    .update(paperlessConnections)
+    .set({
+      baseUrl,
+      instanceKey: reset ? newInstanceKey() : rowInstanceKey(existing),
+      allowInsecureTls: input.allowInsecureTls,
+      ...(token !== null ? { tokenEncrypted: encryptSecret(token) } : {}),
+      ...(moved || reset
+        ? { apiVersion: null, serverVersion: null, lastSyncAt: null }
+        : {}),
+      ...(reset ? { lastSyncModified: null } : {}),
+      ...(moved || reset || token !== null ? { lastError: null } : {}),
+    })
+    .where(
+      and(
+        eq(paperlessConnections.userId, userId),
+        eq(paperlessConnections.id, existing.id),
+      ),
+    )
+    .returning()
+    .get();
   return { connection: toView(row), webhookSecret: null };
 }
 
 /** Replaces the webhook secret; the old one stops working immediately. */
-export function rotateWebhookSecret(userId: string): string {
-  const row = requireConnectionRow(userId);
+export async function rotateWebhookSecret(userId: string): Promise<string> {
   const secret = newWebhookSecret();
-  getDB()
+  const updated = await getDB()
     .update(paperlessConnections)
     .set({ webhookSecretHash: hashSecret(secret) })
-    .where(
-      and(
-        eq(paperlessConnections.userId, userId),
-        eq(paperlessConnections.id, row.id),
-      ),
-    )
-    .run();
+    .where(eq(paperlessConnections.userId, userId))
+    .returning({ id: paperlessConnections.id });
+  if (updated.length === 0) throw notFound("Paperless connection");
   return secret;
 }
 
 /** Removes the connection and its link rows. Bills and their stored documents stay. */
-export function deleteConnection(userId: string): void {
-  const row = requireConnectionRow(userId);
+export async function deleteConnection(userId: string): Promise<void> {
   getDB().transaction((tx) => {
+    const row = getConnectionRowInTx(tx, userId);
+    if (!row) throw notFound("Paperless connection");
     rememberDismissed(tx, row);
     rememberInstance(tx, userId, row.baseUrl, rowInstanceKey(row));
     tx.delete(paperlessConnections)
@@ -421,68 +470,46 @@ export function deleteConnection(userId: string): void {
   });
 }
 
-export function setEnabled(userId: string, enabled: boolean): ConnectionView {
-  const row = requireConnectionRow(userId);
-  return toView(
-    getDB()
-      .update(paperlessConnections)
-      .set({ enabled })
-      .where(
-        and(
-          eq(paperlessConnections.userId, userId),
-          eq(paperlessConnections.id, row.id),
-        ),
-      )
-      .returning()
-      .get(),
-  );
+/** Updates the user's one connection and returns it; not found when there is none. */
+async function updateConnection(
+  userId: string,
+  patch: Partial<typeof paperlessConnections.$inferInsert>,
+): Promise<ConnectionView> {
+  const [row] = await getDB()
+    .update(paperlessConnections)
+    .set(patch)
+    .where(eq(paperlessConnections.userId, userId))
+    .returning();
+  if (!row) throw notFound("Paperless connection");
+  return toView(row);
+}
+
+export function setEnabled(
+  userId: string,
+  enabled: boolean,
+): Promise<ConnectionView> {
+  return updateConnection(userId, { enabled });
 }
 
 export function setFieldMapping(
   userId: string,
   mapping: PaperlessFieldMapping,
-): ConnectionView {
-  const row = requireConnectionRow(userId);
-  return toView(
-    getDB()
-      .update(paperlessConnections)
-      .set({ fieldMapping: mapping })
-      .where(
-        and(
-          eq(paperlessConnections.userId, userId),
-          eq(paperlessConnections.id, row.id),
-        ),
-      )
-      .returning()
-      .get(),
-  );
+): Promise<ConnectionView> {
+  return updateConnection(userId, { fieldMapping: mapping });
 }
 
 export function setBillSourceRow(
   userId: string,
   source: PaperlessBillSource,
-): ConnectionView {
-  const row = requireConnectionRow(userId);
-  return toView(
-    getDB()
-      .update(paperlessConnections)
-      .set({
-        billSource: source,
-        // A different source means a different document set: start over.
-        lastSyncModified: null,
-      })
-      .where(
-        and(
-          eq(paperlessConnections.userId, userId),
-          eq(paperlessConnections.id, row.id),
-        ),
-      )
-      .returning()
-      .get(),
-  );
+): Promise<ConnectionView> {
+  return updateConnection(userId, {
+    billSource: source,
+    // A different source means a different document set: start over.
+    lastSyncModified: null,
+  });
 }
 
-export function recordConnectionState(
+export async function recordConnectionState(
   row: Pick<ConnectionRow, "id" | "userId">,
   patch: Partial<
     Pick<
@@ -494,8 +521,8 @@ export function recordConnectionState(
       | "serverVersion"
     >
   >,
-): void {
-  getDB()
+): Promise<void> {
+  await getDB()
     .update(paperlessConnections)
     .set(patch)
     .where(
@@ -503,14 +530,13 @@ export function recordConnectionState(
         eq(paperlessConnections.userId, row.userId),
         eq(paperlessConnections.id, row.id),
       ),
-    )
-    .run();
+    );
 }
 
-export function clientForRow(
+export async function clientForRow(
   row: ConnectionRow,
   options: { timeoutMs?: number } = {},
-): PaperlessClient {
+): Promise<PaperlessClient> {
   let token: string;
   try {
     token = decryptSecret(row.tokenEncrypted);
@@ -526,7 +552,7 @@ export function clientForRow(
     token,
     allowInsecureTls: row.allowInsecureTls,
     apiVersion: row.apiVersion,
-    guard: privateNetworkGuard(privateNetworkAllowedForUser(row.userId)),
+    guard: privateNetworkGuard(await privateNetworkAllowedForUser(row.userId)),
   });
 }
 
@@ -548,31 +574,31 @@ export function privateNetworkGuard(
 }
 
 /** Stores what a call learned about the server (negotiated API version, release). */
-export function rememberServerInfo(
+export async function rememberServerInfo(
   row: ConnectionRow,
   client: PaperlessClient,
-): void {
+): Promise<void> {
   const serverVersion = client.serverInfo.serverVersion ?? row.serverVersion;
   if (
     client.apiVersion !== row.apiVersion ||
     serverVersion !== row.serverVersion
   ) {
-    recordConnectionState(row, {
+    await recordConnectionState(row, {
       apiVersion: client.apiVersion,
       serverVersion,
     });
   }
 }
 
-export function getClient(
+export async function getClient(
   userId: string,
   options: { timeoutMs?: number } = {},
-): {
+): Promise<{
   row: ConnectionRow;
   client: PaperlessClient;
-} {
-  const row = requireConnectionRow(userId);
-  return { row, client: clientForRow(row, options) };
+}> {
+  const row = await requireConnectionRow(userId);
+  return { row, client: await clientForRow(row, options) };
 }
 
 function parseVersion(v: string): number[] {
@@ -608,17 +634,19 @@ const idOnly = z.object({ id: z.number().int() });
 
 /** Calls the server once, records its version and reports what is worth knowing. */
 export async function testConnection(userId: string): Promise<TestResult> {
-  const { row, client } = getClient(userId, { timeoutMs: TEST_TIMEOUT_MS });
+  const { row, client } = await getClient(userId, {
+    timeoutMs: TEST_TIMEOUT_MS,
+  });
   try {
     await client.json("documents", pageSchema(idOnly), {
       query: { page_size: 1, fields: "id" },
     });
   } catch (err) {
-    recordConnectionState(row, { lastError: errorCode(err) });
+    await recordConnectionState(row, { lastError: errorCode(err) });
     throw err;
   }
-  rememberServerInfo(row, client);
-  recordConnectionState(row, { lastError: null });
+  await rememberServerInfo(row, client);
+  await recordConnectionState(row, { lastError: null });
   const { serverVersion, maxApiVersion } = client.serverInfo;
   const warnings: string[] = [];
   if (serverVersion === null) {
@@ -657,11 +685,11 @@ async function collect<T>(pages: AsyncGenerator<T[]>): Promise<T[]> {
 }
 
 export async function listTags(userId: string): Promise<TagOption[]> {
-  const { row, client } = getClient(userId);
+  const { row, client } = await getClient(userId);
   const tags = await collect(
     client.pages("tags", { ordering: "name", page_size: 100 }, tagSchema),
   );
-  rememberServerInfo(row, client);
+  await rememberServerInfo(row, client);
   return tags.map((t) => ({
     id: t.id,
     name: t.name,
@@ -696,11 +724,11 @@ function describeView(v: z.output<typeof savedViewSchema>): SavedViewOption {
 export async function listSavedViews(
   userId: string,
 ): Promise<SavedViewOption[]> {
-  const { row, client } = getClient(userId);
+  const { row, client } = await getClient(userId);
   const views = await collect(
     client.pages("saved_views", { page_size: 100 }, savedViewSchema),
   );
-  rememberServerInfo(row, client);
+  await rememberServerInfo(row, client);
   return views.map(describeView);
 }
 
@@ -729,11 +757,11 @@ const customFieldSchema = z.object({
 export async function listCustomFields(
   userId: string,
 ): Promise<CustomFieldOption[]> {
-  const { row, client } = getClient(userId);
+  const { row, client } = await getClient(userId);
   const fields = await collect(
     client.pages("custom_fields", { page_size: 100 }, customFieldSchema),
   );
-  rememberServerInfo(row, client);
+  await rememberServerInfo(row, client);
   return fields.map((f) => ({
     id: f.id,
     name: f.name,
@@ -748,14 +776,14 @@ export async function resolveSource(
   kind: PaperlessBillSource["kind"],
   id: number,
 ): Promise<{ label: string; translation: Translation | null }> {
-  const { row, client } = getClient(userId);
+  const { row, client } = await getClient(userId);
   if (kind === "tag") {
     const tag = await client.json(`tags/${id}`, tagSchema);
-    rememberServerInfo(row, client);
+    await rememberServerInfo(row, client);
     return { label: tag.name, translation: null };
   }
   const view = await client.json(`saved_views/${id}`, savedViewSchema);
-  rememberServerInfo(row, client);
+  await rememberServerInfo(row, client);
   return {
     label: view.name,
     translation: translateFilterRules(view.filter_rules),

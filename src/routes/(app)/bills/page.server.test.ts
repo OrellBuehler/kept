@@ -43,9 +43,9 @@ describe("bills overview", () => {
   it("groups bills and reports counts; the exact reference match waits for the user", async () => {
     const u = await createTestUser();
     const account = await seedAccount(u.id);
-    const overdue = seedBill(u.id, { dueDate: daysFromToday(-3) });
-    const soon = seedBill(u.id, { dueDate: daysFromToday(5) });
-    const paid = seedBill(u.id, {
+    const overdue = await seedBill(u.id, { dueDate: daysFromToday(-3) });
+    const soon = await seedBill(u.id, { dueDate: daysFromToday(5) });
+    const paid = await seedBill(u.id, {
       creditorIban: EXAMPLE_IBAN_OTHER,
       reference: EXAMPLE_QRR,
       referenceType: "QRR",
@@ -75,7 +75,7 @@ describe("bills overview", () => {
       "overdue",
     ]);
     expect(v.autoMatchPending).toBe(1);
-    expect(listBillAllocations(u.id, paid.id)).toEqual([]);
+    expect(await listBillAllocations(u.id, paid.id)).toEqual([]);
     expect(v.groups.overdue!.map((b) => b.id)).toEqual([overdue.id]);
     expect(v.groups.dueSoon!.map((b) => b.id).sort()).toEqual(
       [soon.id, paid.id].sort(),
@@ -97,14 +97,14 @@ describe("bills overview", () => {
     // Loading again changes nothing either.
     const again = (await loadAs(u)) as { value: { autoMatchPending: number } };
     expect(again.value.autoMatchPending).toBe(1);
-    expect(listBillAllocations(u.id, paid.id)).toEqual([]);
+    expect(await listBillAllocations(u.id, paid.id)).toEqual([]);
 
     const matched = await run("matchNow", u, {});
     expect(matched).toEqual({
       type: "return",
       value: { success: true, action: "matchNow", matched: 1 },
     });
-    expect(listBillAllocations(u.id, paid.id)).toHaveLength(1);
+    expect(await listBillAllocations(u.id, paid.id)).toHaveLength(1);
     const after = (await loadAs(u)) as {
       value: { autoMatchPending: number; suggestions: unknown[] };
     };
@@ -115,7 +115,7 @@ describe("bills overview", () => {
   it("load writes nothing", async () => {
     const u = await createTestUser();
     const account = await seedAccount(u.id);
-    seedBill(u.id, {
+    await seedBill(u.id, {
       creditorIban: EXAMPLE_IBAN_OTHER,
       reference: EXAMPLE_QRR,
       referenceType: "QRR",
@@ -130,15 +130,15 @@ describe("bills overview", () => {
     const db = getDB();
     const emitted = vi.fn();
     const off = onBillChanged(emitted);
-    const counts = () => ({
-      allocations: db.select().from(billAllocations).all().length,
-      dismissals: db.select().from(matchDismissals).all().length,
-      bills: db.select().from(bills).all(),
+    const counts = async () => ({
+      allocations: (await db.select().from(billAllocations)).length,
+      dismissals: (await db.select().from(matchDismissals)).length,
+      bills: await db.select().from(bills),
     });
-    const before = counts();
+    const before = await counts();
     await loadAs(u);
     await loadAs(u, "?status=overdue");
-    expect(counts()).toEqual(before);
+    expect(await counts()).toEqual(before);
     expect(emitted).not.toHaveBeenCalled();
     off();
   });
@@ -147,7 +147,7 @@ describe("bills overview", () => {
     const u = await createTestUser();
     const other = await createTestUser();
     const account = await seedAccount(other.id);
-    const bill = seedBill(other.id, {
+    const bill = await seedBill(other.id, {
       reference: EXAMPLE_QRR,
       referenceType: "QRR",
     });
@@ -159,18 +159,21 @@ describe("bills overview", () => {
     expect(await run("matchNow", u, {})).toMatchObject({
       value: { matched: 0 },
     });
-    expect(listBillAllocations(other.id, bill.id)).toEqual([]);
+    expect(await listBillAllocations(other.id, bill.id)).toEqual([]);
   });
 
   it("filters and paginates the list from the query string", async () => {
     const u = await createTestUser();
     const other = await createTestUser();
-    const acme = seedBill(u.id, {
+    const acme = await seedBill(u.id, {
       creditorName: "Acme Utilities",
       dueDate: daysFromToday(-3),
     });
-    seedBill(u.id, { creditorName: "Other Co", dueDate: daysFromToday(30) });
-    seedBill(other.id, { creditorName: "Acme Utilities" });
+    await seedBill(u.id, {
+      creditorName: "Other Co",
+      dueDate: daysFromToday(30),
+    });
+    await seedBill(other.id, { creditorName: "Acme Utilities" });
 
     const val = async (search: string) =>
       ((await loadAs(u, search)) as unknown as { value: never }).value as {
@@ -194,7 +197,7 @@ describe("bills overview", () => {
   it("only shows the user's own bills", async () => {
     const a = await createTestUser();
     const b = await createTestUser();
-    seedBill(a.id);
+    await seedBill(a.id);
     const r = (await loadAs(b)) as { value: { counts: { total: number } } };
     expect(r.value.counts.total).toBe(0);
   });
@@ -202,7 +205,7 @@ describe("bills overview", () => {
   it("confirms a suggestion with a typed amount and dismisses others", async () => {
     const u = await createTestUser();
     const account = await seedAccount(u.id);
-    const bill = seedBill(u.id);
+    const bill = await seedBill(u.id);
     const tx = await seedImportedTransaction(u.id, account.id, {
       amount: minor(-2550),
     });
@@ -232,7 +235,7 @@ describe("bills overview", () => {
       type: "return",
       value: { success: true, action: "confirmSuggestion" },
     });
-    expect(listBillAllocations(u.id, bill.id)[0]).toMatchObject({
+    expect((await listBillAllocations(u.id, bill.id))[0]).toMatchObject({
       amount: 2550,
       origin: "user",
     });
@@ -251,12 +254,12 @@ describe("bills overview", () => {
     const a = await createTestUser();
     const b = await createTestUser();
     const accountA = await seedAccount(a.id);
-    const billA = seedBill(a.id);
+    const billA = await seedBill(a.id);
     const txA = await seedImportedTransaction(a.id, accountA.id, {
       amount: minor(-1000),
     });
     const accountB = await seedAccount(b.id);
-    const billB = seedBill(b.id);
+    const billB = await seedBill(b.id);
     const txB = await seedImportedTransaction(b.id, accountB.id, {
       amount: minor(-1000),
     });
@@ -284,6 +287,6 @@ describe("bills overview", () => {
         transactionId: txA.id,
       }),
     ).toEqual({ type: "error", status: 404 });
-    expect(listBillAllocations(a.id, billA.id)).toEqual([]);
+    expect(await listBillAllocations(a.id, billA.id)).toEqual([]);
   });
 });

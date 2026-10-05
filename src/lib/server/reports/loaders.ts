@@ -119,11 +119,11 @@ export async function loadAccountStatement(
   };
 }
 
-export function loadBillsReport(
+export async function loadBillsReport(
   userId: string,
   today: string = localToday(),
-): BillsReportInput {
-  return { bills: billViews(userId, { today }), asOf: today };
+): Promise<BillsReportInput> {
+  return { bills: await billViews(userId, { today }), asOf: today };
 }
 
 export async function loadNetWorthReport(

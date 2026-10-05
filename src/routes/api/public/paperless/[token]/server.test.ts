@@ -34,8 +34,8 @@ describe("POST /api/public/paperless/[token]", () => {
     fake.docs.clear();
     fake.requests = [];
     user = await createTestUser();
-    secret = seedConnection(user.id, fake).webhookSecret!;
-    token = getConnectionRow(user.id)!.webhookToken;
+    secret = (await seedConnection(user.id, fake)).webhookSecret!;
+    token = (await getConnectionRow(user.id))!.webhookToken;
   });
 
   const call = async (opts: {
@@ -80,7 +80,7 @@ describe("POST /api/public/paperless/[token]", () => {
     expect(res.status).toBe(202);
     expect(await res.text()).toBe("");
     await expect
-      .poll(() => listBills(user.id).length, { timeout: 20_000 })
+      .poll(async () => (await listBills(user.id)).length, { timeout: 20_000 })
       .toBe(1);
   });
 
@@ -88,16 +88,16 @@ describe("POST /api/public/paperless/[token]", () => {
     fake.addDoc({ id: 5, original: pdf });
     expect((await call({})).status).toBe(202);
     await expect
-      .poll(() => listBills(user.id).length, { timeout: 20_000 })
+      .poll(async () => (await listBills(user.id)).length, { timeout: 20_000 })
       .toBe(1);
     expect((await call({})).status).toBe(202);
     await new Promise((r) => setTimeout(r, 300));
-    expect(listBills(user.id)).toHaveLength(1);
+    expect(await listBills(user.id)).toHaveLength(1);
   });
 
   it("another user's secret does not open this connection", async () => {
     const other = await createTestUser();
-    const otherSecret = seedConnection(other.id, fake).webhookSecret!;
+    const otherSecret = (await seedConnection(other.id, fake)).webhookSecret!;
     expect((await call({ secret: otherSecret })).status).toBe(401);
   });
 });

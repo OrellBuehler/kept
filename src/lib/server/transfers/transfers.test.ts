@@ -112,7 +112,7 @@ async function setup(over: { fill?: boolean } = {}) {
   const send = async (
     over: Parameters<typeof seedImportedTransaction>[2] = {},
   ) =>
-    await seedImportedTransaction(user.id, a.id, {
+    seedImportedTransaction(user.id, a.id, {
       bookingDate: "2026-03-10",
       amount: m(-10000),
       counterpartyIban: EXAMPLE_IBAN_OTHER,
@@ -143,11 +143,11 @@ const inputOf = (view: Awaited<ReturnType<typeof getAccount>>) => ({
 });
 
 const rowsOf = async (accountId: string) =>
-  await getDB()
+  getDB()
     .select()
     .from(transactions)
     .where(eq(transactions.accountId, accountId));
-const allTransfers = async () => await getDB().select().from(transfers);
+const allTransfers = async () => getDB().select().from(transfers);
 
 describe("linkTransfers", () => {
   it("mirrors a transfer onto an account filled from transfers", async () => {
@@ -638,7 +638,7 @@ describe("foreign currency transfers", () => {
     eurId: string,
     over: Parameters<typeof seedImportedTransaction>[2] = {},
   ) =>
-    await seedImportedTransaction(user.id, eurId, {
+    seedImportedTransaction(user.id, eurId, {
       bookingDate: "2026-03-11",
       amount: m(9300),
       currency: "EUR",
@@ -1192,7 +1192,7 @@ describe("dismissed transfers", () => {
 
 describe("keeping links valid", () => {
   const manualDebit = async (userId: string, accountId: string, over = {}) =>
-    await createManualTransaction(
+    createManualTransaction(
       userId,
       accountId,
       manualInput({
@@ -1835,7 +1835,7 @@ describe("consumers", () => {
   it("keep mirrors out of bill matching", async () => {
     const { user, a, b } = await setup();
     const reference = makeQrr(42);
-    const bill = seedBill(user.id, {
+    const bill = await seedBill(user.id, {
       amount: m(10000),
       reference,
       referenceType: "QRR",
@@ -1853,10 +1853,12 @@ describe("consumers", () => {
     const mirror = (await rowsOf(b.id))[0]!;
     expect(mirror.amount).toBe(-10000);
     expect(
-      getSuggestions(user.id, { billId: bill.id }).map((s) => s.transactionId),
+      (await getSuggestions(user.id, { billId: bill.id })).map(
+        (s) => s.transactionId,
+      ),
     ).not.toContain(mirror.id);
     expect(
-      candidateTransactions(user.id, bill.id).items.map((c) => c.id),
+      (await candidateTransactions(user.id, bill.id)).items.map((c) => c.id),
     ).not.toContain(mirror.id);
     await expect(
       allocate(user.id, bill.id, mirror.id, m(10000), "user"),

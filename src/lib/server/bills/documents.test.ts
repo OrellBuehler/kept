@@ -7,7 +7,7 @@ import { createTestUser } from "$lib/testing/auth";
 import { useTestDB } from "$lib/testing/db";
 import { useTestStore } from "$lib/testing/store";
 import { LedgerError } from "$lib/server/ledger/errors";
-import { bills, documents, getDB } from "$lib/server/db";
+import { bills, documents, getDB, first } from "$lib/server/db";
 import { createStore, readStorageConfig, setStore } from "$lib/server/storage";
 import { seedBill } from "$lib/testing/bills";
 import {
@@ -19,6 +19,7 @@ import {
 import {
   MAX_DOCUMENT_BYTES,
   deleteDocument,
+  deleteDocumentWhere,
   getDocumentMeta,
   hasPdfMagic,
   readDocument,
@@ -46,10 +47,12 @@ describe("documents", () => {
     });
     expect(doc.sha256).toMatch(/^[0-9a-f]{64}$/);
     expect(await keys()).toEqual([`documents/${u.id}/${doc.id}`]);
-    const row = getDB()
-      .select({ storageKey: documents.storageKey })
-      .from(documents)
-      .get();
+    const row = await first(
+      getDB()
+        .select({ storageKey: documents.storageKey })
+        .from(documents)
+        .limit(1),
+    );
     expect(row?.storageKey).toBe(`${u.id}/${doc.id}`);
     const read = await readDocument(u.id, doc.id);
     expect(new TextDecoder().decode(read.bytes)).toContain("%PDF-1.4");
@@ -87,7 +90,7 @@ describe("documents", () => {
     expect(
       await code(() => storeDocument(u.id, exact, "x.pdf", "application/pdf")),
     ).toBe("none");
-    expect(getDB().select().from(documents).all()).toHaveLength(1);
+    expect(await getDB().select().from(documents)).toHaveLength(1);
   });
 
   it("returns the existing document for identical content of the same user only", async () => {
@@ -125,7 +128,7 @@ describe("documents", () => {
       ),
     );
     expect(new Set(results.map((r) => r.id)).size).toBe(1);
-    expect(getDB().select().from(documents).all()).toHaveLength(1);
+    expect(await getDB().select().from(documents)).toHaveLength(1);
     expect(await keys()).toEqual([`documents/${u.id}/${results[0]!.id}`]);
     expect((await readDocument(u.id, results[0]!.id)).bytes.byteLength).toBe(
       pdf("race").byteLength,
@@ -173,7 +176,7 @@ describe("documents", () => {
   it("sweeps old unreferenced uploads only", async () => {
     const u = await createTestUser();
     const other = await createTestUser();
-    const bill = seedBill(u.id);
+    const bill = await seedBill(u.id);
     const old = await storeDocument(u.id, pdf("old"), "a.pdf", "x");
     const used = await storeDocument(u.id, pdf("used"), "b.pdf", "x");
     const fresh = await storeDocument(u.id, pdf("fresh"), "c.pdf", "x");
@@ -181,18 +184,17 @@ describe("documents", () => {
     await attachDocument(u.id, bill.id, used.id);
     const dayAndAbit = Date.now() - 25 * 3600 * 1000;
     for (const id of [old.id, used.id, foreign.id]) {
-      getDB()
+      await getDB()
         .update(documents)
         .set({ createdAt: new Date(dayAndAbit) })
-        .where(eq(documents.id, id))
-        .run();
+        .where(eq(documents.id, id));
     }
     expect(await sweepUnreferencedDocuments(u.id)).toBe(1);
-    expect(() => getDocumentMeta(u.id, old.id)).toThrow(LedgerError);
+    await expect(getDocumentMeta(u.id, old.id)).rejects.toThrow(LedgerError);
     expect(await blobs.store.has(`documents/${u.id}/${old.id}`)).toBe(false);
-    expect(getDocumentMeta(u.id, used.id).id).toBe(used.id);
-    expect(getDocumentMeta(u.id, fresh.id).id).toBe(fresh.id);
-    expect(getDocumentMeta(other.id, foreign.id).id).toBe(foreign.id);
+    expect((await getDocumentMeta(u.id, used.id)).id).toBe(used.id);
+    expect((await getDocumentMeta(u.id, fresh.id)).id).toBe(fresh.id);
+    expect((await getDocumentMeta(other.id, foreign.id)).id).toBe(foreign.id);
     expect(await blobs.store.has(`documents/${other.id}/${foreign.id}`)).toBe(
       true,
     );
@@ -200,11 +202,11 @@ describe("documents", () => {
 
   it("a sweep does not delete a document attached after it selected the stale ones", async () => {
     const u = await createTestUser();
-    const bill = seedBill(u.id);
+    const bill = await seedBill(u.id);
     const a = await storeDocument(u.id, pdf("a"), "a.pdf", "x");
     const b = await storeDocument(u.id, pdf("b"), "b.pdf", "x");
     const dayAndAbit = new Date(Date.now() - 25 * 3600 * 1000);
-    getDB().update(documents).set({ createdAt: dayAndAbit }).run();
+    await getDB().update(documents).set({ createdAt: dayAndAbit });
     const realDelete = blobs.store.delete.bind(blobs.store);
     let kept = "";
     vi.spyOn(blobs.store, "delete").mockImplementation(async (key) => {
@@ -225,11 +227,11 @@ describe("documents", () => {
     });
     expect(await sweepUnreferencedDocuments(u.id)).toBe(1);
     vi.restoreAllMocks();
-    expect(getDocumentMeta(u.id, kept).id).toBe(kept);
+    expect((await getDocumentMeta(u.id, kept)).id).toBe(kept);
     expect((await readDocument(u.id, kept)).bytes.byteLength).toBeGreaterThan(
       0,
     );
-    expect(getBill(u.id, bill.id).documentId).toBe(kept);
+    expect((await getBill(u.id, bill.id)).documentId).toBe(kept);
   });
 
   it("re-inserts a document that was deleted while its dedupe hit was being checked", async () => {
@@ -250,6 +252,31 @@ describe("documents", () => {
     expect(await keys()).toEqual([`documents/${u.id}/${again.id}`]);
   });
 
+  it("deletes a document only while the condition still holds, and only for its owner", async () => {
+    const u = await createTestUser();
+    const other = await createTestUser();
+    const doc = await storeDocument(u.id, pdf("cond"), "a.pdf", "x");
+    const key = `documents/${u.id}/${doc.id}`;
+    expect(
+      await deleteDocumentWhere(
+        u.id,
+        doc.id,
+        eq(documents.source, "integration"),
+      ),
+    ).toBe(false);
+    expect(await deleteDocumentWhere(other.id, doc.id)).toBe(false);
+    expect((await getDocumentMeta(u.id, doc.id)).id).toBe(doc.id);
+    expect(await blobs.store.has(key)).toBe(true);
+
+    expect(
+      await deleteDocumentWhere(u.id, doc.id, eq(documents.source, "upload")),
+    ).toBe(true);
+    await expect(getDocumentMeta(u.id, doc.id)).rejects.toThrow(LedgerError);
+    expect(await blobs.store.has(key)).toBe(false);
+    expect(await deleteDocumentWhere(u.id, doc.id)).toBe(false);
+    await expect(deleteDocument(u.id, doc.id)).rejects.toThrow(LedgerError);
+  });
+
   it("restores a missing blob of a deduped upload as application/pdf", async () => {
     const u = await createTestUser();
     const doc = await storeDocument(u.id, pdf("r"), "a.pdf", "x");
@@ -266,14 +293,13 @@ describe("documents", () => {
 
   it("reads a bill whose stored extraction is corrupt", async () => {
     const u = await createTestUser();
-    const bill = seedBill(u.id);
-    getDB()
+    const bill = await seedBill(u.id);
+    await getDB()
       .update(bills)
       .set({ extraction: "{not json" })
-      .where(eq(bills.id, bill.id))
-      .run();
+      .where(eq(bills.id, bill.id));
     const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
-    expect(getBill(u.id, bill.id).extraction).toBeNull();
+    expect((await getBill(u.id, bill.id)).extraction).toBeNull();
     warn.mockRestore();
   });
 
@@ -287,40 +313,40 @@ describe("documents", () => {
       "application/pdf",
     );
     await expect(readDocument(b.id, doc.id)).rejects.toThrow(LedgerError);
-    expect(() => getDocumentMeta(b.id, doc.id)).toThrow(LedgerError);
+    await expect(getDocumentMeta(b.id, doc.id)).rejects.toThrow(LedgerError);
     await expect(deleteDocument(b.id, doc.id)).rejects.toThrow(LedgerError);
     expect(await blobs.store.has(`documents/${a.id}/${doc.id}`)).toBe(true);
   });
 
   it("deleting a document keeps the bill, with no document", async () => {
     const u = await createTestUser();
-    const bill = seedBill(u.id);
+    const bill = await seedBill(u.id);
     const doc = await storeDocument(u.id, pdf("d"), "a.pdf", "application/pdf");
     await attachDocument(u.id, bill.id, doc.id);
-    expect(getBill(u.id, bill.id).documentId).toBe(doc.id);
+    expect((await getBill(u.id, bill.id)).documentId).toBe(doc.id);
     await deleteDocument(u.id, doc.id);
-    expect(getBill(u.id, bill.id).documentId).toBeNull();
+    expect((await getBill(u.id, bill.id)).documentId).toBeNull();
     expect(await keys()).toEqual([]);
   });
 
   it("replacing or deleting removes an unused uploaded document", async () => {
     const u = await createTestUser();
-    const bill = seedBill(u.id);
+    const bill = await seedBill(u.id);
     const d1 = await storeDocument(u.id, pdf("1"), "a.pdf", "application/pdf");
     const d2 = await storeDocument(u.id, pdf("2"), "b.pdf", "application/pdf");
     await attachDocument(u.id, bill.id, d1.id);
     await attachDocument(u.id, bill.id, d2.id);
-    expect(() => getDocumentMeta(u.id, d1.id)).toThrow(LedgerError);
+    await expect(getDocumentMeta(u.id, d1.id)).rejects.toThrow(LedgerError);
     expect(await keys()).toEqual([`documents/${u.id}/${d2.id}`]);
     await deleteBill(u.id, bill.id);
-    expect(() => getDocumentMeta(u.id, d2.id)).toThrow(LedgerError);
+    await expect(getDocumentMeta(u.id, d2.id)).rejects.toThrow(LedgerError);
     expect(await keys()).toEqual([]);
   });
 
   it("keeps a document that another bill still uses", async () => {
     const u = await createTestUser();
-    const one = seedBill(u.id);
-    const two = seedBill(u.id);
+    const one = await seedBill(u.id);
+    const two = await seedBill(u.id);
     const d = await storeDocument(
       u.id,
       pdf("shared"),
@@ -330,7 +356,7 @@ describe("documents", () => {
     await attachDocument(u.id, one.id, d.id);
     await attachDocument(u.id, two.id, d.id);
     await deleteBill(u.id, one.id);
-    expect(getDocumentMeta(u.id, d.id).id).toBe(d.id);
+    expect((await getDocumentMeta(u.id, d.id)).id).toBe(d.id);
     expect(await blobs.store.has(`documents/${u.id}/${d.id}`)).toBe(true);
   });
 
@@ -338,7 +364,7 @@ describe("documents", () => {
     const a = await createTestUser();
     const b = await createTestUser();
     const doc = await storeDocument(a.id, pdf("z"), "a.pdf", "application/pdf");
-    const bill = seedBill(b.id);
+    const bill = await seedBill(b.id);
     await expect(attachDocument(b.id, bill.id, doc.id)).rejects.toThrow(
       LedgerError,
     );
@@ -362,7 +388,7 @@ describe("documents stored by earlier versions", () => {
     // Layout of earlier versions: <dirname(DATABASE_PATH)>/documents/<userId>/<id>
     mkdirSync(join(dir, "documents", u.id), { recursive: true });
     writeFileSync(join(dir, "documents", u.id, id), bytes);
-    getDB()
+    await getDB()
       .insert(documents)
       .values({
         id,
@@ -373,8 +399,7 @@ describe("documents stored by earlier versions", () => {
         sha256: "0".repeat(64),
         storageKey: join(u.id, id),
         source: "upload",
-      })
-      .run();
+      });
 
     // Only DATABASE_PATH is set, as on an install that predates KEPT_STORAGE_DIR.
     setStore(
@@ -386,11 +411,10 @@ describe("documents stored by earlier versions", () => {
     expect(read.meta.fileName).toBe("old.pdf");
 
     const next = await storeDocument(u.id, pdf("new"), "n.pdf", "x");
-    const [row] = getDB()
+    const [row] = await getDB()
       .select({ storageKey: documents.storageKey })
       .from(documents)
-      .where(eq(documents.id, next.id))
-      .all();
+      .where(eq(documents.id, next.id));
     expect(row?.storageKey).toBe(`${u.id}/${next.id}`);
     expect(await Bun.file(join(dir, "documents", u.id, next.id)).exists()).toBe(
       true,

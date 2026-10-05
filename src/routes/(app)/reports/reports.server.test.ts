@@ -42,7 +42,7 @@ describe("report download", () => {
   it("serves each kind as an attachment PDF", async () => {
     const u = await createTestUser();
     const a = await seedAccount(u.id);
-    seedBill(u.id);
+    await seedBill(u.id);
     const cases: [string, string][] = [
       ["statement", `?account=${a.id}&from=2026-09-01&to=2026-09-30`],
       ["bills", ""],

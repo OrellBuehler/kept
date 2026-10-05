@@ -14,6 +14,7 @@ import {
   getDB,
   paperlessDocuments,
   type PaperlessFieldMapping,
+  first,
 } from "$lib/server/db";
 import { clearEventListeners, onBillChanged } from "$lib/server/events";
 import type { Minor } from "$lib/money";
@@ -163,7 +164,7 @@ describe("pushBill", () => {
     fake.bulkStatus = 200;
     fake.token = "test-token";
     user = await createTestUser();
-    seedConnection(user.id, fake, { mapping });
+    await seedConnection(user.id, fake, { mapping });
     fake.addDoc({ id: 7, original: pdf });
     await syncConnection(user.id);
   });
@@ -173,20 +174,22 @@ describe("pushBill", () => {
   });
 
   const bulkEdits = () => fake.requestsTo("/bulk_edit/", "POST");
-  const billId = () => listBills(user.id)[0]!.id;
-  const link = () =>
-    getDB()
-      .select()
-      .from(paperlessDocuments)
-      .where(
-        and(
-          eq(paperlessDocuments.userId, user.id),
-          eq(paperlessDocuments.paperlessId, 7),
-        ),
-      )
-      .get()!;
+  const billId = async () => (await listBills(user.id))[0]!.id;
+  const link = async () =>
+    (await first(
+      getDB()
+        .select()
+        .from(paperlessDocuments)
+        .where(
+          and(
+            eq(paperlessDocuments.userId, user.id),
+            eq(paperlessDocuments.paperlessId, 7),
+          ),
+        )
+        .limit(1),
+    ))!;
 
-  it("pushes the mapped values as a merge (modify_custom_fields) when a bill is imported", () => {
+  it("pushes the mapped values as a merge (modify_custom_fields) when a bill is imported", async () => {
     expect(bulkEdits()).toHaveLength(1);
     expect(bulkEdits()[0]!.json).toEqual({
       documents: [7],
@@ -202,7 +205,7 @@ describe("pushBill", () => {
       },
     });
     expect(fake.docs.get(7)!.custom_fields).toHaveLength(4);
-    expect(link().lastPushedHash).toMatch(/^[0-9a-f]{64}$/);
+    expect((await link()).lastPushedHash).toMatch(/^[0-9a-f]{64}$/);
   });
 
   it("leaves the modified time of its own write alone on the next sync", async () => {
@@ -216,10 +219,10 @@ describe("pushBill", () => {
     beforeEach(() => vi.stubEnv("KEPT_ALLOW_PRIVATE_NETWORK", ""));
     afterEach(() => vi.stubEnv("KEPT_ALLOW_PRIVATE_NETWORK", "true"));
 
-    const change = () =>
+    const change = async () =>
       updateBill(
         user.id,
-        billId(),
+        await billId(),
         billInput({
           creditorName: "Example Energy Ltd",
           dueDate: "2026-11-30",
@@ -228,9 +231,9 @@ describe("pushBill", () => {
       );
 
     it("a member's stored private connection is not written to", async () => {
-      change();
+      await change();
       fake.requests = [];
-      await expect(pushBill(user.id, billId())).rejects.toMatchObject({
+      await expect(pushBill(user.id, await billId())).rejects.toMatchObject({
         code: "blocked_address",
       });
       expect(fake.requests).toHaveLength(0);
@@ -238,25 +241,27 @@ describe("pushBill", () => {
 
     it("the listener-safe push records the failure by code and sends nothing", async () => {
       vi.spyOn(console, "error").mockImplementation(() => {});
-      change();
+      await change();
       fake.requests = [];
-      expect(await pushBillSafely(user.id, billId())).toBeNull();
+      expect(await pushBillSafely(user.id, await billId())).toBeNull();
       expect(fake.requests).toHaveLength(0);
-      expect(getConnectionRow(user.id)!.lastError).toBe("push_blocked_address");
+      expect((await getConnectionRow(user.id))!.lastError).toBe(
+        "push_blocked_address",
+      );
     });
   });
 
   it("skips the call when nothing changed", async () => {
     fake.requests = [];
-    const r = await pushBill(user.id, billId());
+    const r = await pushBill(user.id, await billId());
     expect(r.status).toBe("unchanged");
     expect(fake.requests).toHaveLength(0);
   });
 
   it("pushes again after the bill changed", async () => {
-    updateBill(
+    await updateBill(
       user.id,
-      billId(),
+      await billId(),
       billInput({
         creditorName: "Example Energy Ltd",
         dueDate: "2026-11-30",
@@ -264,7 +269,7 @@ describe("pushBill", () => {
       }),
     );
     fake.requests = [];
-    const r = await pushBill(user.id, billId());
+    const r = await pushBill(user.id, await billId());
     expect(r.status).toBe("pushed");
     expect(bulkEdits()[0]!.json).toMatchObject({
       parameters: {
@@ -276,7 +281,7 @@ describe("pushBill", () => {
   it("follows bill events when the listener is registered", async () => {
     onBillChanged((u, b) => void pushBillSafely(u, b));
     fake.requests = [];
-    cancelBill(user.id, billId());
+    await cancelBill(user.id, await billId());
     await vi.waitFor(() => expect(bulkEdits()).toHaveLength(1));
     expect(bulkEdits()[0]!.json).toMatchObject({
       parameters: { add_custom_fields: { "13": "opt-cancelled" } },
@@ -285,74 +290,74 @@ describe("pushBill", () => {
 
   it("does not write when Paperless says the user cannot change the document", async () => {
     fake.docs.get(7)!.user_can_change = false;
-    updateBill(
+    await updateBill(
       user.id,
-      billId(),
+      await billId(),
       billInput({ creditorName: "Example Energy Ltd", dueDate: "2026-12-01" }),
     );
     fake.requests = [];
-    const r = await pushBill(user.id, billId());
+    const r = await pushBill(user.id, await billId());
     expect(r).toMatchObject({ status: "skipped", reason: "read_only" });
     expect(bulkEdits()).toHaveLength(0);
   });
 
   it("remembers a read-only result instead of asking Paperless every time", async () => {
     fake.docs.get(7)!.user_can_change = false;
-    updateBill(
+    await updateBill(
       user.id,
-      billId(),
+      await billId(),
       billInput({ creditorName: "Example Energy Ltd", dueDate: "2026-12-01" }),
     );
-    expect(await pushBill(user.id, billId())).toMatchObject({
+    expect(await pushBill(user.id, await billId())).toMatchObject({
       reason: "read_only",
     });
     fake.requests = [];
-    expect(await pushBill(user.id, billId())).toMatchObject({
+    expect(await pushBill(user.id, await billId())).toMatchObject({
       reason: "read_only",
     });
     expect(fake.requests).toHaveLength(0);
 
     // Values change: ask again. Document becomes writable: the push goes through.
     fake.docs.get(7)!.user_can_change = true;
-    updateBill(
+    await updateBill(
       user.id,
-      billId(),
+      await billId(),
       billInput({ creditorName: "Example Energy Ltd", dueDate: "2026-12-05" }),
     );
-    expect((await pushBill(user.id, billId())).status).toBe("pushed");
+    expect((await pushBill(user.id, await billId())).status).toBe("pushed");
   });
 
   it("forgets the read-only marker when the document changes in Paperless", async () => {
     fake.docs.get(7)!.user_can_change = false;
-    updateBill(
+    await updateBill(
       user.id,
-      billId(),
+      await billId(),
       billInput({ creditorName: "Example Energy Ltd", dueDate: "2026-12-01" }),
     );
-    await pushBill(user.id, billId());
-    expect(link().lastPushedHash).toMatch(/^ro:/);
+    await pushBill(user.id, await billId());
+    expect((await link()).lastPushedHash).toMatch(/^ro:/);
     fake.docs.get(7)!.user_can_change = true;
     fake.docs.get(7)!.modified = "2026-10-01T10:00:00+00:00";
     await syncConnection(user.id);
-    expect(link().lastPushedHash).toBeNull();
-    expect((await pushBill(user.id, billId())).status).toBe("pushed");
+    expect((await link()).lastPushedHash).toBeNull();
+    expect((await pushBill(user.id, await billId())).status).toBe("pushed");
   });
 
   it("skips bills without a link, without a mapping and on disabled connections", async () => {
-    const id = billId();
-    const unlinked = seedBill(user.id);
+    const id = await billId();
+    const unlinked = await seedBill(user.id);
     expect(await pushBill(user.id, unlinked.id)).toMatchObject({
       reason: "not_linked",
     });
 
-    const row = getConnectionRow(user.id)!;
+    const row = (await getConnectionRow(user.id))!;
     const { setFieldMapping, setEnabled } = await import("./connection");
-    setFieldMapping(user.id, {});
+    await setFieldMapping(user.id, {});
     expect(await pushBill(user.id, id)).toMatchObject({
       reason: "no_mapping",
     });
-    setFieldMapping(user.id, mapping);
-    setEnabled(user.id, false);
+    await setFieldMapping(user.id, mapping);
+    await setEnabled(user.id, false);
     expect(await pushBill(user.id, id)).toMatchObject({
       reason: "disabled",
     });
@@ -361,35 +366,37 @@ describe("pushBill", () => {
 
   it("treats a document gone from Paperless as skipped", async () => {
     fake.docs.delete(7);
-    updateBill(
+    await updateBill(
       user.id,
-      billId(),
+      await billId(),
       billInput({ creditorName: "Example Energy Ltd", dueDate: "2026-12-02" }),
     );
-    expect(await pushBill(user.id, billId())).toMatchObject({ reason: "gone" });
+    expect(await pushBill(user.id, await billId())).toMatchObject({
+      reason: "gone",
+    });
   });
 
   it("the safe variant records failures by code and never throws", async () => {
     vi.spyOn(console, "error").mockImplementation(() => {});
     fake.bulkStatus = 403;
-    updateBill(
+    await updateBill(
       user.id,
-      billId(),
+      await billId(),
       billInput({ creditorName: "Example Energy Ltd", dueDate: "2026-12-03" }),
     );
-    const r = await pushBillSafely(user.id, billId());
+    const r = await pushBillSafely(user.id, await billId());
     expect(r).toBeNull();
-    expect(getConnectionRow(user.id)!.lastError).toBe("push_forbidden");
+    expect((await getConnectionRow(user.id))!.lastError).toBe("push_forbidden");
   });
 
   it("does not touch another user's documents", async () => {
     const other = await createTestUser();
     fake.requests = [];
-    const theirs = seedBill(other.id);
+    const theirs = await seedBill(other.id);
     expect(await pushBill(other.id, theirs.id)).toMatchObject({
       reason: "not_linked",
     });
-    expect(await pushBill(other.id, billId())).toMatchObject({
+    expect(await pushBill(other.id, await billId())).toMatchObject({
       reason: "not_linked",
     });
     expect(fake.requests.filter((r) => r.path.includes("/7/"))).toHaveLength(0);
