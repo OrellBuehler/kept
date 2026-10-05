@@ -1,5 +1,10 @@
 import { z } from "zod";
 import { errorCode as safeErrorCode } from "$lib/server/errors";
+import { pinnedFetch } from "$lib/server/net/pinned-fetch";
+import {
+  PrivateNetworkError,
+  type Lookup,
+} from "$lib/server/net/private-network";
 
 export const PAPERLESS_ERROR_CODES = [
   "invalid_url",
@@ -189,8 +194,13 @@ export interface ClientOptions {
   downloadTimeoutMs?: number;
   maxDownloadBytes?: number;
   maxJsonBytes?: number;
-  /** Called with the full URL right before every request; throws to refuse it. */
-  guard?: (url: string) => Promise<void>;
+  /**
+   * Refuse private destinations. The host is resolved once per request and the
+   * connection goes to the checked addresses only (no DNS rebinding window).
+   */
+  publicOnly?: boolean;
+  /** Resolver override for `publicOnly`; tests only. */
+  lookup?: Lookup;
 }
 
 export type Query =
@@ -252,7 +262,8 @@ export class PaperlessClient {
   private readonly downloadTimeoutMs: number;
   private readonly maxDownloadBytes: number;
   private readonly maxJsonBytes: number;
-  private readonly guard: ((url: string) => Promise<void>) | undefined;
+  private readonly publicOnly: boolean;
+  private readonly lookup: Lookup | undefined;
 
   constructor(options: ClientOptions) {
     this.baseUrl = normalizeBaseUrl(options.baseUrl);
@@ -263,7 +274,8 @@ export class PaperlessClient {
     this.downloadTimeoutMs = options.downloadTimeoutMs ?? DOWNLOAD_TIMEOUT_MS;
     this.maxDownloadBytes = options.maxDownloadBytes ?? MAX_DOWNLOAD_BYTES;
     this.maxJsonBytes = options.maxJsonBytes ?? MAX_JSON_BYTES;
-    this.guard = options.guard;
+    this.publicOnly = options.publicOnly ?? false;
+    this.lookup = options.lookup;
   }
 
   /** `{base}/api/<path>/`, always with the trailing slash Paperless requires. */
@@ -293,22 +305,39 @@ export class PaperlessClient {
       Accept: init.accept,
     });
     if (init.contentType) headers.set("Content-Type", init.contentType);
-    await this.guard?.(url);
     let res: Response;
     try {
-      res = await fetch(url, {
-        method: init.method,
-        headers,
-        body: init.body,
-        redirect: "manual",
-        signal: AbortSignal.timeout(init.timeoutMs),
-        // Opt-in per connection for self-signed certificates on a private network; off by default.
-        ...(this.allowInsecureTls
-          ? // nosemgrep: problem-based-packs.insecure-transport.js-node.bypass-tls-verification.bypass-tls-verification
-            { tls: { rejectUnauthorized: false } }
-          : {}),
-      } as RequestInit);
+      res = this.publicOnly
+        ? await pinnedFetch(
+            url,
+            {
+              method: init.method,
+              headers,
+              body: init.body,
+              signal: AbortSignal.timeout(init.timeoutMs),
+              allowInsecureTls: this.allowInsecureTls,
+            },
+            { lookup: this.lookup },
+          )
+        : await fetch(url, {
+            method: init.method,
+            headers,
+            body: init.body,
+            redirect: "manual",
+            signal: AbortSignal.timeout(init.timeoutMs),
+            // Opt-in per connection for self-signed certificates on a private network; off by default.
+            ...(this.allowInsecureTls
+              ? // nosemgrep: problem-based-packs.insecure-transport.js-node.bypass-tls-verification.bypass-tls-verification
+                { tls: { rejectUnauthorized: false } }
+              : {}),
+          } as RequestInit);
     } catch (err) {
+      if (err instanceof PrivateNetworkError) {
+        throw new PaperlessError(
+          err.code === "dns" ? "network" : "blocked_address",
+          { cause: err },
+        );
+      }
       throw classifyFetchError(err);
     }
     const serverVersion = res.headers.get("x-version");

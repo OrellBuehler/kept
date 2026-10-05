@@ -183,6 +183,36 @@ describe("channels", () => {
   });
 });
 
+describe("email channel", () => {
+  const smtp = {
+    host: "smtp.example.org",
+    port: 587,
+    secure: false,
+    user: null,
+    password: null,
+    from: "kept@example.org",
+  };
+
+  it("is sent for administrators only, never for members", async () => {
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    const admin = await createTestUser({ role: "admin" });
+    const member = await createTestUser();
+    const sendMail = vi.fn(async () => undefined);
+    for (const u of [admin, member]) {
+      await saveChannel(u.id, "email", { to: "someone@example.org" });
+    }
+
+    expect(await sendTest(admin.id, "email", { smtp, sendMail })).toEqual({
+      ok: true,
+    });
+    expect(sendMail).toHaveBeenCalledTimes(1);
+
+    const refused = await sendTest(member.id, "email", { smtp, sendMail });
+    expect(refused).toMatchObject({ ok: false });
+    expect(sendMail).toHaveBeenCalledTimes(1);
+  });
+});
+
 describe("channels encrypted with another KEPT_SECRET_KEY", () => {
   const keyA = Buffer.alloc(32, 1).toString("base64");
   const keyB = Buffer.alloc(32, 2).toString("base64");

@@ -13,8 +13,9 @@ import {
 import {
   getConnectionRow,
   isTokenUnreadable,
-  privateNetworkGuard,
   saveConnection,
+  tokenReentryError,
+  tokenReentryRequired,
   type ConnectionRow,
   type SaveConnectionInput,
   type SaveConnectionResult,
@@ -102,7 +103,7 @@ async function verifySameServer(
     timeoutMs: CHECK_TIMEOUT_MS,
     downloadTimeoutMs: CHECK_TIMEOUT_MS * 3,
     // The new address is not saved yet, so it gets the same private-network check as saving it.
-    guard: privateNetworkGuard(input.allowPrivateNetwork !== false),
+    publicOnly: input.allowPrivateNetwork !== true,
   });
   for (const sample of samples) {
     let matches: boolean;
@@ -147,6 +148,11 @@ export async function saveConnectionVerified(
       if (!(err instanceof PaperlessError)) throw err;
     }
     if (baseUrl !== null && baseUrl !== existing.baseUrl) {
+      if (
+        tokenReentryRequired(existing, baseUrl, input.token?.trim() || null)
+      ) {
+        throw tokenReentryError();
+      }
       await verifySameServer(existing, baseUrl, input);
     }
   }

@@ -215,7 +215,7 @@
                 autocomplete="new-password"
               />
             </FormField>
-            {#if channel?.needsReentry}
+            {#if channel?.needsReentry || channel?.hasSecret}
               <label class="flex items-center gap-2 text-sm">
                 <input type="checkbox" name="removeSecret" />
                 Remove the saved secret instead of entering it again

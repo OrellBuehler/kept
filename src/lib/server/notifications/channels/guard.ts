@@ -8,6 +8,14 @@ import { ChannelError } from "../types";
 
 export { isPrivateAddress, type Lookup };
 
+/** A blocked or unresolvable destination as a channel error; anything else is returned unchanged. */
+export function toChannelError(err: unknown): unknown {
+  if (!(err instanceof PrivateNetworkError)) return err;
+  return err.code === "dns"
+    ? new ChannelError("dns", "The host name could not be resolved.")
+    : new ChannelError("blocked_address", err.message);
+}
+
 /**
  * Rejects private destinations unless `allowPrivate`; see `privateNetworkAllowed`
  * for who gets it. Runs at save and at send time.
@@ -19,9 +27,6 @@ export async function assertAllowedUrl(
   try {
     await assertHostAllowed(url, options);
   } catch (err) {
-    if (!(err instanceof PrivateNetworkError)) throw err;
-    throw err.code === "dns"
-      ? new ChannelError("dns", "The host name could not be resolved.")
-      : new ChannelError("blocked_address", err.message);
+    throw toChannelError(err);
   }
 }

@@ -70,6 +70,49 @@ describe("normalizeBaseUrl", () => {
   });
 });
 
+describe("PaperlessClient publicOnly", () => {
+  const list = z.object({ results: z.array(idList) });
+
+  it("blocks a host that resolves to a private address without reaching the server", async () => {
+    const c = client({
+      baseUrl: `http://docs.example.org:${new URL(fake.origin).port}`,
+      publicOnly: true,
+      lookup: async () => [{ address: "127.0.0.1", family: 4 }],
+    });
+    expect(await codeOf(c.json("documents", list))).toBe("blocked_address");
+    expect(fake.requests).toHaveLength(0);
+  });
+
+  it("resolves once per request and does not follow a rebinding answer to the loopback server", async () => {
+    let calls = 0;
+    const c = client({
+      baseUrl: `http://docs.example.org:${new URL(fake.origin).port}`,
+      publicOnly: true,
+      timeoutMs: 400,
+      lookup: async () => {
+        calls++;
+        return calls === 1
+          ? [{ address: "203.0.113.7", family: 4 }]
+          : [{ address: "127.0.0.1", family: 4 }];
+      },
+    });
+    expect(await codeOf(c.json("documents", list))).not.toBe("none");
+    expect(calls).toBe(1);
+    expect(fake.requests).toHaveLength(0);
+  });
+
+  it("maps a resolver failure to a network error", async () => {
+    const c = client({
+      baseUrl: "http://docs.example.org",
+      publicOnly: true,
+      lookup: async () => {
+        throw new Error("ENOTFOUND");
+      },
+    });
+    expect(await codeOf(c.json("documents", list))).toBe("network");
+  });
+});
+
 describe("PaperlessClient requests", () => {
   it("sends the token and asks for API version 9 first", async () => {
     await client().json("documents", z.object({ results: z.array(idList) }));

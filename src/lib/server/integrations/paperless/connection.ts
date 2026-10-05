@@ -21,8 +21,6 @@ import {
   transaction,
 } from "$lib/server/db";
 import {
-  PrivateNetworkError,
-  assertHostAllowed,
   isPrivateLiteralHost,
   privateNetworkAllowedForUser,
 } from "$lib/server/net/private-network";
@@ -290,8 +288,29 @@ export interface SaveConnectionInput {
    * links to the old server's documents and start over. Without it, an address change keeps them.
    */
   differentInstance?: boolean;
-  /** Whether this user may point Kept at private-network hosts; see `privateNetworkAllowed`. */
+  /** Private-network hosts are accepted only when this is explicitly true; see `privateNetworkAllowed`. */
   allowPrivateNetwork?: boolean;
+}
+
+/** The scheme, host and port of two normalized base URLs differ. */
+export function originChanged(from: string, to: string): boolean {
+  return new URL(from).origin !== new URL(to).origin;
+}
+
+/** The stored token must not follow an address to another host: it has to be typed in again. */
+export function tokenReentryRequired(
+  existing: ConnectionRow,
+  baseUrl: string,
+  token: string | null,
+): boolean {
+  return token === null && originChanged(existing.baseUrl, baseUrl);
+}
+
+const TOKEN_REENTRY_MESSAGE =
+  "The address points to a different host. Enter the access token again; the saved one is not sent there.";
+
+export function tokenReentryError(): LedgerError {
+  return new LedgerError("invalid", TOKEN_REENTRY_MESSAGE, "token");
 }
 
 export interface SaveConnectionResult {
@@ -318,7 +337,7 @@ export async function saveConnection(
     }
     throw err;
   }
-  if (input.allowPrivateNetwork === false && isPrivateLiteralHost(baseUrl)) {
+  if (input.allowPrivateNetwork !== true && isPrivateLiteralHost(baseUrl)) {
     throw new LedgerError(
       "invalid",
       new PaperlessError("blocked_address").message,
@@ -392,8 +411,12 @@ async function saveConnectionInTx(
       "token",
     );
   }
+  if (tokenReentryRequired(existing, baseUrl, token)) {
+    throw tokenReentryError();
+  }
   const moved = existing.baseUrl !== baseUrl;
   const reset = input.differentInstance === true;
+  let key = reset ? newInstanceKey() : rowInstanceKey(existing);
   if (moved) {
     await rememberInstance(
       tx,
@@ -401,6 +424,8 @@ async function saveConnectionInTx(
       existing.baseUrl,
       rowInstanceKey(existing),
     );
+    // Back at an address the user had before: its documents keep the key their bills were saved under.
+    key = (await rememberedKey(tx, userId, baseUrl)) ?? key;
   }
   if (reset) {
     // Another server has other document ids: old links and watermark are meaningless.
@@ -433,7 +458,7 @@ async function saveConnectionInTx(
       .update(paperlessConnections)
       .set({
         baseUrl,
-        instanceKey: reset ? newInstanceKey() : rowInstanceKey(existing),
+        instanceKey: key,
         allowInsecureTls: input.allowInsecureTls,
         ...(token !== null ? { tokenEncrypted: encryptSecret(token) } : {}),
         ...(moved || reset
@@ -565,25 +590,8 @@ export async function clientForRow(
     token,
     allowInsecureTls: row.allowInsecureTls,
     apiVersion: row.apiVersion,
-    guard: privateNetworkGuard(await privateNetworkAllowedForUser(row.userId)),
+    publicOnly: !(await privateNetworkAllowedForUser(row.userId)),
   });
-}
-
-/** The request guard for a client: none when private hosts are allowed, else a resolve-and-check. */
-export function privateNetworkGuard(
-  allowPrivate: boolean,
-): ((url: string) => Promise<void>) | undefined {
-  if (allowPrivate) return undefined;
-  return async (url) => {
-    try {
-      await assertHostAllowed(url, { allowPrivate: false });
-    } catch (err) {
-      if (!(err instanceof PrivateNetworkError)) throw err;
-      throw new PaperlessError(
-        err.code === "dns" ? "network" : "blocked_address",
-      );
-    }
-  };
 }
 
 /** Stores what a call learned about the server (negotiated API version, release). */
