@@ -21,6 +21,7 @@ import {
   linkTransfersInTx,
   removeMirrors,
   revalidateLinks,
+  transfersLock,
   type Tx,
 } from "$lib/server/transfers";
 import { currentValues, type CurrentValue } from "./balances";
@@ -284,43 +285,47 @@ export async function createAccount(
 ): Promise<AccountView> {
   let id: string;
   try {
-    id = await transaction(async (tx) => {
-      await assertInstitutionOwned(tx, userId, input.institutionId);
-      await assertIbanFree(tx, userId, input.iban);
-      const sortOrder =
-        input.sortOrder ??
-        ((
-          await first(
-            tx
-              .select({
-                m: sql<number | null>`max(${accounts.sortOrder})`.mapWith(
-                  Number,
-                ),
-              })
-              .from(accounts)
-              .where(eq(accounts.userId, userId))
-              .limit(1),
-          )
-        )?.m ?? -1) + 1;
-      const created = (await first(
-        tx
-          .insert(accounts)
-          .values({
-            ...input,
-            sortOrder,
-            userId,
-            fillFromTransfers:
-              input.fillFromTransfers === true && input.type !== "pillar_3a",
-            tradesMoveCash: input.tradesMoveCash && input.type === "investment",
-          })
-          .returning({ id: accounts.id }),
-      ))!;
-      // Transfers other accounts already show to this IBAN become mirrors here.
-      if (input.fillFromTransfers === true && input.type !== "pillar_3a") {
-        await linkTransfersInTx(tx, userId, { targetAccountId: created.id });
-      }
-      return created.id;
-    });
+    id = await transaction(
+      async (tx) => {
+        await assertInstitutionOwned(tx, userId, input.institutionId);
+        await assertIbanFree(tx, userId, input.iban);
+        const sortOrder =
+          input.sortOrder ??
+          ((
+            await first(
+              tx
+                .select({
+                  m: sql<number | null>`max(${accounts.sortOrder})`.mapWith(
+                    Number,
+                  ),
+                })
+                .from(accounts)
+                .where(eq(accounts.userId, userId))
+                .limit(1),
+            )
+          )?.m ?? -1) + 1;
+        const created = (await first(
+          tx
+            .insert(accounts)
+            .values({
+              ...input,
+              sortOrder,
+              userId,
+              fillFromTransfers:
+                input.fillFromTransfers === true && input.type !== "pillar_3a",
+              tradesMoveCash:
+                input.tradesMoveCash && input.type === "investment",
+            })
+            .returning({ id: accounts.id }),
+        ))!;
+        // Transfers other accounts already show to this IBAN become mirrors here.
+        if (input.fillFromTransfers === true && input.type !== "pillar_3a") {
+          await linkTransfersInTx(tx, userId, { targetAccountId: created.id });
+        }
+        return created.id;
+      },
+      { lock: transfersLock(userId) },
+    );
   } catch (err) {
     mapIbanViolation(err, input.iban);
   }
@@ -494,7 +499,9 @@ export async function updateAccount(
   input: AccountInput & { confirmRemoveMirrors?: boolean },
 ): Promise<AccountView> {
   try {
-    await transaction(async (tx) => updateAccountInTx(tx, userId, id, input));
+    await transaction(async (tx) => updateAccountInTx(tx, userId, id, input), {
+      lock: transfersLock(userId),
+    });
   } catch (err) {
     mapIbanViolation(err, input.iban);
   }

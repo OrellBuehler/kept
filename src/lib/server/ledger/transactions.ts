@@ -16,7 +16,7 @@ import {
   type MirrorRef,
   type TransferRef,
 } from "$lib/server/transfers/view";
-import { linkAfterWrite } from "$lib/server/transfers/link";
+import { linkAfterWrite, transfersLock } from "$lib/server/transfers/link";
 import { unlink } from "$lib/server/transfers/manual";
 import {
   findReplacementsInTx,
@@ -261,51 +261,54 @@ export async function createManualTransaction(
   accountId: string,
   input: TransactionInput,
 ): Promise<TransactionView> {
-  const id = await transaction(async (tx) => {
-    const { currency, openingDate } = await ownedAccountInTx(
-      tx,
-      userId,
-      accountId,
-    );
-    assertNotBeforeOpening({ openingDate }, input.bookingDate);
-    const created = (await first(
-      tx
-        .insert(transactions)
-        .values({
-          ...input,
-          userId,
-          accountId,
-          currency,
-          source: "manual",
-          externalId: `manual:${crypto.randomUUID()}`,
-          reversal: false,
-        })
-        .returning({ id: transactions.id }),
-    ))!;
-    // Like an imported row, a manual one takes over the mirror it stands for.
-    const mirrorId = (
-      await findReplacementsInTx(tx, userId, accountId, [
-        {
-          key: created.id,
-          bookingDate: input.bookingDate,
-          amount: input.amount,
-          counterpartyIban: input.counterpartyIban,
-          reference: input.reference,
-          description: input.description,
-        },
-      ])
-    ).get(created.id);
-    if (mirrorId !== undefined)
-      await takeOverMirror(tx, userId, mirrorId, created.id);
-    await linkAfterWrite(
-      tx,
-      userId,
-      accountId,
-      [created.id],
-      [input.bookingDate],
-    );
-    return created.id;
-  });
+  const id = await transaction(
+    async (tx) => {
+      const { currency, openingDate } = await ownedAccountInTx(
+        tx,
+        userId,
+        accountId,
+      );
+      assertNotBeforeOpening({ openingDate }, input.bookingDate);
+      const created = (await first(
+        tx
+          .insert(transactions)
+          .values({
+            ...input,
+            userId,
+            accountId,
+            currency,
+            source: "manual",
+            externalId: `manual:${crypto.randomUUID()}`,
+            reversal: false,
+          })
+          .returning({ id: transactions.id }),
+      ))!;
+      // Like an imported row, a manual one takes over the mirror it stands for.
+      const mirrorId = (
+        await findReplacementsInTx(tx, userId, accountId, [
+          {
+            key: created.id,
+            bookingDate: input.bookingDate,
+            amount: input.amount,
+            counterpartyIban: input.counterpartyIban,
+            reference: input.reference,
+            description: input.description,
+          },
+        ])
+      ).get(created.id);
+      if (mirrorId !== undefined)
+        await takeOverMirror(tx, userId, mirrorId, created.id);
+      await linkAfterWrite(
+        tx,
+        userId,
+        accountId,
+        [created.id],
+        [input.bookingDate],
+      );
+      return created.id;
+    },
+    { lock: transfersLock(userId) },
+  );
   return await getTransaction(userId, id);
 }
 
@@ -323,17 +326,20 @@ export async function updateTransaction(
     if (!("bookingDate" in input)) {
       throw new LedgerError("invalid", "Missing transaction fields.");
     }
-    await transaction(async (tx) => {
-      // Read again inside the transaction: the previous IBAN decides which links survive.
-      const previous = await getTransactionRowInTx(tx, userId, id);
-      assertNotBeforeOpening(
-        await ownedAccountInTx(tx, userId, previous.accountId),
-        input.bookingDate,
-      );
-      await tx.update(transactions).set(input).where(where);
-      // A mirror follows its source's amount, dates and text.
-      await resyncSource(tx, userId, id, previous.counterpartyIban);
-    });
+    await transaction(
+      async (tx) => {
+        // Read again inside the transaction: the previous IBAN decides which links survive.
+        const previous = await getTransactionRowInTx(tx, userId, id);
+        assertNotBeforeOpening(
+          await ownedAccountInTx(tx, userId, previous.accountId),
+          input.bookingDate,
+        );
+        await tx.update(transactions).set(input).where(where);
+        // A mirror follows its source's amount, dates and text.
+        await resyncSource(tx, userId, id, previous.counterpartyIban);
+      },
+      { lock: transfersLock(userId) },
+    );
   }
   return await getTransaction(userId, id);
 }

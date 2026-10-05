@@ -27,6 +27,14 @@ type Reader = Pick<DB, "select">;
 
 const CHUNK = 500;
 
+/**
+ * Linking plans from what is booked and then inserts transfers and mirrors, so
+ * two runs of one user's linking (two imports, an import and a manual entry)
+ * would plan the same link and the second insert would hit the unique index.
+ * Every transaction that links, links manually or unlinks takes this lock.
+ */
+export const transfersLock = (userId: string) => `transfers:${userId}`;
+
 function planAccountQueries(conn: Reader, userId: string) {
   return {
     withPortfolios: conn
@@ -346,7 +354,9 @@ export async function linkTransfers(
   userId: string,
   scope: LinkScope = {},
 ): Promise<LinkResult> {
-  return await transaction(async (tx) => linkTransfersInTx(tx, userId, scope));
+  return await transaction(async (tx) => linkTransfersInTx(tx, userId, scope), {
+    lock: transfersLock(userId),
+  });
 }
 
 /** `linkTransfers` on a transaction you already hold. */
