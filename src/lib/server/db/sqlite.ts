@@ -15,7 +15,12 @@ import { mkdirSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { describeError } from "$lib/server/errors";
 import * as schema from "./schema";
-import type { Backend, BackendTransaction, DB } from "./backend";
+import type {
+  Backend,
+  BackendTransaction,
+  DB,
+  TransactionMode,
+} from "./backend";
 import { Gate, GateToken } from "./gate";
 
 export const DEFAULT_GATE_TIMEOUT_MS = 30_000;
@@ -162,7 +167,10 @@ class SqliteBackend implements Backend {
     return this.#exec(sql, params, method);
   }
 
-  async beginTransaction(): Promise<BackendTransaction> {
+  async beginTransaction(
+    onAbort?: () => void,
+    mode: TransactionMode = "write",
+  ): Promise<BackendTransaction> {
     const token = new GateToken("transaction", true);
     await this.gate.acquire(token);
     try {
@@ -170,8 +178,10 @@ class SqliteBackend implements Backend {
         throw new Error("A transaction is already open on the connection");
       }
       // IMMEDIATE takes the write lock up front, so a transaction that reads
-      // and then writes can never fail late with SQLITE_BUSY_SNAPSHOT.
-      this.client.exec("BEGIN IMMEDIATE");
+      // and then writes can never fail late with SQLITE_BUSY_SNAPSHOT. A
+      // snapshot only reads: the gate keeps every writer of this process out,
+      // and the deferred transaction gives it one consistent view.
+      this.client.exec(mode === "snapshot" ? "BEGIN" : "BEGIN IMMEDIATE");
     } catch (err) {
       this.gate.release(token);
       throw err;
@@ -195,6 +205,7 @@ class SqliteBackend implements Backend {
         token.stack || "(no stack captured)",
       );
       token.active = false;
+      onAbort?.();
       rollbackQuietly();
       this.gate.release(token);
     }, this.#transactionTimeoutMs);
@@ -256,9 +267,31 @@ class SqliteBackend implements Backend {
   ): Promise<T> {
     const token = new GateToken("exclusive client", true);
     await this.gate.acquire(token);
+    // A body that never settles must not hold the connection for good. A
+    // synchronous body blocks the timer as well, so this bounds async ones.
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const expired = new Promise<never>((_, reject) => {
+      timer = setTimeout(() => {
+        if (!token.active) return;
+        console.error(
+          "exclusive client still in use after %dms; releasing the database. Started at:\n%s",
+          this.#transactionTimeoutMs,
+          token.stack || "(no stack captured)",
+        );
+        token.active = false;
+        this.gate.release(token);
+        reject(
+          new Error(
+            "The exclusive database access was open too long and was released; this work cannot continue",
+          ),
+        );
+      }, this.#transactionTimeoutMs);
+      timer.unref();
+    });
     try {
-      return await fn(this.client);
+      return await Promise.race([Promise.resolve(fn(this.client)), expired]);
     } finally {
+      clearTimeout(timer);
       this.gate.release(token);
     }
   }

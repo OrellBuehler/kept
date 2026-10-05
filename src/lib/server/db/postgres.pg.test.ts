@@ -68,6 +68,7 @@ import {
   type DB,
 } from "./index";
 import { MIGRATION_LOCK_KEY, migratePostgres, openPostgres } from "./postgres";
+import { readSnapshot } from "./index";
 
 const adminUrl = process.env.KEPT_TEST_DATABASE_URL;
 const enabled = dialect === "pg" && !!adminUrl;
@@ -261,7 +262,7 @@ describe.skipIf(!enabled)("postgres migrations", () => {
         await backend.close();
       }
       expect(await tableCount()).toBe(0);
-      // The session lock is gone: another connection can take it at once.
+      // The lock is gone: another connection can take it at once.
       const [row] = (await raw.unsafe(
         "select pg_try_advisory_lock(hashtextextended($1, 0)) as got",
         [MIGRATION_LOCK_KEY],
@@ -271,6 +272,46 @@ describe.skipIf(!enabled)("postgres migrations", () => {
     } finally {
       rmSync(folder, { recursive: true, force: true });
     }
+  });
+
+  it("gives up waiting for the migration lock after the given time", async () => {
+    const holder = await raw.reserve();
+    await holder.unsafe("select pg_advisory_lock(hashtextextended($1, 0))", [
+      MIGRATION_LOCK_KEY,
+    ]);
+    const backend = openPostgres(configFor(name));
+    try {
+      const started = Date.now();
+      await expect(
+        migratePostgres(
+          backend,
+          join(process.cwd(), "drizzle", "postgres"),
+          300,
+        ),
+      ).rejects.toThrow(/Timed out after 300ms waiting for another instance/);
+      expect(Date.now() - started).toBeLessThan(3000);
+      expect(await tableCount()).toBe(0);
+    } finally {
+      await holder.unsafe("select pg_advisory_unlock_all()");
+      holder.release();
+      await backend.close();
+    }
+    // Nothing is left held by the timed out run: a normal run goes through.
+    await migrateDatabase(open());
+    expect(await tableCount()).toBeGreaterThan(40);
+  });
+
+  it("holds the lock only for the length of its transaction", async () => {
+    const backend = openPostgres(configFor(name));
+    try {
+      await migratePostgres(backend);
+    } finally {
+      await backend.close();
+    }
+    const [row] = (await raw.unsafe(
+      "select count(*) as n from pg_locks where locktype = 'advisory' and database = (select oid from pg_database where datname = current_database())",
+    )) as { n: string }[];
+    expect(Number(row!.n)).toBe(0);
   });
 
   it("runs migrations without the pool's statement and transaction timeouts", async () => {
@@ -788,6 +829,184 @@ describe.skipIf(!enabled)("postgres backend", () => {
       expect(await countUsers()).toBe(0);
       spy.mockRestore();
       // Both pool slots still work, including the one that was killed.
+      await Promise.all([insertUser("p1"), insertUser("p2"), insertUser("p3")]);
+      expect(await countUsers()).toBe(3);
+    });
+  });
+
+  describe("disabled transaction timeout", () => {
+    it("arms no client watchdog and sends no server timeout", async () => {
+      await start({
+        KEPT_DB_POOL_MAX: "2",
+        KEPT_DB_TRANSACTION_TIMEOUT_MS: "0",
+      });
+      const timers = vi.spyOn(globalThis, "setTimeout");
+      const seen = await transaction(async (tx) => {
+        const [row] = await tx
+          .select({
+            t: sql<string>`current_setting('transaction_timeout')`,
+          })
+          .from(one);
+        return row!.t;
+      });
+      const delays = timers.mock.calls.map((c) => c[1]);
+      timers.mockRestore();
+      expect(seen).toBe("0");
+      // The default limit and the slack alone are what a watchdog would arm.
+      expect(delays).not.toContain(60_000);
+      expect(delays).not.toContain(60_500);
+      expect(delays).not.toContain(500);
+    });
+
+    it("lets a transaction run past the default limit's slack", async () => {
+      await start({
+        KEPT_DB_POOL_MAX: "1",
+        KEPT_DB_TRANSACTION_TIMEOUT_MS: "0",
+      });
+      const error = vi.spyOn(console, "error").mockImplementation(() => {});
+      await transaction(async (tx) => {
+        await sleep(800);
+        await tx.insert(users).values({ username: "slow", passwordHash: "x" });
+      });
+      expect(error).not.toHaveBeenCalled();
+      expect(await countUsers()).toBe(1);
+    });
+  });
+
+  describe("isolation level", () => {
+    it("runs transactions at READ COMMITTED whatever the database default is", async () => {
+      await admin.unsafe(
+        `alter database ${name} set default_transaction_isolation = 'repeatable read'`,
+      );
+      await start();
+      const level = () =>
+        getDB()
+          .select({ l: sql<string>`current_setting('transaction_isolation')` })
+          .from(one)
+          .then((r) => r[0]!.l);
+      expect(await transaction(level)).toBe("read committed");
+      expect(await transaction(level, { lock: "iso" })).toBe("read committed");
+    });
+  });
+
+  describe("read snapshot", () => {
+    it("sees one state for every query, however others commit meanwhile", async () => {
+      await start();
+      await insertUser("first");
+      const counts = await readSnapshot(async () => {
+        const before = await countUsers(); // via the pool: not the snapshot
+        const a = await getDB().select({ n: count() }).from(users);
+        await raw.unsafe(
+          "insert into users (id, username, password_hash) values (gen_random_uuid()::text, 'second', 'x')",
+        );
+        const b = await getDB().select({ n: count() }).from(users);
+        return { before, a: a[0]!.n, b: b[0]!.n };
+      });
+      expect(counts).toEqual({ before: 1, a: 1, b: 1 });
+      expect(await countUsers()).toBe(2);
+    });
+
+    it("is read only and takes no lock key", async () => {
+      await start();
+      await expect(
+        readSnapshot(async () => {
+          await insertUser("nope");
+        }),
+      ).rejects.toThrow();
+      expect(await countUsers()).toBe(0);
+    });
+
+    it("reuses an enclosing transaction", async () => {
+      await start();
+      const n = await transaction(async () => {
+        await insertUser("inside");
+        return readSnapshot(async () => {
+          const [row] = await getDB().select({ n: count() }).from(users);
+          return row!.n;
+        });
+      });
+      expect(n).toBe(1);
+    });
+  });
+
+  describe("deadlock retry", () => {
+    it("retries a transaction PostgreSQL aborted for a deadlock, and both end up committed", async () => {
+      await start({ KEPT_DB_POOL_MAX: "4" });
+      const spy = vi.spyOn(console, "error").mockImplementation(() => {});
+      await getDB()
+        .insert(users)
+        .values([
+          { username: "u1", passwordHash: "x" },
+          { username: "u2", passwordHash: "x" },
+        ]);
+      const touch = (tx: DB, username: string, tag: string) =>
+        tx
+          .update(users)
+          .set({ displayName: tag })
+          .where(eq(users.username, username));
+      // Each first attempt takes its first row, waits for the other to do the
+      // same, then asks for the other's row: a deadlock the server resolves
+      // by aborting one of them.
+      const firstLocks = [
+        Promise.withResolvers<void>(),
+        Promise.withResolvers<void>(),
+      ];
+      const hooks = vi.fn();
+      const attempts = [0, 0];
+      const run = (i: number, first: string, second: string) =>
+        transaction(async (tx) => {
+          const attempt = ++attempts[i]!;
+          await touch(tx, first, `t${i}`);
+          if (attempt === 1) {
+            firstLocks[i]!.resolve();
+            await firstLocks[1 - i]!.promise;
+          }
+          await touch(tx, second, `t${i}`);
+          afterCommit(() => hooks(i));
+        });
+      await Promise.all([run(0, "u1", "u2"), run(1, "u2", "u1")]);
+      expect(attempts.reduce((a, b) => a + b, 0)).toBeGreaterThan(2);
+      // Failed attempts fired no hook: one per transaction.
+      expect(hooks).toHaveBeenCalledTimes(2);
+      const rows = (await raw.unsafe(
+        "select display_name from users order by username",
+      )) as { display_name: string }[];
+      // The second transaction to commit wrote both rows.
+      expect(rows[0]!.display_name).toBe(rows[1]!.display_name);
+      expect(
+        spy.mock.calls.some((c) => String(c[0]).includes("deadlock")),
+      ).toBe(true);
+    }, 30_000);
+  });
+
+  describe("pool acquire timeout", () => {
+    it("fails a transaction that waits too long for a connection, without leaking", async () => {
+      await start({
+        KEPT_DB_POOL_MAX: "2",
+        KEPT_DB_STATEMENT_TIMEOUT_MS: "400",
+      });
+      vi.spyOn(console, "error").mockImplementation(() => {});
+      const release = Promise.withResolvers<void>();
+      const holders = [0, 1].map(() =>
+        transaction(async () => {
+          await release.promise;
+        }),
+      );
+      await sleep(100);
+      const started = Date.now();
+      const error = await transaction(async (tx) => {
+        await tx.insert(users).values({ username: "x", passwordHash: "x" });
+      }).then(
+        () => null,
+        (e: unknown) => e,
+      );
+      expect(error).toBeInstanceOf(LedgerError);
+      expect((error as LedgerError).code).toBe("conflict");
+      expect(Date.now() - started).toBeLessThan(2000);
+      release.resolve();
+      await Promise.all(holders);
+      // The abandoned BEGIN rolled back when its turn came: nothing written,
+      // and both connections are usable.
       await Promise.all([insertUser("p1"), insertUser("p2"), insertUser("p3")]);
       expect(await countUsers()).toBe(3);
     });

@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { useTestDB } from "$lib/testing/db";
 import { transaction } from "./index";
 
@@ -23,5 +23,23 @@ describe("transaction lock keys", () => {
         { lock: "a" },
       ),
     ).rejects.toThrow("two different lock keys");
+  });
+});
+
+describe("transaction lock keys outside the test runner", () => {
+  it("still rejects a second, different key", async () => {
+    vi.stubEnv("VITEST", "");
+    try {
+      await expect(
+        transaction(
+          async () => {
+            await transaction(async () => undefined, { lock: "b" });
+          },
+          { lock: "a" },
+        ),
+      ).rejects.toThrow("two different lock keys");
+    } finally {
+      vi.unstubAllEnvs();
+    }
   });
 });

@@ -60,9 +60,10 @@
     <Card.Title>Balance snapshots</Card.Title>
     <Card.Description>
       {#if portfolios}
-        Snapshots record the cash balance of this account. The value of your
-        portfolios is added on top, so leave it out and update it under
-        Portfolios.
+        Once portfolio values exist, this account is worth its portfolios alone,
+        so balance snapshots do not affect its value. Update the values under
+        Portfolios. Snapshots still shape the history before the first portfolio
+        value.
       {:else if holdings}
         Snapshots record the cash balance of this account. The value of your
         holdings is added on top, so leave it out.

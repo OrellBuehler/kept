@@ -38,6 +38,13 @@ export interface BackendTransaction {
   release(): void;
 }
 
+/**
+ * `write` is the default read-write transaction (READ COMMITTED). `snapshot`
+ * is a read-only view that sees one consistent state for its whole lifetime
+ * (REPEATABLE READ on PostgreSQL) and never takes a lock key.
+ */
+export type TransactionMode = "write" | "snapshot";
+
 export interface Backend {
   /** Plain queries: serialised behind any open transaction. */
   readonly root: DB;
@@ -45,7 +52,10 @@ export interface Backend {
    * `onAbort` is called when the backend gives up on a transaction that stayed
    * open too long (PostgreSQL); the facade then fails the body's further work.
    */
-  beginTransaction(onAbort?: () => void): Promise<BackendTransaction>;
+  beginTransaction(
+    onAbort?: () => void,
+    mode?: TransactionMode,
+  ): Promise<BackendTransaction>;
   /** Applies pending migrations; safe to run from several processes at once where the engine allows it. */
   migrate(): Promise<void>;
   /** Raw access to the connection while nothing else uses it. SQLite only. */

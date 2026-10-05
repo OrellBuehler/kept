@@ -312,9 +312,7 @@ describe("transaction watchdog", () => {
     expect(Date.now() - started).toBeLessThan(1000);
     expect(await names()).toEqual(["waiter"]);
 
-    await expect(late).rejects.toMatchObject({
-      cause: { message: expect.stringMatching(/already finished/) },
-    });
+    await expect(late).rejects.toThrow(/rolled back/);
     await sleep(10);
     expect(await names()).toEqual(["waiter"]);
 
@@ -322,6 +320,43 @@ describe("transaction watchdog", () => {
     expect(logged).toContain("hardening.test.ts");
     expect(logged).not.toMatch(/insert/i);
     expect(logged).not.toContain("stuck");
+  });
+
+  it("marks the transaction aborted, so its late hooks are dropped like PostgreSQL's", async () => {
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    const hook = vi.fn();
+    let ctx!: () => void;
+    const proceed = new Promise<void>((r) => (ctx = r));
+    const outcome = transaction(async () => {
+      await sleep(150);
+      afterCommit(hook);
+      ctx();
+    });
+    await proceed;
+    await outcome.catch(() => undefined);
+    expect(hook).not.toHaveBeenCalled();
+  });
+
+  it("bounds an exclusive client that never settles and frees the gate", async () => {
+    const error = vi.spyOn(console, "error").mockImplementation(() => {});
+    const stuck = withExclusiveClient(() => new Promise<never>(() => {}));
+    const outcome = stuck.then(
+      () => "settled",
+      (err: unknown) => String((err as Error).message),
+    );
+    const started = Date.now();
+    await insertUser(getDB(), "waiter");
+    expect(Date.now() - started).toBeLessThan(1000);
+    expect(await outcome).toMatch(/open too long/);
+    expect(await names()).toEqual(["waiter"]);
+    expect(error.mock.calls.flat().join(" ")).toContain("hardening.test.ts");
+  });
+
+  it("leaves a quick exclusive client alone", async () => {
+    const error = vi.spyOn(console, "error").mockImplementation(() => {});
+    expect(await withExclusiveClient(() => 42)).toBe(42);
+    await sleep(120);
+    expect(error).not.toHaveBeenCalled();
   });
 
   it("rejects the transaction when its body finally returns after the expiry", async () => {
