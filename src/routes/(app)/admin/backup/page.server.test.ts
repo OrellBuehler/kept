@@ -5,6 +5,7 @@ import {
 } from "$lib/server/auth/admin-confirm";
 import { adminActionLimiter } from "$lib/server/auth/rate-limit";
 import { adminAuditLog, getDB } from "$lib/server/db";
+import { dialect } from "$lib/server/db/dialect";
 import { addPasskey, createTestUser, enableTotp } from "$lib/testing/auth";
 import { useTestDB } from "$lib/testing/db";
 import { createTestEvent, outcome } from "$lib/testing/event";
@@ -103,47 +104,53 @@ describe("backup download", () => {
     expect(last).toMatchObject({ type: "fail", status: 429 });
   });
 
-  it("serves the database once after confirmation and records it", async () => {
-    const admin = await createTestUser({ role: "admin", username: "boss" });
-    const confirmed = (await outcome(() =>
-      actions.download(
-        ev({ user: admin, form: { adminPassword: admin.password } }),
-      ),
-    )) as { value: { downloadUrl: string } };
-    const url = `http://localhost${confirmed.value.downloadUrl}`;
-    const res = (await GET(ev({ user: admin, url }))) as Response;
-    // the audit row exists before a single byte is read
-    expect(
-      (await getDB().select().from(adminAuditLog)).filter(
-        (r) => r.action === "backup_download",
-      ),
-    ).toHaveLength(1);
-    expect(res.headers.get("content-disposition")).toMatch(
-      /^attachment; filename="kept-backup-\d{8}-\d{6}\.db"$/,
-    );
-    expect(res.headers.get("cache-control")).toBe("private, no-store");
-    const bytes = new Uint8Array(await res.arrayBuffer());
-    expect(new TextDecoder().decode(bytes.slice(0, 15))).toBe(
-      "SQLite format 3",
-    );
-    expect(Number(res.headers.get("content-length"))).toBe(bytes.byteLength);
+  // TODO(postgres 3.5): backups are gated off on PostgreSQL (the download
+  // builds a SQLite VACUUM INTO copy). Phase 3.5 adds the PostgreSQL behaviour
+  // and its own test; until then this runs on SQLite only.
+  it.skipIf(dialect === "pg")(
+    "serves the database once after confirmation and records it",
+    async () => {
+      const admin = await createTestUser({ role: "admin", username: "boss" });
+      const confirmed = (await outcome(() =>
+        actions.download(
+          ev({ user: admin, form: { adminPassword: admin.password } }),
+        ),
+      )) as { value: { downloadUrl: string } };
+      const url = `http://localhost${confirmed.value.downloadUrl}`;
+      const res = (await GET(ev({ user: admin, url }))) as Response;
+      // the audit row exists before a single byte is read
+      expect(
+        (await getDB().select().from(adminAuditLog)).filter(
+          (r) => r.action === "backup_download",
+        ),
+      ).toHaveLength(1);
+      expect(res.headers.get("content-disposition")).toMatch(
+        /^attachment; filename="kept-backup-\d{8}-\d{6}\.db"$/,
+      );
+      expect(res.headers.get("cache-control")).toBe("private, no-store");
+      const bytes = new Uint8Array(await res.arrayBuffer());
+      expect(new TextDecoder().decode(bytes.slice(0, 15))).toBe(
+        "SQLite format 3",
+      );
+      expect(Number(res.headers.get("content-length"))).toBe(bytes.byteLength);
 
-    const rows = await getDB().select().from(adminAuditLog);
-    expect(rows.map((r) => r.action).sort()).toEqual([
-      "backup_download",
-      "backup_link_issued",
-    ]);
-    expect(rows.find((r) => r.action === "backup_download")).toMatchObject({
-      actorUserId: admin.id,
-      actorUsername: "boss",
-      details: "outcome=started",
-    });
+      const rows = await getDB().select().from(adminAuditLog);
+      expect(rows.map((r) => r.action).sort()).toEqual([
+        "backup_download",
+        "backup_link_issued",
+      ]);
+      expect(rows.find((r) => r.action === "backup_download")).toMatchObject({
+        actorUserId: admin.id,
+        actorUsername: "boss",
+        details: "outcome=started",
+      });
 
-    expect(await outcome(() => GET(ev({ user: admin, url })))).toEqual({
-      type: "error",
-      status: 403,
-    });
-  });
+      expect(await outcome(() => GET(ev({ user: admin, url })))).toEqual({
+        type: "error",
+        status: 403,
+      });
+    },
+  );
 
   it("records failed confirmations and rate-limit hits, but no link", async () => {
     const admin = await createTestUser({ role: "admin" });

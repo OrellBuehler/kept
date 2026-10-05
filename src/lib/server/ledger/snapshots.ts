@@ -7,7 +7,10 @@ import {
   first,
   getDB,
   isUniqueViolation,
+  transaction,
+  type DB,
 } from "$lib/server/db";
+import { ledgerLock } from "./lock";
 import { LedgerError, notFound } from "./errors";
 import type { SnapshotInput } from "./schemas";
 
@@ -32,9 +35,13 @@ const columns = {
   note: balanceSnapshots.note,
 };
 
-async function assertAccount(userId: string, accountId: string) {
+async function assertAccount(
+  userId: string,
+  accountId: string,
+  conn: Pick<DB, "select"> = getDB(),
+) {
   const found = await first(
-    getDB()
+    conn
       .select({ id: accounts.id })
       .from(accounts)
       .where(and(eq(accounts.userId, userId), eq(accounts.id, accountId)))
@@ -88,16 +95,23 @@ export async function createSnapshot(
   accountId: string,
   input: SnapshotInput,
 ): Promise<SnapshotView> {
-  await assertAccount(userId, accountId);
   let row: { id: string };
   try {
+    // A balance pins the account's currency, so it is added under the ledger
+    // lock that a currency change and deleting the account also take.
     // The unique index on (account, date, source) rejects a second manual balance for the date.
-    row = (
-      await getDB()
-        .insert(balanceSnapshots)
-        .values({ ...input, userId, accountId, source: "manual" })
-        .returning({ id: balanceSnapshots.id })
-    )[0]!;
+    row = await transaction(
+      async (tx) => {
+        await assertAccount(userId, accountId, tx);
+        return (
+          await tx
+            .insert(balanceSnapshots)
+            .values({ ...input, userId, accountId, source: "manual" })
+            .returning({ id: balanceSnapshots.id })
+        )[0]!;
+      },
+      { lock: ledgerLock(userId) },
+    );
   } catch (err) {
     if (isUniqueViolation(err)) {
       throw new LedgerError(

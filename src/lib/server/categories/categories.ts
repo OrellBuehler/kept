@@ -99,6 +99,13 @@ const nameTaken = () =>
     "name",
   );
 
+/**
+ * The tree rules (one level deep, a child has its parent's kind) read other
+ * categories, so two concurrent changes could each pass them and together break
+ * them: A under B while B goes under C. The lock makes them take turns.
+ */
+const categoryTreeLock = (userId: string) => `categories:${userId}`;
+
 /** Runs inside the transaction of createCategory / updateCategory. */
 async function assertNameFree(
   tx: Reader,
@@ -226,16 +233,19 @@ export async function createCategory(
   input: CategoryInput,
 ): Promise<CategoryView> {
   try {
-    return await transaction(async (tx) => {
-      await assertNameFree(tx, userId, input.name);
-      await assertParent(tx, userId, input);
-      return (await first(
-        tx
-          .insert(categories)
-          .values({ userId, ...input })
-          .returning(columns),
-      ))!;
-    });
+    return await transaction(
+      async (tx) => {
+        await assertNameFree(tx, userId, input.name);
+        await assertParent(tx, userId, input);
+        return (await first(
+          tx
+            .insert(categories)
+            .values({ userId, ...input })
+            .returning(columns),
+        ))!;
+      },
+      { lock: categoryTreeLock(userId) },
+    );
   } catch (err) {
     mapNameViolation(err);
   }
@@ -247,23 +257,26 @@ export async function updateCategory(
   input: CategoryInput,
 ): Promise<CategoryView> {
   try {
-    await transaction(async (tx) => {
-      const found = await first(
-        tx
-          .select({ id: categories.id })
-          .from(categories)
-          .where(and(eq(categories.userId, userId), eq(categories.id, id)))
-          .limit(1),
-      );
-      if (!found) throw notFound("Category");
-      await assertNameFree(tx, userId, input.name, id);
-      await assertParent(tx, userId, input, id);
-      await assertKindMatchesChildren(tx, userId, id, input.kind);
-      await tx
-        .update(categories)
-        .set(input)
-        .where(and(eq(categories.userId, userId), eq(categories.id, id)));
-    });
+    await transaction(
+      async (tx) => {
+        const found = await first(
+          tx
+            .select({ id: categories.id })
+            .from(categories)
+            .where(and(eq(categories.userId, userId), eq(categories.id, id)))
+            .limit(1),
+        );
+        if (!found) throw notFound("Category");
+        await assertNameFree(tx, userId, input.name, id);
+        await assertParent(tx, userId, input, id);
+        await assertKindMatchesChildren(tx, userId, id, input.kind);
+        await tx
+          .update(categories)
+          .set(input)
+          .where(and(eq(categories.userId, userId), eq(categories.id, id)));
+      },
+      { lock: categoryTreeLock(userId) },
+    );
   } catch (err) {
     mapNameViolation(err);
   }
@@ -279,9 +292,15 @@ export async function deleteCategory(
   id: string,
 ): Promise<void> {
   await getCategory(userId, id);
-  await getDB()
-    .delete(categories)
-    .where(and(eq(categories.userId, userId), eq(categories.id, id)));
+  // Under the tree lock: a category being moved under this one must not race the delete.
+  await transaction(
+    async (tx) => {
+      await tx
+        .delete(categories)
+        .where(and(eq(categories.userId, userId), eq(categories.id, id)));
+    },
+    { lock: categoryTreeLock(userId) },
+  );
 }
 
 /** Sets or clears a transaction's category. A manual choice is never overwritten by rules. */

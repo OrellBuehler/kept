@@ -3,7 +3,8 @@ import { describe, expect, it, vi } from "vitest";
 import { minor } from "$lib/money";
 import { createTestUser } from "$lib/testing/auth";
 import { useTestDB } from "$lib/testing/db";
-import { afterCommit, getDB, transaction, transactions } from "$lib/server/db";
+import * as database from "$lib/server/db";
+import { afterCommit, getDB, transactions } from "$lib/server/db";
 import { seedAccount, seedImportedTransaction } from "$lib/testing/ledger";
 import * as detect from "./detect";
 import {
@@ -18,6 +19,25 @@ import {
 } from "./series";
 
 useTestDB();
+
+// Taken before any test spies on the module, so writers started by a test never wait on its barrier.
+const writeInTransaction = database.transaction;
+
+/**
+ * Makes the transaction `syncRecurring` opens wait until `pending()` settles.
+ * The sync reads, detects and only then asks for its transaction; a write the
+ * test starts after detection must have committed by then, or the sync might
+ * apply its result before the write lands. SQLite's gate happened to order
+ * them; on PostgreSQL the write runs on another connection, so it is awaited.
+ */
+function transactionsWaitFor(pending: () => Promise<unknown>) {
+  return vi
+    .spyOn(database, "transaction")
+    .mockImplementation(async (fn, options) => {
+      await pending();
+      return writeInTransaction(fn, options);
+    });
+}
 
 async function setup() {
   const user = await createTestUser();
@@ -115,6 +135,7 @@ describe("syncRecurring", () => {
     const real = detect.detectSeries;
     let calls = 0;
     let late: Promise<unknown> = Promise.resolve();
+    const barrier = transactionsWaitFor(() => late);
     const spy = vi.spyOn(detect, "detectSeries").mockImplementation((rows) => {
       const detected = real(rows);
       if (++calls === 1) {
@@ -138,6 +159,7 @@ describe("syncRecurring", () => {
     });
     await syncRecurring(user.id);
     spy.mockRestore();
+    barrier.mockRestore();
     await late;
     expect(calls).toBe(2);
     const [series] = await listRecurring(user.id);
@@ -149,8 +171,8 @@ describe("syncRecurring", () => {
 
     /**
      * Runs `change(n)` in its own transaction right after the n-th detection
-     * outside the sync's transaction (n starting at 1). It is queued on the
-     * gate before the sync's own transaction asks for it, so it commits first.
+     * outside the sync's transaction (n starting at 1). The sync's own
+     * transaction waits for it, so the change always commits first.
      */
     function changeAfterDetection(
       times: number,
@@ -159,13 +181,14 @@ describe("syncRecurring", () => {
       const real = detect.detectSeries;
       const pending: Promise<void>[] = [];
       let calls = 0;
+      const barrier = transactionsWaitFor(() => Promise.all(pending));
       const spy = vi
         .spyOn(detect, "detectSeries")
         .mockImplementation((rows) => {
           const detected = real(rows);
           if (++calls <= times) {
             const n = calls;
-            pending.push(transaction(() => change(n)));
+            pending.push(writeInTransaction(() => change(n)));
           }
           return detected;
         });
@@ -175,6 +198,7 @@ describe("syncRecurring", () => {
         },
         async done() {
           spy.mockRestore();
+          barrier.mockRestore();
           await Promise.all(pending);
         },
       };

@@ -1,3 +1,4 @@
+import { ledgerLock } from "$lib/server/ledger/lock";
 import { and, count, desc, eq, gte, lte, or } from "drizzle-orm";
 import type { RowSource } from "$lib/ledger-types";
 import type { Minor } from "$lib/money";
@@ -261,51 +262,54 @@ export async function createManualTransaction(
   accountId: string,
   input: TransactionInput,
 ): Promise<TransactionView> {
-  const id = await transaction(async (tx) => {
-    const { currency, openingDate } = await ownedAccountInTx(
-      tx,
-      userId,
-      accountId,
-    );
-    assertNotBeforeOpening({ openingDate }, input.bookingDate);
-    const created = (await first(
-      tx
-        .insert(transactions)
-        .values({
-          ...input,
-          userId,
-          accountId,
-          currency,
-          source: "manual",
-          externalId: `manual:${crypto.randomUUID()}`,
-          reversal: false,
-        })
-        .returning({ id: transactions.id }),
-    ))!;
-    // Like an imported row, a manual one takes over the mirror it stands for.
-    const mirrorId = (
-      await findReplacementsInTx(tx, userId, accountId, [
-        {
-          key: created.id,
-          bookingDate: input.bookingDate,
-          amount: input.amount,
-          counterpartyIban: input.counterpartyIban,
-          reference: input.reference,
-          description: input.description,
-        },
-      ])
-    ).get(created.id);
-    if (mirrorId !== undefined)
-      await takeOverMirror(tx, userId, mirrorId, created.id);
-    await linkAfterWrite(
-      tx,
-      userId,
-      accountId,
-      [created.id],
-      [input.bookingDate],
-    );
-    return created.id;
-  });
+  const id = await transaction(
+    async (tx) => {
+      const { currency, openingDate } = await ownedAccountInTx(
+        tx,
+        userId,
+        accountId,
+      );
+      assertNotBeforeOpening({ openingDate }, input.bookingDate);
+      const created = (await first(
+        tx
+          .insert(transactions)
+          .values({
+            ...input,
+            userId,
+            accountId,
+            currency,
+            source: "manual",
+            externalId: `manual:${crypto.randomUUID()}`,
+            reversal: false,
+          })
+          .returning({ id: transactions.id }),
+      ))!;
+      // Like an imported row, a manual one takes over the mirror it stands for.
+      const mirrorId = (
+        await findReplacementsInTx(tx, userId, accountId, [
+          {
+            key: created.id,
+            bookingDate: input.bookingDate,
+            amount: input.amount,
+            counterpartyIban: input.counterpartyIban,
+            reference: input.reference,
+            description: input.description,
+          },
+        ])
+      ).get(created.id);
+      if (mirrorId !== undefined)
+        await takeOverMirror(tx, userId, mirrorId, created.id);
+      await linkAfterWrite(
+        tx,
+        userId,
+        accountId,
+        [created.id],
+        [input.bookingDate],
+      );
+      return created.id;
+    },
+    { lock: ledgerLock(userId) },
+  );
   return await getTransaction(userId, id);
 }
 
@@ -323,17 +327,20 @@ export async function updateTransaction(
     if (!("bookingDate" in input)) {
       throw new LedgerError("invalid", "Missing transaction fields.");
     }
-    await transaction(async (tx) => {
-      // Read again inside the transaction: the previous IBAN decides which links survive.
-      const previous = await getTransactionRowInTx(tx, userId, id);
-      assertNotBeforeOpening(
-        await ownedAccountInTx(tx, userId, previous.accountId),
-        input.bookingDate,
-      );
-      await tx.update(transactions).set(input).where(where);
-      // A mirror follows its source's amount, dates and text.
-      await resyncSource(tx, userId, id, previous.counterpartyIban);
-    });
+    await transaction(
+      async (tx) => {
+        // Read again inside the transaction: the previous IBAN decides which links survive.
+        const previous = await getTransactionRowInTx(tx, userId, id);
+        assertNotBeforeOpening(
+          await ownedAccountInTx(tx, userId, previous.accountId),
+          input.bookingDate,
+        );
+        await tx.update(transactions).set(input).where(where);
+        // A mirror follows its source's amount, dates and text.
+        await resyncSource(tx, userId, id, previous.counterpartyIban);
+      },
+      { lock: ledgerLock(userId) },
+    );
   }
   return await getTransaction(userId, id);
 }
@@ -349,9 +356,7 @@ export async function deleteTransaction(
     if (current.transfer) {
       await unlink(userId, current.transfer.id);
     } else {
-      await getDB()
-        .delete(transactions)
-        .where(and(eq(transactions.userId, userId), eq(transactions.id, id)));
+      await removeRow(userId, id);
     }
     return;
   }
@@ -361,7 +366,17 @@ export async function deleteTransaction(
       "Imported transactions cannot be deleted. Delete the import instead.",
     );
   }
-  await getDB()
-    .delete(transactions)
-    .where(and(eq(transactions.userId, userId), eq(transactions.id, id)));
+  await removeRow(userId, id);
+}
+
+/** Under the ledger lock: linking plans from rows it must still find, and a link needs both of its rows. */
+async function removeRow(userId: string, id: string): Promise<void> {
+  await transaction(
+    async (tx) => {
+      await tx
+        .delete(transactions)
+        .where(and(eq(transactions.userId, userId), eq(transactions.id, id)));
+    },
+    { lock: ledgerLock(userId) },
+  );
 }

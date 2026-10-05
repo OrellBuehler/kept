@@ -12,6 +12,7 @@ import {
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { dialect } from "./dialect";
 import {
   closeDatabase,
   migrateDatabase,
@@ -206,7 +207,11 @@ function oldLayout(root: string, count: number): string {
   return dir;
 }
 
-describe("drizzle/sqlite", () => {
+// Replays the SQLite migration folder move with the sync SQLite migrator on a
+// raw connection (and a SQLite-only `__drizzle_migrations` table). PostgreSQL
+// has a single folder from its first release; its migrations run in
+// postgres.pg.test.ts.
+describe.skipIf(dialect === "pg")("drizzle/sqlite", () => {
   let scratch: string;
   let db: DB;
 

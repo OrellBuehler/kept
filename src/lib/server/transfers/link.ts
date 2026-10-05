@@ -1,3 +1,4 @@
+import { ledgerLock } from "$lib/server/ledger/lock";
 import { and, eq, gte, inArray, lte, ne, or, sql } from "drizzle-orm";
 import { normalizeIban } from "$lib/iban";
 import { minor } from "$lib/money";
@@ -346,7 +347,9 @@ export async function linkTransfers(
   userId: string,
   scope: LinkScope = {},
 ): Promise<LinkResult> {
-  return await transaction(async (tx) => linkTransfersInTx(tx, userId, scope));
+  return await transaction(async (tx) => linkTransfersInTx(tx, userId, scope), {
+    lock: ledgerLock(userId),
+  });
 }
 
 /** `linkTransfers` on a transaction you already hold. */

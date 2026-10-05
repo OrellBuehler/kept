@@ -1,3 +1,4 @@
+import { detach } from "$lib/server/detached";
 import { errorCode } from "./client";
 import { listEnabledConnections } from "./connection";
 import { pushAllLinked } from "./push";
@@ -54,11 +55,11 @@ export function startScheduler(
     }
   };
   const first = setTimeout(
-    () => void tick(),
+    () => detach(tick()),
     options.firstRunDelayMs ?? FIRST_RUN_DELAY_MS,
   );
   const timer = setInterval(
-    () => void tick(),
+    () => detach(tick()),
     options.intervalMs ?? CATCH_UP_INTERVAL_MS,
   );
   first.unref?.();

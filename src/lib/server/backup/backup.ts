@@ -1,3 +1,4 @@
+import { detach } from "$lib/server/detached";
 import {
   createReadStream,
   existsSync,
@@ -192,11 +193,11 @@ export function startBackupScheduler(
     }
   };
   const first = setTimeout(
-    () => void tick(),
+    () => detach(tick()),
     options.firstRunDelayMs ?? FIRST_RUN_DELAY_MS,
   );
   const timer = setInterval(
-    () => void tick(),
+    () => detach(tick()),
     options.intervalMs ?? CHECK_INTERVAL_MS,
   );
   first.unref?.();

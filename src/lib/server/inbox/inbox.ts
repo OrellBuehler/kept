@@ -1,3 +1,4 @@
+import { detach } from "$lib/server/detached";
 import { createHash } from "node:crypto";
 import {
   existsSync,
@@ -639,11 +640,11 @@ export function startInboxScheduler(
   };
   // tick() handles its own errors, so nothing is left to await or catch here.
   const firstRun = setTimeout(
-    () => void tick(),
+    () => detach(tick()),
     options.firstRunDelayMs ?? 5_000,
   );
   const timer = setInterval(
-    () => void tick(),
+    () => detach(tick()),
     options.intervalMs ?? config.intervalSeconds * 1000,
   );
   firstRun.unref?.();

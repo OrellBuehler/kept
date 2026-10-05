@@ -1,3 +1,4 @@
+import { ledgerLock } from "$lib/server/ledger/lock";
 import { and, desc, eq, inArray } from "drizzle-orm";
 import type { TradeSide } from "$lib/investment-types";
 import type { Minor } from "$lib/money";
@@ -256,7 +257,7 @@ export async function createTrade(
       }
       return inserted;
     },
-    { lock: `trades:${userId}` },
+    { lock: ledgerLock(userId) },
   );
   return await getTrade(userId, row.id);
 }
@@ -300,7 +301,7 @@ export async function updateTrade(
         await discardProviderPrices(tx, userId, [input.securityId]);
       }
     },
-    { lock: `trades:${userId}` },
+    { lock: ledgerLock(userId) },
   );
   return await getTrade(userId, id);
 }
@@ -321,6 +322,6 @@ export async function deleteTrade(userId: string, id: string): Promise<void> {
         await discardProviderPrices(tx, userId, [current.securityId]);
       }
     },
-    { lock: `trades:${userId}` },
+    { lock: ledgerLock(userId) },
   );
 }

@@ -17,7 +17,7 @@ beforeEach(() => {
   fake.token = "test-token";
   fake.accepted = [9, 10];
   fake.redirectAll = false;
-  fake.delayMs = 0;
+  fake.gate = null;
   fake.wrongHostNext = false;
   fake.pageSize = null;
   fake.prefix = "";
@@ -142,14 +142,20 @@ describe("PaperlessClient requests", () => {
   });
 
   it("times out slow servers", async () => {
-    fake.delayMs = 400;
-    const code = await codeOf(
-      client({ timeoutMs: 50 }).json(
-        "documents",
-        z.object({ results: z.array(idList) }),
-      ),
-    );
-    expect(code).toBe("network");
+    // The server never answers until the test is over, however slow the machine is.
+    let release!: () => void;
+    fake.gate = new Promise<void>((resolve) => (release = resolve));
+    try {
+      const code = await codeOf(
+        client({ timeoutMs: 50 }).json(
+          "documents",
+          z.object({ results: z.array(idList) }),
+        ),
+      );
+      expect(code).toBe("network");
+    } finally {
+      release();
+    }
   });
 
   it("maps 401, 403 and 404 and never leaks the token into messages", async () => {

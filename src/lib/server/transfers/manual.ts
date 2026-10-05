@@ -1,3 +1,4 @@
+import { ledgerLock } from "$lib/server/ledger/lock";
 import {
   and,
   asc,
@@ -119,48 +120,51 @@ export async function unlink(
   userId: string,
   transferId: string,
 ): Promise<void> {
-  await transaction(async (tx) => {
-    const row = await ownedTransfer(tx, userId, transferId);
-    if (row.status === "dismissed") return;
-    const ids = [row.outTransactionId, row.inTransactionId].filter(
-      (id): id is string => id !== null,
-    );
-    const mirrors = new Set(
-      ids.length === 0
-        ? []
-        : (
-            await tx
-              .select({ id: transactions.id })
-              .from(transactions)
-              .where(
-                and(
-                  inArray(transactions.id, ids),
-                  eq(transactions.source, "mirror"),
-                ),
-              )
-          ).map((m) => m.id),
-    );
-    // The mirror's id leaves the row first, or deleting it would delete the row too.
-    await tx
-      .update(transfers)
-      .set({
-        status: "dismissed",
-        outTransactionId:
-          row.outTransactionId && mirrors.has(row.outTransactionId)
-            ? null
-            : row.outTransactionId,
-        inTransactionId:
-          row.inTransactionId && mirrors.has(row.inTransactionId)
-            ? null
-            : row.inTransactionId,
-      })
-      .where(eq(transfers.id, row.id));
-    if (mirrors.size > 0) {
+  await transaction(
+    async (tx) => {
+      const row = await ownedTransfer(tx, userId, transferId);
+      if (row.status === "dismissed") return;
+      const ids = [row.outTransactionId, row.inTransactionId].filter(
+        (id): id is string => id !== null,
+      );
+      const mirrors = new Set(
+        ids.length === 0
+          ? []
+          : (
+              await tx
+                .select({ id: transactions.id })
+                .from(transactions)
+                .where(
+                  and(
+                    inArray(transactions.id, ids),
+                    eq(transactions.source, "mirror"),
+                  ),
+                )
+            ).map((m) => m.id),
+      );
+      // The mirror's id leaves the row first, or deleting it would delete the row too.
       await tx
-        .delete(transactions)
-        .where(inArray(transactions.id, [...mirrors]));
-    }
-  });
+        .update(transfers)
+        .set({
+          status: "dismissed",
+          outTransactionId:
+            row.outTransactionId && mirrors.has(row.outTransactionId)
+              ? null
+              : row.outTransactionId,
+          inTransactionId:
+            row.inTransactionId && mirrors.has(row.inTransactionId)
+              ? null
+              : row.inTransactionId,
+        })
+        .where(eq(transfers.id, row.id));
+      if (mirrors.size > 0) {
+        await tx
+          .delete(transactions)
+          .where(inArray(transactions.id, [...mirrors]));
+      }
+    },
+    { lock: ledgerLock(userId) },
+  );
 }
 
 /**
@@ -174,8 +178,9 @@ export async function linkManually(
   outId: string,
   inId: string,
 ): Promise<string> {
-  return await transaction(async (tx) =>
-    linkManuallyInTx(tx, userId, outId, inId),
+  return await transaction(
+    async (tx) => linkManuallyInTx(tx, userId, outId, inId),
+    { lock: ledgerLock(userId) },
   );
 }
 
@@ -457,93 +462,96 @@ export async function resolveNeedsAmount(
   transferId: string,
   amount: Minor,
 ): Promise<void> {
-  await transaction(async (tx) => {
-    const row = await ownedTransfer(tx, userId, transferId);
-    if (row.status !== "needs_amount") {
-      throw new LedgerError("conflict", "This transfer needs no amount.");
-    }
-    if (amount <= 0) {
-      throw new LedgerError(
-        "invalid",
-        "Enter the amount that arrived, above zero.",
-        "amount",
+  await transaction(
+    async (tx) => {
+      const row = await ownedTransfer(tx, userId, transferId);
+      if (row.status !== "needs_amount") {
+        throw new LedgerError("conflict", "This transfer needs no amount.");
+      }
+      if (amount <= 0) {
+        throw new LedgerError(
+          "invalid",
+          "Enter the amount that arrived, above zero.",
+          "amount",
+        );
+      }
+      const outgoing = row.outTransactionId !== null;
+      const source = await ownedTransaction(
+        tx,
+        userId,
+        (outgoing ? row.outTransactionId : row.inTransactionId)!,
       );
-    }
-    const outgoing = row.outTransactionId !== null;
-    const source = await ownedTransaction(
-      tx,
-      userId,
-      (outgoing ? row.outTransactionId : row.inTransactionId)!,
-    );
-    const plan = await loadPlanAccountsInTx(tx, userId);
-    const home = plan.find((a) => a.id === source.accountId);
-    const target = plan.find(
-      (a) => a.id === (outgoing ? row.toAccountId : row.fromAccountId),
-    );
-    if (!home || !target) throw notFound("Account");
-    if (!canMirrorOnto(target, source.bookingDate)) {
-      throw new LedgerError(
-        "conflict",
-        "The receiving account is no longer filled from transfers.",
+      const plan = await loadPlanAccountsInTx(tx, userId);
+      const home = plan.find((a) => a.id === source.accountId);
+      const target = plan.find(
+        (a) => a.id === (outgoing ? row.toAccountId : row.fromAccountId),
       );
-    }
-    // A booked row that may be the real counterpart: link it instead of booking a second one.
-    const counterpart = await findLinkCandidateInTx(
-      tx,
-      userId,
-      source,
-      home,
-      target,
-    );
-    if (counterpart) {
-      throw new LinkInsteadError(
-        `The receiving account has a transaction on ${counterpart.bookingDate} that may be the other side of this transfer. Link it instead of entering an amount.`,
-        counterpart.id,
+      if (!home || !target) throw notFound("Account");
+      if (!canMirrorOnto(target, source.bookingDate)) {
+        throw new LedgerError(
+          "conflict",
+          "The receiving account is no longer filled from transfers.",
+        );
+      }
+      // A booked row that may be the real counterpart: link it instead of booking a second one.
+      const counterpart = await findLinkCandidateInTx(
+        tx,
+        userId,
+        source,
+        home,
+        target,
       );
-    }
-    const mirror = await first(
-      tx
-        .insert(transactions)
-        .values({
-          userId,
-          accountId: target.id,
-          importId: null,
-          source: "mirror",
-          externalId: `mirror:${source.id}`,
-          mirrorOfId: source.id,
-          bookingDate: source.bookingDate,
-          valueDate: source.valueDate,
-          amount: minor(outgoing ? amount : -amount),
-          currency: target.currency,
-          counterpartyName: home.name,
-          counterpartyIban: home.iban,
-          description: source.description,
-          reference: source.reference,
-          referenceType: source.referenceType,
-          reversal: false,
+      if (counterpart) {
+        throw new LinkInsteadError(
+          `The receiving account has a transaction on ${counterpart.bookingDate} that may be the other side of this transfer. Link it instead of entering an amount.`,
+          counterpart.id,
+        );
+      }
+      const mirror = await first(
+        tx
+          .insert(transactions)
+          .values({
+            userId,
+            accountId: target.id,
+            importId: null,
+            source: "mirror",
+            externalId: `mirror:${source.id}`,
+            mirrorOfId: source.id,
+            bookingDate: source.bookingDate,
+            valueDate: source.valueDate,
+            amount: minor(outgoing ? amount : -amount),
+            currency: target.currency,
+            counterpartyName: home.name,
+            counterpartyIban: home.iban,
+            description: source.description,
+            reference: source.reference,
+            referenceType: source.referenceType,
+            reversal: false,
+          })
+          .onConflictDoNothing({
+            target: [transactions.accountId, transactions.externalId],
+          })
+          .returning({ id: transactions.id }),
+      );
+      if (!mirror) {
+        throw new LedgerError(
+          "conflict",
+          "A counter-transaction for this transfer already exists.",
+        );
+      }
+      await tx
+        .update(transfers)
+        .set({
+          status: "linked",
+          method: "mirrored",
+          ...(outgoing
+            ? { inTransactionId: mirror.id }
+            : { outTransactionId: mirror.id }),
         })
-        .onConflictDoNothing({
-          target: [transactions.accountId, transactions.externalId],
-        })
-        .returning({ id: transactions.id }),
-    );
-    if (!mirror) {
-      throw new LedgerError(
-        "conflict",
-        "A counter-transaction for this transfer already exists.",
-      );
-    }
-    await tx
-      .update(transfers)
-      .set({
-        status: "linked",
-        method: "mirrored",
-        ...(outgoing
-          ? { inTransactionId: mirror.id }
-          : { outTransactionId: mirror.id }),
-      })
-      .where(eq(transfers.id, row.id));
-  });
+        .where(eq(transfers.id, row.id));
+    },
+    { lock: ledgerLock(userId) },
+  );
 }
 
 /**
@@ -556,24 +564,27 @@ export async function linkNeedsAmountTo(
   transferId: string,
   peerId: string,
 ): Promise<string> {
-  return await transaction(async (tx) => {
-    const row = await ownedTransfer(tx, userId, transferId);
-    if (row.status !== "needs_amount") {
-      throw new LedgerError("conflict", "This transfer needs no amount.");
-    }
-    const outgoing = row.outTransactionId !== null;
-    const sourceId = (outgoing ? row.outTransactionId : row.inTransactionId)!;
-    const peer = await ownedTransaction(tx, userId, peerId);
-    if (peer.accountId !== (outgoing ? row.toAccountId : row.fromAccountId)) {
-      throw new LedgerError(
-        "invalid",
-        "Choose a transaction of the receiving account.",
-      );
-    }
-    return outgoing
-      ? linkManuallyInTx(tx, userId, sourceId, peer.id)
-      : linkManuallyInTx(tx, userId, peer.id, sourceId);
-  });
+  return await transaction(
+    async (tx) => {
+      const row = await ownedTransfer(tx, userId, transferId);
+      if (row.status !== "needs_amount") {
+        throw new LedgerError("conflict", "This transfer needs no amount.");
+      }
+      const outgoing = row.outTransactionId !== null;
+      const sourceId = (outgoing ? row.outTransactionId : row.inTransactionId)!;
+      const peer = await ownedTransaction(tx, userId, peerId);
+      if (peer.accountId !== (outgoing ? row.toAccountId : row.fromAccountId)) {
+        throw new LedgerError(
+          "invalid",
+          "Choose a transaction of the receiving account.",
+        );
+      }
+      return outgoing
+        ? linkManuallyInTx(tx, userId, sourceId, peer.id)
+        : linkManuallyInTx(tx, userId, peer.id, sourceId);
+    },
+    { lock: ledgerLock(userId) },
+  );
 }
 
 export const CANDIDATE_WINDOW_DAYS = 10;
@@ -769,36 +780,39 @@ export async function enableFill(
   userId: string,
   accountId: string,
 ): Promise<LinkResult> {
-  return await transaction(async (tx) => {
-    const account = (await loadPlanAccountsInTx(tx, userId)).find(
-      (a) => a.id === accountId,
-    );
-    if (!account) throw notFound("Account");
-    if (account.archived) {
-      throw new LedgerError(
-        "invalid",
-        "An archived account cannot be filled from transfers. Restore it first.",
+  return await transaction(
+    async (tx) => {
+      const account = (await loadPlanAccountsInTx(tx, userId)).find(
+        (a) => a.id === accountId,
       );
-    }
-    if (account.type === "pillar_3a" || account.hasPortfolios) {
-      throw new LedgerError(
-        "invalid",
-        "Pillar 3a accounts cannot be filled from transfers.",
-      );
-    }
-    if (account.iban === null) {
-      throw new LedgerError(
-        "invalid",
-        "The account needs an IBAN to be filled from transfers.",
-        "iban",
-      );
-    }
-    await tx
-      .update(accounts)
-      .set({ fillFromTransfers: true })
-      .where(and(eq(accounts.userId, userId), eq(accounts.id, accountId)));
-    return linkTransfersInTx(tx, userId, { targetAccountId: accountId });
-  });
+      if (!account) throw notFound("Account");
+      if (account.archived) {
+        throw new LedgerError(
+          "invalid",
+          "An archived account cannot be filled from transfers. Restore it first.",
+        );
+      }
+      if (account.type === "pillar_3a" || account.hasPortfolios) {
+        throw new LedgerError(
+          "invalid",
+          "Pillar 3a accounts cannot be filled from transfers.",
+        );
+      }
+      if (account.iban === null) {
+        throw new LedgerError(
+          "invalid",
+          "The account needs an IBAN to be filled from transfers.",
+          "iban",
+        );
+      }
+      await tx
+        .update(accounts)
+        .set({ fillFromTransfers: true })
+        .where(and(eq(accounts.userId, userId), eq(accounts.id, accountId)));
+      return linkTransfersInTx(tx, userId, { targetAccountId: accountId });
+    },
+    { lock: ledgerLock(userId) },
+  );
 }
 
 function mirrorCountQuery(conn: Reader, userId: string, accountId: string) {

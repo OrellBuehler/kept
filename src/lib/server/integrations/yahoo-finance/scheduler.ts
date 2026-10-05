@@ -1,3 +1,4 @@
+import { detach } from "$lib/server/detached";
 import { refreshPrices, listMarketDataUserIds } from "$lib/server/investments";
 import { localToday } from "$lib/server/ledger/balances";
 import { errorCode } from "$lib/server/errors";
@@ -52,11 +53,11 @@ export function startScheduler(
     }
   };
   const first = setTimeout(
-    () => void tick(),
+    () => detach(tick()),
     options.firstRunDelayMs ?? FIRST_RUN_DELAY_MS,
   );
   const timer = setInterval(
-    () => void tick(),
+    () => detach(tick()),
     options.intervalMs ?? REFRESH_INTERVAL_MS,
   );
   first.unref?.();

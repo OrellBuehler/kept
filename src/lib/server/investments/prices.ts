@@ -1,3 +1,4 @@
+import { ledgerLock } from "$lib/server/ledger/lock";
 import { and, count, desc, eq, sql } from "drizzle-orm";
 import type { PriceSource } from "$lib/investment-types";
 import type { Fixed8 } from "$lib/quantity";
@@ -127,23 +128,27 @@ export async function setManualPrice(
   securityId: string,
   input: PriceInput,
 ): Promise<PriceView> {
-  const row = await transaction(async (tx) => {
-    await assertSecurityInTx(tx, userId, securityId);
-    return (await first(
-      tx
-        .insert(securityPrices)
-        .values({ userId, securityId, ...input, source: "manual" })
-        .onConflictDoUpdate({
-          target: [
-            securityPrices.securityId,
-            securityPrices.date,
-            securityPrices.source,
-          ],
-          set: { price: input.price, updatedAt: new Date() },
-        })
-        .returning({ id: securityPrices.id }),
-    ))!;
-  });
+  const row = await transaction(
+    async (tx) => {
+      await assertSecurityInTx(tx, userId, securityId);
+      return (await first(
+        tx
+          .insert(securityPrices)
+          .values({ userId, securityId, ...input, source: "manual" })
+          .onConflictDoUpdate({
+            target: [
+              securityPrices.securityId,
+              securityPrices.date,
+              securityPrices.source,
+            ],
+            set: { price: input.price, updatedAt: new Date() },
+          })
+          .returning({ id: securityPrices.id }),
+      ))!;
+    },
+    // Changing the security's currency checks for manual prices under this lock.
+    { lock: ledgerLock(userId) },
+  );
   return await getPrice(userId, row.id);
 }
 
@@ -186,33 +191,37 @@ export async function upsertProviderPrices(
     allRows.filter((r) => r.price > 0),
     (r) => r.date,
   );
-  await transaction(async (tx) => {
-    await assertSecurityInTx(tx, userId, securityId);
-    for (let i = 0; i < rows.length; i += CHUNK) {
-      await tx
-        .insert(securityPrices)
-        .values(
-          rows.slice(i, i + CHUNK).map((r) => ({
-            userId,
-            securityId,
-            date: r.date,
-            price: r.price,
-            source: "provider" as const,
-          })),
-        )
-        .onConflictDoUpdate({
-          target: [
-            securityPrices.securityId,
-            securityPrices.date,
-            securityPrices.source,
-          ],
-          set: {
-            price: sql`excluded.price`,
-            updatedAt: new Date(),
-          },
-        });
-    }
-  });
+  // The security must still exist when the rows go in: deleting it takes the same lock.
+  await transaction(
+    async (tx) => {
+      await assertSecurityInTx(tx, userId, securityId);
+      for (let i = 0; i < rows.length; i += CHUNK) {
+        await tx
+          .insert(securityPrices)
+          .values(
+            rows.slice(i, i + CHUNK).map((r) => ({
+              userId,
+              securityId,
+              date: r.date,
+              price: r.price,
+              source: "provider" as const,
+            })),
+          )
+          .onConflictDoUpdate({
+            target: [
+              securityPrices.securityId,
+              securityPrices.date,
+              securityPrices.source,
+            ],
+            set: {
+              price: sql`excluded.price`,
+              updatedAt: new Date(),
+            },
+          });
+      }
+    },
+    { lock: ledgerLock(userId) },
+  );
   return rows.length;
 }
 

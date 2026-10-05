@@ -36,6 +36,8 @@ import {
 } from "$lib/testing/fixtures/bill-identifiers";
 import { createFirstAdmin, createUser } from "$lib/server/auth/users";
 import { describeError } from "$lib/server/errors";
+import { LedgerError } from "$lib/server/ledger/errors";
+import { ledgerFailure } from "$lib/server/ledger/http";
 import { createManualTransaction, listTransactions } from "$lib/server/ledger";
 import { currentBalance } from "$lib/server/ledger/balances";
 import { listAccounts } from "$lib/server/ledger/accounts";
@@ -53,6 +55,7 @@ import {
   closeDatabase,
   getDB,
   institutions,
+  isForeignKeyViolation,
   isUniqueViolation,
   migrateDatabase,
   openPostgresDatabase,
@@ -923,6 +926,38 @@ describe.skipIf(!enabled)("postgres backend", () => {
         );
       expect(describeError(fk)).toContain("sqlstate=23503");
       expect(isUniqueViolation(fk)).toBe(false);
+    });
+
+    it("reports a foreign-key violation inside a transaction as a conflict", async () => {
+      const orphan = () =>
+        getDB()
+          .insert(transactions)
+          .values({
+            userId: crypto.randomUUID(),
+            accountId: crypto.randomUUID(),
+            source: "manual",
+            externalId: "x",
+            bookingDate: "2024-01-01",
+            amount: minor(1),
+            currency: "CHF",
+          });
+      const error = await transaction(async () => {
+        await orphan();
+      }).then(
+        () => null,
+        (e: unknown) => e,
+      );
+      expect(error).toBeInstanceOf(LedgerError);
+      expect((error as LedgerError).code).toBe("conflict");
+      expect((error as LedgerError).message).toBe(
+        "That changed meanwhile, try again.",
+      );
+      const outside = await orphan().then(
+        () => null,
+        (e: unknown) => e,
+      );
+      expect(isForeignKeyViolation(outside)).toBe(true);
+      expect(ledgerFailure("test", outside)).toMatchObject({ status: 400 });
     });
 
     it("maps a duplicate username to the domain error", async () => {

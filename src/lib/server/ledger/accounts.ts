@@ -1,3 +1,4 @@
+import { ledgerLock } from "$lib/server/ledger/lock";
 import { and, asc, eq, inArray, max, ne, sql } from "drizzle-orm";
 import type { AccountType, WithdrawalPeriod } from "$lib/ledger-types";
 import { shareOf, type Minor } from "$lib/money";
@@ -284,43 +285,47 @@ export async function createAccount(
 ): Promise<AccountView> {
   let id: string;
   try {
-    id = await transaction(async (tx) => {
-      await assertInstitutionOwned(tx, userId, input.institutionId);
-      await assertIbanFree(tx, userId, input.iban);
-      const sortOrder =
-        input.sortOrder ??
-        ((
-          await first(
-            tx
-              .select({
-                m: sql<number | null>`max(${accounts.sortOrder})`.mapWith(
-                  Number,
-                ),
-              })
-              .from(accounts)
-              .where(eq(accounts.userId, userId))
-              .limit(1),
-          )
-        )?.m ?? -1) + 1;
-      const created = (await first(
-        tx
-          .insert(accounts)
-          .values({
-            ...input,
-            sortOrder,
-            userId,
-            fillFromTransfers:
-              input.fillFromTransfers === true && input.type !== "pillar_3a",
-            tradesMoveCash: input.tradesMoveCash && input.type === "investment",
-          })
-          .returning({ id: accounts.id }),
-      ))!;
-      // Transfers other accounts already show to this IBAN become mirrors here.
-      if (input.fillFromTransfers === true && input.type !== "pillar_3a") {
-        await linkTransfersInTx(tx, userId, { targetAccountId: created.id });
-      }
-      return created.id;
-    });
+    id = await transaction(
+      async (tx) => {
+        await assertInstitutionOwned(tx, userId, input.institutionId);
+        await assertIbanFree(tx, userId, input.iban);
+        const sortOrder =
+          input.sortOrder ??
+          ((
+            await first(
+              tx
+                .select({
+                  m: sql<number | null>`max(${accounts.sortOrder})`.mapWith(
+                    Number,
+                  ),
+                })
+                .from(accounts)
+                .where(eq(accounts.userId, userId))
+                .limit(1),
+            )
+          )?.m ?? -1) + 1;
+        const created = (await first(
+          tx
+            .insert(accounts)
+            .values({
+              ...input,
+              sortOrder,
+              userId,
+              fillFromTransfers:
+                input.fillFromTransfers === true && input.type !== "pillar_3a",
+              tradesMoveCash:
+                input.tradesMoveCash && input.type === "investment",
+            })
+            .returning({ id: accounts.id }),
+        ))!;
+        // Transfers other accounts already show to this IBAN become mirrors here.
+        if (input.fillFromTransfers === true && input.type !== "pillar_3a") {
+          await linkTransfersInTx(tx, userId, { targetAccountId: created.id });
+        }
+        return created.id;
+      },
+      { lock: ledgerLock(userId) },
+    );
   } catch (err) {
     mapIbanViolation(err, input.iban);
   }
@@ -494,7 +499,9 @@ export async function updateAccount(
   input: AccountInput & { confirmRemoveMirrors?: boolean },
 ): Promise<AccountView> {
   try {
-    await transaction(async (tx) => updateAccountInTx(tx, userId, id, input));
+    await transaction(async (tx) => updateAccountInTx(tx, userId, id, input), {
+      lock: ledgerLock(userId),
+    });
   } catch (err) {
     mapIbanViolation(err, input.iban);
   }
@@ -507,10 +514,17 @@ export async function setAccountArchived(
   archived: boolean,
 ): Promise<AccountView> {
   await getAccount(userId, id);
-  await getDB()
-    .update(accounts)
-    .set({ archived, archivedAt: archived ? new Date() : null })
-    .where(and(eq(accounts.userId, userId), eq(accounts.id, id)));
+  // Under the ledger lock so an import (which refuses an archived account) and
+  // the archive are ordered.
+  await transaction(
+    async (tx) => {
+      await tx
+        .update(accounts)
+        .set({ archived, archivedAt: archived ? new Date() : null })
+        .where(and(eq(accounts.userId, userId), eq(accounts.id, id)));
+    },
+    { lock: ledgerLock(userId) },
+  );
   return await getAccount(userId, id);
 }
 
@@ -522,7 +536,14 @@ export const unarchiveAccount = async (userId: string, id: string) =>
 /** Hard delete; transactions, imports, snapshots and the CSV profile cascade. */
 export async function deleteAccount(userId: string, id: string): Promise<void> {
   await getAccount(userId, id);
-  await getDB()
-    .delete(accounts)
-    .where(and(eq(accounts.userId, userId), eq(accounts.id, id)));
+  // Under the ledger lock: everything that writes rows for the account holds it
+  // while it checks the account, so none can be mid-write when the account goes.
+  await transaction(
+    async (tx) => {
+      await tx
+        .delete(accounts)
+        .where(and(eq(accounts.userId, userId), eq(accounts.id, id)));
+    },
+    { lock: ledgerLock(userId) },
+  );
 }

@@ -2,6 +2,7 @@ import { eq } from "drizzle-orm";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createTestUser, loginTestUser } from "$lib/testing/auth";
 import { useTestDB } from "$lib/testing/db";
+import * as database from "$lib/server/db";
 import {
   authEvents,
   first,
@@ -35,6 +36,35 @@ import {
 import { AuthError } from "./types";
 
 const NOW = 1_700_000_000_000;
+
+/**
+ * Wraps a query builder so that awaiting it first waits for `wait`. Lets a
+ * test put a concurrent write between a read and the statement that follows it
+ * without relying on how the engine orders two connections.
+ */
+function after<T extends object>(builder: T, wait: Promise<unknown>): T {
+  return new Proxy(builder, {
+    get(target, prop) {
+      const value = Reflect.get(target, prop, target) as unknown;
+      if (prop === "then") {
+        return (resolve: never, reject: never) =>
+          wait.then(() =>
+            (target as unknown as PromiseLike<unknown>).then(resolve, reject),
+          );
+      }
+      if (typeof value !== "function") return value;
+      return (...args: unknown[]) => {
+        const next = (value as (...a: unknown[]) => unknown).apply(
+          target,
+          args,
+        );
+        return typeof next === "object" && next !== null
+          ? after(next, wait)
+          : next;
+      };
+    },
+  });
+}
 
 async function enrol(userId: string, username: string, now = NOW) {
   const { secret } = await startTotpEnrolment(userId, username);
@@ -106,20 +136,41 @@ describe("two-factor", () => {
     const { secret } = await enrol(u.id, u.username);
     const next = NOW + 30_000;
     const real = totp.verifyTotp;
+    const realGetDB = getDB;
+    let competing: Promise<unknown> | null = null;
     const spy = vi.spyOn(totp, "verifyTotp").mockImplementation((...args) => {
       const step = real(...args);
-      // A competing attempt records a later step right after the read.
-      void getDB()
+      // A competing attempt records a later step right after the read ...
+      competing = realGetDB()
         .update(totpCredentials)
         .set({ lastStep: 9_999_999_999 })
         .where(eq(totpCredentials.userId, u.id))
         .then(() => undefined);
       return step;
     });
+    // ... and the write that follows the read waits until it has landed.
+    const gate = vi.spyOn(database, "getDB").mockImplementation(() => {
+      const db = realGetDB();
+      if (!competing) return db;
+      const wait = competing;
+      competing = null;
+      return new Proxy(db, {
+        get(target, prop) {
+          const value = Reflect.get(target, prop, target) as unknown;
+          if (prop !== "update") return value;
+          return (...args: unknown[]) =>
+            after(
+              (value as (...a: unknown[]) => object).apply(target, args),
+              wait,
+            );
+        },
+      });
+    });
     expect(await consumeTotpCode(u.id, totpCode(secret, next), next)).toBe(
       false,
     );
     spy.mockRestore();
+    gate.mockRestore();
     const row = (await first(
       getDB()
         .select({ lastStep: totpCredentials.lastStep })

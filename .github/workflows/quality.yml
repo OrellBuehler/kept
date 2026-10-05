@@ -145,3 +145,70 @@ jobs:
       - name: Server log on failure
         if: ${{ failure() }}
         run: docker logs s3 | tail -n 50
+
+  postgres:
+    name: PostgreSQL test suite
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      # The same suite as `quality`, against a throwaway server. Run with `docker run`
+      # rather than a service container so the server can be started with fsync off,
+      # which a service cannot pass.
+      PG_IMAGE: postgres:18@sha256:5a5a84b19854a9ffaa54082c166ff4ec27473a361e496e5ea167f298f2da9722
+
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
+        with:
+          bun-version-file: .bun-version
+
+      - name: Cache bun dependencies
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
+        with:
+          path: ~/.bun/install/cache
+          key: bun-${{ runner.os }}-${{ hashFiles('**/bun.lock') }}
+          restore-keys: |
+            bun-${{ runner.os }}-
+
+      - run: bun install --frozen-lockfile
+
+      # Random per run, so no credential is committed.
+      - name: Start PostgreSQL
+        run: |
+          password="$(openssl rand -hex 16)"
+          echo "::add-mask::$password"
+          docker run -d --name pg -p 127.0.0.1:5432:5432 \
+            -e POSTGRES_PASSWORD="$password" \
+            "$PG_IMAGE" \
+            -c fsync=off -c synchronous_commit=off -c full_page_writes=off \
+            -c max_connections=300
+          echo "KEPT_TEST_DATABASE_URL=postgres://postgres:$password@127.0.0.1:5432/postgres" >> "$GITHUB_ENV"
+          for _ in $(seq 1 60); do
+            if docker exec pg pg_isready -U postgres -h 127.0.0.1 >/dev/null 2>&1; then exit 0; fi
+            sleep 1
+          done
+          docker logs pg | tail -n 30
+          echo "PostgreSQL did not become ready" >&2
+          exit 1
+
+      # An unset URL makes `test:pg` skip every file and still succeed, so check it first.
+      - name: Test suite on PostgreSQL
+        run: |
+          test -n "$KEPT_TEST_DATABASE_URL"
+          bun run test:pg
+
+      # Both migration folders must match the schema: generating again writes nothing.
+      - name: No schema changes
+        run: |
+          bunx drizzle-kit generate --config drizzle.sqlite.config.ts
+          bunx drizzle-kit generate --config drizzle.pg.config.ts
+          if [ -n "$(git status --porcelain drizzle/)" ]; then
+            git status --porcelain drizzle/
+            echo "The schema changed without a migration: run bun run db:generate and commit drizzle/." >&2
+            exit 1
+          fi
+
+      - name: Server log on failure
+        if: ${{ failure() }}
+        run: docker logs pg | tail -n 50

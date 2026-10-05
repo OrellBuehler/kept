@@ -1,3 +1,4 @@
+import { ledgerLock } from "$lib/server/ledger/lock";
 import { and, asc, eq } from "drizzle-orm";
 import type { SecurityKind } from "$lib/investment-types";
 import {
@@ -69,8 +70,8 @@ export async function createSecurity(
 }
 
 /**
- * The checks and the writes share one transaction, so a trade or a manual
- * price added in between cannot slip past the currency guard.
+ * The checks and the writes share one transaction (and the ledger lock), so a
+ * trade or a manual price added in between cannot slip past the currency guard.
  */
 async function updateSecurityInTx(
   tx: Tx,
@@ -146,7 +147,9 @@ export async function updateSecurity(
   id: string,
   input: SecurityInput,
 ): Promise<SecurityView> {
-  await transaction(async (tx) => updateSecurityInTx(tx, userId, id, input));
+  await transaction(async (tx) => updateSecurityInTx(tx, userId, id, input), {
+    lock: ledgerLock(userId),
+  });
   return await getSecurity(userId, id);
 }
 
@@ -155,30 +158,33 @@ export async function deleteSecurity(
   userId: string,
   id: string,
 ): Promise<void> {
-  await transaction(async (tx) => {
-    const found = await first(
-      tx
-        .select({ id: securities.id })
-        .from(securities)
-        .where(and(eq(securities.userId, userId), eq(securities.id, id)))
-        .limit(1),
-    );
-    if (!found) throw notFound("Security");
-    const used = await first(
-      tx
-        .select({ id: trades.id })
-        .from(trades)
-        .where(and(eq(trades.userId, userId), eq(trades.securityId, id)))
-        .limit(1),
-    );
-    if (used) {
-      throw new LedgerError(
-        "conflict",
-        "The security cannot be deleted while it has trades.",
+  await transaction(
+    async (tx) => {
+      const found = await first(
+        tx
+          .select({ id: securities.id })
+          .from(securities)
+          .where(and(eq(securities.userId, userId), eq(securities.id, id)))
+          .limit(1),
       );
-    }
-    await tx
-      .delete(securities)
-      .where(and(eq(securities.userId, userId), eq(securities.id, id)));
-  });
+      if (!found) throw notFound("Security");
+      const used = await first(
+        tx
+          .select({ id: trades.id })
+          .from(trades)
+          .where(and(eq(trades.userId, userId), eq(trades.securityId, id)))
+          .limit(1),
+      );
+      if (used) {
+        throw new LedgerError(
+          "conflict",
+          "The security cannot be deleted while it has trades.",
+        );
+      }
+      await tx
+        .delete(securities)
+        .where(and(eq(securities.userId, userId), eq(securities.id, id)));
+    },
+    { lock: ledgerLock(userId) },
+  );
 }

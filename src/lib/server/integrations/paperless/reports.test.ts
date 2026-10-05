@@ -216,7 +216,14 @@ describe("uploadReport", () => {
       uploadReport(user.id, input("retry"), fast),
     ]);
     expect(fake.uploads).toHaveLength(2);
-    expect([x.status, y.status].sort()).toEqual(["pending", "success"]);
+    // The caller that lost the claim sees the other one's upload still in
+    // flight, or already finished when it looks late: either way nothing is
+    // sent twice and one of them reports the success.
+    const statuses = [x.status, y.status].sort();
+    expect(statuses).toContain("success");
+    expect(statuses.every((s) => s === "pending" || s === "success")).toBe(
+      true,
+    );
     expect(await listUploads(user.id)).toHaveLength(1);
   });
 

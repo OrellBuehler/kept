@@ -113,8 +113,13 @@ describe("isUniqueViolationOn", () => {
       caught = err;
     }
     expect(isUniqueViolationOn(caught, username)).toBe(true);
+    // SQLite identifies the constraint by its columns, PostgreSQL by its name.
     expect(
-      isUniqueViolationOn(caught, { ...username, columns: ["other"] }),
+      isUniqueViolationOn(caught, {
+        ...username,
+        constraint: "other_unique",
+        columns: ["other"],
+      }),
     ).toBe(false);
   });
 

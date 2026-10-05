@@ -9,6 +9,7 @@ import {
   vi,
 } from "vitest";
 import { listBills } from "$lib/server/bills/bills";
+import { drainDetached } from "$lib/server/detached";
 import { clearEventListeners } from "$lib/server/events";
 import { createTestUser, type TestUser } from "$lib/testing/auth";
 import { useTestDB } from "$lib/testing/db";
@@ -38,7 +39,7 @@ describe("scheduler", () => {
   beforeEach(async () => {
     fake.requests = [];
     fake.docs.clear();
-    fake.delayMs = 0;
+    fake.gate = null;
     fake.token = "test-token";
     user = await createTestUser();
   });
@@ -65,14 +66,22 @@ describe("scheduler", () => {
   it("skips a connection that is already syncing", async () => {
     await seedConnection(user.id, fake);
     fake.addDoc({ id: 1, original: pdf });
-    fake.delayMs = 150;
+    // The sync's first request is held until the test releases it.
+    let release!: () => void;
+    fake.gate = new Promise<void>((resolve) => (release = resolve));
     const running = syncConnection(user.id);
-    // The sync registers itself at once.
-    await vi.waitFor(() => expect(isSyncing(user.id)).toBe(true));
+    await vi.waitFor(() => {
+      expect(isSyncing(user.id)).toBe(true);
+      expect(fake.requests.length).toBeGreaterThan(0);
+    });
     fake.requests = [];
 
-    await runCatchUp();
-    expect(fake.requests).toHaveLength(0);
+    try {
+      await runCatchUp();
+      expect(fake.requests).toHaveLength(0);
+    } finally {
+      release();
+    }
 
     await running;
     expect(isSyncing(user.id)).toBe(false);
@@ -110,6 +119,8 @@ describe("scheduler", () => {
       },
     );
     stop();
+    // A tick that was already running finishes before the count is taken.
+    await drainDetached();
 
     const requests = fake.requests.length;
     await new Promise((r) => setTimeout(r, 100));

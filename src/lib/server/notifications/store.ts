@@ -146,50 +146,53 @@ export async function saveChannel(
   config: ChannelConfig,
   options: SaveChannelOptions = {},
 ): Promise<SaveChannelResult> {
-  return await transaction(async (tx) => {
-    const field = options.keepSecret;
-    const next: ChannelConfig & { token?: string; secret?: string } = {
-      ...config,
-    };
-    if (field && next[field] === undefined) {
-      const row = await first(
-        tx
-          .select()
-          .from(notificationChannels)
-          .where(
-            and(
-              eq(notificationChannels.userId, userId),
-              eq(notificationChannels.kind, kind),
-            ),
-          )
-          .limit(1),
-      );
-      let previous: Record<string, string | undefined> | null = null;
-      let unreadable = false;
-      if (row) {
-        try {
-          previous = JSON.parse(decryptSecret(row.configEncrypted));
-        } catch (err) {
-          if (!(err instanceof SecretUnreadableError)) throw err;
-          unreadable = true;
+  return await transaction(
+    async (tx) => {
+      const field = options.keepSecret;
+      const next: ChannelConfig & { token?: string; secret?: string } = {
+        ...config,
+      };
+      if (field && next[field] === undefined) {
+        const row = await first(
+          tx
+            .select()
+            .from(notificationChannels)
+            .where(
+              and(
+                eq(notificationChannels.userId, userId),
+                eq(notificationChannels.kind, kind),
+              ),
+            )
+            .limit(1),
+        );
+        let previous: Record<string, string | undefined> | null = null;
+        let unreadable = false;
+        if (row) {
+          try {
+            previous = JSON.parse(decryptSecret(row.configEncrypted));
+          } catch (err) {
+            if (!(err instanceof SecretUnreadableError)) throw err;
+            unreadable = true;
+          }
+        }
+        if (previous?.[field]) {
+          next[field] = previous[field];
+        } else if (unreadable && !options.dropUnreadableSecret) {
+          return { ok: false, reason: "secret_unreadable" } as const;
         }
       }
-      if (previous?.[field]) {
-        next[field] = previous[field];
-      } else if (unreadable && !options.dropUnreadableSecret) {
-        return { ok: false, reason: "secret_unreadable" } as const;
-      }
-    }
-    const configEncrypted = encryptSecret(JSON.stringify(next));
-    await tx
-      .insert(notificationChannels)
-      .values({ userId, kind, configEncrypted })
-      .onConflictDoUpdate({
-        target: [notificationChannels.userId, notificationChannels.kind],
-        set: { configEncrypted, lastError: null, lastErrorAt: null },
-      });
-    return { ok: true } as const;
-  });
+      const configEncrypted = encryptSecret(JSON.stringify(next));
+      await tx
+        .insert(notificationChannels)
+        .values({ userId, kind, configEncrypted })
+        .onConflictDoUpdate({
+          target: [notificationChannels.userId, notificationChannels.kind],
+          set: { configEncrypted, lastError: null, lastErrorAt: null },
+        });
+      return { ok: true } as const;
+    },
+    { lock: `notification-channel:${userId}:${kind}` },
+  );
 }
 
 export async function setChannelEnabled(

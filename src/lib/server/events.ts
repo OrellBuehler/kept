@@ -2,6 +2,7 @@
  * Generic in-process event bus. The core emits; optional integrations subscribe
  * at startup. A listener failing never affects the operation that emitted.
  */
+import { detach } from "$lib/server/detached";
 import { describeError } from "$lib/server/errors";
 
 export type BillChangedListener = (
@@ -26,8 +27,10 @@ export function emitBillChanged(userId: string, billId: string): void {
     try {
       const result = listener(userId, billId);
       if (result instanceof Promise) {
-        result.catch((err) =>
-          console.error("bill-changed listener failed", describeError(err)),
+        detach(
+          result.catch((err) =>
+            console.error("bill-changed listener failed", describeError(err)),
+          ),
         );
       }
     } catch (err) {

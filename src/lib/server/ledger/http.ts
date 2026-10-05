@@ -1,5 +1,6 @@
 import { error, fail } from "@sveltejs/kit";
-import { LedgerError } from "./errors";
+import { isForeignKeyViolation } from "$lib/server/db";
+import { changedMeanwhile, LedgerError } from "./errors";
 
 /**
  * Maps a ledger error to an HTTP outcome for a form action: 404 for ids that
@@ -11,6 +12,7 @@ export function ledgerFailure(
   err: unknown,
   values: Record<string, string> = {},
 ) {
+  if (isForeignKeyViolation(err)) err = changedMeanwhile();
   if (err instanceof LedgerError) {
     if (err.code === "not_found") error(404, err.message);
     return fail(400, {
