@@ -11,14 +11,14 @@ useTestDB();
 describe("preferences", () => {
   it("returns defaults when nothing is stored", async () => {
     const u = await createTestUser();
-    expect(getPreferences(u.id)).toEqual(DEFAULT_PREFERENCES);
+    expect(await getPreferences(u.id)).toEqual(DEFAULT_PREFERENCES);
   });
 
   it("upserts and merges a partial patch over the stored values", async () => {
     const u = await createTestUser();
-    updatePreferences(u.id, { blurAmounts: true });
-    updatePreferences(u.id, { locale: "de-CH", pageSize: 100 });
-    expect(getPreferences(u.id)).toEqual({
+    await updatePreferences(u.id, { blurAmounts: true });
+    await updatePreferences(u.id, { locale: "de-CH", pageSize: 100 });
+    expect(await getPreferences(u.id)).toEqual({
       ...DEFAULT_PREFERENCES,
       blurAmounts: true,
       locale: "de-CH",
@@ -26,22 +26,38 @@ describe("preferences", () => {
     });
   });
 
+  it("keeps both fields when two patches overlap", async () => {
+    const u = await createTestUser();
+    await Promise.all([
+      updatePreferences(u.id, { blurAmounts: true }),
+      updatePreferences(u.id, { locale: "de-CH" }),
+    ]);
+    expect(await getPreferences(u.id)).toEqual({
+      ...DEFAULT_PREFERENCES,
+      blurAmounts: true,
+      locale: "de-CH",
+    });
+  });
+
   it("stores the investment cash switch and falls back to off", async () => {
     const u = await createTestUser();
-    expect(getPreferences(u.id).investmentCashLiquid).toBe(false);
-    updatePreferences(u.id, { investmentCashLiquid: true });
-    expect(getPreferences(u.id).investmentCashLiquid).toBe(true);
+    expect((await getPreferences(u.id)).investmentCashLiquid).toBe(false);
+    await updatePreferences(u.id, { investmentCashLiquid: true });
+    expect((await getPreferences(u.id)).investmentCashLiquid).toBe(true);
     const other = await createTestUser();
-    expect(getPreferences(other.id).investmentCashLiquid).toBe(false);
+    expect((await getPreferences(other.id)).investmentCashLiquid).toBe(false);
   });
 
   it("keeps preferences per user", async () => {
     const a = await createTestUser();
     const b = await createTestUser();
-    updatePreferences(a.id, { ibanDisplay: "hidden", defaultCurrency: "EUR" });
-    expect(getPreferences(b.id)).toEqual(DEFAULT_PREFERENCES);
-    updatePreferences(b.id, { ibanDisplay: "masked" });
-    expect(getPreferences(a.id)).toMatchObject({
+    await updatePreferences(a.id, {
+      ibanDisplay: "hidden",
+      defaultCurrency: "EUR",
+    });
+    expect(await getPreferences(b.id)).toEqual(DEFAULT_PREFERENCES);
+    await updatePreferences(b.id, { ibanDisplay: "masked" });
+    expect(await getPreferences(a.id)).toMatchObject({
       ibanDisplay: "hidden",
       defaultCurrency: "EUR",
     });
@@ -51,13 +67,12 @@ describe("preferences", () => {
 describe("stale stored values", () => {
   it("fall back to defaults per field", async () => {
     const u = await createTestUser();
-    updatePreferences(u.id, { blurAmounts: true, locale: "de-CH" });
-    getDB()
+    await updatePreferences(u.id, { blurAmounts: true, locale: "de-CH" });
+    await getDB()
       .update(userPreferences)
       .set({ defaultCurrency: "XXX", pageSize: 7 })
-      .where(eq(userPreferences.userId, u.id))
-      .run();
-    expect(getPreferences(u.id)).toEqual({
+      .where(eq(userPreferences.userId, u.id));
+    expect(await getPreferences(u.id)).toEqual({
       ...DEFAULT_PREFERENCES,
       blurAmounts: true,
       locale: "de-CH",

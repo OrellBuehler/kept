@@ -41,7 +41,7 @@ export async function monthSummary(
 ): Promise<MonthSummary> {
   const db = getDB();
   const prev = previousMonth(month);
-  const own = db
+  const own = await db
     .select({
       id: accounts.id,
       archived: accounts.archived,
@@ -49,15 +49,14 @@ export async function monthSummary(
       shareBps: accounts.shareBps,
     })
     .from(accounts)
-    .where(eq(accounts.userId, userId))
-    .all();
+    .where(eq(accounts.userId, userId));
   const active = new Map(
     own.filter((a) => !a.archived).map((a) => [a.id, a.currency]),
   );
   const shareBpsOf = new Map(own.map((a) => [a.id, a.shareBps]));
   const exclusion = await loadTransferExclusion(userId);
 
-  const rows = db
+  const rows = await db
     .select({
       id: transactions.id,
       accountId: transactions.accountId,
@@ -74,8 +73,7 @@ export async function monthSummary(
         gte(transactions.bookingDate, monthBounds(prev).first),
         lte(transactions.bookingDate, monthBounds(month).last),
       ),
-    )
-    .all();
+    );
 
   const acc = new Map<string, { income: number; expenses: number }>();
   const bucket = (m: string, currency: string) => {

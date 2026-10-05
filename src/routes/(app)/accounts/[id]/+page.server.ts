@@ -24,11 +24,7 @@ import {
   unarchiveAccount,
   updateAccount,
 } from "$lib/server/ledger/accounts";
-import {
-  ledgerFailure,
-  orNotFound,
-  orNotFoundAsync,
-} from "$lib/server/ledger/http";
+import { ledgerFailure, orNotFoundAsync } from "$lib/server/ledger/http";
 import { listInstitutions } from "$lib/server/ledger/institutions";
 import {
   accountInputSchema,
@@ -142,9 +138,9 @@ export const load: PageServerLoad = async ({ locals, params, url }) => {
   const query = parseListQuery(
     url.searchParams,
     account.currency,
-    getPreferences(user.id).pageSize,
+    (await getPreferences(user.id)).pageSize,
   );
-  const trades = listTrades(user.id, account.id);
+  const trades = await listTrades(user.id, account.id);
   const portfolios = await listPortfolios(user.id, account.id);
   const hasHoldings = account.type === "investment" || trades.length > 0;
   const showPortfolios = account.type === "pillar_3a" || portfolios.length > 0;
@@ -165,7 +161,7 @@ export const load: PageServerLoad = async ({ locals, params, url }) => {
     portfolios,
     portfolioValues,
     trades,
-    securities: listSecurities(user.id),
+    securities: await listSecurities(user.id),
     institutions: (await listInstitutions(user.id)).map((i) => ({
       id: i.id,
       name: i.name,
@@ -196,8 +192,8 @@ async function ownedTransaction(userId: string, accountId: string, id: string) {
   return tx;
 }
 
-function ownedTrade(userId: string, accountId: string, id: string) {
-  const trade = orNotFound(() => getTrade(userId, id));
+async function ownedTrade(userId: string, accountId: string, id: string) {
+  const trade = await orNotFoundAsync(() => getTrade(userId, id));
   if (trade.accountId !== accountId) error(404, "Trade not found.");
   return trade;
 }
@@ -690,7 +686,7 @@ export const actions: Actions = {
       return fail(400, { action: "addTrade", errors: parsed.errors, values });
     }
     try {
-      const created = createTrade(user.id, account.id, parsed.data);
+      const created = await createTrade(user.id, account.id, parsed.data);
       return {
         success: true as const,
         action: "addTrade" as const,
@@ -714,7 +710,11 @@ export const actions: Actions = {
         values,
       });
     }
-    const existing = ownedTrade(user.id, account.id, idParsed.data.tradeId);
+    const existing = await ownedTrade(
+      user.id,
+      account.id,
+      idParsed.data.tradeId,
+    );
     const parsed = parseForm(tradeInputSchema(account.currency), form);
     if (!parsed.ok) {
       return fail(400, {
@@ -724,7 +724,7 @@ export const actions: Actions = {
       });
     }
     try {
-      updateTrade(user.id, existing.id, parsed.data);
+      await updateTrade(user.id, existing.id, parsed.data);
       return {
         success: true as const,
         action: "updateTrade" as const,
@@ -748,9 +748,9 @@ export const actions: Actions = {
         values,
       });
     }
-    const existing = ownedTrade(user.id, account.id, parsed.data.tradeId);
+    const existing = await ownedTrade(user.id, account.id, parsed.data.tradeId);
     try {
-      deleteTrade(user.id, existing.id);
+      await deleteTrade(user.id, existing.id);
       return {
         success: true as const,
         action: "deleteTrade" as const,

@@ -162,22 +162,22 @@ async function setup(tradesMoveCash = true) {
     counterpartyIban: EXAMPLE_IBAN_OTHER,
   });
   await linkTransfers(user.id, { transactionIds: [deposit.id] });
-  const sec = seedSecurity(user.id);
+  const sec = await seedSecurity(user.id);
   // buy 600.00 on 01-10, sell 200.00 on 02-10; 4 units remain, priced at 130.00.
-  seedTrade(user.id, broker.id, sec.id, {
+  await seedTrade(user.id, broker.id, sec.id, {
     date: "2024-01-10",
     qty: "6",
     price: "100",
     amount: 60000,
   });
-  seedTrade(user.id, broker.id, sec.id, {
+  await seedTrade(user.id, broker.id, sec.id, {
     date: "2024-02-10",
     side: "sell",
     qty: "2",
     price: "100",
     amount: 20000,
   });
-  seedProviderPrice(user.id, sec.id, "2024-03-01", "130");
+  await seedProviderPrice(user.id, sec.id, "2024-03-01", "130");
   return { user, main, broker };
 }
 

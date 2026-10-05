@@ -248,6 +248,29 @@ describe("annotating a detected payment", () => {
     expect(await getDB().select().from(pillar3aContributions)).toHaveLength(1);
   });
 
+  it("reports the loser of two concurrent annotations as a conflict and keeps one row", async () => {
+    const { user, current } = await setup();
+    const t = await pay(user.id, current.id, REF_A, 100_000, "2025-12-29");
+    const results = await Promise.allSettled([
+      updateDetectedContribution(
+        user.id,
+        t.id,
+        details({ date: "2026-01-02" }),
+        TODAY,
+      ),
+      updateDetectedContribution(
+        user.id,
+        t.id,
+        details({ date: "2026-01-03" }),
+        TODAY,
+      ),
+    ]);
+    expect(results.filter((r) => r.status === "fulfilled")).toHaveLength(1);
+    const lost = results.find((r) => r.status === "rejected");
+    expect(lost?.reason).toMatchObject({ code: "conflict" });
+    expect(await getDB().select().from(pillar3aContributions)).toHaveLength(1);
+  });
+
   it("deleting the annotation resets the payment", async () => {
     const { user, current } = await setup();
     const t = await pay(user.id, current.id, REF_A, 100_000, "2025-12-29");

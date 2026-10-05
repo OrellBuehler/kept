@@ -20,33 +20,33 @@ import {
 import type { TriggerSettings } from "./types";
 import { describeError } from "$lib/server/errors";
 
-function accountFacts(userId: string): AccountFact[] {
+async function accountFacts(userId: string): Promise<AccountFact[]> {
   const lastImports = new Map(
-    getDB()
-      .select({ accountId: imports.accountId, last: max(imports.createdAt) })
-      .from(imports)
-      .where(eq(imports.userId, userId))
-      .groupBy(imports.accountId)
-      .all()
-      .map((r) => [r.accountId, r.last]),
+    (
+      await getDB()
+        .select({ accountId: imports.accountId, last: max(imports.createdAt) })
+        .from(imports)
+        .where(eq(imports.userId, userId))
+        .groupBy(imports.accountId)
+    ).map((r) => [r.accountId, r.last]),
   );
-  return getDB()
-    .select({
-      id: accounts.id,
-      name: accounts.name,
-      createdAt: accounts.createdAt,
-    })
-    .from(accounts)
-    .where(and(eq(accounts.userId, userId), eq(accounts.archived, false)))
-    .all()
-    .map((a) => {
-      const last = lastImports.get(a.id);
-      return {
-        id: a.id,
-        name: a.name,
-        lastImportDate: todayLocal(last ? new Date(last) : a.createdAt),
-      };
-    });
+  return (
+    await getDB()
+      .select({
+        id: accounts.id,
+        name: accounts.name,
+        createdAt: accounts.createdAt,
+      })
+      .from(accounts)
+      .where(and(eq(accounts.userId, userId), eq(accounts.archived, false)))
+  ).map((a) => {
+    const last = lastImports.get(a.id);
+    return {
+      id: a.id,
+      name: a.name,
+      lastImportDate: todayLocal(last ? new Date(last) : a.createdAt),
+    };
+  });
 }
 
 async function gatherFacts(
@@ -67,7 +67,7 @@ async function gatherFacts(
     month,
     bills: needBills ? await billViews(userId, { today }) : [],
     budgets,
-    accounts: settings.staleImportEnabled ? accountFacts(userId) : [],
+    accounts: settings.staleImportEnabled ? await accountFacts(userId) : [],
   };
 }
 
@@ -80,10 +80,10 @@ export async function runNotifications(
   deps: DispatchDeps,
   now: Date = new Date(),
 ): Promise<void> {
-  for (const { userId, settings } of usersWithTriggers()) {
+  for (const { userId, settings } of await usersWithTriggers()) {
     try {
-      if (listEnabledChannelKinds(userId).length === 0) continue;
-      const done = sentKeys(userId);
+      if ((await listEnabledChannelKinds(userId)).length === 0) continue;
+      const done = await sentKeys(userId);
       const events = evaluateTriggers(
         settings,
         await gatherFacts(userId, settings, now),
@@ -91,7 +91,7 @@ export async function runNotifications(
       const message = digest(events);
       if (!message) continue;
       if ((await deliver(userId, message, deps)) > 0) {
-        markSent(
+        await markSent(
           userId,
           events.map((e) => e.key),
         );

@@ -3,6 +3,7 @@ import { minor, shareOf, type Minor, type ShareBasis } from "$lib/money";
 import {
   accounts,
   balanceSnapshots,
+  first,
   getDB,
   portfolios,
   portfolioValues,
@@ -78,7 +79,7 @@ export async function netWorthSeries(
   const db = getDB();
 
   const collected = new Map<string, Collected>();
-  for (const a of db
+  for (const a of await db
     .select({
       id: accounts.id,
       currency: accounts.currency,
@@ -90,8 +91,7 @@ export async function netWorthSeries(
       archivedAt: accounts.archivedAt,
     })
     .from(accounts)
-    .where(eq(accounts.userId, userId))
-    .all()) {
+    .where(eq(accounts.userId, userId))) {
     const { archived, archivedAt, ...rest } = a;
     // An archived account without a timestamp has no known past: leave it out.
     if (archived && !archivedAt) continue;
@@ -102,7 +102,7 @@ export async function netWorthSeries(
       snapshots: [],
     });
   }
-  for (const t of db
+  for (const t of await db
     .select({
       accountId: transactions.accountId,
       bookingDate: transactions.bookingDate,
@@ -111,11 +111,10 @@ export async function netWorthSeries(
     .from(transactions)
     .where(
       and(eq(transactions.userId, userId), lte(transactions.bookingDate, to)),
-    )
-    .all()) {
+    )) {
     collected.get(t.accountId)?.transactions.push(t);
   }
-  for (const s of db
+  for (const s of await db
     .select({
       accountId: balanceSnapshots.accountId,
       date: balanceSnapshots.date,
@@ -125,8 +124,7 @@ export async function netWorthSeries(
     .from(balanceSnapshots)
     .where(
       and(eq(balanceSnapshots.userId, userId), lte(balanceSnapshots.date, to)),
-    )
-    .all()) {
+    )) {
     collected.get(s.accountId)?.snapshots.push(s);
   }
 
@@ -174,43 +172,57 @@ export async function netWorthSeries(
  * Earliest date with any data on an account the series includes (not archived,
  * or archived with a known `archivedAt`), or null without data.
  */
-export function earliestDataDate(userId: string): string | null {
+export async function earliestDataDate(userId: string): Promise<string | null> {
   const db = getDB();
   const counted = or(
     eq(accounts.archived, false),
     isNotNull(accounts.archivedAt),
   );
-  const candidates = [
-    db
-      .select({ d: min(transactions.bookingDate) })
-      .from(transactions)
-      .innerJoin(accounts, eq(accounts.id, transactions.accountId))
-      .where(and(eq(transactions.userId, userId), counted))
-      .get()?.d,
-    db
-      .select({ d: min(balanceSnapshots.date) })
-      .from(balanceSnapshots)
-      .innerJoin(accounts, eq(accounts.id, balanceSnapshots.accountId))
-      .where(and(eq(balanceSnapshots.userId, userId), counted))
-      .get()?.d,
-    db
-      .select({ d: min(trades.date) })
-      .from(trades)
-      .innerJoin(accounts, eq(accounts.id, trades.accountId))
-      .where(and(eq(trades.userId, userId), counted))
-      .get()?.d,
-    db
-      .select({ d: min(portfolioValues.date) })
-      .from(portfolioValues)
-      .innerJoin(portfolios, eq(portfolios.id, portfolioValues.portfolioId))
-      .innerJoin(accounts, eq(accounts.id, portfolios.accountId))
-      .where(and(eq(portfolioValues.userId, userId), counted))
-      .get()?.d,
-    db
-      .select({ d: min(accounts.openingDate) })
-      .from(accounts)
-      .where(and(eq(accounts.userId, userId), counted))
-      .get()?.d,
-  ].filter((d): d is string => typeof d === "string");
+  const candidates = (
+    await Promise.all([
+      first(
+        db
+          .select({ d: min(transactions.bookingDate) })
+          .from(transactions)
+          .innerJoin(accounts, eq(accounts.id, transactions.accountId))
+          .where(and(eq(transactions.userId, userId), counted))
+          .limit(1),
+      ),
+      first(
+        db
+          .select({ d: min(balanceSnapshots.date) })
+          .from(balanceSnapshots)
+          .innerJoin(accounts, eq(accounts.id, balanceSnapshots.accountId))
+          .where(and(eq(balanceSnapshots.userId, userId), counted))
+          .limit(1),
+      ),
+      first(
+        db
+          .select({ d: min(trades.date) })
+          .from(trades)
+          .innerJoin(accounts, eq(accounts.id, trades.accountId))
+          .where(and(eq(trades.userId, userId), counted))
+          .limit(1),
+      ),
+      first(
+        db
+          .select({ d: min(portfolioValues.date) })
+          .from(portfolioValues)
+          .innerJoin(portfolios, eq(portfolios.id, portfolioValues.portfolioId))
+          .innerJoin(accounts, eq(accounts.id, portfolios.accountId))
+          .where(and(eq(portfolioValues.userId, userId), counted))
+          .limit(1),
+      ),
+      first(
+        db
+          .select({ d: min(accounts.openingDate) })
+          .from(accounts)
+          .where(and(eq(accounts.userId, userId), counted))
+          .limit(1),
+      ),
+    ])
+  )
+    .map((r) => r?.d)
+    .filter((d): d is string => typeof d === "string");
   return candidates.length ? candidates.sort()[0]! : null;
 }

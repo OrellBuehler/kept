@@ -12,8 +12,8 @@ const blurSchema = z.object({
     .transform((v) => v === "true"),
 });
 
-export const load: PageServerLoad = ({ locals }) => {
-  return { preferences: getPreferences(requireUser(locals).id) };
+export const load: PageServerLoad = async ({ locals }) => {
+  return { preferences: await getPreferences(requireUser(locals).id) };
 };
 
 export const actions: Actions = {
@@ -21,7 +21,7 @@ export const actions: Actions = {
     const user = requireUser(locals);
     const parsed = parseForm(preferencesSchema, await request.formData());
     if (!parsed.ok) return fail(400, { errors: parsed.errors });
-    updatePreferences(user.id, parsed.data);
+    await updatePreferences(user.id, parsed.data);
     return { success: true as const };
   },
 
@@ -29,7 +29,7 @@ export const actions: Actions = {
     const user = requireUser(locals);
     const parsed = parseForm(blurSchema, await request.formData());
     if (!parsed.ok) return fail(400, { errors: parsed.errors });
-    updatePreferences(user.id, parsed.data);
+    await updatePreferences(user.id, parsed.data);
     return { success: true as const };
   },
 };

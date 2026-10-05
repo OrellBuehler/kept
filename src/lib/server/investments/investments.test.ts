@@ -49,13 +49,13 @@ function form(fields: Record<string, string>) {
 async function setup() {
   const user = await createTestUser();
   const account = await seedAccount(user.id);
-  const security = seedSecurity(user.id);
+  const security = await seedSecurity(user.id);
   return { user, account, security };
 }
 
-function conflict(fn: () => unknown, message?: RegExp) {
+async function conflict(fn: () => Promise<unknown>, message?: RegExp) {
   try {
-    fn();
+    await fn();
   } catch (err) {
     expect(err).toBeInstanceOf(LedgerError);
     expect((err as LedgerError).code).toBe("conflict");
@@ -65,9 +65,9 @@ function conflict(fn: () => unknown, message?: RegExp) {
   throw new Error("expected a LedgerError");
 }
 
-function notFoundError(fn: () => unknown) {
+async function notFoundError(fn: () => Promise<unknown>) {
   try {
-    fn();
+    await fn();
   } catch (err) {
     expect(err).toBeInstanceOf(LedgerError);
     expect((err as LedgerError).code).toBe("not_found");
@@ -79,18 +79,18 @@ function notFoundError(fn: () => unknown) {
 describe("securities", () => {
   it("creates, lists, updates and deletes", async () => {
     const { user } = await setup();
-    const created = createSecurity(user.id, {
+    const created = await createSecurity(user.id, {
       name: "Zeta Fund",
       kind: "fund",
       isin: null,
       symbol: "ZETA.SW",
       currency: "CHF",
     });
-    expect(listSecurities(user.id).map((s) => s.name)).toEqual([
+    expect((await listSecurities(user.id)).map((s) => s.name)).toEqual([
       "Example World ETF",
       "Zeta Fund",
     ]);
-    const updated = updateSecurity(user.id, created.id, {
+    const updated = await updateSecurity(user.id, created.id, {
       name: "Zeta Fund II",
       kind: "fund",
       isin: null,
@@ -98,18 +98,20 @@ describe("securities", () => {
       currency: "CHF",
     });
     expect(updated.name).toBe("Zeta Fund II");
-    deleteSecurity(user.id, created.id);
-    notFoundError(() => getSecurity(user.id, created.id));
+    await deleteSecurity(user.id, created.id);
+    await notFoundError(() => getSecurity(user.id, created.id));
   });
 
   it("blocks delete while trades reference it, and cascades prices otherwise", async () => {
     const { user, account, security } = await setup();
-    seedManualPrice(user.id, security.id, "2024-01-01", "100");
-    const t = seedTrade(user.id, account.id, security.id, { amount: 1000 });
-    conflict(() => deleteSecurity(user.id, security.id), /trades/);
-    deleteTrade(user.id, t.id);
-    deleteSecurity(user.id, security.id);
-    expect(ctx.db.select().from(securityPrices).all()).toEqual([]);
+    await seedManualPrice(user.id, security.id, "2024-01-01", "100");
+    const t = await seedTrade(user.id, account.id, security.id, {
+      amount: 1000,
+    });
+    await conflict(() => deleteSecurity(user.id, security.id), /trades/);
+    await deleteTrade(user.id, t.id);
+    await deleteSecurity(user.id, security.id);
+    expect(await ctx.db.select().from(securityPrices)).toEqual([]);
   });
 
   it("blocks a currency change once trades exist", async () => {
@@ -121,12 +123,17 @@ describe("securities", () => {
       symbol: null,
       currency: "USD",
     };
-    expect(updateSecurity(user.id, security.id, input).currency).toBe("USD");
-    seedTrade(user.id, account.id, security.id, { amount: 1000 });
-    conflict(() =>
-      updateSecurity(user.id, security.id, { ...input, currency: "EUR" }),
+    expect((await updateSecurity(user.id, security.id, input)).currency).toBe(
+      "USD",
     );
-    expect(getSecurity(user.id, security.id).currency).toBe("USD");
+    await seedTrade(user.id, account.id, security.id, { amount: 1000 });
+    await conflict(() =>
+      updateSecurity(user.id, security.id, {
+        ...input,
+        currency: "EUR",
+      }),
+    );
+    expect((await getSecurity(user.id, security.id)).currency).toBe("USD");
   });
 
   it("blocks a currency change with manual prices but drops provider prices", async () => {
@@ -138,39 +145,44 @@ describe("securities", () => {
       symbol: null,
       currency: "USD",
     };
-    seedProviderPrice(user.id, security.id, "2024-01-01", "100");
-    const manual = seedManualPrice(user.id, security.id, "2024-01-02", "101");
-    conflict(
+    await seedProviderPrice(user.id, security.id, "2024-01-01", "100");
+    const manual = await seedManualPrice(
+      user.id,
+      security.id,
+      "2024-01-02",
+      "101",
+    );
+    await conflict(
       () => updateSecurity(user.id, security.id, input),
       /manual prices/,
     );
-    deletePrice(user.id, manual.id);
-    updateSecurity(user.id, security.id, input);
-    expect(listPrices(user.id, security.id)).toEqual([]);
+    await deletePrice(user.id, manual.id);
+    await updateSecurity(user.id, security.id, input);
+    expect(await listPrices(user.id, security.id)).toEqual([]);
   });
 
   it("drops provider prices when the symbol changes and keeps manual ones", async () => {
     const { user, security } = await setup();
-    seedProviderPrice(user.id, security.id, "2024-01-01", "100");
-    seedManualPrice(user.id, security.id, "2024-01-02", "101");
-    updateSecurity(user.id, security.id, {
+    await seedProviderPrice(user.id, security.id, "2024-01-01", "100");
+    await seedManualPrice(user.id, security.id, "2024-01-02", "101");
+    await updateSecurity(user.id, security.id, {
       name: security.name,
       kind: security.kind,
       isin: null,
       symbol: "NEW.SW",
       currency: "CHF",
     });
-    expect(listPrices(user.id, security.id).map((p) => p.source)).toEqual([
-      "manual",
-    ]);
+    expect(
+      (await listPrices(user.id, security.id)).map((p) => p.source),
+    ).toEqual(["manual"]);
   });
 
   it("is invisible to other users", async () => {
     const { user, security } = await setup();
     const other = await createTestUser();
-    expect(listSecurities(other.id)).toEqual([]);
-    notFoundError(() => getSecurity(other.id, security.id));
-    notFoundError(() =>
+    expect(await listSecurities(other.id)).toEqual([]);
+    await notFoundError(() => getSecurity(other.id, security.id));
+    await notFoundError(() =>
       updateSecurity(other.id, security.id, {
         name: "x",
         kind: "etf",
@@ -179,8 +191,8 @@ describe("securities", () => {
         currency: "CHF",
       }),
     );
-    notFoundError(() => deleteSecurity(other.id, security.id));
-    expect(getSecurity(user.id, security.id).name).toBe(security.name);
+    await notFoundError(() => deleteSecurity(other.id, security.id));
+    expect((await getSecurity(user.id, security.id)).name).toBe(security.name);
   });
 });
 
@@ -401,18 +413,18 @@ describe("isin", () => {
 describe("trades", () => {
   it("creates and lists newest first with security details", async () => {
     const { user, account, security } = await setup();
-    seedTrade(user.id, account.id, security.id, {
+    await seedTrade(user.id, account.id, security.id, {
       date: "2024-01-01",
       amount: 1005,
       fees: 5,
       note: "first",
     });
-    const second = seedTrade(user.id, account.id, security.id, {
+    const second = await seedTrade(user.id, account.id, security.id, {
       date: "2024-02-01",
       amount: 2000,
       qty: "20",
     });
-    const list = listTrades(user.id, account.id);
+    const list = await listTrades(user.id, account.id);
     expect(list.map((t) => t.date)).toEqual(["2024-02-01", "2024-01-01"]);
     expect(list[1]).toMatchObject({
       securityName: security.name,
@@ -423,13 +435,13 @@ describe("trades", () => {
       quantity: parseFixed("10"),
       price: parseFixed("100"),
     });
-    expect(getTrade(user.id, second.id).side).toBe("buy");
+    expect((await getTrade(user.id, second.id)).side).toBe("buy");
   });
 
   it("rejects an oversell on create and leaves nothing behind", async () => {
     const { user, account, security } = await setup();
-    seedTrade(user.id, account.id, security.id, { amount: 1000 });
-    conflict(
+    await seedTrade(user.id, account.id, security.id, { amount: 1000 });
+    await conflict(
       () =>
         seedTrade(user.id, account.id, security.id, {
           side: "sell",
@@ -438,8 +450,8 @@ describe("trades", () => {
         }),
       /negative holding/,
     );
-    expect(listTrades(user.id, account.id)).toHaveLength(1);
-    seedTrade(user.id, account.id, security.id, {
+    expect(await listTrades(user.id, account.id)).toHaveLength(1);
+    await seedTrade(user.id, account.id, security.id, {
       side: "sell",
       qty: "10",
       amount: 1000,
@@ -448,14 +460,14 @@ describe("trades", () => {
   });
 
   describe("splits", () => {
-    const splitOf = (
+    const splitOf = async (
       userId: string,
       accountId: string,
       securityId: string,
       date: string,
       ratio: string,
     ) =>
-      seedTrade(userId, accountId, securityId, {
+      await seedTrade(userId, accountId, securityId, {
         date,
         side: "split",
         qty: ratio,
@@ -465,21 +477,27 @@ describe("trades", () => {
 
     it("records a split and lets a later sell use the split quantity", async () => {
       const { user, account, security } = await setup();
-      seedTrade(user.id, account.id, security.id, { amount: 1000 });
-      const s = splitOf(user.id, account.id, security.id, "2024-02-01", "2");
+      await seedTrade(user.id, account.id, security.id, { amount: 1000 });
+      const s = await splitOf(
+        user.id,
+        account.id,
+        security.id,
+        "2024-02-01",
+        "2",
+      );
       expect(s).toMatchObject({
         side: "split",
         quantity: parseFixed("2"),
         price: 0,
         amount: 0,
       });
-      seedTrade(user.id, account.id, security.id, {
+      await seedTrade(user.id, account.id, security.id, {
         date: "2024-03-01",
         side: "sell",
         qty: "20",
         amount: 2000,
       });
-      conflict(
+      await conflict(
         () =>
           seedTrade(user.id, account.id, security.id, {
             date: "2024-04-01",
@@ -493,62 +511,70 @@ describe("trades", () => {
 
     it("rejects a sell that was only valid before a reverse split", async () => {
       const { user, account, security } = await setup();
-      seedTrade(user.id, account.id, security.id, { amount: 1000 });
-      seedTrade(user.id, account.id, security.id, {
+      await seedTrade(user.id, account.id, security.id, { amount: 1000 });
+      await seedTrade(user.id, account.id, security.id, {
         date: "2024-03-01",
         side: "sell",
         qty: "5",
         amount: 500,
       });
-      conflict(
+      await conflict(
         () => splitOf(user.id, account.id, security.id, "2024-02-01", "0.1"),
         /negative holding/,
       );
-      expect(listTrades(user.id, account.id)).toHaveLength(2);
+      expect(await listTrades(user.id, account.id)).toHaveLength(2);
     });
 
     it("rejects a split without shares and deleting the buy under a split", async () => {
       const { user, account, security } = await setup();
-      conflict(
+      await conflict(
         () => splitOf(user.id, account.id, security.id, "2024-01-01", "2"),
         /no shares to split/,
       );
-      const buy = seedTrade(user.id, account.id, security.id, { amount: 1000 });
-      splitOf(user.id, account.id, security.id, "2024-02-01", "2");
-      conflict(() => deleteTrade(user.id, buy.id), /no shares to split/);
+      const buy = await seedTrade(user.id, account.id, security.id, {
+        amount: 1000,
+      });
+      await splitOf(user.id, account.id, security.id, "2024-02-01", "2");
+      await conflict(() => deleteTrade(user.id, buy.id), /no shares to split/);
     });
 
     it("rejects deleting a split that later sells depend on", async () => {
       const { user, account, security } = await setup();
-      seedTrade(user.id, account.id, security.id, { amount: 1000 });
-      const s = splitOf(user.id, account.id, security.id, "2024-02-01", "2");
-      seedTrade(user.id, account.id, security.id, {
+      await seedTrade(user.id, account.id, security.id, { amount: 1000 });
+      const s = await splitOf(
+        user.id,
+        account.id,
+        security.id,
+        "2024-02-01",
+        "2",
+      );
+      await seedTrade(user.id, account.id, security.id, {
         date: "2024-03-01",
         side: "sell",
         qty: "15",
         amount: 1500,
       });
-      conflict(() => deleteTrade(user.id, s.id), /negative holding/);
+      await conflict(() => deleteTrade(user.id, s.id), /negative holding/);
     });
 
     it("applies a 1:3 reverse split exactly: 3 shares become 1 and selling 1 succeeds", async () => {
       const { user, account, security } = await setup();
-      seedTrade(user.id, account.id, security.id, {
+      await seedTrade(user.id, account.id, security.id, {
         qty: "3",
         amount: 3000,
       });
-      const s = seedTrade(user.id, account.id, security.id, {
+      const s = await seedTrade(user.id, account.id, security.id, {
         date: "2024-02-01",
         side: "split",
         price: "0",
         amount: 0,
         split: { new: 1, old: 3 },
       });
-      expect(getTrade(user.id, s.id)).toMatchObject({
+      expect(await getTrade(user.id, s.id)).toMatchObject({
         splitNew: 1,
         splitOld: 3,
       });
-      conflict(
+      await conflict(
         () =>
           seedTrade(user.id, account.id, security.id, {
             date: "2024-03-01",
@@ -558,48 +584,58 @@ describe("trades", () => {
           }),
         /negative holding/,
       );
-      seedTrade(user.id, account.id, security.id, {
+      await seedTrade(user.id, account.id, security.id, {
         date: "2024-03-01",
         side: "sell",
         qty: "1",
         amount: 1000,
       });
       expect(
-        listTrades(user.id, account.id).filter((t) => t.side === "sell"),
+        (await listTrades(user.id, account.id)).filter(
+          (t) => t.side === "sell",
+        ),
       ).toHaveLength(1);
     });
 
     describe("provider prices after a split change", () => {
-      const prices = (userId: string, securityId: string) =>
-        listPrices(userId, securityId).map((p) => `${p.source}:${p.date}`);
+      const prices = async (userId: string, securityId: string) =>
+        (await listPrices(userId, securityId)).map(
+          (p) => `${p.source}:${p.date}`,
+        );
       const prepare = async () => {
         const { user, account, security } = await setup();
-        const other = seedSecurity(user.id, { name: "Other Fund" });
-        seedTrade(user.id, account.id, security.id, { amount: 1000 });
+        const other = await seedSecurity(user.id, { name: "Other Fund" });
+        await seedTrade(user.id, account.id, security.id, { amount: 1000 });
         for (const id of [security.id, other.id]) {
-          seedProviderPrice(user.id, id, "2024-01-20", "100");
-          seedProviderPrice(user.id, id, "2024-03-20", "50");
+          await seedProviderPrice(user.id, id, "2024-01-20", "100");
+          await seedProviderPrice(user.id, id, "2024-03-20", "50");
         }
-        seedManualPrice(user.id, security.id, "2024-01-25", "101");
+        await seedManualPrice(user.id, security.id, "2024-01-25", "101");
         return { user, account, security, other };
       };
-      const kept = (security: string, other: string, user: string) => ({
-        manual: prices(user, security),
-        other: prices(user, other),
+      const kept = async (security: string, other: string, user: string) => ({
+        manual: await prices(user, security),
+        other: await prices(user, other),
       });
 
       it("discards them when a split is recorded, changed or deleted", async () => {
         const { user, account, security, other } = await prepare();
-        expect(prices(user.id, security.id)).toHaveLength(3);
+        expect(await prices(user.id, security.id)).toHaveLength(3);
 
-        const s = splitOf(user.id, account.id, security.id, "2024-02-01", "2");
-        expect(kept(security.id, other.id, user.id)).toEqual({
+        const s = await splitOf(
+          user.id,
+          account.id,
+          security.id,
+          "2024-02-01",
+          "2",
+        );
+        expect(await kept(security.id, other.id, user.id)).toEqual({
           manual: ["manual:2024-01-25"],
           other: ["provider:2024-03-20", "provider:2024-01-20"],
         });
 
-        seedProviderPrice(user.id, security.id, "2024-03-20", "50");
-        updateTrade(user.id, s.id, {
+        await seedProviderPrice(user.id, security.id, "2024-03-20", "50");
+        await updateTrade(user.id, s.id, {
           securityId: security.id,
           date: "2024-02-02",
           side: "split",
@@ -611,28 +647,37 @@ describe("trades", () => {
           amount: minor(0),
           note: null,
         });
-        expect(prices(user.id, security.id)).toEqual(["manual:2024-01-25"]);
+        expect(await prices(user.id, security.id)).toEqual([
+          "manual:2024-01-25",
+        ]);
 
-        seedProviderPrice(user.id, security.id, "2024-03-20", "50");
-        deleteTrade(user.id, s.id);
-        expect(prices(user.id, security.id)).toEqual(["manual:2024-01-25"]);
-        expect(prices(user.id, other.id)).toHaveLength(2);
+        await seedProviderPrice(user.id, security.id, "2024-03-20", "50");
+        await deleteTrade(user.id, s.id);
+        expect(await prices(user.id, security.id)).toEqual([
+          "manual:2024-01-25",
+        ]);
+        expect(await prices(user.id, other.id)).toHaveLength(2);
       });
 
       it("leaves them alone for buys and sells, and for another user", async () => {
         const { user, account, security } = await prepare();
         const stranger = await createTestUser();
-        const strangerSecurity = seedSecurity(stranger.id);
-        seedProviderPrice(stranger.id, strangerSecurity.id, "2024-01-20", "9");
-        seedTrade(user.id, account.id, security.id, {
+        const strangerSecurity = await seedSecurity(stranger.id);
+        await seedProviderPrice(
+          stranger.id,
+          strangerSecurity.id,
+          "2024-01-20",
+          "9",
+        );
+        await seedTrade(user.id, account.id, security.id, {
           date: "2024-02-01",
           side: "sell",
           qty: "1",
           amount: 100,
         });
-        expect(prices(user.id, security.id)).toHaveLength(3);
-        splitOf(user.id, account.id, security.id, "2024-02-15", "2");
-        expect(prices(stranger.id, strangerSecurity.id)).toEqual([
+        expect(await prices(user.id, security.id)).toHaveLength(3);
+        await splitOf(user.id, account.id, security.id, "2024-02-15", "2");
+        expect(await prices(stranger.id, strangerSecurity.id)).toEqual([
           "provider:2024-01-20",
         ]);
       });
@@ -640,33 +685,51 @@ describe("trades", () => {
 
     it("rejects a ratio that overflows the quantity", async () => {
       const { user, account, security } = await setup();
-      seedTrade(user.id, account.id, security.id, {
+      await seedTrade(user.id, account.id, security.id, {
         qty: "50000000",
         amount: 1000,
       });
-      expect(() =>
+      await expect(
         splitOf(user.id, account.id, security.id, "2024-02-01", "100"),
-      ).toThrow(/too large/);
+      ).rejects.toThrow(/too large/);
     });
 
     it("never touches another user's trades", async () => {
       const a = await setup();
       const b = await setup();
-      seedTrade(a.user.id, a.account.id, a.security.id, { amount: 1000 });
-      expect(() =>
+      await seedTrade(a.user.id, a.account.id, a.security.id, { amount: 1000 });
+      await expect(
         splitOf(b.user.id, a.account.id, a.security.id, "2024-02-01", "2"),
-      ).toThrow(LedgerError);
-      expect(listTrades(a.user.id, a.account.id)).toHaveLength(1);
+      ).rejects.toThrow(LedgerError);
+      expect(await listTrades(a.user.id, a.account.id)).toHaveLength(1);
     });
+  });
+
+  it("lets only one of two concurrent sells through when together they oversell", async () => {
+    const { user, account, security } = await setup();
+    await seedTrade(user.id, account.id, security.id, { amount: 1000 });
+    const sell = () =>
+      seedTrade(user.id, account.id, security.id, {
+        date: "2024-02-01",
+        side: "sell",
+        qty: "6",
+        amount: 600,
+      });
+    const results = await Promise.allSettled([sell(), sell()]);
+    expect(results.filter((r) => r.status === "fulfilled")).toHaveLength(1);
+    expect(results.find((r) => r.status === "rejected")?.reason).toMatchObject({
+      code: "conflict",
+    });
+    expect(await listTrades(user.id, account.id)).toHaveLength(2);
   });
 
   it("rejects selling before buying", async () => {
     const { user, account, security } = await setup();
-    seedTrade(user.id, account.id, security.id, {
+    await seedTrade(user.id, account.id, security.id, {
       date: "2024-02-01",
       amount: 1000,
     });
-    conflict(() =>
+    await conflict(() =>
       seedTrade(user.id, account.id, security.id, {
         date: "2024-01-01",
         side: "sell",
@@ -678,25 +741,27 @@ describe("trades", () => {
 
   it("counts a buy of the same date before a sell", async () => {
     const { user, account, security } = await setup();
-    seedTrade(user.id, account.id, security.id, { amount: 1000 });
-    seedTrade(user.id, account.id, security.id, {
+    await seedTrade(user.id, account.id, security.id, { amount: 1000 });
+    await seedTrade(user.id, account.id, security.id, {
       date: "2024-03-01",
       qty: "5",
       amount: 500,
     });
-    seedTrade(user.id, account.id, security.id, {
+    await seedTrade(user.id, account.id, security.id, {
       date: "2024-03-01",
       side: "sell",
       qty: "15",
       amount: 1500,
     });
-    expect(listTrades(user.id, account.id)).toHaveLength(3);
+    expect(await listTrades(user.id, account.id)).toHaveLength(3);
   });
 
   it("rejects an edit that shrinks an earlier buy below later sells", async () => {
     const { user, account, security } = await setup();
-    const buy = seedTrade(user.id, account.id, security.id, { amount: 1000 });
-    seedTrade(user.id, account.id, security.id, {
+    const buy = await seedTrade(user.id, account.id, security.id, {
+      amount: 1000,
+    });
+    await seedTrade(user.id, account.id, security.id, {
       date: "2024-02-01",
       side: "sell",
       qty: "8",
@@ -712,24 +777,30 @@ describe("trades", () => {
       amount: buy.amount,
       note: null,
     };
-    conflict(() => updateTrade(user.id, buy.id, input), /2024-02-01/);
-    expect(getTrade(user.id, buy.id).quantity).toBe(parseFixed("10"));
+    await conflict(() => updateTrade(user.id, buy.id, input), /2024-02-01/);
+    expect((await getTrade(user.id, buy.id)).quantity).toBe(parseFixed("10"));
     expect(
-      updateTrade(user.id, buy.id, { ...input, quantity: parseFixed("9") })
-        .quantity,
+      (
+        await updateTrade(user.id, buy.id, {
+          ...input,
+          quantity: parseFixed("9"),
+        })
+      ).quantity,
     ).toBe(parseFixed("9"));
   });
 
   it("rejects an edit that moves a buy after its sell", async () => {
     const { user, account, security } = await setup();
-    const buy = seedTrade(user.id, account.id, security.id, { amount: 1000 });
-    seedTrade(user.id, account.id, security.id, {
+    const buy = await seedTrade(user.id, account.id, security.id, {
+      amount: 1000,
+    });
+    await seedTrade(user.id, account.id, security.id, {
       date: "2024-02-01",
       side: "sell",
       qty: "5",
       amount: 500,
     });
-    conflict(() =>
+    await conflict(() =>
       updateTrade(user.id, buy.id, {
         securityId: security.id,
         date: "2024-03-01",
@@ -745,25 +816,29 @@ describe("trades", () => {
 
   it("rejects deleting a buy that later sells depend on", async () => {
     const { user, account, security } = await setup();
-    const buy = seedTrade(user.id, account.id, security.id, { amount: 1000 });
-    const sell = seedTrade(user.id, account.id, security.id, {
+    const buy = await seedTrade(user.id, account.id, security.id, {
+      amount: 1000,
+    });
+    const sell = await seedTrade(user.id, account.id, security.id, {
       date: "2024-02-01",
       side: "sell",
       qty: "5",
       amount: 500,
     });
-    conflict(() => deleteTrade(user.id, buy.id));
-    expect(listTrades(user.id, account.id)).toHaveLength(2);
-    deleteTrade(user.id, sell.id);
-    deleteTrade(user.id, buy.id);
-    expect(listTrades(user.id, account.id)).toEqual([]);
+    await conflict(() => deleteTrade(user.id, buy.id));
+    expect(await listTrades(user.id, account.id)).toHaveLength(2);
+    await deleteTrade(user.id, sell.id);
+    await deleteTrade(user.id, buy.id);
+    expect(await listTrades(user.id, account.id)).toEqual([]);
   });
 
   it("validates both securities when a trade changes security", async () => {
     const { user, account, security } = await setup();
-    const other = seedSecurity(user.id, { name: "Other" });
-    const buy = seedTrade(user.id, account.id, security.id, { amount: 1000 });
-    seedTrade(user.id, account.id, security.id, {
+    const other = await seedSecurity(user.id, { name: "Other" });
+    const buy = await seedTrade(user.id, account.id, security.id, {
+      amount: 1000,
+    });
+    await seedTrade(user.id, account.id, security.id, {
       date: "2024-02-01",
       side: "sell",
       qty: "5",
@@ -779,31 +854,35 @@ describe("trades", () => {
       amount: buy.amount,
       note: null,
     };
-    conflict(() => updateTrade(user.id, buy.id, input));
+    await conflict(() => updateTrade(user.id, buy.id, input));
 
-    const lone = seedTrade(user.id, account.id, other.id, {
+    const lone = await seedTrade(user.id, account.id, other.id, {
       date: "2024-03-01",
       amount: 100,
     });
     expect(
-      updateTrade(user.id, lone.id, { ...input, securityId: security.id })
-        .securityId,
+      (
+        await updateTrade(user.id, lone.id, {
+          ...input,
+          securityId: security.id,
+        })
+      ).securityId,
     ).toBe(security.id);
   });
 
   it("keeps sequences per account and per security", async () => {
     const { user, account, security } = await setup();
     const second = await seedAccount(user.id, { name: "Second" });
-    const other = seedSecurity(user.id, { name: "Other" });
-    seedTrade(user.id, account.id, security.id, { amount: 1000 });
-    conflict(() =>
+    const other = await seedSecurity(user.id, { name: "Other" });
+    await seedTrade(user.id, account.id, security.id, { amount: 1000 });
+    await conflict(() =>
       seedTrade(user.id, second.id, security.id, {
         side: "sell",
         qty: "1",
         amount: 100,
       }),
     );
-    conflict(() =>
+    await conflict(() =>
       seedTrade(user.id, account.id, other.id, {
         side: "sell",
         qty: "1",
@@ -814,18 +893,20 @@ describe("trades", () => {
 
   it("cascades with the account", async () => {
     const { user, account, security } = await setup();
-    seedTrade(user.id, account.id, security.id, { amount: 1000 });
+    await seedTrade(user.id, account.id, security.id, { amount: 1000 });
     const { deleteAccount } = await import("$lib/server/ledger");
     await deleteAccount(user.id, account.id);
-    expect(ctx.db.select().from(trades).all()).toEqual([]);
+    expect(await ctx.db.select().from(trades)).toEqual([]);
   });
 
   it("hides trades, accounts and securities of other users", async () => {
     const { user, account, security } = await setup();
-    const trade = seedTrade(user.id, account.id, security.id, { amount: 1000 });
+    const trade = await seedTrade(user.id, account.id, security.id, {
+      amount: 1000,
+    });
     const other = await createTestUser();
     const otherAccount = await seedAccount(other.id);
-    const otherSecurity = seedSecurity(other.id);
+    const otherSecurity = await seedSecurity(other.id);
     const input = {
       securityId: security.id,
       date: "2024-02-01",
@@ -837,36 +918,36 @@ describe("trades", () => {
       note: null,
     };
 
-    notFoundError(() => listTrades(other.id, account.id));
-    notFoundError(() => getTrade(other.id, trade.id));
-    notFoundError(() => deleteTrade(other.id, trade.id));
-    notFoundError(() => updateTrade(other.id, trade.id, input));
-    notFoundError(() =>
+    await notFoundError(() => listTrades(other.id, account.id));
+    await notFoundError(() => getTrade(other.id, trade.id));
+    await notFoundError(() => deleteTrade(other.id, trade.id));
+    await notFoundError(() => updateTrade(other.id, trade.id, input));
+    await notFoundError(() =>
       createTrade(other.id, account.id, {
         ...input,
         securityId: otherSecurity.id,
       }),
     );
-    notFoundError(() => createTrade(other.id, otherAccount.id, input));
-    notFoundError(() =>
+    await notFoundError(() => createTrade(other.id, otherAccount.id, input));
+    await notFoundError(() =>
       updateTrade(user.id, trade.id, {
         ...input,
         securityId: otherSecurity.id,
       }),
     );
-    expect(listTrades(user.id, account.id)).toHaveLength(1);
-    expect(listTrades(other.id, otherAccount.id)).toEqual([]);
+    expect(await listTrades(user.id, account.id)).toHaveLength(1);
+    expect(await listTrades(other.id, otherAccount.id)).toEqual([]);
   });
 });
 
 describe("prices", () => {
   it("sets, replaces and deletes manual prices", async () => {
     const { user, security } = await setup();
-    const first = setManualPrice(user.id, security.id, {
+    const first = await setManualPrice(user.id, security.id, {
       date: "2024-01-01",
       price: parseFixed("100"),
     });
-    const replaced = setManualPrice(user.id, security.id, {
+    const replaced = await setManualPrice(user.id, security.id, {
       date: "2024-01-01",
       price: parseFixed("101.5"),
     });
@@ -875,27 +956,27 @@ describe("prices", () => {
       price: parseFixed("101.5"),
       source: "manual",
     });
-    expect(listPrices(user.id, security.id)).toHaveLength(1);
-    deletePrice(user.id, first.id);
-    expect(listPrices(user.id, security.id)).toEqual([]);
+    expect(await listPrices(user.id, security.id)).toHaveLength(1);
+    await deletePrice(user.id, first.id);
+    expect(await listPrices(user.id, security.id)).toEqual([]);
   });
 
   it("skips zero and negative provider prices", async () => {
     const { user, security } = await setup();
-    const n = upsertProviderPrices(user.id, security.id, [
+    const n = await upsertProviderPrices(user.id, security.id, [
       { date: "2024-01-01", price: parseFixed("0") },
       { date: "2024-01-02", price: parseFixed("-3") },
       { date: "2024-01-03", price: parseFixed("3") },
     ]);
     expect(n).toBe(1);
-    expect(listPrices(user.id, security.id).map((p) => p.date)).toEqual([
-      "2024-01-03",
-    ]);
+    expect((await listPrices(user.id, security.id)).map((p) => p.date)).toEqual(
+      ["2024-01-03"],
+    );
   });
 
   it("limits the price list to the newest rows and counts them all", async () => {
     const { user, security } = await setup();
-    upsertProviderPrices(
+    await upsertProviderPrices(
       user.id,
       security.id,
       Array.from({ length: 400 }, (_, i) => ({
@@ -903,23 +984,23 @@ describe("prices", () => {
         price: parseFixed("1"),
       })),
     );
-    const list = listPrices(user.id, security.id);
+    const list = await listPrices(user.id, security.id);
     expect(list).toHaveLength(PRICE_LIST_LIMIT);
     expect(list[0]!.date > list[1]!.date).toBe(true);
-    expect(countPrices(user.id, security.id)).toBe(400);
-    expect(listPrices(user.id, security.id, 1000)).toHaveLength(400);
+    expect(await countPrices(user.id, security.id)).toBe(400);
+    expect(await listPrices(user.id, security.id, 1000)).toHaveLength(400);
     const other = await createTestUser();
-    notFoundError(() => countPrices(other.id, security.id));
-    notFoundError(() => listPrices(other.id, security.id));
+    await notFoundError(() => countPrices(other.id, security.id));
+    await notFoundError(() => listPrices(other.id, security.id));
   });
 
   it("keeps a manual and a provider price of the same date side by side", async () => {
     const { user, security } = await setup();
-    seedProviderPrice(user.id, security.id, "2024-01-01", "100");
-    seedManualPrice(user.id, security.id, "2024-01-01", "101");
-    seedProviderPrice(user.id, security.id, "2024-01-02", "102");
+    await seedProviderPrice(user.id, security.id, "2024-01-01", "100");
+    await seedManualPrice(user.id, security.id, "2024-01-01", "101");
+    await seedProviderPrice(user.id, security.id, "2024-01-02", "102");
     expect(
-      listPrices(user.id, security.id).map((p) => [p.date, p.source]),
+      (await listPrices(user.id, security.id)).map((p) => [p.date, p.source]),
     ).toEqual([
       ["2024-01-02", "provider"],
       ["2024-01-01", "provider"],
@@ -929,22 +1010,22 @@ describe("prices", () => {
 
   it("refuses to delete provider prices", async () => {
     const { user, security } = await setup();
-    seedProviderPrice(user.id, security.id, "2024-01-01", "100");
-    const [price] = listPrices(user.id, security.id);
-    conflict(() => deletePrice(user.id, price!.id));
+    await seedProviderPrice(user.id, security.id, "2024-01-01", "100");
+    const [price] = await listPrices(user.id, security.id);
+    await conflict(() => deletePrice(user.id, price!.id));
   });
 
   it("upserts provider prices without touching manual ones", async () => {
     const { user, security } = await setup();
-    seedManualPrice(user.id, security.id, "2024-01-01", "101");
-    upsertProviderPrices(user.id, security.id, [
+    await seedManualPrice(user.id, security.id, "2024-01-01", "101");
+    await upsertProviderPrices(user.id, security.id, [
       { date: "2024-01-01", price: parseFixed("100") },
       { date: "2024-01-02", price: parseFixed("102") },
     ]);
-    upsertProviderPrices(user.id, security.id, [
+    await upsertProviderPrices(user.id, security.id, [
       { date: "2024-01-02", price: parseFixed("103") },
     ]);
-    const prices = listPrices(user.id, security.id);
+    const prices = await listPrices(user.id, security.id);
     expect(prices).toHaveLength(3);
     expect(prices.find((p) => p.date === "2024-01-02")!.price).toBe(
       parseFixed("103"),
@@ -961,8 +1042,8 @@ describe("prices", () => {
       date: new Date(Date.UTC(2020, 0, 1 + i)).toISOString().slice(0, 10),
       price: fixed(100_000_000 + i),
     }));
-    expect(upsertProviderPrices(user.id, security.id, rows)).toBe(1200);
-    expect(listPrices(user.id, security.id, 5000)).toHaveLength(1200);
+    expect(await upsertProviderPrices(user.id, security.id, rows)).toBe(1200);
+    expect(await listPrices(user.id, security.id, 5000)).toHaveLength(1200);
   });
 
   it("upserts FX rates idempotently", async () => {
@@ -973,34 +1054,38 @@ describe("prices", () => {
       date: "2024-01-01",
       rate: parseFixed("0.9"),
     };
-    upsertFxRates(user.id, [row]);
-    upsertFxRates(user.id, [{ ...row, rate: parseFixed("0.91") }]);
-    const rows = ctx.db
+    await upsertFxRates(user.id, [row]);
+    await upsertFxRates(user.id, [{ ...row, rate: parseFixed("0.91") }]);
+    const rows = await ctx.db
       .select()
       .from(fxRates)
-      .where(eq(fxRates.userId, user.id))
-      .all();
+      .where(eq(fxRates.userId, user.id));
     expect(rows).toHaveLength(1);
     expect(rows[0]!.rate).toBe(parseFixed("0.91"));
   });
 
   it("hides and protects the prices of other users", async () => {
     const { user, security } = await setup();
-    const price = seedManualPrice(user.id, security.id, "2024-01-01", "100");
+    const price = await seedManualPrice(
+      user.id,
+      security.id,
+      "2024-01-01",
+      "100",
+    );
     const other = await createTestUser();
-    notFoundError(() => listPrices(other.id, security.id));
-    notFoundError(() =>
+    await notFoundError(() => listPrices(other.id, security.id));
+    await notFoundError(() =>
       setManualPrice(other.id, security.id, {
         date: "2024-01-02",
         price: parseFixed("1"),
       }),
     );
-    notFoundError(() =>
+    await notFoundError(() =>
       upsertProviderPrices(other.id, security.id, [
         { date: "2024-01-02", price: parseFixed("1") },
       ]),
     );
-    notFoundError(() => deletePrice(other.id, price.id));
-    expect(listPrices(user.id, security.id)).toHaveLength(1);
+    await notFoundError(() => deletePrice(other.id, price.id));
+    expect(await listPrices(user.id, security.id)).toHaveLength(1);
   });
 });

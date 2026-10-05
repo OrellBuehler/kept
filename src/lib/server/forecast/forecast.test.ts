@@ -58,14 +58,16 @@ describe("planned items", () => {
     );
     expect(updated.amount).toBe(1_000);
 
-    expect(listPlannedItems(other.id)).toEqual([]);
+    expect(await listPlannedItems(other.id)).toEqual([]);
     await expect(
       updatePlannedItem(other.id, created.id, planned()),
     ).rejects.toThrow(LedgerError);
-    expect(() => deletePlannedItem(other.id, created.id)).toThrow(LedgerError);
+    await expect(deletePlannedItem(other.id, created.id)).rejects.toThrow(
+      LedgerError,
+    );
 
-    deletePlannedItem(u.id, created.id);
-    expect(listPlannedItems(u.id)).toEqual([]);
+    await deletePlannedItem(u.id, created.id);
+    expect(await listPlannedItems(u.id)).toEqual([]);
   });
 
   it("takes the currency from the account and rejects foreign accounts", async () => {
@@ -183,14 +185,14 @@ describe("forecast", () => {
       type: "investment",
       openingBalance: minor(50_000),
     });
-    const sec = seedSecurity(u.id);
-    seedTrade(u.id, acc.id, sec.id, {
+    const sec = await seedSecurity(u.id);
+    await seedTrade(u.id, acc.id, sec.id, {
       date: "2026-09-01",
       qty: "10",
       price: "100",
       amount: 100_000,
     });
-    seedProviderPrice(u.id, sec.id, "2026-09-30", "120");
+    await seedProviderPrice(u.id, sec.id, "2026-09-30", "120");
     const f = await forecast(u.id, TODAY, 30);
     expect(f.accounts[0]!.startBalance).toBe(50_000);
   });

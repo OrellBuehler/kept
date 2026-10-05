@@ -12,10 +12,10 @@ import { localToday } from "$lib/server/ledger";
 import { ledgerFailure } from "$lib/server/ledger/http";
 import type { Actions, PageServerLoad } from "./$types";
 
-export const load: PageServerLoad = ({ locals }) => {
+export const load: PageServerLoad = async ({ locals }) => {
   const user = requireUser(locals);
   return {
-    settings: getMarketDataSettings(user.id),
+    settings: await getMarketDataSettings(user.id),
     providerAvailable: getQuoteProvider() !== null,
   };
 };
@@ -32,7 +32,7 @@ export const actions: Actions = {
         values: safeValues(form, ["enabled"]),
       });
     }
-    setMarketDataEnabled(user.id, parsed.data.enabled);
+    await setMarketDataEnabled(user.id, parsed.data.enabled);
     return {
       success: true as const,
       action: "save" as const,

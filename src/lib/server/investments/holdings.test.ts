@@ -46,15 +46,15 @@ async function setup() {
     type: "investment",
     openingBalance: m(50000),
   });
-  const security = seedSecurity(user.id);
-  seedTrade(user.id, account.id, security.id, {
+  const security = await seedSecurity(user.id);
+  await seedTrade(user.id, account.id, security.id, {
     date: "2026-01-10",
     qty: "10",
     price: "100",
     amount: 100500,
     fees: 500,
   });
-  seedProviderPrice(user.id, security.id, "2026-10-14", "120");
+  await seedProviderPrice(user.id, security.id, "2026-10-14", "120");
   return { user, account, security };
 }
 
@@ -87,7 +87,7 @@ describe("balance with holdings", () => {
 
   it("ignores trades after the date", async () => {
     const { user, account, security } = await setup();
-    seedTrade(user.id, account.id, security.id, {
+    await seedTrade(user.id, account.id, security.id, {
       date: "2026-12-01",
       qty: "5",
       amount: 60000,
@@ -136,7 +136,7 @@ describe("balance with holdings", () => {
 
   it("lets a manual price win in the account value", async () => {
     const { user, account, security } = await setup();
-    seedManualPrice(user.id, security.id, "2026-10-14", "130");
+    await seedManualPrice(user.id, security.id, "2026-10-14", "130");
     expect((await accountValue(user.id, account.id, TODAY)).holdings).toBe(
       130000,
     );
@@ -144,23 +144,23 @@ describe("balance with holdings", () => {
 
   it("converts foreign securities and flags a missing rate", async () => {
     const { user, account } = await setup();
-    const usd = seedSecurity(user.id, {
+    const usd = await seedSecurity(user.id, {
       name: "Dollar Stock",
       currency: "USD",
     });
-    seedTrade(user.id, account.id, usd.id, {
+    await seedTrade(user.id, account.id, usd.id, {
       date: "2026-02-01",
       qty: "2",
       price: "50",
       amount: 9000,
     });
-    seedProviderPrice(user.id, usd.id, "2026-10-14", "60");
+    await seedProviderPrice(user.id, usd.id, "2026-10-14", "60");
 
     const missing = await accountValue(user.id, account.id, TODAY);
     expect(missing.estimated).toBe(true);
     expect(missing.holdings).toBe(120000 + 9000);
 
-    upsertFxRates(user.id, [
+    await upsertFxRates(user.id, [
       {
         base: "USD",
         quote: "CHF",
@@ -197,8 +197,11 @@ describe("balance with holdings", () => {
       name: "Shared",
       shareBps: 5000,
     });
-    const sec = seedSecurity(user.id, { name: "S" });
-    seedTrade(user.id, shared.id, sec.id, { amount: 100000, price: "100" });
+    const sec = await seedSecurity(user.id, { name: "S" });
+    await seedTrade(user.id, shared.id, sec.id, {
+      amount: 100000,
+      price: "100",
+    });
     expect(await getAccount(user.id, shared.id, TODAY)).toMatchObject({
       balance: 100000,
       shareBalance: 50000,
@@ -231,8 +234,8 @@ describe("balance with holdings", () => {
   it("batches several accounts", async () => {
     const { user, account } = await setup();
     const second = await seedAccount(user.id, { name: "Second" });
-    const sec = seedSecurity(user.id, { name: "S2" });
-    seedTrade(user.id, second.id, sec.id, { amount: 1000 });
+    const sec = await seedSecurity(user.id, { name: "S2" });
+    await seedTrade(user.id, second.id, sec.id, { amount: 1000 });
     const inputs = await loadHoldingsInputs(
       user.id,
       [account.id, second.id],
@@ -252,11 +255,11 @@ describe("net worth with holdings", () => {
       currency: "USD",
       openingBalance: m(1000),
     });
-    const usdSecurity = seedSecurity(user.id, {
+    const usdSecurity = await seedSecurity(user.id, {
       name: "Dollar Stock",
       currency: "USD",
     });
-    seedTrade(user.id, usdAccount.id, usdSecurity.id, {
+    await seedTrade(user.id, usdAccount.id, usdSecurity.id, {
       date: "2026-02-01",
       qty: "1",
       price: "300",
@@ -266,8 +269,10 @@ describe("net worth with holdings", () => {
       name: "Gone",
       openingBalance: m(5),
     });
-    const archivedSecurity = seedSecurity(user.id, { name: "Gone" });
-    seedTrade(user.id, archived.id, archivedSecurity.id, { amount: 99999 });
+    const archivedSecurity = await seedSecurity(user.id, { name: "Gone" });
+    await seedTrade(user.id, archived.id, archivedSecurity.id, {
+      amount: 99999,
+    });
     await archiveAccount(user.id, archived.id);
 
     const series = await netWorthSeries(user.id, {
@@ -298,8 +303,8 @@ describe("net worth with holdings", () => {
   it("counts shares of holdings with the share basis", async () => {
     const user = await createTestUser();
     const account = await seedAccount(user.id, { shareBps: 5000 });
-    const sec = seedSecurity(user.id);
-    seedTrade(user.id, account.id, sec.id, {
+    const sec = await seedSecurity(user.id);
+    await seedTrade(user.id, account.id, sec.id, {
       date: "2026-10-01",
       amount: 100000,
     });
@@ -316,38 +321,44 @@ describe("net worth with holdings", () => {
 describe("earliestDataDate", () => {
   it("considers trade dates", async () => {
     const user = await createTestUser();
-    expect(earliestDataDate(user.id)).toBeNull();
+    expect(await earliestDataDate(user.id)).toBeNull();
     const account = await seedAccount(user.id);
-    const sec = seedSecurity(user.id);
-    seedTrade(user.id, account.id, sec.id, { date: "2023-05-05", amount: 1 });
-    expect(earliestDataDate(user.id)).toBe("2023-05-05");
+    const sec = await seedSecurity(user.id);
+    await seedTrade(user.id, account.id, sec.id, {
+      date: "2023-05-05",
+      amount: 1,
+    });
+    expect(await earliestDataDate(user.id)).toBe("2023-05-05");
     await seedImportedTransaction(user.id, account.id, {
       bookingDate: "2024-01-01",
     });
-    expect(earliestDataDate(user.id)).toBe("2023-05-05");
+    expect(await earliestDataDate(user.id)).toBe("2023-05-05");
   });
 
   it("counts trades of archived accounts but not other users' trades", async () => {
     const user = await createTestUser();
     const other = await createTestUser();
     const archived = await seedAccount(user.id);
-    const sec = seedSecurity(user.id);
-    seedTrade(user.id, archived.id, sec.id, { date: "2020-01-01", amount: 1 });
+    const sec = await seedSecurity(user.id);
+    await seedTrade(user.id, archived.id, sec.id, {
+      date: "2020-01-01",
+      amount: 1,
+    });
     await archiveAccount(user.id, archived.id);
     const otherAccount = await seedAccount(other.id);
-    const otherSec = seedSecurity(other.id);
-    seedTrade(other.id, otherAccount.id, otherSec.id, {
+    const otherSec = await seedSecurity(other.id);
+    await seedTrade(other.id, otherAccount.id, otherSec.id, {
       date: "2019-01-01",
       amount: 1,
     });
-    expect(earliestDataDate(user.id)).toBe("2020-01-01");
+    expect(await earliestDataDate(user.id)).toBe("2020-01-01");
   });
 });
 
 describe("staleness with holdings", () => {
   it("does not flag an old import when a held security was priced manually recently", async () => {
     const { user, account, security } = await setup();
-    seedManualPrice(user.id, security.id, "2026-10-14", "121");
+    await seedManualPrice(user.id, security.id, "2026-10-14", "121");
     await seedImport(user.id, account.id, {
       createdAt: new Date("2026-06-01T12:00:00"),
     });
@@ -359,7 +370,7 @@ describe("staleness with holdings", () => {
 
   it("does not flag an old import when there was a recent trade", async () => {
     const { user, account, security } = await setup();
-    seedTrade(user.id, account.id, security.id, {
+    await seedTrade(user.id, account.id, security.id, {
       date: "2026-10-10",
       qty: "1",
       price: "100",
@@ -377,7 +388,7 @@ describe("staleness with holdings", () => {
   it("stays stale with an old import and daily fetched prices", async () => {
     const { user, account, security } = await setup();
     for (const d of ["2026-10-12", "2026-10-13", "2026-10-14"]) {
-      seedProviderPrice(user.id, security.id, d, "120");
+      await seedProviderPrice(user.id, security.id, d, "120");
     }
     await seedImport(user.id, account.id, {
       createdAt: new Date("2026-04-15T12:00:00"),
@@ -392,19 +403,19 @@ describe("staleness with holdings", () => {
   it("ignores manual prices of a fully sold security", async () => {
     const user = await createTestUser();
     const account = await seedAccount(user.id);
-    const sec = seedSecurity(user.id);
-    seedTrade(user.id, account.id, sec.id, {
+    const sec = await seedSecurity(user.id);
+    await seedTrade(user.id, account.id, sec.id, {
       date: "2026-01-01",
       qty: "5",
       amount: 500,
     });
-    seedTrade(user.id, account.id, sec.id, {
+    await seedTrade(user.id, account.id, sec.id, {
       date: "2026-02-01",
       side: "sell",
       qty: "5",
       amount: 500,
     });
-    seedManualPrice(user.id, sec.id, "2026-10-14", "10");
+    await seedManualPrice(user.id, sec.id, "2026-10-14", "10");
     await seedImport(user.id, account.id, {
       createdAt: new Date("2026-06-01T12:00:00"),
     });
@@ -418,15 +429,18 @@ describe("staleness with holdings", () => {
     const user = await createTestUser();
     const account = await seedAccount(user.id);
     const other = await seedAccount(user.id, { name: "Other" });
-    const sec = seedSecurity(user.id);
-    const otherSec = seedSecurity(user.id, { name: "Other sec" });
-    seedTrade(user.id, account.id, sec.id, { date: "2026-01-01", amount: 1 });
-    seedTrade(user.id, other.id, otherSec.id, {
+    const sec = await seedSecurity(user.id);
+    const otherSec = await seedSecurity(user.id, { name: "Other sec" });
+    await seedTrade(user.id, account.id, sec.id, {
       date: "2026-01-01",
       amount: 1,
     });
-    seedManualPrice(user.id, sec.id, "2026-12-01", "10");
-    seedManualPrice(user.id, otherSec.id, "2026-10-14", "10");
+    await seedTrade(user.id, other.id, otherSec.id, {
+      date: "2026-01-01",
+      amount: 1,
+    });
+    await seedManualPrice(user.id, sec.id, "2026-12-01", "10");
+    await seedManualPrice(user.id, otherSec.id, "2026-10-14", "10");
     const by = Object.fromEntries(
       (await accountBalances(user.id, TODAY)).map((a) => [a.name, a]),
     );
@@ -437,15 +451,15 @@ describe("staleness with holdings", () => {
   it("yields one date per account without multiplying rows by prices", async () => {
     const { user, account, security } = await setup();
     const second = await seedAccount(user.id, { name: "Second" });
-    seedTrade(user.id, second.id, security.id, {
+    await seedTrade(user.id, second.id, security.id, {
       date: "2026-02-01",
       amount: 1,
     });
-    seedTrade(user.id, account.id, security.id, {
+    await seedTrade(user.id, account.id, security.id, {
       date: "2026-03-01",
       amount: 1,
     });
-    seedManualPrice(user.id, security.id, "2026-09-01", "1");
+    await seedManualPrice(user.id, security.id, "2026-09-01", "1");
     expect(
       await latestHoldingsActivity(user.id, [account.id, second.id], TODAY),
     ).toEqual(
@@ -464,26 +478,26 @@ describe("staleness with holdings", () => {
   it("treats a security as held after a split even when sells exceed the raw quantity", async () => {
     const user = await createTestUser();
     const account = await seedAccount(user.id);
-    const sec = seedSecurity(user.id);
-    seedTrade(user.id, account.id, sec.id, {
+    const sec = await seedSecurity(user.id);
+    await seedTrade(user.id, account.id, sec.id, {
       date: "2026-01-01",
       qty: "10",
       amount: 1,
     });
-    seedTrade(user.id, account.id, sec.id, {
+    await seedTrade(user.id, account.id, sec.id, {
       date: "2026-02-01",
       side: "split",
       qty: "2",
       price: "0",
       amount: 0,
     });
-    seedTrade(user.id, account.id, sec.id, {
+    await seedTrade(user.id, account.id, sec.id, {
       date: "2026-03-01",
       side: "sell",
       qty: "15",
       amount: 1,
     });
-    seedManualPrice(user.id, sec.id, "2026-09-01", "1");
+    await seedManualPrice(user.id, sec.id, "2026-09-01", "1");
     expect(
       (await latestHoldingsActivity(user.id, [account.id], TODAY)).get(
         account.id,
@@ -494,9 +508,12 @@ describe("staleness with holdings", () => {
   it("stays stale when prices and trades are old too", async () => {
     const user = await createTestUser();
     const account = await seedAccount(user.id);
-    const sec = seedSecurity(user.id);
-    seedTrade(user.id, account.id, sec.id, { date: "2026-01-01", amount: 1 });
-    seedProviderPrice(user.id, sec.id, "2026-03-01", "10");
+    const sec = await seedSecurity(user.id);
+    await seedTrade(user.id, account.id, sec.id, {
+      date: "2026-01-01",
+      amount: 1,
+    });
+    await seedProviderPrice(user.id, sec.id, "2026-03-01", "10");
     await seedImport(user.id, account.id, {
       createdAt: new Date("2026-06-01T12:00:00"),
     });
@@ -507,10 +524,13 @@ describe("staleness with holdings", () => {
   it("is not affected by manual prices of securities the account does not hold", async () => {
     const user = await createTestUser();
     const account = await seedAccount(user.id);
-    const held = seedSecurity(user.id, { name: "Held" });
-    const unheld = seedSecurity(user.id, { name: "Unheld" });
-    seedTrade(user.id, account.id, held.id, { date: "2026-01-01", amount: 1 });
-    seedManualPrice(user.id, unheld.id, "2026-10-14", "10");
+    const held = await seedSecurity(user.id, { name: "Held" });
+    const unheld = await seedSecurity(user.id, { name: "Unheld" });
+    await seedTrade(user.id, account.id, held.id, {
+      date: "2026-01-01",
+      amount: 1,
+    });
+    await seedManualPrice(user.id, unheld.id, "2026-10-14", "10");
     await seedImport(user.id, account.id, {
       createdAt: new Date("2026-06-01T12:00:00"),
     });
@@ -521,9 +541,12 @@ describe("staleness with holdings", () => {
     const user = await createTestUser();
     const fresh = await seedAccount(user.id, { name: "Fresh" });
     const old = await seedAccount(user.id, { name: "Old" });
-    const sec = seedSecurity(user.id, { name: "Sec" });
-    seedTrade(user.id, fresh.id, sec.id, { date: "2026-10-14", amount: 1 });
-    seedTrade(user.id, old.id, sec.id, { date: "2026-01-01", amount: 1 });
+    const sec = await seedSecurity(user.id, { name: "Sec" });
+    await seedTrade(user.id, fresh.id, sec.id, {
+      date: "2026-10-14",
+      amount: 1,
+    });
+    await seedTrade(user.id, old.id, sec.id, { date: "2026-01-01", amount: 1 });
     const by = Object.fromEntries(
       (await accountBalances(user.id, TODAY)).map((a) => [a.name, a]),
     );

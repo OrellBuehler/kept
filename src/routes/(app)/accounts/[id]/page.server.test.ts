@@ -99,8 +99,12 @@ describe("account detail page", () => {
       type: "investment",
       openingBalance: minor(500),
     });
-    const sec = seedSecurity(u.id);
-    seedTrade(u.id, inv.id, sec.id, { qty: "2", price: "50", amount: 10000 });
+    const sec = await seedSecurity(u.id);
+    await seedTrade(u.id, inv.id, sec.id, {
+      qty: "2",
+      price: "50",
+      amount: 10000,
+    });
 
     const plainData = ((await loadAs(u, plain.id)) as { value: LoadData })
       .value;
@@ -118,14 +122,14 @@ describe("account detail page", () => {
   it("adds, edits and deletes trades", async () => {
     const u = await createTestUser();
     const acc = await seedAccount(u.id, { type: "investment" });
-    const sec = seedSecurity(u.id);
+    const sec = await seedSecurity(u.id);
 
     const added = await run("addTrade", u, acc.id, tradeForm(sec.id));
     expect(added).toMatchObject({
       type: "return",
       value: { success: true, action: "addTrade" },
     });
-    const [trade] = listTrades(u.id, acc.id);
+    const [trade] = await listTrades(u.id, acc.id);
     expect(trade).toMatchObject({ amount: 10100, fees: 100, side: "buy" });
 
     expect(
@@ -136,7 +140,7 @@ describe("account detail page", () => {
         amount: "151",
       }),
     ).toMatchObject({ type: "return", value: { success: true } });
-    expect(listTrades(u.id, acc.id)[0]).toMatchObject({
+    expect((await listTrades(u.id, acc.id))[0]).toMatchObject({
       quantity: 300_000_000,
       amount: 15100,
     });
@@ -144,13 +148,13 @@ describe("account detail page", () => {
     expect(
       await run("deleteTrade", u, acc.id, { tradeId: trade!.id }),
     ).toMatchObject({ type: "return", value: { success: true } });
-    expect(listTrades(u.id, acc.id)).toEqual([]);
+    expect(await listTrades(u.id, acc.id)).toEqual([]);
   });
 
   it("validates trades and echoes the values", async () => {
     const u = await createTestUser();
     const acc = await seedAccount(u.id, { type: "investment" });
-    const sec = seedSecurity(u.id);
+    const sec = await seedSecurity(u.id);
     const r = await run("addTrade", u, acc.id, {
       ...tradeForm(sec.id),
       quantity: "0",
@@ -163,15 +167,15 @@ describe("account detail page", () => {
     });
     const errors = (r as { data: { errors: object } }).data.errors;
     expect(Object.keys(errors).sort()).toEqual(["amount", "quantity"]);
-    expect(listTrades(u.id, acc.id)).toEqual([]);
+    expect(await listTrades(u.id, acc.id)).toEqual([]);
   });
 
   it("refuses a sell that would leave a negative holding and a trade in another user's security", async () => {
     const u = await createTestUser();
     const other = await createTestUser();
     const acc = await seedAccount(u.id, { type: "investment" });
-    const sec = seedSecurity(u.id);
-    const foreign = seedSecurity(other.id);
+    const sec = await seedSecurity(u.id);
+    const foreign = await seedSecurity(other.id);
     const sell = await run("addTrade", u, acc.id, {
       ...tradeForm(sec.id),
       side: "sell",
@@ -185,7 +189,7 @@ describe("account detail page", () => {
       type: "error",
       status: 404,
     });
-    expect(listTrades(u.id, acc.id)).toEqual([]);
+    expect(await listTrades(u.id, acc.id)).toEqual([]);
   });
 
   it("locks the account currency once it has trades", async () => {
@@ -194,8 +198,8 @@ describe("account detail page", () => {
       type: "investment",
       currency: "CHF",
     });
-    const sec = seedSecurity(u.id);
-    seedTrade(u.id, acc.id, sec.id, { amount: 100000 });
+    const sec = await seedSecurity(u.id);
+    await seedTrade(u.id, acc.id, sec.id, { amount: 100000 });
     const r = await run("updateAccount", u, acc.id, {
       name: "x",
       type: "investment",
@@ -268,8 +272,8 @@ describe("account detail page", () => {
     const u = await createTestUser();
     const other = await createTestUser();
     const acc = await seedAccount(u.id);
-    updatePreferences(u.id, { pageSize: 25 });
-    updatePreferences(other.id, { pageSize: 200 });
+    await updatePreferences(u.id, { pageSize: 25 });
+    await updatePreferences(other.id, { pageSize: 200 });
     const size = async (query = "") =>
       ((await loadAs(u, acc.id, query)) as { value: LoadData }).value
         .transactions.pageSize;
@@ -555,8 +559,8 @@ describe("account detail page", () => {
         note: null,
       });
       const bAcc = await seedAccount(b.id, { name: "B's account" });
-      const sec = seedSecurity(a.id);
-      const trade = seedTrade(a.id, acc.id, sec.id, { amount: 100000 });
+      const sec = await seedSecurity(a.id);
+      const trade = await seedTrade(a.id, acc.id, sec.id, { amount: 100000 });
       return { a, b, acc, tx, imported, snap, bAcc, sec, trade };
     }
 
@@ -603,7 +607,7 @@ describe("account detail page", () => {
       expect((await getTransaction(a.id, tx.id)).deductionYear).toBeNull();
       expect((await getTransaction(a.id, imported.id)).note).toBeNull();
       expect(await listSnapshots(a.id, acc.id)).toHaveLength(1);
-      expect(listTrades(a.id, acc.id)).toHaveLength(1);
+      expect(await listTrades(a.id, acc.id)).toHaveLength(1);
     });
 
     it("A's ids used through B's own account are 404 too", async () => {
@@ -632,7 +636,7 @@ describe("account detail page", () => {
         "secret description",
       );
       expect(await listSnapshots(a.id, snap.accountId)).toHaveLength(1);
-      expect(listTrades(a.id, trade.accountId)).toHaveLength(1);
+      expect(await listTrades(a.id, trade.accountId)).toHaveLength(1);
     });
 
     it("a trade of another account of the same user is 404", async () => {
@@ -647,7 +651,7 @@ describe("account detail page", () => {
           status: 404,
         });
       }
-      expect(listTrades(a.id, acc.id)).toHaveLength(1);
+      expect(await listTrades(a.id, acc.id)).toHaveLength(1);
     });
   });
   it("marks a transaction as a tax payment and clears it again", async () => {

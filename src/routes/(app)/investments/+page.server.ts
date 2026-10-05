@@ -20,7 +20,7 @@ import {
   updateSecurity,
 } from "$lib/server/investments";
 import { localToday } from "$lib/server/ledger";
-import { ledgerFailure, orNotFound } from "$lib/server/ledger/http";
+import { ledgerFailure, orNotFoundAsync } from "$lib/server/ledger/http";
 import { idFormSchema, idSchema } from "$lib/server/ledger/schemas";
 import type { Actions, PageServerLoad } from "./$types";
 import { describeError } from "$lib/server/errors";
@@ -50,25 +50,27 @@ export const load: PageServerLoad = async ({ locals, url }) => {
   if (!query.success) error(404, "Not found");
   const securityId = query.data.prices ?? null;
   const all = query.data.all === "1";
-  const settings = getMarketDataSettings(user.id);
+  const settings = await getMarketDataSettings(user.id);
   return {
     overview: await investmentsOverview(user.id, localToday()),
-    securities: listSecurities(user.id),
+    securities: await listSecurities(user.id),
     marketData: {
       enabled: settings.enabled,
       canLookup: settings.enabled && getQuoteProvider() !== null,
     },
     priceHistory: securityId
       ? {
-          security: orNotFound(() => getSecurity(user.id, securityId)),
-          prices: orNotFound(() =>
+          security: await orNotFoundAsync(() =>
+            getSecurity(user.id, securityId),
+          ),
+          prices: await orNotFoundAsync(() =>
             listPrices(
               user.id,
               securityId,
               all ? Number.MAX_SAFE_INTEGER : undefined,
             ),
           ),
-          total: orNotFound(() => countPrices(user.id, securityId)),
+          total: await orNotFoundAsync(() => countPrices(user.id, securityId)),
         }
       : null,
   };
@@ -88,7 +90,7 @@ export const actions: Actions = {
       });
     }
     try {
-      const created = createSecurity(user.id, parsed.data);
+      const created = await createSecurity(user.id, parsed.data);
       return {
         success: true as const,
         action: "createSecurity" as const,
@@ -111,7 +113,7 @@ export const actions: Actions = {
         values,
       });
     }
-    orNotFound(() => getSecurity(user.id, idParsed.data.securityId));
+    await orNotFoundAsync(() => getSecurity(user.id, idParsed.data.securityId));
     const parsed = parseForm(securityInputSchema, form);
     if (!parsed.ok) {
       return fail(400, {
@@ -121,7 +123,7 @@ export const actions: Actions = {
       });
     }
     try {
-      updateSecurity(user.id, idParsed.data.securityId, parsed.data);
+      await updateSecurity(user.id, idParsed.data.securityId, parsed.data);
       return {
         success: true as const,
         action: "updateSecurity" as const,
@@ -145,7 +147,7 @@ export const actions: Actions = {
       });
     }
     try {
-      deleteSecurity(user.id, parsed.data.securityId);
+      await deleteSecurity(user.id, parsed.data.securityId);
       return {
         success: true as const,
         action: "deleteSecurity" as const,
@@ -173,7 +175,7 @@ export const actions: Actions = {
       });
     }
     // A lookup sends the search text out, so it follows the same opt-in.
-    if (!getMarketDataSettings(user.id).enabled) {
+    if (!(await getMarketDataSettings(user.id)).enabled) {
       return fail(400, {
         action: "lookup",
         errors: {
@@ -220,13 +222,13 @@ export const actions: Actions = {
         values,
       });
     }
-    orNotFound(() => getSecurity(user.id, idParsed.data.securityId));
+    await orNotFoundAsync(() => getSecurity(user.id, idParsed.data.securityId));
     const parsed = parseForm(priceInputSchema, form);
     if (!parsed.ok) {
       return fail(400, { action: "setPrice", errors: parsed.errors, values });
     }
     try {
-      setManualPrice(user.id, idParsed.data.securityId, parsed.data);
+      await setManualPrice(user.id, idParsed.data.securityId, parsed.data);
       return { success: true as const, action: "setPrice" as const };
     } catch (err) {
       return ledgerFailure("setPrice", err, values);
@@ -246,7 +248,7 @@ export const actions: Actions = {
       });
     }
     try {
-      deletePrice(user.id, parsed.data.priceId);
+      await deletePrice(user.id, parsed.data.priceId);
       return { success: true as const, action: "deletePrice" as const };
     } catch (err) {
       return ledgerFailure("deletePrice", err, values);

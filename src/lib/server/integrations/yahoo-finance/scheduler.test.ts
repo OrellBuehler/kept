@@ -52,12 +52,12 @@ function provider(over: Partial<QuoteProvider> = {}): {
 async function seedUser(symbol: string, enabled: boolean) {
   const user = await createTestUser();
   const account = await seedAccount(user.id);
-  const security = seedSecurity(user.id, { symbol, currency: "CHF" });
-  seedTrade(user.id, account.id, security.id, {
+  const security = await seedSecurity(user.id, { symbol, currency: "CHF" });
+  await seedTrade(user.id, account.id, security.id, {
     date: "2024-01-10",
     amount: 1000,
   });
-  setMarketDataEnabled(user.id, enabled);
+  await setMarketDataEnabled(user.id, enabled);
   return { user, security };
 }
 
@@ -71,8 +71,8 @@ describe("market data scheduler", () => {
     await runRefresh();
 
     expect(fake.symbols).toEqual(["ON.SW"]);
-    expect(listPrices(on.user.id, on.security.id)).toHaveLength(1);
-    expect(getMarketDataSettings(on.user.id).lastRunAt).not.toBeNull();
+    expect(await listPrices(on.user.id, on.security.id)).toHaveLength(1);
+    expect((await getMarketDataSettings(on.user.id)).lastRunAt).not.toBeNull();
   });
 
   it("a user whose refresh throws does not stop the others", async () => {
@@ -93,8 +93,12 @@ describe("market data scheduler", () => {
     await runRefresh();
 
     expect(calls).toBe(2);
-    expect(getMarketDataSettings(first.user.id).lastError).toBe("A.SW: Error");
-    expect(listPrices(second.user.id, second.security.id)).toHaveLength(1);
+    expect((await getMarketDataSettings(first.user.id)).lastError).toBe(
+      "A.SW: Error",
+    );
+    expect(await listPrices(second.user.id, second.security.id)).toHaveLength(
+      1,
+    );
   });
 
   it("logs a refresh that cannot run without leaking details", async () => {

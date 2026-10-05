@@ -1,6 +1,6 @@
 import { and, eq } from "drizzle-orm";
 import { minor, type Minor } from "$lib/money";
-import { getDB, plannedItems } from "$lib/server/db";
+import { first, getDB, plannedItems } from "$lib/server/db";
 import { getAccount } from "$lib/server/ledger/accounts";
 import { LedgerError, notFound } from "$lib/server/ledger/errors";
 import { parseMoneyInput } from "$lib/server/ledger/schemas";
@@ -28,21 +28,27 @@ const columns = {
   label: plannedItems.label,
 };
 
-export function listPlannedItems(userId: string): PlannedItemView[] {
-  return getDB()
+export async function listPlannedItems(
+  userId: string,
+): Promise<PlannedItemView[]> {
+  return await getDB()
     .select(columns)
     .from(plannedItems)
     .where(eq(plannedItems.userId, userId))
-    .orderBy(plannedItems.date, plannedItems.id)
-    .all();
+    .orderBy(plannedItems.date, plannedItems.id);
 }
 
-function getPlannedItem(userId: string, id: string): PlannedItemView {
-  const row = getDB()
-    .select(columns)
-    .from(plannedItems)
-    .where(and(eq(plannedItems.userId, userId), eq(plannedItems.id, id)))
-    .get();
+async function getPlannedItem(
+  userId: string,
+  id: string,
+): Promise<PlannedItemView> {
+  const row = await first(
+    getDB()
+      .select(columns)
+      .from(plannedItems)
+      .where(and(eq(plannedItems.userId, userId), eq(plannedItems.id, id)))
+      .limit(1),
+  );
   if (!row) throw notFound("Planned item");
   return row;
 }
@@ -87,11 +93,13 @@ export async function createPlannedItem(
   userId: string,
   input: PlannedItemInput,
 ): Promise<PlannedItemView> {
-  return getDB()
-    .insert(plannedItems)
-    .values({ userId, ...(await toValues(userId, input)) })
-    .returning(columns)
-    .get();
+  const values = await toValues(userId, input);
+  return (
+    await getDB()
+      .insert(plannedItems)
+      .values({ userId, ...values })
+      .returning(columns)
+  )[0]!;
 }
 
 export async function updatePlannedItem(
@@ -99,21 +107,26 @@ export async function updatePlannedItem(
   id: string,
   input: PlannedItemInput,
 ): Promise<PlannedItemView> {
-  getPlannedItem(userId, id);
-  getDB()
+  await getPlannedItem(userId, id);
+  const values = await toValues(userId, input);
+  const updated = await getDB()
     .update(plannedItems)
-    .set(await toValues(userId, input))
+    .set(values)
     .where(and(eq(plannedItems.userId, userId), eq(plannedItems.id, id)))
-    .run();
-  return getPlannedItem(userId, id);
+    .returning(columns);
+  if (updated.length === 0) throw notFound("Planned item");
+  return updated[0]!;
 }
 
-export function deletePlannedItem(userId: string, id: string): void {
-  getPlannedItem(userId, id);
-  getDB()
+export async function deletePlannedItem(
+  userId: string,
+  id: string,
+): Promise<void> {
+  const deleted = await getDB()
     .delete(plannedItems)
     .where(and(eq(plannedItems.userId, userId), eq(plannedItems.id, id)))
-    .run();
+    .returning({ id: plannedItems.id });
+  if (deleted.length === 0) throw notFound("Planned item");
 }
 
 export function plannedToItems(

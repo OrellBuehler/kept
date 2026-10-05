@@ -68,21 +68,21 @@ export async function accountBalances(
   today: string,
 ): Promise<AccountBalanceView[]> {
   const lastSnapshot = new Map(
-    getDB()
-      .select({
-        accountId: balanceSnapshots.accountId,
-        d: max(balanceSnapshots.date),
-      })
-      .from(balanceSnapshots)
-      .where(
-        and(
-          eq(balanceSnapshots.userId, userId),
-          lte(balanceSnapshots.date, today),
-        ),
-      )
-      .groupBy(balanceSnapshots.accountId)
-      .all()
-      .map((r) => [r.accountId, r.d]),
+    (
+      await getDB()
+        .select({
+          accountId: balanceSnapshots.accountId,
+          d: max(balanceSnapshots.date),
+        })
+        .from(balanceSnapshots)
+        .where(
+          and(
+            eq(balanceSnapshots.userId, userId),
+            lte(balanceSnapshots.date, today),
+          ),
+        )
+        .groupBy(balanceSnapshots.accountId)
+    ).map((r) => [r.accountId, r.d]),
   );
   const accountRows = (await listAccounts(userId, today)).filter(
     (a) => !a.archived,

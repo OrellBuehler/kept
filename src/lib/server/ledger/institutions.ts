@@ -93,15 +93,17 @@ export async function updateInstitution(
   id: string,
   input: InstitutionInput,
 ): Promise<InstitutionView> {
-  await getInstitution(userId, id);
+  let updated: { id: string }[] = [];
   try {
-    await getDB()
+    updated = await getDB()
       .update(institutions)
       .set(input)
-      .where(and(eq(institutions.userId, userId), eq(institutions.id, id)));
+      .where(and(eq(institutions.userId, userId), eq(institutions.id, id)))
+      .returning({ id: institutions.id });
   } catch (err) {
     mapNameViolation(err);
   }
+  if (updated.length === 0) throw notFound("Institution");
   return await getInstitution(userId, id);
 }
 

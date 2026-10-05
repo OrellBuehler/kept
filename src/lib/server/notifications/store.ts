@@ -6,6 +6,7 @@ import {
   encryptSecret,
 } from "$lib/server/crypto";
 import {
+  first,
   getDB,
   notificationChannels,
   notificationSettings,
@@ -18,12 +19,9 @@ import { DEFAULT_SETTINGS, type TriggerSettings } from "./types";
 
 export type ChannelConfig = NtfyConfig | WebhookConfig | EmailConfig;
 
-export function getSettings(userId: string): TriggerSettings {
-  const row = getDB()
-    .select()
-    .from(notificationSettings)
-    .where(eq(notificationSettings.userId, userId))
-    .get();
+type SettingsRow = typeof notificationSettings.$inferSelect;
+
+function toSettings(row: SettingsRow | undefined): TriggerSettings {
   if (!row) return { ...DEFAULT_SETTINGS };
   return {
     billDueEnabled: row.billDueEnabled,
@@ -36,15 +34,29 @@ export function getSettings(userId: string): TriggerSettings {
   };
 }
 
-export function saveSettings(userId: string, settings: TriggerSettings): void {
-  getDB()
+export async function getSettings(userId: string): Promise<TriggerSettings> {
+  return toSettings(
+    await first(
+      getDB()
+        .select()
+        .from(notificationSettings)
+        .where(eq(notificationSettings.userId, userId))
+        .limit(1),
+    ),
+  );
+}
+
+export async function saveSettings(
+  userId: string,
+  settings: TriggerSettings,
+): Promise<void> {
+  await getDB()
     .insert(notificationSettings)
     .values({ userId, ...settings })
     .onConflictDoUpdate({
       target: notificationSettings.userId,
       set: settings,
-    })
-    .run();
+    });
 }
 
 export function anyTriggerEnabled(s: TriggerSettings): boolean {
@@ -57,86 +69,133 @@ export function anyTriggerEnabled(s: TriggerSettings): boolean {
 }
 
 /** Users who have at least one trigger switched on. */
-export function usersWithTriggers(): {
-  userId: string;
-  settings: TriggerSettings;
-}[] {
-  return getDB()
-    .select()
-    .from(notificationSettings)
-    .all()
-    .map((r) => ({ userId: r.userId, settings: getSettings(r.userId) }))
+export async function usersWithTriggers(): Promise<
+  {
+    userId: string;
+    settings: TriggerSettings;
+  }[]
+> {
+  return (await getDB().select().from(notificationSettings))
+    .map((r) => ({ userId: r.userId, settings: toSettings(r) }))
     .filter((u) => anyTriggerEnabled(u.settings));
 }
 
 type ChannelRow = typeof notificationChannels.$inferSelect;
 
-function channelRow(userId: string, kind: ChannelKind): ChannelRow | null {
+async function channelRow(
+  userId: string,
+  kind: ChannelKind,
+): Promise<ChannelRow | null> {
   return (
-    getDB()
-      .select()
-      .from(notificationChannels)
-      .where(
-        and(
-          eq(notificationChannels.userId, userId),
-          eq(notificationChannels.kind, kind),
-        ),
-      )
-      .get() ?? null
+    (await first(
+      getDB()
+        .select()
+        .from(notificationChannels)
+        .where(
+          and(
+            eq(notificationChannels.userId, userId),
+            eq(notificationChannels.kind, kind),
+          ),
+        )
+        .limit(1),
+    )) ?? null
   );
 }
 
 /** Decrypted settings of a channel; null when it is not configured. */
-export function getChannelConfig<K extends ChannelKind>(
+export async function getChannelConfig<K extends ChannelKind>(
   userId: string,
   kind: K,
-):
+): Promise<
   | (K extends "ntfy"
       ? NtfyConfig
       : K extends "webhook"
         ? WebhookConfig
         : EmailConfig)
-  | null {
-  const row = channelRow(userId, kind);
+  | null
+> {
+  const row = await channelRow(userId, kind);
   if (!row) return null;
   return JSON.parse(decryptSecret(row.configEncrypted));
 }
 
-/** Like `getChannelConfig`, but null when the stored settings cannot be decrypted (the caller will overwrite them). */
-export function getReadableChannelConfig(
-  userId: string,
-  kind: ChannelKind,
-): ChannelConfig | null {
-  try {
-    return getChannelConfig(userId, kind);
-  } catch (err) {
-    if (err instanceof SecretUnreadableError) return null;
-    throw err;
-  }
+export interface SaveChannelOptions {
+  /**
+   * The secret field a blank form leaves out. When `config` lacks it, the
+   * stored value is kept.
+   */
+  keepSecret?: "token" | "secret";
+  /** Allow the save although the stored secret cannot be read and none was given (it is dropped). */
+  dropUnreadableSecret?: boolean;
 }
 
-export function saveChannel(
+export type SaveChannelResult =
+  | { ok: true }
+  /** Nothing was written: the stored secret cannot be decrypted, and the caller neither supplied one nor allowed dropping it. */
+  | { ok: false; reason: "secret_unreadable" };
+
+/**
+ * Stores the channel settings. Keeping the stored secret and the write happen
+ * in one transaction, so a concurrent save cannot be overwritten by a stale
+ * copy of its secret.
+ */
+export async function saveChannel(
   userId: string,
   kind: ChannelKind,
   config: ChannelConfig,
-): void {
-  const configEncrypted = encryptSecret(JSON.stringify(config));
-  getDB()
-    .insert(notificationChannels)
-    .values({ userId, kind, configEncrypted })
-    .onConflictDoUpdate({
-      target: [notificationChannels.userId, notificationChannels.kind],
-      set: { configEncrypted, lastError: null, lastErrorAt: null },
-    })
-    .run();
+  options: SaveChannelOptions = {},
+): Promise<SaveChannelResult> {
+  return getDB().transaction((tx) => {
+    const field = options.keepSecret;
+    const next: ChannelConfig & { token?: string; secret?: string } = {
+      ...config,
+    };
+    if (field && next[field] === undefined) {
+      const row = tx
+        .select()
+        .from(notificationChannels)
+        .where(
+          and(
+            eq(notificationChannels.userId, userId),
+            eq(notificationChannels.kind, kind),
+          ),
+        )
+        .limit(1)
+        .get();
+      let previous: Record<string, string | undefined> | null = null;
+      let unreadable = false;
+      if (row) {
+        try {
+          previous = JSON.parse(decryptSecret(row.configEncrypted));
+        } catch (err) {
+          if (!(err instanceof SecretUnreadableError)) throw err;
+          unreadable = true;
+        }
+      }
+      if (previous?.[field]) {
+        next[field] = previous[field];
+      } else if (unreadable && !options.dropUnreadableSecret) {
+        return { ok: false, reason: "secret_unreadable" } as const;
+      }
+    }
+    const configEncrypted = encryptSecret(JSON.stringify(next));
+    tx.insert(notificationChannels)
+      .values({ userId, kind, configEncrypted })
+      .onConflictDoUpdate({
+        target: [notificationChannels.userId, notificationChannels.kind],
+        set: { configEncrypted, lastError: null, lastErrorAt: null },
+      })
+      .run();
+    return { ok: true } as const;
+  });
 }
 
-export function setChannelEnabled(
+export async function setChannelEnabled(
   userId: string,
   kind: ChannelKind,
   enabled: boolean,
-): void {
-  getDB()
+): Promise<void> {
+  await getDB()
     .update(notificationChannels)
     .set({ enabled })
     .where(
@@ -144,29 +203,30 @@ export function setChannelEnabled(
         eq(notificationChannels.userId, userId),
         eq(notificationChannels.kind, kind),
       ),
-    )
-    .run();
+    );
 }
 
-export function deleteChannel(userId: string, kind: ChannelKind): void {
-  getDB()
+export async function deleteChannel(
+  userId: string,
+  kind: ChannelKind,
+): Promise<void> {
+  await getDB()
     .delete(notificationChannels)
     .where(
       and(
         eq(notificationChannels.userId, userId),
         eq(notificationChannels.kind, kind),
       ),
-    )
-    .run();
+    );
 }
 
-export function recordChannelResult(
+export async function recordChannelResult(
   userId: string,
   kind: ChannelKind,
   reason: string | null,
   now: Date = new Date(),
-): void {
-  getDB()
+): Promise<void> {
+  await getDB()
     .update(notificationChannels)
     .set(
       reason === null
@@ -178,8 +238,7 @@ export function recordChannelResult(
         eq(notificationChannels.userId, userId),
         eq(notificationChannels.kind, kind),
       ),
-    )
-    .run();
+    );
 }
 
 /** Everything the UI may see: no token, no secret. */
@@ -219,37 +278,41 @@ function toView(row: ChannelRow): ChannelView {
   };
 }
 
-export function listChannels(userId: string): ChannelView[] {
-  return getDB()
-    .select()
-    .from(notificationChannels)
-    .where(eq(notificationChannels.userId, userId))
-    .all()
-    .map(toView);
+export async function listChannels(userId: string): Promise<ChannelView[]> {
+  return (
+    await getDB()
+      .select()
+      .from(notificationChannels)
+      .where(eq(notificationChannels.userId, userId))
+  ).map(toView);
 }
 
-export function listEnabledChannelKinds(userId: string): ChannelKind[] {
-  return listChannels(userId)
+export async function listEnabledChannelKinds(
+  userId: string,
+): Promise<ChannelKind[]> {
+  return (await listChannels(userId))
     .filter((c) => c.enabled && !c.needsReentry)
     .map((c) => c.kind);
 }
 
-export function sentKeys(userId: string): Set<string> {
+export async function sentKeys(userId: string): Promise<Set<string>> {
   return new Set(
-    getDB()
-      .select({ key: notificationsSent.eventKey })
-      .from(notificationsSent)
-      .where(eq(notificationsSent.userId, userId))
-      .all()
-      .map((r) => r.key),
+    (
+      await getDB()
+        .select({ key: notificationsSent.eventKey })
+        .from(notificationsSent)
+        .where(eq(notificationsSent.userId, userId))
+    ).map((r) => r.key),
   );
 }
 
-export function markSent(userId: string, keys: readonly string[]): void {
+export async function markSent(
+  userId: string,
+  keys: readonly string[],
+): Promise<void> {
   if (keys.length === 0) return;
-  getDB()
+  await getDB()
     .insert(notificationsSent)
     .values(keys.map((eventKey) => ({ userId, eventKey })))
-    .onConflictDoNothing()
-    .run();
+    .onConflictDoNothing();
 }

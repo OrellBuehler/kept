@@ -7,58 +7,12 @@ import svelteConfig from "./svelte.config.js";
 
 /**
  * Temporary ban on the synchronous bun-sqlite terminals `.all()`, `.get()` and
- * `.run()` in files that have already been converted to `await`/`first()`.
- * Each of phases 2.2-2.6 (one domain per PR) appends the globs of the files it
- * converted, source and tests alike, e.g. "src/lib/server/auth/**". It keeps a
- * converted file from regressing until the driver swap (2.7) makes the
- * compiler reject these calls and this list and rule are deleted.
+ * `.run()` everywhere in `src/`: every query is awaited (or goes through
+ * `first()`), so the driver swap (2.7) only has to touch the transaction
+ * bodies. It keeps converted code from regressing until 2.7 makes the compiler
+ * reject these calls and this rule is deleted.
  */
-const CONVERTED_TO_ASYNC = [
-  // 2.2 auth
-  "src/lib/server/auth/**",
-  "src/lib/testing/auth.ts",
-  "src/hooks.server.ts",
-  "src/hooks.server.test.ts",
-  "src/routes/login/**",
-  "src/routes/logout/**",
-  "src/routes/setup/**",
-  "src/routes/api/auth/**",
-  "src/routes/(app)/admin/**",
-  "src/routes/(app)/settings/account/**",
-  "src/routes/(app)/settings/security/**",
-  // 2.3 ledger, transfers, pillar 3a, categories, tax
-  "src/lib/server/ledger/**",
-  "src/lib/server/transfers/**",
-  "src/lib/server/pillar3a/**",
-  "src/lib/server/investments/load.ts",
-  "src/lib/server/investments/overview.ts",
-  "src/lib/server/investments/overview.test.ts",
-  "src/lib/testing/ledger.ts",
-  "src/lib/testing/pillar3a.ts",
-  "src/routes/(app)/accounts/**",
-  "src/routes/(app)/institutions/**",
-  "src/routes/(app)/pillar-3a/**",
-  "src/routes/api/pillar-3a/**",
-  "src/lib/server/categories/**",
-  "src/lib/server/tax/**",
-  "src/routes/(app)/budgets/**",
-  "src/routes/(app)/settings/categories/**",
-  "src/routes/(app)/taxes/**",
-  // 2.4 imports, inbox
-  "src/lib/server/imports/**",
-  "src/lib/server/inbox/**",
-  "src/lib/testing/imports.ts",
-  "src/routes/(app)/import/**",
-  "src/routes/api/imports/**",
-  // 2.5 bills, paperless
-  "src/lib/server/bills/**",
-  "src/lib/server/integrations/paperless/**",
-  "src/lib/server/net/**",
-  "src/lib/testing/bills.ts",
-  "src/routes/(app)/bills/**",
-  "src/routes/(app)/settings/paperless/**",
-  "src/routes/api/public/paperless/**",
-];
+const SYNC_TERMINAL_BAN_FILES = ["src/**"];
 
 /**
  * The sync terminals stay legal inside the synchronous transaction bodies and
@@ -83,26 +37,24 @@ const asyncTransactionBan = {
     "bun-sqlite transactions must be synchronous until phase 2.7: do not pass an async callback to .transaction().",
 };
 
-const syncTerminalBan = CONVERTED_TO_ASYNC.length
-  ? [
-      {
-        files: CONVERTED_TO_ASYNC,
-        rules: {
-          "no-restricted-syntax": [
-            "error",
-            asyncTransactionBan,
-            {
-              selector:
-                "CallExpression[arguments.length=0] > MemberExpression.callee[property.name=/^(all|get|run)$/]" +
-                OUTSIDE_TX_BODY,
-              message:
-                "Await the query (or use first()) instead of .all()/.get()/.run().",
-            },
-          ],
+const syncTerminalBan = [
+  {
+    files: SYNC_TERMINAL_BAN_FILES,
+    rules: {
+      "no-restricted-syntax": [
+        "error",
+        asyncTransactionBan,
+        {
+          selector:
+            "CallExpression[arguments.length=0] > MemberExpression.callee[property.name=/^(all|get|run)$/]" +
+            OUTSIDE_TX_BODY,
+          message:
+            "Await the query (or use first()) instead of .all()/.get()/.run().",
         },
-      },
-    ]
-  : [];
+      ],
+    },
+  },
+];
 
 export default ts.config(
   {
@@ -178,4 +130,10 @@ export default ts.config(
     rules: { "no-restricted-syntax": ["error", asyncTransactionBan] },
   },
   ...syncTerminalBan,
+  {
+    // Raw bun:sqlite statements (`db.query(sql).get()`), not drizzle builders:
+    // this test inspects a backup file with the driver directly.
+    files: ["src/lib/server/backup/backup.test.ts"],
+    rules: { "no-restricted-syntax": ["error", asyncTransactionBan] },
+  },
 );

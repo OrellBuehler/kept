@@ -313,21 +313,21 @@ describe("current balance cap", () => {
       type: "investment",
       openingBalance: minor(1000),
     });
-    const sec = seedSecurity(user.id);
-    seedTrade(user.id, inv.id, sec.id, {
+    const sec = await seedSecurity(user.id);
+    await seedTrade(user.id, inv.id, sec.id, {
       date: "2024-02-01",
       qty: "10",
       price: "100",
       amount: 100500,
     });
-    seedProviderPrice(user.id, sec.id, "2024-03-01", "120");
+    await seedProviderPrice(user.id, sec.id, "2024-03-01", "120");
     const other = await createTestUser();
     const foreign = await seedAccount(other.id, {
       type: "investment",
       openingBalance: minor(7),
     });
-    const secOther = seedSecurity(other.id);
-    seedTrade(other.id, foreign.id, secOther.id, {
+    const secOther = await seedSecurity(other.id);
+    await seedTrade(other.id, foreign.id, secOther.id, {
       date: "2024-02-01",
       amount: 100000,
     });

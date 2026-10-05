@@ -17,10 +17,10 @@ import {
 } from "$lib/server/recurring";
 import type { Actions, PageServerLoad, RequestEvent } from "./$types";
 
-export const load: PageServerLoad = ({ locals }) => {
+export const load: PageServerLoad = async ({ locals }) => {
   const user = requireUser(locals);
-  syncRecurring(user.id);
-  const series = listRecurring(user.id, localToday());
+  await syncRecurring(user.id);
+  const series = await listRecurring(user.id, localToday());
   return { series, totals: recurringTotals(series) };
 };
 
@@ -28,7 +28,7 @@ function formAction<S extends z.ZodType>(
   action: string,
   schema: S,
   fields: readonly string[],
-  run: (userId: string, data: z.output<S>) => void,
+  run: (userId: string, data: z.output<S>) => Promise<void>,
 ) {
   return async ({ locals, request }: RequestEvent) => {
     const user = requireUser(locals);
@@ -39,7 +39,7 @@ function formAction<S extends z.ZodType>(
       return fail(400, { action, errors: parsed.errors, values });
     }
     try {
-      run(user.id, parsed.data);
+      await run(user.id, parsed.data);
       return { success: true as const, action };
     } catch (err) {
       return ledgerFailure(action, err, values);

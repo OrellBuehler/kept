@@ -85,7 +85,7 @@ export async function dashboard(
   const window = rangeWindow(
     range,
     today,
-    range === "all" ? earliestDataDate(userId) : null,
+    range === "all" ? await earliestDataDate(userId) : null,
   );
   const accounts = await accountBalances(userId, today);
   const bills = await billsSummary(userId, today);
@@ -115,7 +115,7 @@ export async function dashboard(
       ? await spendingByCategory(userId, month, "total")
       : null,
     bills,
-    unmatched: unmatchedTransactions(userId, { days: 60, today }),
+    unmatched: await unmatchedTransactions(userId, { days: 60, today }),
     imports: await lastImports(userId, today, accounts),
     staleAccounts: accounts.filter((a) => a.stale).length,
     overdueBills: bills.overdue.count,

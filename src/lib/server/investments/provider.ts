@@ -3,6 +3,7 @@ import type { SecurityKind } from "$lib/investment-types";
 import type { Fixed8 } from "$lib/quantity";
 import {
   accounts,
+  first,
   fxRates,
   getDB,
   marketDataSettings,
@@ -81,16 +82,20 @@ export interface MarketDataSettingsView {
   lastError: string | null;
 }
 
-export function getMarketDataSettings(userId: string): MarketDataSettingsView {
-  const row = getDB()
-    .select({
-      enabled: marketDataSettings.enabled,
-      lastRunAt: marketDataSettings.lastRunAt,
-      lastError: marketDataSettings.lastError,
-    })
-    .from(marketDataSettings)
-    .where(eq(marketDataSettings.userId, userId))
-    .get();
+export async function getMarketDataSettings(
+  userId: string,
+): Promise<MarketDataSettingsView> {
+  const row = await first(
+    getDB()
+      .select({
+        enabled: marketDataSettings.enabled,
+        lastRunAt: marketDataSettings.lastRunAt,
+        lastError: marketDataSettings.lastError,
+      })
+      .from(marketDataSettings)
+      .where(eq(marketDataSettings.userId, userId))
+      .limit(1),
+  );
   if (!row) return { enabled: false, lastRunAt: null, lastError: null };
   return {
     enabled: row.enabled,
@@ -99,40 +104,40 @@ export function getMarketDataSettings(userId: string): MarketDataSettingsView {
   };
 }
 
-export function setMarketDataEnabled(
+/** One atomic upsert on the unique user id, so concurrent calls cannot collide. */
+export async function setMarketDataEnabled(
   userId: string,
   enabled: boolean,
-): MarketDataSettingsView {
-  getDB()
+): Promise<MarketDataSettingsView> {
+  await getDB()
     .insert(marketDataSettings)
     .values({ userId, enabled })
     .onConflictDoUpdate({
       target: marketDataSettings.userId,
       set: { enabled, updatedAt: new Date() },
-    })
-    .run();
-  return getMarketDataSettings(userId);
+    });
+  return await getMarketDataSettings(userId);
 }
 
 /** Users who opted in to market data; for the scheduler. */
-export function listMarketDataUserIds(): string[] {
-  return getDB()
-    .select({ userId: marketDataSettings.userId })
-    .from(marketDataSettings)
-    .where(eq(marketDataSettings.enabled, true))
-    .all()
-    .map((r) => r.userId);
+export async function listMarketDataUserIds(): Promise<string[]> {
+  return (
+    await getDB()
+      .select({ userId: marketDataSettings.userId })
+      .from(marketDataSettings)
+      .where(eq(marketDataSettings.enabled, true))
+  ).map((r) => r.userId);
 }
 
-function recordRun(userId: string, now: Date, lastError: string | null) {
-  getDB()
+/** An atomic upsert; it never touches `enabled`, so a concurrent toggle survives. */
+async function recordRun(userId: string, now: Date, lastError: string | null) {
+  await getDB()
     .insert(marketDataSettings)
     .values({ userId, lastRunAt: now, lastError })
     .onConflictDoUpdate({
       target: marketDataSettings.userId,
       set: { lastRunAt: now, lastError, updatedAt: new Date() },
-    })
-    .run();
+    });
 }
 
 // --- refresh --------------------------------------------------------------
@@ -197,7 +202,7 @@ export async function refreshPrices(
   today: string,
   now: Date = new Date(),
 ): Promise<RefreshResult> {
-  if (!getMarketDataSettings(userId).enabled) {
+  if (!(await getMarketDataSettings(userId)).enabled) {
     throw new LedgerError("conflict", "Market data is turned off.");
   }
   const source = provider;
@@ -206,7 +211,7 @@ export async function refreshPrices(
   }
   const db = getDB();
 
-  const uses = db
+  const uses = await db
     .select({
       securityId: securities.id,
       symbol: securities.symbol,
@@ -223,40 +228,39 @@ export async function refreshPrices(
       securities.symbol,
       securities.currency,
       accounts.currency,
-    )
-    .all();
+    );
 
   const priceSpan = new Map(
-    db
-      .select({
-        securityId: securityPrices.securityId,
-        first: min(securityPrices.date),
-        last: max(securityPrices.date),
-      })
-      .from(securityPrices)
-      .where(
-        and(
-          eq(securityPrices.userId, userId),
-          eq(securityPrices.source, "provider"),
-        ),
-      )
-      .groupBy(securityPrices.securityId)
-      .all()
-      .map((r) => [r.securityId, { first: r.first!, last: r.last! }]),
+    (
+      await db
+        .select({
+          securityId: securityPrices.securityId,
+          first: min(securityPrices.date),
+          last: max(securityPrices.date),
+        })
+        .from(securityPrices)
+        .where(
+          and(
+            eq(securityPrices.userId, userId),
+            eq(securityPrices.source, "provider"),
+          ),
+        )
+        .groupBy(securityPrices.securityId)
+    ).map((r) => [r.securityId, { first: r.first!, last: r.last! }]),
   );
   const fxSpan = new Map(
-    db
-      .select({
-        base: fxRates.base,
-        quote: fxRates.quote,
-        first: min(fxRates.date),
-        last: max(fxRates.date),
-      })
-      .from(fxRates)
-      .where(and(eq(fxRates.userId, userId), eq(fxRates.source, "provider")))
-      .groupBy(fxRates.base, fxRates.quote)
-      .all()
-      .map((r) => [`${r.base}/${r.quote}`, { first: r.first!, last: r.last! }]),
+    (
+      await db
+        .select({
+          base: fxRates.base,
+          quote: fxRates.quote,
+          first: min(fxRates.date),
+          last: max(fxRates.date),
+        })
+        .from(fxRates)
+        .where(and(eq(fxRates.userId, userId), eq(fxRates.source, "provider")))
+        .groupBy(fxRates.base, fxRates.quote)
+    ).map((r) => [`${r.base}/${r.quote}`, { first: r.first!, last: r.last! }]),
   );
 
   const symbols = new Map<
@@ -314,7 +318,7 @@ export async function refreshPrices(
       const points = history.points.filter(
         (p) => p.date >= from && p.date <= today,
       );
-      result.prices += upsertProviderPrices(userId, securityId, points);
+      result.prices += await upsertProviderPrices(userId, securityId, points);
       result.securities += 1;
     } catch (err) {
       result.errors.push(`${target.symbol}: ${describe(err)}`);
@@ -327,7 +331,7 @@ export async function refreshPrices(
     try {
       const points = await source.fx(pair.base, pair.quote, from, today);
       assertPointDates(points);
-      result.fxRates += upsertFxRates(
+      result.fxRates += await upsertFxRates(
         userId,
         points
           .filter((p) => p.date >= from && p.date <= today && p.rate > 0)
@@ -339,7 +343,7 @@ export async function refreshPrices(
     }
   }
 
-  recordRun(
+  await recordRun(
     userId,
     now,
     result.errors.length > 0

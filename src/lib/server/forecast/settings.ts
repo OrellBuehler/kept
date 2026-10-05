@@ -1,8 +1,7 @@
 import { and, eq, inArray, ne } from "drizzle-orm";
 import { minor, type Minor } from "$lib/money";
 import { accounts, forecastAccountSettings, getDB } from "$lib/server/db";
-import { getAccount } from "$lib/server/ledger/accounts";
-import { LedgerError } from "$lib/server/ledger/errors";
+import { LedgerError, notFound } from "$lib/server/ledger/errors";
 import { parseMoneyInput } from "$lib/server/ledger/schemas";
 import type { AccountSettingsInput } from "./schemas";
 
@@ -12,36 +11,44 @@ export interface AccountSettings {
   defaultPayment: boolean;
 }
 
-export function listAccountSettings(userId: string): AccountSettings[] {
-  return getDB()
+export async function listAccountSettings(
+  userId: string,
+): Promise<AccountSettings[]> {
+  return await getDB()
     .select({
       accountId: forecastAccountSettings.accountId,
       threshold: forecastAccountSettings.threshold,
       defaultPayment: forecastAccountSettings.isDefaultPayment,
     })
     .from(forecastAccountSettings)
-    .where(eq(forecastAccountSettings.userId, userId))
-    .all();
+    .where(eq(forecastAccountSettings.userId, userId));
 }
 
 export async function saveAccountSettings(
   userId: string,
   input: AccountSettingsInput,
 ): Promise<void> {
-  const account = await getAccount(userId, input.accountId);
-  let threshold: Minor | null = null;
-  const text = input.threshold ?? "";
-  if (text !== "") {
-    const parsed = parseMoneyInput(text, account.currency);
-    if (!parsed.ok) {
-      throw new LedgerError("invalid", parsed.message, "threshold");
-    }
-    threshold = minor(parsed.value);
-  }
   const defaultPayment =
     input.defaultPayment === "on" || input.defaultPayment === "true";
-  const db = getDB();
-  db.transaction((tx) => {
+  // The account is read in the same transaction as the writes, so its
+  // currency cannot change or the account vanish between the check and them.
+  getDB().transaction((tx) => {
+    const account = tx
+      .select({ id: accounts.id, currency: accounts.currency })
+      .from(accounts)
+      .where(and(eq(accounts.userId, userId), eq(accounts.id, input.accountId)))
+      .limit(1)
+      .get();
+    if (!account) throw notFound("Account");
+    let threshold: Minor | null = null;
+    const text = input.threshold ?? "";
+    if (text !== "") {
+      const parsed = parseMoneyInput(text, account.currency);
+      if (!parsed.ok) {
+        throw new LedgerError("invalid", parsed.message, "threshold");
+      }
+      threshold = minor(parsed.value);
+    }
     tx.insert(forecastAccountSettings)
       .values({
         userId,

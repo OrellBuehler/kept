@@ -17,7 +17,7 @@ export async function runRefresh(
   options: { jitterMs?: number } = {},
 ): Promise<void> {
   const jitter = options.jitterMs ?? 0;
-  for (const userId of listMarketDataUserIds()) {
+  for (const userId of await listMarketDataUserIds()) {
     try {
       if (jitter > 0) await sleep(Math.random() * jitter);
       const result = await refreshPrices(userId, localToday());

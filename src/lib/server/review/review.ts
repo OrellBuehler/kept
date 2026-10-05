@@ -134,23 +134,26 @@ interface Classified {
 const UNCATEGORIZED = "Uncategorized";
 
 async function loadOwn(userId: string) {
-  const own = getDB()
+  const own = await getDB()
     .select({
       id: accounts.id,
       archived: accounts.archived,
       currency: accounts.currency,
     })
     .from(accounts)
-    .where(eq(accounts.userId, userId))
-    .all();
+    .where(eq(accounts.userId, userId));
   const active = new Map(
     own.filter((a) => !a.archived).map((a) => [a.id, a.currency]),
   );
   return { active, exclusion: await loadTransferExclusion(userId) };
 }
 
-function loadRows(userId: string, from: string, to: string): Row[] {
-  return getDB()
+async function loadRows(
+  userId: string,
+  from: string,
+  to: string,
+): Promise<Row[]> {
+  return await getDB()
     .select({
       id: transactions.id,
       accountId: transactions.accountId,
@@ -169,15 +172,14 @@ function loadRows(userId: string, from: string, to: string): Row[] {
         gte(transactions.bookingDate, from),
         lte(transactions.bookingDate, to),
       ),
-    )
-    .all();
+    );
 }
 
 /** Years with at least one transaction on a non-archived account, newest first. */
 export async function reviewYears(userId: string): Promise<number[]> {
   const { active } = await loadOwn(userId);
   const years = new Set<number>();
-  for (const r of loadRows(userId, "0000-01-01", "9999-12-31")) {
+  for (const r of await loadRows(userId, "0000-01-01", "9999-12-31")) {
     if (active.has(r.accountId)) years.add(Number(r.bookingDate.slice(0, 4)));
   }
   return [...years].sort((a, b) => b - a);
@@ -213,18 +215,18 @@ export async function yearReview(
   const to = today < yearEnd ? today : yearEnd;
   const { active, exclusion } = await loadOwn(userId);
   const cats = new Map<string, Cat>(
-    getDB()
-      .select({
-        id: categories.id,
-        name: categories.name,
-        parentId: categories.parentId,
-        kind: categories.kind,
-        color: categories.color,
-      })
-      .from(categories)
-      .where(eq(categories.userId, userId))
-      .all()
-      .map((c) => [c.id, c]),
+    (
+      await getDB()
+        .select({
+          id: categories.id,
+          name: categories.name,
+          parentId: categories.parentId,
+          kind: categories.kind,
+          color: categories.color,
+        })
+        .from(categories)
+        .where(eq(categories.userId, userId))
+    ).map((c) => [c.id, c]),
   );
 
   let excludedTransfers = 0;
@@ -251,12 +253,16 @@ export async function yearReview(
   };
 
   const current: Classified[] = [];
-  for (const r of loadRows(userId, from, to)) {
+  for (const r of await loadRows(userId, from, to)) {
     const c = classify(r, true);
     if (c) current.push(c);
   }
   const previous: Classified[] = [];
-  for (const r of loadRows(userId, `${year - 1}-01-01`, `${year - 1}-12-31`)) {
+  for (const r of await loadRows(
+    userId,
+    `${year - 1}-01-01`,
+    `${year - 1}-12-31`,
+  )) {
     const c = classify(r, false);
     if (c) previous.push(c);
   }
