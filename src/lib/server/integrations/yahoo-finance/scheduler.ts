@@ -1,4 +1,4 @@
-import { detach } from "$lib/server/detached";
+import { startTicker } from "$lib/server/scheduling";
 import { refreshPrices, listMarketDataUserIds } from "$lib/server/investments";
 import { localToday } from "$lib/server/ledger/balances";
 import { errorCode } from "$lib/server/errors";
@@ -42,28 +42,10 @@ export function startScheduler(
     jitterMs?: number;
   } = {},
 ): () => void {
-  let running = false;
-  const tick = async () => {
-    if (running) return;
-    running = true;
-    try {
-      await runRefresh({ jitterMs: options.jitterMs ?? JITTER_MS });
-    } finally {
-      running = false;
-    }
-  };
-  const first = setTimeout(
-    () => detach(tick()),
-    options.firstRunDelayMs ?? FIRST_RUN_DELAY_MS,
-  );
-  const timer = setInterval(
-    () => detach(tick()),
-    options.intervalMs ?? REFRESH_INTERVAL_MS,
-  );
-  first.unref?.();
-  timer.unref?.();
-  return () => {
-    clearTimeout(first);
-    clearInterval(timer);
-  };
+  return startTicker({
+    name: "market data refresh",
+    intervalMs: options.intervalMs ?? REFRESH_INTERVAL_MS,
+    firstRunDelayMs: options.firstRunDelayMs ?? FIRST_RUN_DELAY_MS,
+    run: () => runRefresh({ jitterMs: options.jitterMs ?? JITTER_MS }),
+  });
 }

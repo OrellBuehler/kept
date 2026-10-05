@@ -22,3 +22,8 @@ export function registerBackups(): void {
     stop = null;
   };
 }
+
+/** Stops the daily backup check (shutdown, tests). A backup already running finishes. */
+export function stopBackups(): void {
+  stop?.();
+}

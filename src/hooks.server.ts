@@ -1,14 +1,23 @@
 import { json, type Handle, type HandleServerError } from "@sveltejs/kit";
 import { warmDummyHash } from "$lib/server/auth/password";
 import { assertSecretKeyConfigured } from "$lib/server/crypto";
-import { registerBackups } from "$lib/server/backup";
-import { registerInbox } from "$lib/server/inbox";
+import { registerBackups, stopBackups } from "$lib/server/backup";
+import { registerInbox, stopInbox } from "$lib/server/inbox";
 import { startPendingSweep } from "$lib/server/imports";
 import { runMigrations } from "$lib/server/db";
 import { getStore, sweepStaleStorageTemp } from "$lib/server/storage";
-import { registerNotifications } from "$lib/server/notifications";
-import { registerPaperless } from "$lib/server/integrations/paperless";
-import { registerMarketData } from "$lib/server/integrations/yahoo-finance";
+import {
+  registerNotifications,
+  unregisterNotifications,
+} from "$lib/server/notifications";
+import {
+  registerPaperless,
+  unregisterPaperless,
+} from "$lib/server/integrations/paperless";
+import {
+  registerMarketData,
+  unregisterMarketData,
+} from "$lib/server/integrations/yahoo-finance";
 import {
   SESSION_COOKIE,
   clearedSessionCookieHeader,
@@ -22,6 +31,11 @@ import {
   warnIfAddressHeaderUnset,
   warnIfProxied,
 } from "$lib/server/auth/login";
+import {
+  installShutdownHandler,
+  onShutdown,
+  trackRequest,
+} from "$lib/server/lifecycle";
 import { withSecurityHeaders } from "$lib/server/security-headers";
 import { countUsers } from "$lib/server/auth/users";
 
@@ -40,6 +54,12 @@ export async function init() {
   registerPaperless();
   registerMarketData();
   registerNotifications();
+  onShutdown("backups", stopBackups);
+  onShutdown("inbox scan", stopInbox);
+  onShutdown("paperless sync", unregisterPaperless);
+  onShutdown("market data refresh", unregisterMarketData);
+  onShutdown("notifications", unregisterNotifications);
+  installShutdownHandler();
 }
 
 export const handleError: HandleServerError = ({ error, event, status }) => {
@@ -99,5 +119,7 @@ async function handleRequest({
   );
 }
 
-export const handle: Handle = async (input) =>
-  withSecurityHeaders(await handleRequest(input), input.event.url);
+export const handle: Handle = (input) =>
+  trackRequest(async () =>
+    withSecurityHeaders(await handleRequest(input), input.event.url),
+  );

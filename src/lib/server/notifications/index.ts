@@ -1,4 +1,4 @@
-import { detach } from "$lib/server/detached";
+import { startTicker } from "$lib/server/scheduling";
 import { runNotifications } from "./run";
 import { readSmtpConfig, type SmtpConfig } from "./smtp";
 
@@ -21,29 +21,14 @@ export function registerNotifications(
 ): void {
   if (stop) return;
   smtp = readSmtpConfig();
-  let running = false;
-  const tick = async () => {
-    if (running) return;
-    running = true;
-    try {
-      await runNotifications({ smtp });
-    } finally {
-      running = false;
-    }
-  };
-  const first = setTimeout(
-    () => detach(tick()),
-    options.firstRunDelayMs ?? FIRST_RUN_DELAY_MS,
-  );
-  const timer = setInterval(
-    () => detach(tick()),
-    options.intervalMs ?? CHECK_INTERVAL_MS,
-  );
-  first.unref?.();
-  timer.unref?.();
+  const stopTicker = startTicker({
+    name: "notifications",
+    intervalMs: options.intervalMs ?? CHECK_INTERVAL_MS,
+    firstRunDelayMs: options.firstRunDelayMs ?? FIRST_RUN_DELAY_MS,
+    run: () => runNotifications({ smtp }),
+  });
   stop = () => {
-    clearTimeout(first);
-    clearInterval(timer);
+    stopTicker();
     stop = null;
   };
 }
