@@ -6,7 +6,12 @@ import type { FetchFn } from "./channels/http";
 import { ntfyChannel } from "./channels/ntfy";
 import { webhookChannel } from "./channels/webhook";
 import type { SmtpConfig } from "./smtp";
-import { getChannelConfig, listChannels, recordChannelResult } from "./store";
+import {
+  getChannelConfig,
+  listChannels,
+  mayUseEmail,
+  recordChannelResult,
+} from "./store";
 import { ChannelError, type Channel, type NotificationMessage } from "./types";
 
 export interface DispatchDeps {
@@ -46,6 +51,12 @@ async function buildChannel(
         await privateNetworkAllowedForUser(userId),
       );
     case "email":
+      if (!(await mayUseEmail(userId))) {
+        throw new ChannelError(
+          "email_not_allowed",
+          "Email notifications are limited to administrators.",
+        );
+      }
       if (!deps.smtp) {
         throw new ChannelError(
           "smtp_not_configured",
@@ -94,6 +105,14 @@ export async function deliver(
         "notification channel skipped",
         channel.kind,
         "secret_unreadable",
+      );
+      continue;
+    }
+    if (channel.kind === "email" && !(await mayUseEmail(userId))) {
+      console.warn(
+        "notification channel skipped",
+        channel.kind,
+        "email_not_allowed",
       );
       continue;
     }

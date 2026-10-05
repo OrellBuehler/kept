@@ -88,6 +88,7 @@ describe("crypto", () => {
 
   it("throws in production when the key is missing or invalid", () => {
     vi.stubEnv("NODE_ENV", "production");
+    vi.stubEnv("DEV", false);
     vi.stubEnv("KEPT_SECRET_KEY", "");
     expect(() => assertSecretKeyConfigured()).toThrow(/not set/);
     vi.stubEnv("KEPT_SECRET_KEY", "short");
@@ -96,7 +97,36 @@ describe("crypto", () => {
     expect(() => assertSecretKeyConfigured()).not.toThrow();
   });
 
-  it("falls back to a dev key outside production and warns once", () => {
+  it("refuses the insecure key in a built server even without NODE_ENV", () => {
+    vi.stubEnv("NODE_ENV", "");
+    vi.stubEnv("DEV", false);
+    vi.stubEnv("KEPT_SECRET_KEY", "");
+    expect(() => assertSecretKeyConfigured()).toThrow(
+      /KEPT_SECRET_KEY is not set/,
+    );
+    expect(() => encryptSecret("x")).toThrow(/not set/);
+  });
+
+  it("uses the insecure key in a built server only when KEPT_ALLOW_INSECURE_KEY=true", () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    vi.stubEnv("DEV", false);
+    vi.stubEnv("KEPT_SECRET_KEY", "");
+    vi.stubEnv("KEPT_ALLOW_INSECURE_KEY", "yes");
+    expect(() => assertSecretKeyConfigured()).toThrow(/not set/);
+    vi.stubEnv("KEPT_ALLOW_INSECURE_KEY", "true");
+    expect(decryptSecret(encryptSecret("x"))).toBe("x");
+    expect(warn).toHaveBeenCalledTimes(1);
+  });
+
+  it("a configured key wins over the opt-in", () => {
+    vi.stubEnv("DEV", false);
+    vi.stubEnv("KEPT_ALLOW_INSECURE_KEY", "true");
+    const payload = encryptSecret("x");
+    vi.stubEnv("KEPT_SECRET_KEY", "");
+    expect(() => decryptSecret(payload)).toThrow(/Cannot decrypt/);
+  });
+
+  it("falls back to a dev key under vite dev and tests and warns once", () => {
     const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
     vi.stubEnv("KEPT_SECRET_KEY", "");
     expect(decryptSecret(encryptSecret("x"))).toBe("x");

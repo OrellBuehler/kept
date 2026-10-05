@@ -92,7 +92,7 @@ describe("saveChannel", () => {
       const u = await unreadable();
       const saved = await saveChannel(u.id, "ntfy", ntfy({ topic: "other" }), {
         keepSecret: "token",
-        dropUnreadableSecret: true,
+        dropSecret: true,
       });
       expect(saved).toEqual({ ok: true });
       expect(await getChannelConfig(u.id, "ntfy")).toEqual(

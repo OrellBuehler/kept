@@ -23,17 +23,29 @@ function parseKey(raw: string): Buffer | null {
   return key.length === KEY_BYTES ? key : null;
 }
 
+/**
+ * The publicly known key is only usable under `vite dev`, in tests (both have
+ * `import.meta.env.DEV`, which a production build folds to false), or when
+ * `KEPT_ALLOW_INSECURE_KEY=true` asks for it. A built server started with
+ * `bun run start` has no NODE_ENV, so that is not a safe signal on its own.
+ */
+function insecureKeyAllowed(): boolean {
+  if (process.env.KEPT_ALLOW_INSECURE_KEY === "true") return true;
+  return import.meta.env?.DEV === true;
+}
+
 function getKey(): Buffer {
   const raw = process.env.KEPT_SECRET_KEY;
-  // Bun.env, not process.env: the bundler statically folds
-  // `process.env.NODE_ENV` at build time, which would disable this check.
-  const production = Bun.env.NODE_ENV === "production";
   if (raw === undefined || raw.trim() === "") {
-    if (production) throw new Error(`KEPT_SECRET_KEY is not set. ${HELP}`);
+    if (!insecureKeyAllowed()) {
+      throw new Error(
+        `KEPT_SECRET_KEY is not set. ${HELP}. For throwaway local use only, KEPT_ALLOW_INSECURE_KEY=true opts into a publicly known key.`,
+      );
+    }
     if (!warned) {
       warned = true;
       console.warn(
-        "KEPT_SECRET_KEY is not set: using an INSECURE development key. Never do this in production.",
+        "KEPT_SECRET_KEY is not set: using an INSECURE development key. Never do this with real data.",
       );
     }
     return INSECURE_DEV_KEY;

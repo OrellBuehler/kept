@@ -11,7 +11,7 @@
   import FormAlert from "$lib/components/app/form-alert.svelte";
   import LocalTime from "$lib/components/app/local-time.svelte";
   import FormField from "$lib/components/FormField.svelte";
-  import { CHANNEL_LABELS } from "$lib/notification-types";
+  import { CHANNEL_KINDS, CHANNEL_LABELS } from "$lib/notification-types";
   import { formError, type FormErrors } from "$lib/form-errors";
   import { submitHandler } from "$lib/form-submit";
   import type { PageProps } from "./$types";
@@ -29,6 +29,14 @@
       "Kept POSTs JSON ({source, title, message, sentAt}). With a secret, the request carries x-kept-signature: sha256=<HMAC-SHA256 of the body>.",
     email: "Sent through the SMTP server your administrator configured.",
   } as const;
+
+  const shownKinds = $derived(
+    CHANNEL_KINDS.filter(
+      (k) => data.kinds.includes(k) || data.channels.some((c) => c.kind === k),
+    ),
+  );
+  const lockedReason = (kind: string) =>
+    kind === "email" ? data.emailBlocked : null;
 
   const view = (kind: string) => data.channels.find((c) => c.kind === kind);
 
@@ -146,8 +154,9 @@
     </Card.Content>
   </Card.Root>
 
-  {#each data.kinds as kind (kind)}
+  {#each shownKinds as kind (kind)}
     {@const channel = view(kind)}
+    {@const locked = lockedReason(kind)}
     {@const errors = channelErrors[kind] ?? {}}
     <Card.Root>
       <Card.Header>
@@ -169,145 +178,160 @@
             message="The saved settings can no longer be read, probably because KEPT_SECRET_KEY changed. Nothing is sent through this channel until you enter the settings again and save, or remove the channel."
           />
         {/if}
-        <form
-          method="POST"
-          action="?/saveChannel"
-          class="grid gap-4"
-          use:enhance={channelHandler(kind, "Saved.")}
-        >
-          <input type="hidden" name="kind" value={kind} />
-          {#if kind === "ntfy"}
-            <FormField
-              label="Server"
-              for="ntfy-serverUrl"
-              errors={errors.serverUrl}
-            >
-              <Input
-                id="ntfy-serverUrl"
-                name="serverUrl"
-                type="url"
-                required
-                placeholder="https://ntfy.sh"
-                value={channel?.fields.serverUrl ?? ""}
-              />
-            </FormField>
-            <FormField label="Topic" for="ntfy-topic" errors={errors.topic}>
-              <Input
-                id="ntfy-topic"
-                name="topic"
-                required
-                autocomplete="off"
-                value={channel?.fields.topic ?? ""}
-              />
-            </FormField>
-            <FormField
-              label="Access token (optional)"
-              for="ntfy-token"
-              errors={errors.token}
-              hint={channel?.hasSecret
-                ? "A token is stored. Leave blank to keep it."
-                : "Stored encrypted, never shown again."}
-            >
-              <Input
-                id="ntfy-token"
-                name="token"
-                type="password"
-                autocomplete="new-password"
-              />
-            </FormField>
-            {#if channel?.needsReentry}
-              <label class="flex items-center gap-2 text-sm">
-                <input type="checkbox" name="removeSecret" />
-                Remove the saved secret instead of entering it again
-              </label>
+        {#if locked}
+          <FormAlert
+            message={locked === "admin"
+              ? "Email notifications are limited to administrators."
+              : "The administrator has not configured an SMTP server."}
+          />
+        {:else}
+          <form
+            method="POST"
+            action="?/saveChannel"
+            class="grid gap-4"
+            use:enhance={channelHandler(kind, "Saved.")}
+          >
+            <input type="hidden" name="kind" value={kind} />
+            {#if kind === "ntfy"}
+              <FormField
+                label="Server"
+                for="ntfy-serverUrl"
+                errors={errors.serverUrl}
+              >
+                <Input
+                  id="ntfy-serverUrl"
+                  name="serverUrl"
+                  type="url"
+                  required
+                  placeholder="https://ntfy.sh"
+                  value={channel?.fields.serverUrl ?? ""}
+                />
+              </FormField>
+              <FormField label="Topic" for="ntfy-topic" errors={errors.topic}>
+                <Input
+                  id="ntfy-topic"
+                  name="topic"
+                  required
+                  autocomplete="off"
+                  value={channel?.fields.topic ?? ""}
+                />
+              </FormField>
+              <FormField
+                label="Access token (optional)"
+                for="ntfy-token"
+                errors={errors.token}
+                hint={channel?.hasSecret
+                  ? "A token is stored. Leave blank to keep it."
+                  : "Stored encrypted, never shown again."}
+              >
+                <Input
+                  id="ntfy-token"
+                  name="token"
+                  type="password"
+                  autocomplete="new-password"
+                />
+              </FormField>
+              {#if channel?.needsReentry || channel?.hasSecret}
+                <label class="flex items-center gap-2 text-sm">
+                  <input type="checkbox" name="removeSecret" />
+                  Remove the saved secret instead of entering it again
+                </label>
+              {/if}
+            {:else if kind === "webhook"}
+              <FormField label="URL" for="webhook-url" errors={errors.url}>
+                <Input
+                  id="webhook-url"
+                  name="url"
+                  type="url"
+                  required
+                  placeholder="https://example.org/hooks/kept"
+                  value={channel?.fields.url ?? ""}
+                />
+              </FormField>
+              <FormField
+                label="Signing secret (optional)"
+                for="webhook-secret"
+                errors={errors.secret}
+                hint={channel?.hasSecret
+                  ? "A secret is stored. Leave blank to keep it."
+                  : "Stored encrypted, never shown again."}
+              >
+                <Input
+                  id="webhook-secret"
+                  name="secret"
+                  type="password"
+                  autocomplete="new-password"
+                />
+              </FormField>
+              {#if channel?.needsReentry || channel?.hasSecret}
+                <label class="flex items-center gap-2 text-sm">
+                  <input type="checkbox" name="removeSecret" />
+                  Remove the saved secret instead of entering it again
+                </label>
+              {/if}
+            {:else}
+              <FormField label="Send to" for="email-to" errors={errors.to}>
+                <Input
+                  id="email-to"
+                  name="to"
+                  type="email"
+                  required
+                  value={channel?.fields.to ?? ""}
+                />
+              </FormField>
             {/if}
-          {:else if kind === "webhook"}
-            <FormField label="URL" for="webhook-url" errors={errors.url}>
-              <Input
-                id="webhook-url"
-                name="url"
-                type="url"
-                required
-                placeholder="https://example.org/hooks/kept"
-                value={channel?.fields.url ?? ""}
-              />
-            </FormField>
-            <FormField
-              label="Signing secret (optional)"
-              for="webhook-secret"
-              errors={errors.secret}
-              hint={channel?.hasSecret
-                ? "A secret is stored. Leave blank to keep it."
-                : "Stored encrypted, never shown again."}
+            <FormAlert message={formError(errors)} />
+            <Button
+              type="submit"
+              disabled={pending === kind}
+              class="self-start"
             >
-              <Input
-                id="webhook-secret"
-                name="secret"
-                type="password"
-                autocomplete="new-password"
-              />
-            </FormField>
-            {#if channel?.needsReentry}
-              <label class="flex items-center gap-2 text-sm">
-                <input type="checkbox" name="removeSecret" />
-                Remove the saved secret instead of entering it again
-              </label>
-            {/if}
-          {:else}
-            <FormField label="Send to" for="email-to" errors={errors.to}>
-              <Input
-                id="email-to"
-                name="to"
-                type="email"
-                required
-                value={channel?.fields.to ?? ""}
-              />
-            </FormField>
-          {/if}
-          <FormAlert message={formError(errors)} />
-          <Button type="submit" disabled={pending === kind} class="self-start">
-            {#if pending === kind}<Spinner />Saving…{:else}{channel
-                ? channel.needsReentry
-                  ? "Save again"
-                  : "Save changes"
-                : "Add channel"}{/if}
-          </Button>
-        </form>
+              {#if pending === kind}<Spinner />Saving…{:else}{channel
+                  ? channel.needsReentry
+                    ? "Save again"
+                    : "Save changes"
+                  : "Add channel"}{/if}
+            </Button>
+          </form>
+        {/if}
 
         {#if channel}
           <div class="grid gap-3 border-t pt-4">
             <div class="flex flex-wrap items-center gap-3">
-              <form
-                method="POST"
-                action="?/testChannel"
-                use:enhance={() => {
-                  pending = `test-${kind}`;
-                  return async ({ result, update }) => {
-                    pending = null;
-                    if (
-                      result.type === "success" &&
-                      result.data &&
-                      "result" in result.data
-                    ) {
-                      const r = result.data.result as
-                        { ok: true } | { ok: false; reason: string };
-                      if (r.ok) toast.success("Test message sent.");
-                      else toast.error(r.reason);
-                    }
-                    await update();
-                  };
-                }}
-              >
-                <input type="hidden" name="kind" value={kind} />
-                <Button
-                  type="submit"
-                  variant="outline"
-                  disabled={pending === `test-${kind}` || channel.needsReentry}
+              {#if !locked}
+                <form
+                  method="POST"
+                  action="?/testChannel"
+                  use:enhance={() => {
+                    pending = `test-${kind}`;
+                    return async ({ result, update }) => {
+                      pending = null;
+                      if (
+                        result.type === "success" &&
+                        result.data &&
+                        "result" in result.data
+                      ) {
+                        const r = result.data.result as
+                          { ok: true } | { ok: false; reason: string };
+                        if (r.ok) toast.success("Test message sent.");
+                        else toast.error(r.reason);
+                      }
+                      await update();
+                    };
+                  }}
                 >
-                  {#if pending === `test-${kind}`}<Spinner />Sending…{:else}Send
-                    test{/if}
-                </Button>
-              </form>
+                  <input type="hidden" name="kind" value={kind} />
+                  <Button
+                    type="submit"
+                    variant="outline"
+                    disabled={pending === `test-${kind}` ||
+                      channel.needsReentry}
+                  >
+                    {#if pending === `test-${kind}`}<Spinner
+                      />Sending…{:else}Send test{/if}
+                  </Button>
+                </form>
+              {/if}
               <form
                 method="POST"
                 id="toggle-{kind}"
@@ -373,7 +397,7 @@
     </Card.Root>
   {/each}
 
-  {#if !data.kinds.includes("email")}
+  {#if !data.kinds.includes("email") && !data.emailBlocked && !view("email")}
     <p class="text-muted-foreground text-sm">
       Email is not available: the administrator has not configured an SMTP
       server.

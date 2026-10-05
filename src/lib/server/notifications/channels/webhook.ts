@@ -1,6 +1,7 @@
 import { signBody } from "../sign";
 import type { Channel } from "../types";
 import { postJson, type FetchFn } from "./http";
+import type { Lookup } from "./guard";
 
 export interface WebhookConfig {
   url: string;
@@ -12,9 +13,10 @@ export const SIGNATURE_HEADER = "x-kept-signature";
 /** JSON payload; with a secret it carries `x-kept-signature: sha256=<hmac of the exact body>`. */
 export function webhookChannel(
   config: WebhookConfig,
-  fetchFn: FetchFn = fetch,
+  fetchFn?: FetchFn,
   now: () => Date = () => new Date(),
   allowPrivate = false,
+  lookup?: Lookup,
 ): Channel {
   return {
     async send({ title, body }) {
@@ -32,6 +34,7 @@ export function webhookChannel(
           ? { [SIGNATURE_HEADER]: signBody(config.secret, payload) }
           : {},
         allowPrivate,
+        lookup,
       );
     },
   };

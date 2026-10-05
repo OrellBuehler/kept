@@ -125,11 +125,15 @@ export function isPrivateAddress(address: string): boolean {
 }
 
 export class PrivateNetworkError extends Error {
-  constructor(readonly code: "blocked_address" | "dns") {
+  constructor(
+    readonly code: "blocked_address" | "dns",
+    options?: { cause?: unknown },
+  ) {
     super(
       code === "dns"
         ? "The host name could not be resolved."
         : "This address is on a private network, which this server does not allow for your account.",
+      options,
     );
     this.name = "PrivateNetworkError";
   }
@@ -146,24 +150,31 @@ export function isPrivateLiteralHost(url: string): boolean {
   return isIP(host) !== 0 && isPrivateAddress(host);
 }
 
+export interface ResolvedAddress {
+  address: string;
+  family: number;
+}
+
 /**
- * Unless `allowPrivate`, resolves the host and rejects private destinations.
- * Call it right before each request. (A DNS answer can still change between
- * this check and the connection; this is a guard rail, not a sandbox.)
+ * Resolves the host once and returns its addresses, rejecting the URL when any of them
+ * is private. Connect to exactly these addresses (see `pinnedFetch`): resolving again
+ * lets a DNS answer change between the check and the connection.
  */
-export async function assertHostAllowed(
+export async function resolvePublicAddresses(
   url: string,
-  options: { allowPrivate: boolean; lookup?: Lookup },
-): Promise<void> {
-  if (options.allowPrivate) return;
-  if (isPrivateLiteralHost(url))
+  options: { lookup?: Lookup } = {},
+): Promise<ResolvedAddress[]> {
+  if (isPrivateLiteralHost(url)) {
     throw new PrivateNetworkError("blocked_address");
+  }
   const host = hostOf(url);
-  let addresses: { address: string }[];
+  const family = isIP(host);
+  if (family !== 0) return [{ address: host, family }];
+  let addresses: ResolvedAddress[];
   try {
     addresses = await (options.lookup ?? defaultLookup)(host, { all: true });
-  } catch {
-    throw new PrivateNetworkError("dns");
+  } catch (err) {
+    throw new PrivateNetworkError("dns", { cause: err });
   }
   if (
     addresses.length === 0 ||
@@ -171,4 +182,18 @@ export async function assertHostAllowed(
   ) {
     throw new PrivateNetworkError("blocked_address");
   }
+  return addresses;
+}
+
+/**
+ * Unless `allowPrivate`, resolves the host and rejects private destinations. This is
+ * a pre-flight check only; requests that must be safe against DNS rebinding go through
+ * `pinnedFetch`, which connects to the addresses it validated.
+ */
+export async function assertHostAllowed(
+  url: string,
+  options: { allowPrivate: boolean; lookup?: Lookup },
+): Promise<void> {
+  if (options.allowPrivate) return;
+  await resolvePublicAddresses(url, options);
 }

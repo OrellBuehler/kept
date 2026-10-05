@@ -56,6 +56,51 @@ describe("assertAllowedUrl", () => {
     expect(fetchFn).not.toHaveBeenCalled();
   });
 
+  it("resolves once and never follows a rebinding answer to a private server", async () => {
+    let hits = 0;
+    const server = Bun.serve({
+      port: 0,
+      hostname: "127.0.0.1",
+      fetch: () => {
+        hits++;
+        return new Response(null, { status: 200 });
+      },
+    });
+    try {
+      let calls = 0;
+      const lookup: Lookup = async () => {
+        calls++;
+        return calls === 1
+          ? [{ address: "203.0.113.7", family: 4 }]
+          : [{ address: "127.0.0.1", family: 4 }];
+      };
+      const hook = webhookChannel(
+        { url: `http://hook.example.org:${server.port}/x` },
+        undefined,
+        undefined,
+        false,
+        lookup,
+      );
+      await expect(hook.send({ title: "t", body: "b" })).rejects.toBeInstanceOf(
+        ChannelError,
+      );
+      expect(calls).toBe(1);
+      expect(hits).toBe(0);
+
+      const blocked = ntfyChannel(
+        { serverUrl: "https://ntfy.example.org", topic: "kept" },
+        undefined,
+        false,
+        async () => [{ address: "10.0.0.4", family: 4 }],
+      );
+      await expect(
+        blocked.send({ title: "t", body: "b" }),
+      ).rejects.toMatchObject({ code: "blocked_address" });
+    } finally {
+      await server.stop(true);
+    }
+  });
+
   it("sends to a private host when the channel was built with permission", async () => {
     const fetchFn = vi.fn(async () => new Response(null, { status: 200 }));
     const ntfy = ntfyChannel(

@@ -29,6 +29,7 @@ export async function seedConnection(
     baseUrl: fake.baseUrl,
     token: fake.token,
     allowInsecureTls: false,
+    allowPrivateNetwork: true,
   });
   if (options.source !== null) {
     await setBillSourceRow(

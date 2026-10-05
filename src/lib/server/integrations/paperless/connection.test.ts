@@ -65,6 +65,7 @@ describe("connection", () => {
       baseUrl: fake.baseUrl,
       token: "test-token",
       allowInsecureTls: false,
+      allowPrivateNetwork: true,
       ...over,
     });
 
@@ -132,6 +133,42 @@ describe("connection", () => {
     await save(u.id, { token: "new-token" });
     expect(decryptSecret((await getConnectionRow(u.id))!.tokenEncrypted)).toBe(
       "new-token",
+    );
+  });
+
+  it("refuses a private address unless private networks are explicitly allowed", async () => {
+    const u = await createTestUser();
+    for (const allowPrivateNetwork of [undefined, false]) {
+      const err = await save(u.id, { allowPrivateNetwork }).catch((e) => e);
+      expect(err).toBeInstanceOf(LedgerError);
+      expect(err.field).toBe("baseUrl");
+    }
+    expect(await getConnectionRow(u.id)).toBeNull();
+    await save(u.id, { allowPrivateNetwork: true });
+    expect(await getConnectionRow(u.id)).not.toBeNull();
+  });
+
+  it("does not reuse the stored token for another host, but does for the same one", async () => {
+    const u = await createTestUser();
+    await save(u.id);
+    const first = (await getConnectionRow(u.id))!;
+
+    const err = await save(u.id, {
+      baseUrl: "http://moved.example.org",
+      token: "",
+    }).catch((e) => e);
+    expect(err).toBeInstanceOf(LedgerError);
+    expect(err.field).toBe("token");
+    expect((await getConnectionRow(u.id))!.baseUrl).toBe(first.baseUrl);
+
+    await save(u.id, { baseUrl: `${fake.baseUrl}/sub`, token: "" });
+    expect((await getConnectionRow(u.id))!.tokenEncrypted).toBe(
+      first.tokenEncrypted,
+    );
+
+    await save(u.id, { baseUrl: "http://moved.example.org", token: "fresh" });
+    expect(decryptSecret((await getConnectionRow(u.id))!.tokenEncrypted)).toBe(
+      "fresh",
     );
   });
 

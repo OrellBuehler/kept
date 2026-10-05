@@ -12,6 +12,7 @@ import {
   notificationSettings,
   notificationsSent,
   transaction,
+  users,
 } from "$lib/server/db";
 import type { EmailConfig } from "./channels/email";
 import type { NtfyConfig } from "./channels/ntfy";
@@ -120,18 +121,51 @@ export async function getChannelConfig<K extends ChannelKind>(
   return JSON.parse(decryptSecret(row.configEncrypted));
 }
 
+/**
+ * Email goes out through the instance's SMTP account to any address the sender picks, so
+ * only administrators may use it; users have no verified address of their own to restrict it to.
+ */
+export async function mayUseEmail(userId: string): Promise<boolean> {
+  const row = await first(
+    getDB()
+      .select({ role: users.role })
+      .from(users)
+      .where(eq(users.id, userId))
+      .limit(1),
+  );
+  return row?.role === "admin";
+}
+
 export interface SaveChannelOptions {
   /**
    * The secret field a blank form leaves out. When `config` lacks it, the
    * stored value is kept.
    */
   keepSecret?: "token" | "secret";
-  /** Allow the save although the stored secret cannot be read and none was given (it is dropped). */
-  dropUnreadableSecret?: boolean;
+  /** Remove the stored secret instead of keeping it (also allows a save when it cannot be read). */
+  dropSecret?: boolean;
+  /**
+   * The config field holding the address the secret is sent to. The stored secret is only
+   * kept while that address keeps its origin (scheme, host, port); otherwise it must be re-entered.
+   */
+  secretSentTo?: "serverUrl" | "url";
+}
+
+/** Whether two addresses have the same scheme, host and port; unparseable ones never do. */
+function sameOrigin(a: unknown, b: unknown): boolean {
+  if (typeof a !== "string" || typeof b !== "string") return false;
+  try {
+    return new URL(a).origin === new URL(b).origin;
+  } catch (err) {
+    if (err instanceof TypeError) return false;
+    throw err;
+  }
 }
 
 export type SaveChannelResult =
   | { ok: true }
+  /** Nothing was written: the address moved to another origin and no secret was given, so the stored one is not carried over. */
+  | { ok: false; reason: "secret_origin_changed" }
   /** Nothing was written: the stored secret cannot be decrypted, and the caller neither supplied one nor allowed dropping it. */
   | { ok: false; reason: "secret_unreadable" };
 
@@ -175,10 +209,23 @@ export async function saveChannel(
             unreadable = true;
           }
         }
-        if (previous?.[field]) {
-          next[field] = previous[field];
-        } else if (unreadable && !options.dropUnreadableSecret) {
-          return { ok: false, reason: "secret_unreadable" } as const;
+        const urlField = options.secretSentTo;
+        const movedOrigin =
+          previous?.[field] &&
+          urlField &&
+          !sameOrigin(
+            previous[urlField],
+            (next as unknown as Record<string, unknown>)[urlField],
+          );
+        if (movedOrigin && !options.dropSecret) {
+          return { ok: false, reason: "secret_origin_changed" } as const;
+        }
+        // Explicitly removed: the stored secret is never copied.
+        if (!options.dropSecret) {
+          if (previous?.[field]) next[field] = previous[field];
+          else if (unreadable) {
+            return { ok: false, reason: "secret_unreadable" } as const;
+          }
         }
       }
       const configEncrypted = encryptSecret(JSON.stringify(next));

@@ -1,5 +1,6 @@
 import { ChannelError } from "../types";
-import { assertAllowedUrl } from "./guard";
+import { pinnedFetch } from "$lib/server/net/pinned-fetch";
+import { assertAllowedUrl, toChannelError, type Lookup } from "./guard";
 
 export type FetchFn = (
   input: string | URL | Request,
@@ -8,25 +9,36 @@ export type FetchFn = (
 
 export const TIMEOUT_MS = 10_000;
 
-/** POSTs a JSON body; redirects are never followed. Non-2xx and network failures become `ChannelError`s. */
+/**
+ * POSTs a JSON body; redirects are never followed. Non-2xx and network failures become `ChannelError`s.
+ * Without an injected `fetchFn`, a destination that must stay public is resolved once and
+ * connected to by the checked address (see `pinnedFetch`), so DNS rebinding cannot reach the
+ * private network. An injected `fetchFn` (tests) is only preceded by a resolve-and-check.
+ */
 export async function postJson(
-  fetchFn: FetchFn,
+  fetchFn: FetchFn | undefined,
   url: string,
   body: string,
   headers: Record<string, string>,
   allowPrivate: boolean,
+  lookup?: Lookup,
 ): Promise<void> {
-  await assertAllowedUrl(url, { allowPrivate });
+  const pinned = fetchFn === undefined && !allowPrivate;
+  if (!pinned) await assertAllowedUrl(url, { allowPrivate, lookup });
+  const init = {
+    method: "POST",
+    headers: { "content-type": "application/json", ...headers },
+    body,
+    signal: AbortSignal.timeout(TIMEOUT_MS),
+  };
   let res: Response;
   try {
-    res = await fetchFn(url, {
-      method: "POST",
-      redirect: "manual",
-      headers: { "content-type": "application/json", ...headers },
-      body,
-      signal: AbortSignal.timeout(TIMEOUT_MS),
-    });
+    res = pinned
+      ? await pinnedFetch(url, init, { lookup })
+      : await (fetchFn ?? fetch)(url, { ...init, redirect: "manual" });
   } catch (err) {
+    const mapped = toChannelError(err);
+    if (mapped instanceof ChannelError) throw mapped;
     const name = err instanceof Error ? err.name : "";
     if (name === "TimeoutError" || name === "AbortError") {
       throw new ChannelError("timeout", "The server did not answer in time.");

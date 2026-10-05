@@ -1,4 +1,12 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import {
+  afterEach,
+  onTestFinished,
+  beforeEach,
+  describe,
+  expect,
+  it,
+  vi,
+} from "vitest";
 import {
   getChannelConfig,
   getSettings,
@@ -7,6 +15,10 @@ import {
 import { createTestUser, type TestUser } from "$lib/testing/auth";
 import { useTestDB } from "$lib/testing/db";
 import { createTestEvent, outcome } from "$lib/testing/event";
+import {
+  registerNotifications,
+  unregisterNotifications,
+} from "$lib/server/notifications";
 import { actions, load } from "./+page.server";
 
 useTestDB();
@@ -109,6 +121,93 @@ describe("settings/notifications", () => {
     expect((await save({ topic: "bad topic!" })).type).toBe("fail");
   });
 
+  it("does not carry the ntfy token to another origin, but keeps it on the same one", async () => {
+    const base = { kind: "ntfy", topic: "kept" };
+    await act("saveChannel", user, {
+      ...base,
+      serverUrl: "https://ntfy.example.org",
+      token: "tk_secret",
+    });
+
+    const moved = await act("saveChannel", user, {
+      ...base,
+      serverUrl: "https://ntfy.example.net",
+    });
+    expect(moved.type).toBe("fail");
+    expect(JSON.stringify(moved)).toContain("token");
+    expect(await getChannelConfig(user.id, "ntfy")).toMatchObject({
+      serverUrl: "https://ntfy.example.org",
+      token: "tk_secret",
+    });
+
+    for (const serverUrl of [
+      "http://ntfy.example.org",
+      "https://ntfy.example.org:8443",
+    ]) {
+      const res = await act("saveChannel", user, { ...base, serverUrl });
+      expect(res.type, serverUrl).toBe("fail");
+    }
+
+    const samePath = await act("saveChannel", user, {
+      ...base,
+      serverUrl: "https://ntfy.example.org/prefix",
+    });
+    expect(samePath.type).toBe("return");
+    expect(await getChannelConfig(user.id, "ntfy")).toMatchObject({
+      token: "tk_secret",
+    });
+
+    const fresh = await act("saveChannel", user, {
+      ...base,
+      serverUrl: "https://ntfy.example.net",
+      token: "tk_new",
+    });
+    expect(fresh.type).toBe("return");
+    expect(await getChannelConfig(user.id, "ntfy")).toMatchObject({
+      serverUrl: "https://ntfy.example.net",
+      token: "tk_new",
+    });
+
+    const dropped = await act("saveChannel", user, {
+      ...base,
+      serverUrl: "https://ntfy.example.org",
+      removeSecret: "on",
+    });
+    expect(dropped.type).toBe("return");
+    expect((await getChannelConfig(user.id, "ntfy"))?.token).toBeUndefined();
+  });
+
+  it("removeSecret deletes a readable secret at the same address", async () => {
+    await act("saveChannel", user, {
+      kind: "ntfy",
+      serverUrl: "https://ntfy.example.org",
+      topic: "kept",
+      token: "tk_secret",
+    });
+    await act("saveChannel", user, {
+      kind: "webhook",
+      url: "https://hooks.example.org/k",
+      secret: "sig",
+    });
+    const ntfyRes = await act("saveChannel", user, {
+      kind: "ntfy",
+      serverUrl: "https://ntfy.example.org",
+      topic: "kept",
+      removeSecret: "on",
+    });
+    const hookRes = await act("saveChannel", user, {
+      kind: "webhook",
+      url: "https://hooks.example.org/k",
+      removeSecret: "on",
+    });
+    expect(ntfyRes.type).toBe("return");
+    expect(hookRes.type).toBe("return");
+    expect((await getChannelConfig(user.id, "ntfy"))?.token).toBeUndefined();
+    expect(
+      (await getChannelConfig(user.id, "webhook"))?.secret,
+    ).toBeUndefined();
+  });
+
   it("refuses the email channel when SMTP is not configured", async () => {
     const res = await act("saveChannel", user, {
       kind: "email",
@@ -116,6 +215,35 @@ describe("settings/notifications", () => {
     });
     expect(res.type).toBe("fail");
     expect(await listChannels(user.id)).toEqual([]);
+  });
+
+  it("limits the email channel to administrators", async () => {
+    vi.stubEnv("KEPT_SMTP_HOST", "smtp.example.org");
+    vi.stubEnv("KEPT_SMTP_FROM", "kept@example.org");
+    registerNotifications({ firstRunDelayMs: 3_600_000 });
+    onTestFinished(unregisterNotifications);
+    const form = { kind: "email", to: "someone@example.org" };
+
+    const refused = await act("saveChannel", user, form);
+    expect(refused.type).toBe("fail");
+    expect(await listChannels(user.id)).toEqual([]);
+    const memberLoad = (await load(
+      createTestEvent({
+        user,
+        url: "http://kept.test/settings/notifications",
+      }) as never,
+    )) as { kinds: string[] };
+    expect(memberLoad.kinds).not.toContain("email");
+
+    const admin = await createTestUser({ role: "admin" });
+    expect((await act("saveChannel", admin, form)).type).toBe("return");
+    const adminLoad = (await load(
+      createTestEvent({
+        user: admin,
+        url: "http://kept.test/settings/notifications",
+      }) as never,
+    )) as { kinds: string[] };
+    expect(adminLoad.kinds).toContain("email");
   });
 
   it("sends a test message, toggles and deletes", async () => {

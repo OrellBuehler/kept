@@ -30,7 +30,14 @@ export const load: PageServerLoad = async ({ locals }) => {
   return {
     settings: await getSettings(user.id),
     channels,
-    kinds: CHANNEL_KINDS.filter((k) => k !== "email" || smtpConfigured),
+    emailBlocked: !smtpConfigured
+      ? ("smtp" as const)
+      : user.role !== "admin"
+        ? ("admin" as const)
+        : null,
+    kinds: CHANNEL_KINDS.filter(
+      (k) => k !== "email" || (smtpConfigured && user.role === "admin"),
+    ),
   };
 };
 
@@ -46,6 +53,13 @@ const emailUnavailable = () =>
   fail(400, {
     action: "channel",
     errors: { form: ["The administrator has not configured email."] },
+  });
+
+const emailAdminsOnly = () =>
+  fail(403, {
+    action: "channel",
+    kind: "email" as const,
+    errors: { form: ["Email notifications are limited to administrators."] },
   });
 
 export const actions: Actions = {
@@ -64,6 +78,7 @@ export const actions: Actions = {
     const form = await request.formData();
     const kind = kindOf(form);
     if (!kind) return unknownChannel();
+    if (kind === "email" && user.role !== "admin") return emailAdminsOnly();
     if (kind === "email" && !getSmtpConfig()) return emailUnavailable();
     const parsed = parseForm(channelFormSchemas[kind], form);
     if (!parsed.ok) {
@@ -93,8 +108,20 @@ export const actions: Actions = {
     // there is nothing to keep: it must be entered again or removed explicitly.
     const saved = await saveChannel(user.id, kind, data, {
       keepSecret: secretField ?? undefined,
-      dropUnreadableSecret: form.get("removeSecret") === "on",
+      dropSecret: form.get("removeSecret") === "on",
+      secretSentTo: kind === "ntfy" ? "serverUrl" : undefined,
     });
+    if (!saved.ok && saved.reason === "secret_origin_changed") {
+      return fail(400, {
+        action: "channel",
+        kind,
+        errors: {
+          token: [
+            'The server address changed. Enter the access token again, or tick "Remove the saved secret"; the saved one is not sent to a different server.',
+          ],
+        },
+      });
+    }
     if (!saved.ok) {
       return fail(400, {
         action: "channel",

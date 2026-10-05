@@ -30,8 +30,9 @@ beforeAll(async () => {
 const move = (userId: string, baseUrl: string, extra = {}) =>
   saveConnectionVerified(userId, {
     baseUrl,
-    token: null,
+    token: "test-token",
     allowInsecureTls: false,
+    allowPrivateNetwork: true,
     ...extra,
   });
 
@@ -90,6 +91,29 @@ describe("saveConnectionVerified", () => {
     expect((await getConnectionRow(user.id))!.baseUrl).toBe(before.baseUrl);
   });
 
+  it("never contacts a private address when the permission flag is omitted", async () => {
+    other.addDoc({ id: 95, original: pdfEnergy });
+    const err = await rejection(
+      move(user.id, other.baseUrl, { allowPrivateNetwork: undefined }),
+    );
+    expect(err.field).toBe("baseUrl");
+    expect(other.requests).toHaveLength(0);
+  });
+
+  it("does not send the stored token to another host", async () => {
+    other.addDoc({ id: 95, original: pdfEnergy });
+    const before = (await getConnectionRow(user.id))!;
+
+    const err = await rejection(move(user.id, other.baseUrl, { token: null }));
+
+    expect(err.field).toBe("token");
+    expect(other.requests).toHaveLength(0);
+    expect((await getConnectionRow(user.id))!.baseUrl).toBe(before.baseUrl);
+    expect(
+      (await rejection(move(user.id, other.baseUrl, { token: "  " }))).field,
+    ).toBe("token");
+  });
+
   it("asks for the token again instead of failing when the stored one cannot be decrypted", async () => {
     other.addDoc({ id: 95, original: pdfEnergy });
     await getDB()
@@ -97,7 +121,7 @@ describe("saveConnectionVerified", () => {
       .set({ tokenEncrypted: "v1.broken.broken" })
       .where(eq(paperlessConnections.userId, user.id));
 
-    const err = await rejection(move(user.id, other.baseUrl));
+    const err = await rejection(move(user.id, other.baseUrl, { token: null }));
 
     expect(err.field).toBe("token");
     expect(err.message).toContain("KEPT_SECRET_KEY");

@@ -6,7 +6,7 @@ import { createTestUser } from "$lib/testing/auth";
 import { seedBill } from "$lib/testing/bills";
 import { useTestDB } from "$lib/testing/db";
 import { seedAccount } from "$lib/testing/ledger";
-import { sendTest } from "./dispatch";
+import { deliver, sendTest } from "./dispatch";
 import { runNotifications } from "./run";
 import {
   getChannelConfig,
@@ -180,6 +180,55 @@ describe("channels", () => {
     await saveChannel(user.id, "email", { to: "me@example.org" });
     const res = await sendTest(user.id, "email", { smtp: null });
     expect(res).toMatchObject({ ok: false });
+  });
+});
+
+describe("email channel", () => {
+  const smtp = {
+    host: "smtp.example.org",
+    port: 587,
+    secure: false,
+    user: null,
+    password: null,
+    from: "kept@example.org",
+  };
+
+  it("is sent for administrators only, never for members", async () => {
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    const admin = await createTestUser({ role: "admin" });
+    const member = await createTestUser();
+    const sendMail = vi.fn(async () => undefined);
+    for (const u of [admin, member]) {
+      await saveChannel(u.id, "email", { to: "someone@example.org" });
+    }
+
+    expect(await sendTest(admin.id, "email", { smtp, sendMail })).toEqual({
+      ok: true,
+    });
+    expect(sendMail).toHaveBeenCalledTimes(1);
+
+    const refused = await sendTest(member.id, "email", { smtp, sendMail });
+    expect(refused).toMatchObject({ ok: false });
+    expect(sendMail).toHaveBeenCalledTimes(1);
+  });
+
+  it("deliver skips a member's email channel with one warning and no error", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const error = vi.spyOn(console, "error").mockImplementation(() => {});
+    const member = await createTestUser();
+    await saveChannel(member.id, "email", { to: "someone@example.org" });
+    const sendMail = vi.fn(async () => undefined);
+
+    const delivered = await deliver(
+      member.id,
+      { title: "t", body: "b" },
+      { smtp, sendMail },
+    );
+
+    expect(delivered).toBe(0);
+    expect(sendMail).not.toHaveBeenCalled();
+    expect(warn).toHaveBeenCalledTimes(1);
+    expect(error).not.toHaveBeenCalled();
   });
 });
 

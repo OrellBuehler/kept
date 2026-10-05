@@ -769,7 +769,11 @@ describe("syncConnection", () => {
     await syncConnection(user.id);
     await deleteBill(user.id, (await listBills(user.id))[0]!.id);
 
-    const input = { token: null, allowInsecureTls: false };
+    const input = {
+      token: null,
+      allowInsecureTls: false,
+      allowPrivateNetwork: true,
+    };
     await saveConnection(user.id, {
       ...input,
       baseUrl: `${fake.origin}/other`,
@@ -792,6 +796,7 @@ describe("syncConnection", () => {
       baseUrl: `${fake.origin}/other`,
       token: null,
       allowInsecureTls: false,
+      allowPrivateNetwork: true,
     });
 
     expect(await getDB().select().from(paperlessDocuments)).toHaveLength(1);
@@ -815,6 +820,7 @@ describe("syncConnection", () => {
       baseUrl: `${fake.origin}/other`,
       token: null,
       allowInsecureTls: false,
+      allowPrivateNetwork: true,
     });
     await getDB().update(paperlessConnections).set({ lastSyncModified: null });
     const r = await syncConnection(user.id);
@@ -832,6 +838,7 @@ describe("syncConnection", () => {
       baseUrl: `${fake.origin}/other`,
       token: null,
       allowInsecureTls: false,
+      allowPrivateNetwork: true,
     });
     expect((await getConnectionRow(user.id))!.instanceKey).toBe(legacyKey);
   });
@@ -845,6 +852,7 @@ describe("syncConnection", () => {
       baseUrl: `${fake.origin}/other`,
       token: null,
       allowInsecureTls: false,
+      allowPrivateNetwork: true,
       differentInstance: true,
     });
 
@@ -859,6 +867,66 @@ describe("syncConnection", () => {
     expect(await listBills(user.id)).toHaveLength(2);
   });
 
+  it("moving back to an earlier address after a different-server reset restores that address's key", async () => {
+    const original = (await getConnectionRow(user.id))!;
+    const input = {
+      token: null,
+      allowInsecureTls: false,
+      allowPrivateNetwork: true,
+    };
+    await saveConnection(user.id, {
+      ...input,
+      baseUrl: `${fake.origin}/other`,
+      differentInstance: true,
+    });
+    const elsewhere = (await getConnectionRow(user.id))!;
+    expect(elsewhere.instanceKey).not.toBe(original.instanceKey);
+
+    await saveConnection(user.id, { ...input, baseUrl: original.baseUrl });
+    expect((await getConnectionRow(user.id))!.instanceKey).toBe(
+      original.instanceKey,
+    );
+
+    await saveConnection(user.id, { ...input, baseUrl: elsewhere.baseUrl });
+    expect((await getConnectionRow(user.id))!.instanceKey).toBe(
+      elsewhere.instanceKey,
+    );
+  });
+
+  it("a different-server reset to a remembered address still gets a fresh key", async () => {
+    const original = (await getConnectionRow(user.id))!;
+    const input = {
+      token: null,
+      allowInsecureTls: false,
+      allowPrivateNetwork: true,
+    };
+    await saveConnection(user.id, {
+      ...input,
+      baseUrl: `${fake.origin}/other`,
+    });
+    await saveConnection(user.id, {
+      ...input,
+      baseUrl: original.baseUrl,
+      differentInstance: true,
+    });
+    const after = (await getConnectionRow(user.id))!;
+    expect(after.instanceKey).not.toBe(original.instanceKey);
+  });
+
+  it("a reset at the same address still gets a fresh key", async () => {
+    const before = (await getConnectionRow(user.id))!;
+    await saveConnection(user.id, {
+      baseUrl: before.baseUrl,
+      token: null,
+      allowInsecureTls: false,
+      allowPrivateNetwork: true,
+      differentInstance: true,
+    });
+    expect((await getConnectionRow(user.id))!.instanceKey).not.toBe(
+      before.instanceKey,
+    );
+  });
+
   it("reconnecting after a different-server reset reuses the key and creates no duplicates", async () => {
     fake.addDoc({ id: 95, original: pdfEnergy });
     fake.prefix = "/other";
@@ -866,6 +934,7 @@ describe("syncConnection", () => {
       baseUrl: fake.baseUrl,
       token: null,
       allowInsecureTls: false,
+      allowPrivateNetwork: true,
       differentInstance: true,
     });
     await syncConnection(user.id);
@@ -892,6 +961,7 @@ describe("syncConnection", () => {
       baseUrl: fake.baseUrl,
       token: null,
       allowInsecureTls: false,
+      allowPrivateNetwork: true,
     });
 
     await deleteConnection(user.id);
@@ -912,6 +982,7 @@ describe("syncConnection", () => {
       baseUrl: fake.baseUrl,
       token: null,
       allowInsecureTls: false,
+      allowPrivateNetwork: true,
       differentInstance: true,
     });
     const key = (await getConnectionRow(user.id))!.instanceKey;
