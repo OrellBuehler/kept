@@ -20,6 +20,9 @@ async function lint(file: string, options: Record<string, unknown> = {}) {
           parserOptions: {
             project: [join(fixtures, "tsconfig.json")],
             tsconfigRootDir: fixtures,
+            // With CI=true typescript-estree switches to single-run programs, whose module
+            // specifier lookup crashes on these fixtures (TypeScript `path.includes`).
+            disallowAutomaticSingleRunInference: true,
           },
         },
         plugins: { kept: { rules: { "no-pg-only-api": noPgOnlyApi } } },
