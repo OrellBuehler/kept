@@ -90,7 +90,7 @@ export async function createUser(
 
 /**
  * First-run setup: creates an admin only if no user exists. The check and the
- * insert share one transaction, so concurrent attempts cannot both win.
+ * insert share one locked transaction, so concurrent attempts cannot both win.
  */
 export async function createFirstAdmin(
   input: Omit<NewUser, "role">,
@@ -99,14 +99,20 @@ export async function createFirstAdmin(
     throw new AuthError("setup_closed", "Setup has already been completed.");
   }
   const passwordHash = await hashPassword(input.password);
-  return await transaction(async (tx) => {
-    const n =
-      (await first(tx.select({ n: count() }).from(users).limit(1)))?.n ?? 0;
-    if (n > 0) {
-      throw new AuthError("setup_closed", "Setup has already been completed.");
-    }
-    return await insertUser(tx, { ...input, role: "admin" }, passwordHash);
-  });
+  return await transaction(
+    async (tx) => {
+      const n =
+        (await first(tx.select({ n: count() }).from(users).limit(1)))?.n ?? 0;
+      if (n > 0) {
+        throw new AuthError(
+          "setup_closed",
+          "Setup has already been completed.",
+        );
+      }
+      return await insertUser(tx, { ...input, role: "admin" }, passwordHash);
+    },
+    { lock: "users:first-admin" },
+  );
 }
 
 export async function changePassword(
@@ -251,11 +257,14 @@ export async function deleteUser(
   targetId: string,
   audit?: InTransaction<DeletableUser>,
 ): Promise<void> {
-  await transaction(async (tx) => {
-    const target = await assertCanDeleteUserInTx(tx, actorId, targetId);
-    await tx.delete(users).where(eq(users.id, targetId));
-    await audit?.(tx, target);
-  });
+  await transaction(
+    async (tx) => {
+      const target = await assertCanDeleteUserInTx(tx, actorId, targetId);
+      await tx.delete(users).where(eq(users.id, targetId));
+      await audit?.(tx, target);
+    },
+    { lock: "users:admin-set" },
+  );
 }
 
 export async function findUserByUsername(username: string) {

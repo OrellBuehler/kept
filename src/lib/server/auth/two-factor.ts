@@ -129,23 +129,28 @@ export async function startTotpEnrolment(
 ): Promise<TotpEnrolment> {
   const secret = generateTotpSecret();
   const encrypted = encryptSecret(secret);
-  await transaction(async (tx) => {
-    const existing = await first(
-      tx
-        .select({ confirmedAt: totpCredentials.confirmedAt })
-        .from(totpCredentials)
-        .where(eq(totpCredentials.userId, userId))
-        .limit(1),
-    );
-    if (existing?.confirmedAt) {
-      throw new AuthError(
-        "totp_already_enabled",
-        "Authenticator app is already enabled.",
+  await transaction(
+    async (tx) => {
+      const existing = await first(
+        tx
+          .select({ confirmedAt: totpCredentials.confirmedAt })
+          .from(totpCredentials)
+          .where(eq(totpCredentials.userId, userId))
+          .limit(1),
       );
-    }
-    await tx.delete(totpCredentials).where(eq(totpCredentials.userId, userId));
-    await tx.insert(totpCredentials).values({ userId, secret: encrypted });
-  });
+      if (existing?.confirmedAt) {
+        throw new AuthError(
+          "totp_already_enabled",
+          "Authenticator app is already enabled.",
+        );
+      }
+      await tx
+        .delete(totpCredentials)
+        .where(eq(totpCredentials.userId, userId));
+      await tx.insert(totpCredentials).values({ userId, secret: encrypted });
+    },
+    { lock: `totp-enrolment:${userId}` },
+  );
   return { secret, uri: otpauthUri(secret, username) };
 }
 
@@ -191,8 +196,10 @@ async function replaceRecoveryCodes(tx: Tx, userId: string): Promise<string[]> {
 }
 
 /**
- * Atomically checks `code` against the stored secret and records the matched
- * time step, so the same code (or an older one) is never accepted twice.
+ * Checks `code` against the stored secret and records the matched time step, so
+ * the same code (or an older one) is never accepted twice. The record is a
+ * compare-and-set on the step that was read: of two parallel attempts with the
+ * same code only the one whose update still finds that step wins.
  */
 export async function consumeTotpCode(
   userId: string,
@@ -200,39 +207,47 @@ export async function consumeTotpCode(
   now: number = Date.now(),
   opts: { confirming?: boolean } = {},
 ): Promise<boolean> {
-  return await transaction(async (tx) => {
-    const row = await first(
-      tx
-        .select()
-        .from(totpCredentials)
-        .where(eq(totpCredentials.userId, userId))
-        .limit(1),
-    );
-    if (!row) return false;
-    if (!opts.confirming && !row.confirmedAt) return false;
-    // Confirming twice in parallel must not both pass: the check in
-    // confirmTotpEnrolment is not atomic with this one.
-    if (opts.confirming && row.confirmedAt) return false;
-    let secret: string;
-    try {
-      secret = decryptSecret(row.secret);
-    } catch (err) {
-      if (!(err instanceof SecretUnreadableError)) throw err;
-      // KEPT_SECRET_KEY changed: no authenticator code can match; recovery codes and an admin reset still work.
-      console.warn("totp code rejected", err.code);
-      return false;
-    }
-    const step = verifyTotp(secret, code, now, row.lastStep);
-    if (step === null) return false;
-    await tx
-      .update(totpCredentials)
-      .set({
-        lastStep: step,
-        ...(opts.confirming ? { confirmedAt: new Date(now) } : {}),
-      })
-      .where(eq(totpCredentials.userId, userId));
-    return true;
-  });
+  const row = await first(
+    getDB()
+      .select()
+      .from(totpCredentials)
+      .where(eq(totpCredentials.userId, userId))
+      .limit(1),
+  );
+  if (!row) return false;
+  if (!opts.confirming && !row.confirmedAt) return false;
+  // Confirming twice in parallel must not both pass: the check in
+  // confirmTotpEnrolment is not atomic with this one.
+  if (opts.confirming && row.confirmedAt) return false;
+  let secret: string;
+  try {
+    secret = decryptSecret(row.secret);
+  } catch (err) {
+    if (!(err instanceof SecretUnreadableError)) throw err;
+    // KEPT_SECRET_KEY changed: no authenticator code can match; recovery codes and an admin reset still work.
+    console.warn("totp code rejected", err.code);
+    return false;
+  }
+  const step = verifyTotp(secret, code, now, row.lastStep);
+  if (step === null) return false;
+  const claimed = await getDB()
+    .update(totpCredentials)
+    .set({
+      lastStep: step,
+      ...(opts.confirming ? { confirmedAt: new Date(now) } : {}),
+    })
+    .where(
+      and(
+        eq(totpCredentials.userId, userId),
+        eq(totpCredentials.lastStep, row.lastStep),
+        eq(totpCredentials.secret, row.secret),
+        opts.confirming
+          ? isNull(totpCredentials.confirmedAt)
+          : isNotNull(totpCredentials.confirmedAt),
+      ),
+    )
+    .returning({ userId: totpCredentials.userId });
+  return claimed.length === 1;
 }
 
 /** Confirms enrolment with a code from the app and returns the recovery codes (shown once). */

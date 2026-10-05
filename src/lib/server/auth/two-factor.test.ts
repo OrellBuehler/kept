@@ -12,6 +12,7 @@ import {
 import { decryptSecret } from "$lib/server/crypto";
 import { LoginRateLimiter } from "./rate-limit";
 import { validateSessionToken } from "./sessions";
+import * as totp from "./totp";
 import { totpCode } from "./totp";
 import {
   RECOVERY_CODE_COUNT,
@@ -83,6 +84,50 @@ describe("two-factor", () => {
     await expect(startTotpEnrolment(u.id, u.username)).rejects.toThrow(
       AuthError,
     );
+  });
+
+  it("accepts one of many parallel attempts with the same code", async () => {
+    const u = await createTestUser();
+    const { secret } = await startTotpEnrolment(u.id, u.username);
+    const code = totpCode(secret, NOW);
+    // Every attempt reads the credential before any has written: only the
+    // compare-and-set on the stored step lets exactly one through.
+    const results = await Promise.all(
+      Array.from({ length: 6 }, () =>
+        consumeTotpCode(u.id, code, NOW, { confirming: true }),
+      ),
+    );
+    expect(results.filter(Boolean)).toHaveLength(1);
+    expect(await getTwoFactorStatus(u.id)).toMatchObject({ totpEnabled: true });
+  });
+
+  it("rejects a valid code when the step moved between the read and the write", async () => {
+    const u = await createTestUser();
+    const { secret } = await enrol(u.id, u.username);
+    const next = NOW + 30_000;
+    const real = totp.verifyTotp;
+    const spy = vi.spyOn(totp, "verifyTotp").mockImplementation((...args) => {
+      const step = real(...args);
+      // A competing attempt records a later step right after the read.
+      void getDB()
+        .update(totpCredentials)
+        .set({ lastStep: 9_999_999_999 })
+        .where(eq(totpCredentials.userId, u.id))
+        .then(() => undefined);
+      return step;
+    });
+    expect(await consumeTotpCode(u.id, totpCode(secret, next), next)).toBe(
+      false,
+    );
+    spy.mockRestore();
+    const row = (await first(
+      getDB()
+        .select({ lastStep: totpCredentials.lastStep })
+        .from(totpCredentials)
+        .where(eq(totpCredentials.userId, u.id))
+        .limit(1),
+    ))!;
+    expect(row.lastStep).toBe(9_999_999_999);
   });
 
   it("accepts a code once per time step (replay)", async () => {

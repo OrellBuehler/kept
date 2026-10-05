@@ -5,7 +5,6 @@ import {
   first,
   getDB,
   type AuthChallengeKind,
-  transaction,
 } from "$lib/server/db";
 import { cookieSecureOverride, hashToken } from "./sessions";
 
@@ -145,23 +144,32 @@ export async function setPendingChallenge(
     .where(eq(authChallenges.id, id));
 }
 
-/** Atomically reads and clears the stored WebAuthn challenge of a pending login. */
+/**
+ * Reads and clears the stored WebAuthn challenge of a pending login. The clear
+ * is a compare-and-set on the value that was read, so of parallel takers only
+ * the one whose update still finds it gets the challenge.
+ */
 export async function takePendingChallenge(id: string): Promise<string | null> {
-  return await transaction(async (tx) => {
-    const row = await first(
-      tx
-        .select({ challenge: authChallenges.challenge })
-        .from(authChallenges)
-        .where(eq(authChallenges.id, id))
-        .limit(1),
-    );
-    if (!row?.challenge) return null;
-    await tx
-      .update(authChallenges)
-      .set({ challenge: null })
-      .where(eq(authChallenges.id, id));
-    return row.challenge;
-  });
+  const db = getDB();
+  const row = await first(
+    db
+      .select({ challenge: authChallenges.challenge })
+      .from(authChallenges)
+      .where(eq(authChallenges.id, id))
+      .limit(1),
+  );
+  if (!row?.challenge) return null;
+  const cleared = await db
+    .update(authChallenges)
+    .set({ challenge: null })
+    .where(
+      and(
+        eq(authChallenges.id, id),
+        eq(authChallenges.challenge, row.challenge),
+      ),
+    )
+    .returning({ id: authChallenges.id });
+  return cleared.length === 1 ? row.challenge : null;
 }
 
 export async function createWebauthnChallenge(
@@ -184,27 +192,26 @@ export async function createWebauthnChallenge(
   return id;
 }
 
-/** Single use: the row is deleted whether or not the ceremony then succeeds. */
+/**
+ * Single use: the row is deleted whether or not the ceremony then succeeds.
+ * `DELETE ... RETURNING` hands the row to exactly one caller.
+ */
 export async function takeWebauthnChallenge(
   id: string,
   kind: WebauthnKind,
   userId: string | null,
   now: number = Date.now(),
 ): Promise<string | null> {
-  return await transaction(async (tx) => {
-    const row = await first(
-      tx
-        .select()
-        .from(authChallenges)
-        .where(and(eq(authChallenges.id, id), eq(authChallenges.kind, kind)))
-        .limit(1),
-    );
-    if (!row) return null;
-    await tx.delete(authChallenges).where(eq(authChallenges.id, id));
-    if (row.expiresAt.getTime() <= now) return null;
-    if (row.userId !== userId) return null;
-    return row.challenge;
-  });
+  const row = await first(
+    getDB()
+      .delete(authChallenges)
+      .where(and(eq(authChallenges.id, id), eq(authChallenges.kind, kind)))
+      .returning(),
+  );
+  if (!row) return null;
+  if (row.expiresAt.getTime() <= now) return null;
+  if (row.userId !== userId) return null;
+  return row.challenge;
 }
 
 export function setPendingCookie(
