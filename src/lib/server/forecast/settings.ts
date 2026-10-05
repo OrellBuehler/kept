@@ -38,62 +38,66 @@ export async function saveAccountSettings(
     input.defaultPayment === "on" || input.defaultPayment === "true";
   // The account is read in the same transaction as the writes, so its
   // currency cannot change or the account vanish between the check and them.
-  await transaction(async (tx) => {
-    const account = await first(
-      tx
-        .select({ id: accounts.id, currency: accounts.currency })
-        .from(accounts)
-        .where(
-          and(eq(accounts.userId, userId), eq(accounts.id, input.accountId)),
-        )
-        .limit(1),
-    );
-    if (!account) throw notFound("Account");
-    let threshold: Minor | null = null;
-    const text = input.threshold ?? "";
-    if (text !== "") {
-      const parsed = parseMoneyInput(text, account.currency);
-      if (!parsed.ok) {
-        throw new LedgerError("invalid", parsed.message, "threshold");
-      }
-      threshold = minor(parsed.value);
-    }
-    await tx
-      .insert(forecastAccountSettings)
-      .values({
-        userId,
-        accountId: account.id,
-        threshold,
-        isDefaultPayment: defaultPayment,
-      })
-      .onConflictDoUpdate({
-        target: forecastAccountSettings.accountId,
-        set: { threshold, isDefaultPayment: defaultPayment },
-      });
-    if (defaultPayment) {
-      const sameCurrency = (
-        await tx
-          .select({ id: accounts.id })
+  await transaction(
+    async (tx) => {
+      const account = await first(
+        tx
+          .select({ id: accounts.id, currency: accounts.currency })
           .from(accounts)
           .where(
-            and(
-              eq(accounts.userId, userId),
-              eq(accounts.currency, account.currency),
-              ne(accounts.id, account.id),
-            ),
+            and(eq(accounts.userId, userId), eq(accounts.id, input.accountId)),
           )
-      ).map((a) => a.id);
-      if (sameCurrency.length > 0) {
-        await tx
-          .update(forecastAccountSettings)
-          .set({ isDefaultPayment: false })
-          .where(
-            and(
-              eq(forecastAccountSettings.userId, userId),
-              inArray(forecastAccountSettings.accountId, sameCurrency),
-            ),
-          );
+          .limit(1),
+      );
+      if (!account) throw notFound("Account");
+      let threshold: Minor | null = null;
+      const text = input.threshold ?? "";
+      if (text !== "") {
+        const parsed = parseMoneyInput(text, account.currency);
+        if (!parsed.ok) {
+          throw new LedgerError("invalid", parsed.message, "threshold");
+        }
+        threshold = minor(parsed.value);
       }
-    }
-  });
+      await tx
+        .insert(forecastAccountSettings)
+        .values({
+          userId,
+          accountId: account.id,
+          threshold,
+          isDefaultPayment: defaultPayment,
+        })
+        .onConflictDoUpdate({
+          target: forecastAccountSettings.accountId,
+          set: { threshold, isDefaultPayment: defaultPayment },
+        });
+      if (defaultPayment) {
+        const sameCurrency = (
+          await tx
+            .select({ id: accounts.id })
+            .from(accounts)
+            .where(
+              and(
+                eq(accounts.userId, userId),
+                eq(accounts.currency, account.currency),
+                ne(accounts.id, account.id),
+              ),
+            )
+        ).map((a) => a.id);
+        if (sameCurrency.length > 0) {
+          await tx
+            .update(forecastAccountSettings)
+            .set({ isDefaultPayment: false })
+            .where(
+              and(
+                eq(forecastAccountSettings.userId, userId),
+                inArray(forecastAccountSettings.accountId, sameCurrency),
+              ),
+            );
+        }
+      }
+    },
+    // At most one default payment account per currency: each save unsets the others.
+    { lock: `forecast:${userId}` },
+  );
 }
