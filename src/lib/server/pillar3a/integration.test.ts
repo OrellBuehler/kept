@@ -77,7 +77,7 @@ describe("balances with portfolios", () => {
     await setValues(user.id, acc.id, "2026-06-30", [
       { portfolioId: a.id, amount: minor(11_000) },
     ]);
-    expect(await currentBalance(user.id, acc.id, "2026-01-30")).toBe(0);
+    expect(await currentBalance(user.id, acc.id, "2026-01-30")).toBe(1000);
     expect(await currentBalance(user.id, acc.id, "2026-01-31")).toBe(30_000);
     expect(await currentBalance(user.id, acc.id, TODAY)).toBe(11_000 + 20_000);
     expect((await getAccount(user.id, acc.id, TODAY)).balance).toBe(31_000);
@@ -96,7 +96,7 @@ describe("balances with portfolios", () => {
     await setValues(user.id, acc.id, "2026-12-31", [
       { portfolioId: a.id, amount: minor(5000) },
     ]);
-    expect(await currentBalance(user.id, acc.id, TODAY)).toBe(0);
+    expect(await currentBalance(user.id, acc.id, TODAY)).toBe(1000);
   });
 
   it("does not count deposits twice: transactions and an opening balance are inside the portfolio values", async () => {
@@ -109,7 +109,7 @@ describe("balances with portfolios", () => {
       { portfolioId: a.id, amount: minor(7100) },
     ]);
     expect(await currentBalance(user.id, acc.id, TODAY)).toBe(7100);
-    expect(await currentBalance(user.id, acc.id, "2026-01-25")).toBe(0);
+    expect(await currentBalance(user.id, acc.id, "2026-01-25")).toBe(8000);
     expect((await listAccounts(user.id, TODAY))[0]!.balance).toBe(7100);
     expect((await accountBalances(user.id, TODAY))[0]!.balance).toBe(7100);
     const [chf] = await netWorthSeries(user.id, {
@@ -125,7 +125,34 @@ describe("balances with portfolios", () => {
       "2026-01-31",
       "day",
     );
-    expect(series.map((p) => p.amount)).toEqual([0, 7100]);
+    expect(series.map((p) => p.amount)).toEqual([8000, 7100]);
+  });
+
+  it("keeps the history before the first portfolio value on the cash path", async () => {
+    const { user, acc, a } = await setup();
+    await seedImportedTransaction(user.id, acc.id, {
+      bookingDate: "2026-01-20",
+      amount: minor(500),
+    });
+    await setValues(user.id, acc.id, "2026-06-30", [
+      { portfolioId: a.id, amount: minor(9000) },
+    ]);
+    expect(await currentBalance(user.id, acc.id, "2026-03-31")).toBe(1500);
+    expect(await currentBalance(user.id, acc.id, "2026-06-30")).toBe(9000);
+    const series = await balanceSeries(
+      user.id,
+      acc.id,
+      "2026-05-31",
+      "2026-07-01",
+      "month",
+    );
+    expect(series.map((p) => p.amount)).toEqual([1500, 9000, 9000]);
+    const [chf] = await netWorthSeries(user.id, {
+      from: "2026-03-31",
+      to: "2026-06-30",
+      today: TODAY,
+    });
+    expect(chf!.points.map((p) => p.amount)).toEqual([1500, 1500, 1500, 9000]);
   });
 
   it("keeps the cash behaviour of a 3a account without portfolios", async () => {
@@ -255,7 +282,7 @@ describe("net worth with portfolios", () => {
       today: TODAY,
     });
     expect(chf!.points.map((p) => [p.date, p.amount])).toEqual([
-      ["2026-05-31", 100],
+      ["2026-05-31", 1100],
       ["2026-06-30", 30_100],
       ["2026-07-31", 30_100],
       ["2026-08-31", 30_100],

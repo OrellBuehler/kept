@@ -49,10 +49,11 @@ import { LedgerError, notFound } from "./errors";
  *   come on top as well: per portfolio the latest value dated <= D, and 0 from
  *   the portfolio's closing date on.
  * - A pillar 3a account with at least one portfolio is worth its portfolios
- *   alone (`portfolioOnly`): the hand-entered portfolio values already contain
- *   the deposits, so cash (opening balance, transactions, snapshots) and any
- *   holdings are left out, which would count the same money twice. Without
- *   portfolios a 3a account behaves like any other.
+ *   alone (`portfolioOnly`) from the date of its first portfolio value on: the
+ *   hand-entered values already contain the deposits, so cash (opening balance,
+ *   transactions, snapshots) and any holdings are left out, which would count
+ *   the same money twice. Before that date, and without portfolios, a 3a
+ *   account behaves like any other, so its earlier history is kept.
  * - Amounts are in the account's currency; securities in other currencies are
  *   converted inside the holdings valuation, nowhere else.
  */
@@ -132,12 +133,33 @@ function lowerBound(sorted: readonly string[], target: string): number {
  * Builds a balance lookup from prefix sums: O(n log n) once, O(log n) per date.
  */
 export function makeBalanceAt(input: BalanceInput): BalanceAt {
-  if (input.portfolioOnly) {
-    const portfolios = input.portfolios
-      ? makePortfoliosValueAt(input.portfolios)
-      : null;
-    return (date) => minor(portfolios ? portfolios(date) : 0);
-  }
+  const stacked = makeStackedBalanceAt(input);
+  const from = input.portfolioOnly ? earliestPortfolioDate(input) : null;
+  if (from === null) return stacked;
+  const portfolios = makePortfoliosValueAt(input.portfolios!);
+  // Before the first portfolio value the account was an ordinary one: its
+  // history keeps the cash path instead of dropping to zero.
+  return (date) => (date >= from ? portfolios(date) : stacked(date));
+}
+
+/** Date of the earliest portfolio value, or null without any. */
+function earliestPortfolioDate(input: BalanceInput): string | null {
+  let earliest: string | null = null;
+  for (const p of input.portfolios ?? [])
+    for (const v of p.values)
+      if (earliest === null || v.date < earliest) earliest = v.date;
+  return earliest;
+}
+
+/** True when the account is valued by its portfolios alone on `date`. */
+function portfolioOnlyAt(input: BalanceInput, date: string): boolean {
+  if (!input.portfolioOnly) return false;
+  const from = earliestPortfolioDate(input);
+  return from !== null && date >= from;
+}
+
+/** Cash plus holdings plus portfolios, whatever the account type. */
+function makeStackedBalanceAt(input: BalanceInput): BalanceAt {
   const txs = ledgerMoves(input).sort((a, b) =>
     a.bookingDate < b.bookingDate ? -1 : a.bookingDate > b.bookingDate ? 1 : 0,
   );
@@ -204,7 +226,7 @@ export function cashBalanceAt(input: BalanceInput, date: string): Minor {
 
 /** The cash shown for an account: none for one valued by its portfolios alone. */
 function shownCash(input: BalanceInput, date: string): Minor {
-  return input.portfolioOnly ? minor(0) : cashBalanceAt(input, date);
+  return portfolioOnlyAt(input, date) ? minor(0) : cashBalanceAt(input, date);
 }
 
 /**
@@ -416,7 +438,7 @@ export function localToday(now = new Date()): string {
 }
 
 /**
- * Balance (cash plus holdings and portfolios) as of `today` (YYYY-MM-DD, default local
+ * Balance (cash plus holdings and portfolios; the portfolios alone for a 3a account with portfolio values) as of `today` (YYYY-MM-DD, default local
  * today): future-dated transactions, snapshots and trades do not count.
  */
 export async function currentBalance(
@@ -438,7 +460,7 @@ export interface AccountValue {
   estimated: boolean;
 }
 
-/** Cash, holdings and portfolios of an account as of `today`; `total` is their sum. */
+/** Cash, holdings and portfolios of an account as of `today`; `total` is their sum, except that a 3a account with portfolio values is worth them alone. */
 export async function accountValue(
   userId: string,
   accountId: string,
@@ -447,7 +469,7 @@ export async function accountValue(
   const input = await loadInput(userId, accountId, today, true);
   const cash = shownCash(input, today);
   const held =
-    input.holdings && !input.portfolioOnly
+    input.holdings && !portfolioOnlyAt(input, today)
       ? makeHoldingsValueAt(input.holdings)(today)
       : null;
   const holdings = held?.value ?? minor(0);
@@ -464,7 +486,7 @@ export async function accountValue(
   };
 }
 
-/** Current balances (cash plus holdings and portfolios) of several accounts with a handful of queries in total. */
+/** Current balances (cash plus holdings and portfolios, see the model above) of several accounts with a handful of queries in total. */
 export async function currentBalances(
   userId: string,
   accountRows: readonly {
@@ -490,7 +512,7 @@ export interface CurrentValue {
   holdings: HoldingsValue | null;
   /** Pillar 3a portfolios, valued by hand. */
   portfolios: Minor;
-  /** Cash plus holdings plus portfolios. */
+  /** Cash plus holdings plus portfolios (the portfolios alone for a 3a account with portfolio values). */
   total: Minor;
 }
 
@@ -586,7 +608,7 @@ async function currentValuesSnapshot(
       };
       const cash = shownCash(input, today);
       const held =
-        input.holdings && !input.portfolioOnly
+        input.holdings && !portfolioOnlyAt(input, today)
           ? makeHoldingsValueAt(input.holdings)(today)
           : null;
       const portfolioValue = input.portfolios

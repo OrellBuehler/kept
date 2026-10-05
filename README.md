@@ -110,7 +110,8 @@ docker run -d --name kept -p 3000:3000 \
 
 - Kept applies its migrations on startup and keeps their history in a `drizzle` schema, so the role needs
   to create that schema (CREATE on the database) and tables in `public`; owning the database is enough.
-  Concurrent starts take turns.
+  Concurrent starts take turns: a transaction-scoped advisory lock serialises them, and a start waits at most
+  300 seconds for another instance's migrations before failing with a clear error.
 - PostgreSQL 17 or newer is required. On an older server set `KEPT_DB_TRANSACTION_TIMEOUT_MS=0`
   (the setting is not known before 17); Kept stops at startup with that hint otherwise.
 - With a URL, `DATABASE_PATH` is ignored and there is no data directory to default file storage to, so set
@@ -120,7 +121,9 @@ docker run -d --name kept -p 3000:3000 \
   `ignore_startup_parameters`, or set `KEPT_DB_STATEMENT_TIMEOUT_MS=0` and `KEPT_DB_TRANSACTION_TIMEOUT_MS=0`.
 - The pool, timeouts and application name are tuned with `KEPT_DB_POOL_MAX` (10), `KEPT_DB_STATEMENT_TIMEOUT_MS`
   (30000), `KEPT_DB_TRANSACTION_TIMEOUT_MS` (60000) and `KEPT_DB_APPLICATION_NAME` (`kept`), see the table
-  above. Invalid values stop Kept at startup with a message that names the variable, never its value.
+  above. A request waiting for a pooled connection gives up after `KEPT_DB_STATEMENT_TIMEOUT_MS` (30 seconds when
+  that is `0`) and fails with a "database is busy" conflict. `KEPT_DB_TRANSACTION_TIMEOUT_MS=0` disables the
+  transaction limit entirely. Invalid values stop Kept at startup with a message that names the variable, never its value.
 - Names sort in the order of the server's collation, so lists ordered by name can differ from SQLite
   (which compares bytes): a database with `en_US.utf8` ignores case and punctuation and sorts accented
   letters next to their base letter, while the `C` collation sorts by byte value and puts every uppercase

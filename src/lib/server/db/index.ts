@@ -44,6 +44,8 @@ interface Tx0 {
   readonly btx: BackendTransaction;
   state: TxState;
   savepoints: number;
+  /** A `readSnapshot` frame: it must not start writing work. */
+  readOnly: boolean;
   /** The one lock key this transaction (or a savepoint in it) took. */
   lockKey?: string;
 }
@@ -268,6 +270,11 @@ export async function transaction<T>(
 ): Promise<T> {
   const parent = als.getStore();
   if (parent && route(parent) === "tx") {
+    if (parent.tx.readOnly) {
+      throw new Error(
+        "transaction() cannot be used inside readSnapshot(): a snapshot only reads",
+      );
+    }
     return savepoint(parent, fn, options.lock);
   }
   // Only the outermost transaction retries: a nested one is part of its
@@ -326,7 +333,12 @@ async function runTopLevel<T>(
   const btx = await currentBackend().beginTransaction(() => {
     if (owner.tx) owner.tx.state = "aborted";
   }, mode);
-  const tx: Tx0 = { btx, state: "active", savepoints: 0 };
+  const tx: Tx0 = {
+    btx,
+    state: "active",
+    savepoints: 0,
+    readOnly: mode === "snapshot",
+  };
   owner.tx = tx;
   const frame = newFrame(tx, null);
   let outcome: { ok: true; value: T } | { ok: false; error: unknown };

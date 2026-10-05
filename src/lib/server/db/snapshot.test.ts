@@ -69,4 +69,15 @@ describe("readSnapshot", () => {
     });
     expect(await countUsers()).toBe(1);
   });
+
+  it("rejects a transaction started inside it, on every database", async () => {
+    await expect(
+      readSnapshot(async () => {
+        await transaction(async () => {
+          await insertUser("nope");
+        });
+      }),
+    ).rejects.toThrow(/inside readSnapshot/);
+    expect(await countUsers()).toBe(0);
+  });
 });
