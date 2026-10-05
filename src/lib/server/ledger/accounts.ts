@@ -346,6 +346,7 @@ async function updateAccountInTx(
         iban: accounts.iban,
         currency: accounts.currency,
         depositIban: accounts.depositIban,
+        tradesMoveCash: accounts.tradesMoveCash,
         openingBalance: accounts.openingBalance,
         fillFromTransfers: accounts.fillFromTransfers,
         sortOrder: accounts.sortOrder,
@@ -451,6 +452,29 @@ async function updateAccountInTx(
   }
   const tradesMoveCash =
     rest.tradesMoveCash && (rest.type === "investment" || hasTrades);
+  if (tradesMoveCash && !current.tradesMoveCash) {
+    const hasStatements =
+      (await first(
+        tx
+          .select({ id: transactions.id })
+          .from(transactions)
+          .where(
+            and(
+              eq(transactions.userId, userId),
+              eq(transactions.accountId, id),
+              eq(transactions.source, "import"),
+            ),
+          )
+          .limit(1),
+      )) !== undefined;
+    if (hasStatements) {
+      throw new LedgerError(
+        "invalid",
+        "This account has imported statement transactions, which already contain the trades. Turning this on would count them twice.",
+        "tradesMoveCash",
+      );
+    }
+  }
   const ibanChanged = rest.iban !== current.iban;
   await tx
     .update(accounts)

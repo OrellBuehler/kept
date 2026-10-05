@@ -18,7 +18,7 @@ import {
 } from "$lib/testing/investments";
 import { seedAccount, seedImportedTransaction } from "$lib/testing/ledger";
 import { linkTransfers } from "$lib/server/transfers";
-import { getAccount } from "./accounts";
+import { getAccount, updateAccount } from "./accounts";
 import {
   accountBalanceAt,
   accountValue,
@@ -292,5 +292,90 @@ describe("trades move cash", () => {
     expect((await accountValue(user.id, broker.id, "2024-12-31")).cash).toBe(
       60000,
     );
+  });
+});
+
+describe("enabling trades move cash", () => {
+  useTestDB();
+
+  const inputOf = (view: Awaited<ReturnType<typeof getAccount>>) => ({
+    institutionId: null,
+    name: view.name,
+    type: view.type,
+    currency: view.currency,
+    iban: view.iban,
+    contractNumber: null,
+    depositIban: null,
+    openingBalance: view.openingBalance,
+    openingDate: view.openingDate,
+    noticeMonths: null,
+    freeWithdrawal: null,
+    freeWithdrawalPeriod: null,
+    shareBps: view.shareBps,
+    sharedWith: null,
+    sortOrder: null,
+    fillFromTransfers: view.fillFromTransfers,
+    tradesMoveCash: view.tradesMoveCash,
+  });
+
+  it("is refused when the account already has imported transactions", async () => {
+    const user = await createTestUser();
+    const broker = await seedAccount(user.id, {
+      type: "investment",
+      iban: EXAMPLE_IBAN,
+    });
+    await seedImportedTransaction(user.id, broker.id, {
+      bookingDate: "2024-01-02",
+      amount: minor(-60000),
+    });
+    const view = await getAccount(user.id, broker.id, "2024-12-31");
+    await expect(
+      updateAccount(user.id, broker.id, {
+        ...inputOf(view),
+        tradesMoveCash: true,
+      }),
+    ).rejects.toThrow(/statement/i);
+    expect(
+      (await getAccount(user.id, broker.id, "2024-12-31")).tradesMoveCash,
+    ).toBe(false);
+  });
+
+  it("is allowed without imported transactions, and other users' imports do not count", async () => {
+    const user = await createTestUser();
+    const other = await createTestUser();
+    const theirs = await seedAccount(other.id, { type: "investment" });
+    await seedImportedTransaction(other.id, theirs.id, {
+      bookingDate: "2024-01-02",
+      amount: minor(-60000),
+    });
+    const broker = await seedAccount(user.id, {
+      type: "investment",
+      iban: EXAMPLE_IBAN,
+    });
+    const view = await getAccount(user.id, broker.id, "2024-12-31");
+    await updateAccount(user.id, broker.id, {
+      ...inputOf(view),
+      tradesMoveCash: true,
+    });
+    expect(
+      (await getAccount(user.id, broker.id, "2024-12-31")).tradesMoveCash,
+    ).toBe(true);
+  });
+
+  it("allows other edits of an account that has it on and later received an import", async () => {
+    const { user, broker } = await setup();
+    await seedImportedTransaction(user.id, broker.id, {
+      bookingDate: "2024-01-05",
+      amount: minor(-100),
+    });
+    const view = await getAccount(user.id, broker.id, "2024-12-31");
+    await updateAccount(user.id, broker.id, {
+      ...inputOf(view),
+      name: "Renamed",
+    });
+    expect(await getAccount(user.id, broker.id, "2024-12-31")).toMatchObject({
+      name: "Renamed",
+      tradesMoveCash: true,
+    });
   });
 });

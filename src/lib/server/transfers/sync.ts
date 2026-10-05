@@ -155,6 +155,19 @@ export async function resyncSource(
         referenceType: source.referenceType,
       })
       .where(eq(transactions.id, mirror.id));
+    // The out side is the debit: a source that changed sign swaps the transfer's sides.
+    const sourceIsOut = source.amount < 0;
+    if ((t.outTransactionId === transactionId) !== sourceIsOut) {
+      await tx
+        .update(transfers)
+        .set({
+          outTransactionId: t.inTransactionId,
+          inTransactionId: t.outTransactionId,
+          fromAccountId: t.toAccountId,
+          toAccountId: t.fromAccountId,
+        })
+        .where(eq(transfers.id, t.id));
+    }
   }
   return linkAfterWrite(
     tx,
