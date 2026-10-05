@@ -28,6 +28,16 @@ import {
 } from "./preview";
 import { describeError } from "$lib/server/errors";
 
+/** The account changed between building the preview and writing it; a fresh preview may succeed. */
+export class PreviewStaleError extends LedgerError {
+  constructor() {
+    super(
+      "conflict",
+      "The account changed since the preview was built. Please review the upload again.",
+    );
+  }
+}
+
 export interface ConfirmResult {
   importId: string;
   accountId: string;
@@ -106,12 +116,10 @@ export async function confirmImport(
       // The preview was built outside the lock; what it validated must still hold.
       if (
         account.currency !== preview.account.currency ||
-        account.iban !== preview.account.iban
+        // Only camt statements are checked against the account IBAN.
+        (preview.format === "camt053" && account.iban !== preview.account.iban)
       ) {
-        throw new LedgerError(
-          "conflict",
-          "The account changed since the preview was built. Please review the upload again.",
-        );
+        throw new PreviewStaleError();
       }
       const imp = (await first(
         tx

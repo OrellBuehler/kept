@@ -14,6 +14,7 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { runAutoMatching } from "$lib/server/bills/suggestions";
 import { eq } from "drizzle-orm";
+import { accounts } from "$lib/server/db";
 import { getDB, inboxFiles, transactions } from "$lib/server/db";
 import { saveCsvProfile } from "$lib/server/imports";
 import { createTestUser } from "$lib/testing/auth";
@@ -41,6 +42,24 @@ vi.mock("$lib/server/bills/suggestions", async (orig) => {
   return { ...actual, runAutoMatching: vi.fn(actual.runAutoMatching) };
 });
 
+// Runs after the n-th buildPreview call (the inbox previews once, confirm rebuilds it).
+let afterPreview: { skip: number; run: () => Promise<void> } | null = null;
+vi.mock("$lib/server/imports/preview", async (orig) => {
+  const actual = await orig<typeof import("$lib/server/imports/preview")>();
+  return {
+    ...actual,
+    buildPreview: async (...args: Parameters<typeof actual.buildPreview>) => {
+      const preview = await actual.buildPreview(...args);
+      if (afterPreview && afterPreview.skip-- <= 0) {
+        const { run } = afterPreview;
+        afterPreview = null;
+        await run();
+      }
+      return preview;
+    },
+  };
+});
+
 useTestDB();
 const blobs = useTestStore();
 
@@ -51,7 +70,10 @@ beforeEach(() => {
     intervalSeconds: 60,
   };
 });
-afterEach(() => rmSync(config.dir, { recursive: true, force: true }));
+afterEach(() => {
+  afterPreview = null;
+  rmSync(config.dir, { recursive: true, force: true });
+});
 
 const NOW = Date.UTC(2025, 0, 15, 12, 0, 0);
 const scan = (settleMs = 10_000) => scanInbox(config, { now: NOW, settleMs });
@@ -353,6 +375,36 @@ describe("scanInbox", () => {
     expect(await scan()).toMatchObject({ review: 1, imported: 0 });
     expect(await count(account.id)).toBe(1);
     expect(names("alice", "review")).toHaveLength(1);
+  });
+
+  it("leaves a file in place for the next scan when the account changed after the preview", async () => {
+    const { account } = await setup();
+    drop("alice", "stmt.xml", fixture("camt053/overlap-a.xml"));
+    afterPreview = {
+      skip: 1,
+      run: async () => {
+        await getDB()
+          .update(accounts)
+          .set({ currency: "EUR" })
+          .where(eq(accounts.id, account.id));
+      },
+    };
+    expect(await scan()).toMatchObject({ skipped: 1, failed: 0, imported: 0 });
+    expect(names("alice", "failed")).toEqual([]);
+    expect(readdirSync(join(config.dir, "alice"))).toContain("stmt.xml");
+    expect(await count(account.id)).toBe(0);
+  });
+
+  it("moves a file to failed when trades move cash on the account", async () => {
+    const { account } = await setup();
+    await getDB()
+      .update(accounts)
+      .set({ tradesMoveCash: true })
+      .where(eq(accounts.id, account.id));
+    drop("alice", "stmt.xml", fixture("camt053/overlap-a.xml"));
+    expect(await scan()).toMatchObject({ failed: 1, imported: 0 });
+    expect(names("alice", "failed").length).toBeGreaterThan(0);
+    expect(await count(account.id)).toBe(0);
   });
 
   it("only looks at the folder of each user", async () => {

@@ -10,9 +10,14 @@ import {
   EXAMPLE_IBAN_THIRD,
 } from "$lib/testing/fixtures/bill-identifiers";
 import { buildCamt, type CamtEntry } from "$lib/testing/fixtures/camt053/build";
-import { uploadBytes } from "$lib/testing/imports";
+import {
+  SIMPLE_CSV_PROFILE,
+  uploadBytes,
+  uploadFixture,
+} from "$lib/testing/imports";
+import { parseMappingProfile } from "$lib/server/importers/mapping";
 import { seedAccount } from "$lib/testing/ledger";
-import { confirmImport } from "./confirm";
+import { PreviewStaleError, confirmImport } from "./confirm";
 import { undoImport } from "./history";
 import { getPendingMeta } from "./pending";
 import { buildPreview } from "./preview";
@@ -154,6 +159,36 @@ describe("confirmImport re-checks the preview under the ledger lock", () => {
       /Trades move cash/,
     );
     expect(await rowsOf(b.id)).toEqual([]);
+  });
+
+  it("refuses a camt import when the account IBAN changed after the preview", async () => {
+    const { user, b } = await setup();
+    const pendingId = await uploadBytes(user.id, b.id, statementB());
+    afterPreview = async () => {
+      await getDB()
+        .update(accounts)
+        .set({ iban: EXAMPLE_IBAN_THIRD })
+        .where(eq(accounts.id, b.id));
+    };
+    await expect(confirmImport(user.id, pendingId)).rejects.toThrow(
+      PreviewStaleError,
+    );
+    expect(await rowsOf(b.id)).toEqual([]);
+  });
+
+  it("ignores an IBAN change for a csv import, which does not use the IBAN", async () => {
+    const { user, b } = await setup();
+    const pendingId = await uploadFixture(user.id, b.id, "csv/overlap-a.csv");
+    afterPreview = async () => {
+      await getDB()
+        .update(accounts)
+        .set({ iban: EXAMPLE_IBAN_THIRD })
+        .where(eq(accounts.id, b.id));
+    };
+    const result = await confirmImport(user.id, pendingId, {
+      profile: parseMappingProfile(SIMPLE_CSV_PROFILE),
+    });
+    expect(result.newCount).toBeGreaterThan(0);
   });
 
   it("does not take over another user's mirror", async () => {

@@ -315,7 +315,7 @@ describe("purgeExpired", () => {
     expect(await getDB().select().from(pendingImports)).toEqual([]);
   });
 
-  it("keeps the row when its blob cannot be deleted, so the next purge retries", async () => {
+  it("drops the row even when its blob cannot be deleted, leaving the blob to the orphan sweep", async () => {
     const { user, account } = await setup();
     const old = await store(user.id, account.id);
     await expire(old.id, Date.now() - 1000);
@@ -324,16 +324,34 @@ describe("purgeExpired", () => {
     const log = vi.spyOn(console, "error").mockImplementation(() => {});
     try {
       await purgeExpired();
-      expect(await getDB().select().from(pendingImports)).toHaveLength(1);
+      expect(await getDB().select().from(pendingImports)).toEqual([]);
       expect(log).toHaveBeenCalledOnce();
       expect(JSON.stringify(log.mock.calls)).not.toContain("offline");
     } finally {
       log.mockRestore();
       ctx.store.delete = realDelete;
     }
+    expect(await blobKeys()).toHaveLength(1);
+    expect(
+      await sweepOrphanedPending(Date.now() + PENDING_TTL_MS + 60_000),
+    ).toBe(1);
+    expect(await blobKeys()).toEqual([]);
+  });
+
+  it("still purges newer expired rows when the store's deletes always fail", async () => {
+    const { user, account } = await setup();
+    const ids: string[] = [];
+    for (let i = 0; i < PURGE_BATCH_SIZE + 1; i++) {
+      ids.push((await store(user.id, account.id)).id);
+    }
+    await drainDetached();
+    for (const [i, id] of ids.entries())
+      await expire(id, Date.now() - 10_000 + i);
+    ctx.store.delete = () => Promise.reject(new Error("offline"));
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    await purgeExpired();
     await purgeExpired();
     expect(await getDB().select().from(pendingImports)).toEqual([]);
-    expect(await blobKeys()).toEqual([]);
   });
 });
 

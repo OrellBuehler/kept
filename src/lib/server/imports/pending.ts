@@ -120,8 +120,9 @@ export const PURGE_BATCH_SIZE = 50;
 /**
  * Removes expired uploads (row and blob) of all users, at most one batch per
  * call so a slow store cannot stall housekeeping indefinitely; the next call
- * continues. A blob that cannot be removed keeps its row, so a later purge
- * retries it.
+ * continues. A blob that cannot be removed is logged and left to
+ * `sweepOrphanedPending`; its row is deleted regardless, so failing blobs
+ * cannot fill the batch forever.
  */
 export async function purgeExpired(now = Date.now()): Promise<void> {
   const db = getDB();
@@ -141,7 +142,6 @@ export async function purgeExpired(now = Date.now()): Promise<void> {
         id,
         describeError(err),
       );
-      continue;
     }
     await db.delete(pendingImports).where(eq(pendingImports.id, id));
   }
@@ -219,10 +219,7 @@ async function maintain(now: number): Promise<void> {
 
 /** Housekeeping at startup; failures are logged and retried by the next upload. */
 export function startPendingSweep(): void {
-  maintain(Date.now()).catch((err) => {
-    lastOrphanSweep = 0;
-    console.error("pending import cleanup failed: %s", describeError(err));
-  });
+  maintainInBackground(Date.now());
 }
 
 export async function storePending(

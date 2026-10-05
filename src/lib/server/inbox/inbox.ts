@@ -30,6 +30,7 @@ import {
   balanceWarningText,
   buildPreview,
   confirmImport,
+  PreviewStaleError,
   deletePending,
   detectFormat,
   startUpload,
@@ -383,6 +384,10 @@ async function processFile(ctx: ScanContext, c: Candidate): Promise<Outcome> {
   try {
     return await importCandidate(ctx, c, bytes, sha);
   } catch (err) {
+    if (err instanceof PreviewStaleError) {
+      // Transient: leave the file where it is so the next scan retries it.
+      return "skipped";
+    }
     if (
       err instanceof Rejected ||
       err instanceof LedgerError ||
