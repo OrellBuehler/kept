@@ -14,6 +14,7 @@ import {
 } from "$lib/server/db";
 import { emitBillChanged } from "$lib/server/events";
 import { LedgerError, notFound } from "$lib/server/ledger/errors";
+import { lockTransactionRowsInTx } from "$lib/server/ledger/transactions";
 import {
   allocateInTx,
   type AllocationTx,
@@ -145,11 +146,7 @@ function windowQuery(
     .limit(MAX_SUGGESTION_TRANSACTIONS);
 }
 
-async function compute(
-  userId: string,
-  onlyBillId?: string,
-  includeDismissed = false,
-): Promise<Computed> {
+async function compute(userId: string, onlyBillId?: string): Promise<Computed> {
   const db = getDB();
   const allBills = (await listBills(userId)).filter((b) => !b.cancelled);
   const allocations = await loadAllocations(userId);
@@ -182,7 +179,7 @@ async function compute(
   ).filter(
     (s) =>
       (onlyBillId === undefined || s.billId === onlyBillId) &&
-      (includeDismissed || !dismissed.has(pairKey(s.billId, s.transactionId))),
+      !dismissed.has(pairKey(s.billId, s.transactionId)),
   );
   if (found.length === 0) return { suggestions: [], truncated };
 
@@ -257,17 +254,6 @@ export async function previewMatching(userId: string): Promise<{
   };
 }
 
-/** Whether the pair would be confirmed automatically if it were not dismissed. */
-export async function wouldAutoConfirm(
-  userId: string,
-  billId: string,
-  transactionId: string,
-): Promise<boolean> {
-  return (await compute(userId, billId, true)).suggestions.some(
-    (s) => s.transactionId === transactionId && s.auto,
-  );
-}
-
 /**
  * Pairs that automatic matching would confirm on the current state, read inside
  * the transaction: same rule as `compute`, minus dismissed pairs. Keyed by pair.
@@ -332,6 +318,13 @@ export async function writeAutoMatches(
   planned: ReadonlyArray<{ billId: string; transactionId: string }>,
 ): Promise<string[]> {
   return await transaction(async (tx) => {
+    // All row locks in one statement, before any read: taking them one by one
+    // in suggestion order could invert against other multi-row writers.
+    await lockTransactionRowsInTx(
+      tx,
+      userId,
+      planned.map((s) => s.transactionId),
+    );
     const fresh = await freshAutoPlanInTx(tx, userId);
     const billIds: string[] = [];
     for (const s of planned) {
@@ -406,27 +399,35 @@ export async function removeAllocation(
   userId: string,
   allocationId: string,
 ): Promise<void> {
-  const db = getDB();
-  const [row] = await db
-    .delete(billAllocations)
-    .where(
-      and(
-        eq(billAllocations.userId, userId),
-        eq(billAllocations.id, allocationId),
-      ),
-    )
-    .returning({
-      billId: billAllocations.billId,
-      transactionId: billAllocations.transactionId,
-    });
-  if (!row) throw notFound("Allocation");
-  if (await wouldAutoConfirm(userId, row.billId, row.transactionId)) {
-    await db
-      .insert(matchDismissals)
-      .values({ userId, billId: row.billId, transactionId: row.transactionId })
-      .onConflictDoNothing();
-  }
-  afterCommit(() => emitBillChanged(userId, row.billId));
+  // Delete, check and dismissal must not interleave with an automatic run, or it
+  // re-creates the allocation in between. Same lock as every allocation write.
+  await transaction(async (tx) => {
+    const [removed] = await tx
+      .delete(billAllocations)
+      .where(
+        and(
+          eq(billAllocations.userId, userId),
+          eq(billAllocations.id, allocationId),
+        ),
+      )
+      .returning({
+        billId: billAllocations.billId,
+        transactionId: billAllocations.transactionId,
+      });
+    if (!removed) throw notFound("Allocation");
+    const plan = await freshAutoPlanInTx(tx, userId);
+    if (plan.has(pairKey(removed.billId, removed.transactionId))) {
+      await tx
+        .insert(matchDismissals)
+        .values({
+          userId,
+          billId: removed.billId,
+          transactionId: removed.transactionId,
+        })
+        .onConflictDoNothing();
+    }
+    afterCommit(() => emitBillChanged(userId, removed.billId));
+  }, billsLock(userId));
 }
 
 /** Brings a dismissed pair back as a suggestion. Idempotent. */

@@ -357,6 +357,30 @@ describe("dismissals and removal", () => {
     expect((await runAutoMatching(u.id)).matched).toBe(0);
   });
 
+  it("a concurrent automatic run cannot re-create an allocation that is being removed", async () => {
+    for (let delay = 0; delay <= 8; delay++) {
+      const { u, account } = await setup();
+      const bill = await qrBill(u.id);
+      const tx = await payment(u.id, account.id, 10000, {
+        reference: EXAMPLE_QRR,
+      });
+      await runAutoMatching(u.id);
+      const [existing] = await listBillAllocations(u.id, bill.id);
+      const auto = async () => {
+        for (let i = 0; i < delay; i++) await Promise.resolve();
+        await runAutoMatching(u.id);
+      };
+      await Promise.all([removeAllocation(u.id, existing!.id), auto()]);
+      expect(
+        await listBillAllocations(u.id, bill.id),
+        `delay ${delay}`,
+      ).toEqual([]);
+      expect((await listDismissed(u.id, bill.id)).map((t) => t.id)).toEqual([
+        tx.id,
+      ]);
+    }
+  });
+
   it("removing a manual allocation does not dismiss a pair that was never automatic", async () => {
     const { u, account } = await setup();
     const bill = await seedBill(u.id, {
