@@ -9,6 +9,7 @@ import {
   isUniqueViolation,
   transactions,
   type DB,
+  transaction,
 } from "$lib/server/db";
 import { LedgerError, notFound } from "$lib/server/ledger/errors";
 import { monthBounds } from "$lib/server/dashboard/dates";
@@ -48,18 +49,19 @@ async function getBudget(userId: string, id: string): Promise<BudgetView> {
   return row;
 }
 
-/** Sync: runs inside the transaction of createBudget / updateBudget. */
-function assertBudgetable(
+/** Runs inside the transaction of createBudget / updateBudget. */
+async function assertBudgetable(
   tx: Pick<DB, "select">,
   userId: string,
   categoryId: string,
 ) {
-  const category = tx
-    .select({ kind: categories.kind })
-    .from(categories)
-    .where(and(eq(categories.userId, userId), eq(categories.id, categoryId)))
-    .limit(1)
-    .get();
+  const category = await first(
+    tx
+      .select({ kind: categories.kind })
+      .from(categories)
+      .where(and(eq(categories.userId, userId), eq(categories.id, categoryId)))
+      .limit(1),
+  );
   if (!category) {
     throw new LedgerError("invalid", "Choose a category.", "categoryId");
   }
@@ -79,26 +81,27 @@ const budgetTaken = () =>
     "categoryId",
   );
 
-/** Sync: runs inside the transaction of createBudget / updateBudget. */
-function assertUnique(
+/** Runs inside the transaction of createBudget / updateBudget. */
+async function assertUnique(
   tx: Pick<DB, "select">,
   userId: string,
   input: BudgetInput,
   exceptId?: string,
 ) {
-  const clash = tx
-    .select({ id: budgets.id })
-    .from(budgets)
-    .where(
-      and(
-        eq(budgets.userId, userId),
-        eq(budgets.categoryId, input.categoryId),
-        eq(budgets.currency, input.currency),
-        exceptId ? ne(budgets.id, exceptId) : undefined,
-      ),
-    )
-    .limit(1)
-    .get();
+  const clash = await first(
+    tx
+      .select({ id: budgets.id })
+      .from(budgets)
+      .where(
+        and(
+          eq(budgets.userId, userId),
+          eq(budgets.categoryId, input.categoryId),
+          eq(budgets.currency, input.currency),
+          exceptId ? ne(budgets.id, exceptId) : undefined,
+        ),
+      )
+      .limit(1),
+  );
   if (clash) throw budgetTaken();
 }
 
@@ -117,14 +120,15 @@ export async function createBudget(
   input: BudgetInput,
 ): Promise<BudgetView> {
   try {
-    return getDB().transaction((tx) => {
-      assertBudgetable(tx, userId, input.categoryId);
-      assertUnique(tx, userId, input);
-      return tx
-        .insert(budgets)
-        .values({ userId, ...input })
-        .returning(columns)
-        .get();
+    return await transaction(async (tx) => {
+      await assertBudgetable(tx, userId, input.categoryId);
+      await assertUnique(tx, userId, input);
+      return (await first(
+        tx
+          .insert(budgets)
+          .values({ userId, ...input })
+          .returning(columns),
+      ))!;
     });
   } catch (err) {
     mapBudgetViolation(err);
@@ -137,20 +141,21 @@ export async function updateBudget(
   input: BudgetInput,
 ): Promise<BudgetView> {
   try {
-    getDB().transaction((tx) => {
-      const found = tx
-        .select({ id: budgets.id })
-        .from(budgets)
-        .where(and(eq(budgets.userId, userId), eq(budgets.id, id)))
-        .limit(1)
-        .get();
+    await transaction(async (tx) => {
+      const found = await first(
+        tx
+          .select({ id: budgets.id })
+          .from(budgets)
+          .where(and(eq(budgets.userId, userId), eq(budgets.id, id)))
+          .limit(1),
+      );
       if (!found) throw notFound("Budget");
-      assertBudgetable(tx, userId, input.categoryId);
-      assertUnique(tx, userId, input, id);
-      tx.update(budgets)
+      await assertBudgetable(tx, userId, input.categoryId);
+      await assertUnique(tx, userId, input, id);
+      await tx
+        .update(budgets)
         .set(input)
-        .where(and(eq(budgets.userId, userId), eq(budgets.id, id)))
-        .run();
+        .where(and(eq(budgets.userId, userId), eq(budgets.id, id)));
     });
   } catch (err) {
     mapBudgetViolation(err);

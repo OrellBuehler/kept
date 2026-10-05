@@ -19,6 +19,7 @@ import {
   transactions,
   transfers,
   type DB,
+  transaction,
 } from "$lib/server/db";
 import { LedgerError, notFound } from "$lib/server/ledger/errors";
 import {
@@ -41,16 +42,18 @@ type TransferRow = typeof transfers.$inferSelect;
 
 type Reader = Pick<DB, "select">;
 
-function ownedTransfer(
+async function ownedTransfer(
   tx: Tx,
   userId: string,
   transferId: string,
-): TransferRow {
-  const row = tx
-    .select()
-    .from(transfers)
-    .where(and(eq(transfers.userId, userId), eq(transfers.id, transferId)))
-    .get();
+): Promise<TransferRow> {
+  const row = await first(
+    tx
+      .select()
+      .from(transfers)
+      .where(and(eq(transfers.userId, userId), eq(transfers.id, transferId)))
+      .limit(1),
+  );
   if (!row) throw notFound("Transfer");
   return row;
 }
@@ -63,15 +66,15 @@ function ownedTransactionQuery(conn: Reader, userId: string, id: string) {
     .limit(1);
 }
 
-function ownedTransaction(tx: Tx, userId: string, id: string) {
-  const row = ownedTransactionQuery(tx, userId, id).get();
+async function ownedTransaction(tx: Tx, userId: string, id: string) {
+  const row = await first(ownedTransactionQuery(tx, userId, id));
   if (!row) throw notFound("Transaction");
   return row;
 }
 
 /** Rows of any status that reference the transaction on either side. */
-function rowsReferencing(tx: Tx, userId: string, transactionId: string) {
-  return tx
+async function rowsReferencing(tx: Tx, userId: string, transactionId: string) {
+  return await tx
     .select()
     .from(transfers)
     .where(
@@ -82,25 +85,28 @@ function rowsReferencing(tx: Tx, userId: string, transactionId: string) {
           eq(transfers.inTransactionId, transactionId),
         ),
       ),
-    )
-    .all();
+    );
 }
 
 /** Takes a transaction out of its dismissed and needs-amount rows; a row left without a side goes. */
-function release(tx: Tx, userId: string, transactionId: string): void {
-  for (const row of rowsReferencing(tx, userId, transactionId)) {
+async function release(
+  tx: Tx,
+  userId: string,
+  transactionId: string,
+): Promise<void> {
+  for (const row of await rowsReferencing(tx, userId, transactionId)) {
     if (row.status === "linked") continue;
     const outId =
       row.outTransactionId === transactionId ? null : row.outTransactionId;
     const inId =
       row.inTransactionId === transactionId ? null : row.inTransactionId;
     if (row.status === "needs_amount" || (outId === null && inId === null)) {
-      tx.delete(transfers).where(eq(transfers.id, row.id)).run();
+      await tx.delete(transfers).where(eq(transfers.id, row.id));
     } else {
-      tx.update(transfers)
+      await tx
+        .update(transfers)
         .set({ outTransactionId: outId, inTransactionId: inId })
-        .where(eq(transfers.id, row.id))
-        .run();
+        .where(eq(transfers.id, row.id));
     }
   }
 }
@@ -113,8 +119,8 @@ export async function unlink(
   userId: string,
   transferId: string,
 ): Promise<void> {
-  getDB().transaction((tx) => {
-    const row = ownedTransfer(tx, userId, transferId);
+  await transaction(async (tx) => {
+    const row = await ownedTransfer(tx, userId, transferId);
     if (row.status === "dismissed") return;
     const ids = [row.outTransactionId, row.inTransactionId].filter(
       (id): id is string => id !== null,
@@ -122,20 +128,21 @@ export async function unlink(
     const mirrors = new Set(
       ids.length === 0
         ? []
-        : tx
-            .select({ id: transactions.id })
-            .from(transactions)
-            .where(
-              and(
-                inArray(transactions.id, ids),
-                eq(transactions.source, "mirror"),
-              ),
-            )
-            .all()
-            .map((m) => m.id),
+        : (
+            await tx
+              .select({ id: transactions.id })
+              .from(transactions)
+              .where(
+                and(
+                  inArray(transactions.id, ids),
+                  eq(transactions.source, "mirror"),
+                ),
+              )
+          ).map((m) => m.id),
     );
     // The mirror's id leaves the row first, or deleting it would delete the row too.
-    tx.update(transfers)
+    await tx
+      .update(transfers)
       .set({
         status: "dismissed",
         outTransactionId:
@@ -147,12 +154,11 @@ export async function unlink(
             ? null
             : row.inTransactionId,
       })
-      .where(eq(transfers.id, row.id))
-      .run();
+      .where(eq(transfers.id, row.id));
     if (mirrors.size > 0) {
-      tx.delete(transactions)
-        .where(inArray(transactions.id, [...mirrors]))
-        .run();
+      await tx
+        .delete(transactions)
+        .where(inArray(transactions.id, [...mirrors]));
     }
   });
 }
@@ -168,21 +174,23 @@ export async function linkManually(
   outId: string,
   inId: string,
 ): Promise<string> {
-  return getDB().transaction((tx) => linkManuallyInTx(tx, userId, outId, inId));
+  return await transaction(async (tx) =>
+    linkManuallyInTx(tx, userId, outId, inId),
+  );
 }
 
-/** Sync twin of linkManually, for the body of a transaction. */
-function linkManuallyInTx(
+/** `linkManually` on a transaction you already hold. */
+async function linkManuallyInTx(
   tx: Tx,
   userId: string,
   outId: string,
   inId: string,
-): string {
+): Promise<string> {
   if (outId === inId) {
     throw new LedgerError("invalid", "Choose two different transactions.");
   }
-  const out = ownedTransaction(tx, userId, outId);
-  const into = ownedTransaction(tx, userId, inId);
+  const out = await ownedTransaction(tx, userId, outId);
+  const into = await ownedTransaction(tx, userId, inId);
   if (out.accountId === into.accountId) {
     throw new LedgerError(
       "invalid",
@@ -196,28 +204,31 @@ function linkManuallyInTx(
     );
   }
   for (const id of [out.id, into.id]) {
-    if (rowsReferencing(tx, userId, id).some((r) => r.status === "linked")) {
+    if (
+      (await rowsReferencing(tx, userId, id)).some((r) => r.status === "linked")
+    ) {
       throw new LedgerError(
         "conflict",
         "One of the transactions is already part of a transfer.",
       );
     }
   }
-  release(tx, userId, out.id);
-  release(tx, userId, into.id);
-  return tx
-    .insert(transfers)
-    .values({
-      userId,
-      outTransactionId: out.id,
-      inTransactionId: into.id,
-      status: "linked",
-      method: "manual",
-      fromAccountId: out.accountId,
-      toAccountId: into.accountId,
-    })
-    .returning({ id: transfers.id })
-    .get().id;
+  await release(tx, userId, out.id);
+  await release(tx, userId, into.id);
+  return (await first(
+    tx
+      .insert(transfers)
+      .values({
+        userId,
+        outTransactionId: out.id,
+        inTransactionId: into.id,
+        status: "linked",
+        method: "manual",
+        fromAccountId: out.accountId,
+        toAccountId: into.accountId,
+      })
+      .returning({ id: transfers.id }),
+  ))!.id;
 }
 
 /** A booked row on the receiving account that may be the real other side of a needs-amount transfer. */
@@ -313,17 +324,17 @@ async function findLinkCandidate(
   return nearestCandidate(source, rows);
 }
 
-/** Sync twin of findLinkCandidate, for the body of a transaction. */
-function findLinkCandidateInTx(
+/** `findLinkCandidate` on a transaction you already hold. */
+async function findLinkCandidateInTx(
   tx: Reader,
   userId: string,
   source: { bookingDate: string; amount: number },
   home: { iban: string | null },
   target: { id: string },
-): LinkCandidate | null {
+): Promise<LinkCandidate | null> {
   return nearestCandidate(
     source,
-    linkCandidateQuery(tx, userId, source, home, target).all(),
+    await linkCandidateQuery(tx, userId, source, home, target),
   );
 }
 
@@ -446,8 +457,8 @@ export async function resolveNeedsAmount(
   transferId: string,
   amount: Minor,
 ): Promise<void> {
-  getDB().transaction((tx) => {
-    const row = ownedTransfer(tx, userId, transferId);
+  await transaction(async (tx) => {
+    const row = await ownedTransfer(tx, userId, transferId);
     if (row.status !== "needs_amount") {
       throw new LedgerError("conflict", "This transfer needs no amount.");
     }
@@ -459,12 +470,12 @@ export async function resolveNeedsAmount(
       );
     }
     const outgoing = row.outTransactionId !== null;
-    const source = ownedTransaction(
+    const source = await ownedTransaction(
       tx,
       userId,
       (outgoing ? row.outTransactionId : row.inTransactionId)!,
     );
-    const plan = loadPlanAccountsInTx(tx, userId);
+    const plan = await loadPlanAccountsInTx(tx, userId);
     const home = plan.find((a) => a.id === source.accountId);
     const target = plan.find(
       (a) => a.id === (outgoing ? row.toAccountId : row.fromAccountId),
@@ -477,45 +488,53 @@ export async function resolveNeedsAmount(
       );
     }
     // A booked row that may be the real counterpart: link it instead of booking a second one.
-    const counterpart = findLinkCandidateInTx(tx, userId, source, home, target);
+    const counterpart = await findLinkCandidateInTx(
+      tx,
+      userId,
+      source,
+      home,
+      target,
+    );
     if (counterpart) {
       throw new LinkInsteadError(
         `The receiving account has a transaction on ${counterpart.bookingDate} that may be the other side of this transfer. Link it instead of entering an amount.`,
         counterpart.id,
       );
     }
-    const mirror = tx
-      .insert(transactions)
-      .values({
-        userId,
-        accountId: target.id,
-        importId: null,
-        source: "mirror",
-        externalId: `mirror:${source.id}`,
-        mirrorOfId: source.id,
-        bookingDate: source.bookingDate,
-        valueDate: source.valueDate,
-        amount: minor(outgoing ? amount : -amount),
-        currency: target.currency,
-        counterpartyName: home.name,
-        counterpartyIban: home.iban,
-        description: source.description,
-        reference: source.reference,
-        referenceType: source.referenceType,
-        reversal: false,
-      })
-      .onConflictDoNothing({
-        target: [transactions.accountId, transactions.externalId],
-      })
-      .returning({ id: transactions.id })
-      .get();
+    const mirror = await first(
+      tx
+        .insert(transactions)
+        .values({
+          userId,
+          accountId: target.id,
+          importId: null,
+          source: "mirror",
+          externalId: `mirror:${source.id}`,
+          mirrorOfId: source.id,
+          bookingDate: source.bookingDate,
+          valueDate: source.valueDate,
+          amount: minor(outgoing ? amount : -amount),
+          currency: target.currency,
+          counterpartyName: home.name,
+          counterpartyIban: home.iban,
+          description: source.description,
+          reference: source.reference,
+          referenceType: source.referenceType,
+          reversal: false,
+        })
+        .onConflictDoNothing({
+          target: [transactions.accountId, transactions.externalId],
+        })
+        .returning({ id: transactions.id }),
+    );
     if (!mirror) {
       throw new LedgerError(
         "conflict",
         "A counter-transaction for this transfer already exists.",
       );
     }
-    tx.update(transfers)
+    await tx
+      .update(transfers)
       .set({
         status: "linked",
         method: "mirrored",
@@ -523,8 +542,7 @@ export async function resolveNeedsAmount(
           ? { inTransactionId: mirror.id }
           : { outTransactionId: mirror.id }),
       })
-      .where(eq(transfers.id, row.id))
-      .run();
+      .where(eq(transfers.id, row.id));
   });
 }
 
@@ -538,14 +556,14 @@ export async function linkNeedsAmountTo(
   transferId: string,
   peerId: string,
 ): Promise<string> {
-  return getDB().transaction((tx) => {
-    const row = ownedTransfer(tx, userId, transferId);
+  return await transaction(async (tx) => {
+    const row = await ownedTransfer(tx, userId, transferId);
     if (row.status !== "needs_amount") {
       throw new LedgerError("conflict", "This transfer needs no amount.");
     }
     const outgoing = row.outTransactionId !== null;
     const sourceId = (outgoing ? row.outTransactionId : row.inTransactionId)!;
-    const peer = ownedTransaction(tx, userId, peerId);
+    const peer = await ownedTransaction(tx, userId, peerId);
     if (peer.accountId !== (outgoing ? row.toAccountId : row.fromAccountId)) {
       throw new LedgerError(
         "invalid",
@@ -654,12 +672,13 @@ export async function transferCandidates(
 }
 
 /** Deletes the mirrors on an account and the needs-amount rows waiting for it (the toggle went off). */
-export function removeMirrors(
+export async function removeMirrors(
   tx: Tx,
   userId: string,
   accountId: string,
-): number {
-  tx.delete(transfers)
+): Promise<number> {
+  await tx
+    .delete(transfers)
     .where(
       and(
         eq(transfers.userId, userId),
@@ -675,19 +694,19 @@ export function removeMirrors(
           ),
         ),
       ),
-    )
-    .run();
-  return tx
-    .delete(transactions)
-    .where(
-      and(
-        eq(transactions.userId, userId),
-        eq(transactions.accountId, accountId),
-        eq(transactions.source, "mirror"),
-      ),
-    )
-    .returning({ id: transactions.id })
-    .all().length;
+    );
+  return (
+    await tx
+      .delete(transactions)
+      .where(
+        and(
+          eq(transactions.userId, userId),
+          eq(transactions.accountId, accountId),
+          eq(transactions.source, "mirror"),
+        ),
+      )
+      .returning({ id: transactions.id })
+  ).length;
 }
 
 export interface FillSuggestion {
@@ -750,8 +769,8 @@ export async function enableFill(
   userId: string,
   accountId: string,
 ): Promise<LinkResult> {
-  return getDB().transaction((tx) => {
-    const account = loadPlanAccountsInTx(tx, userId).find(
+  return await transaction(async (tx) => {
+    const account = (await loadPlanAccountsInTx(tx, userId)).find(
       (a) => a.id === accountId,
     );
     if (!account) throw notFound("Account");
@@ -774,10 +793,10 @@ export async function enableFill(
         "iban",
       );
     }
-    tx.update(accounts)
+    await tx
+      .update(accounts)
       .set({ fillFromTransfers: true })
-      .where(and(eq(accounts.userId, userId), eq(accounts.id, accountId)))
-      .run();
+      .where(and(eq(accounts.userId, userId), eq(accounts.id, accountId)));
     return linkTransfersInTx(tx, userId, { targetAccountId: accountId });
   });
 }
@@ -804,11 +823,11 @@ export async function countMirrors(
   return row?.n ?? 0;
 }
 
-/** Sync twin of countMirrors, for the body of a transaction. */
-export function countMirrorsInTx(
+/** `countMirrors` on a transaction you already hold. */
+export async function countMirrorsInTx(
   tx: Reader,
   userId: string,
   accountId: string,
-): number {
-  return mirrorCountQuery(tx, userId, accountId).get()?.n ?? 0;
+): Promise<number> {
+  return (await first(mirrorCountQuery(tx, userId, accountId)))?.n ?? 0;
 }

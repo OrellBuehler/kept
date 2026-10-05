@@ -2,9 +2,10 @@ import { and, eq, sql } from "drizzle-orm";
 import {
   accounts,
   balanceSnapshots,
-  getDB,
   imports,
   transactions,
+  first,
+  transaction,
 } from "$lib/server/db";
 import type { CsvMappingProfile } from "$lib/server/importers/mapping";
 import { categorize, loadRules } from "$lib/server/categories/rules";
@@ -64,16 +65,19 @@ export async function confirmImport(
   );
   const rules = await loadRules(userId);
 
-  const result = getDB().transaction((tx) => {
+  const result = await transaction(async (tx) => {
     // Claiming the upload first makes a concurrent second confirm fail and roll back.
-    if (!deletePendingRowInTx(tx, userId, pendingId)) throw notFound("Upload");
+    if (!(await deletePendingRowInTx(tx, userId, pendingId))) {
+      throw notFound("Upload");
+    }
     // Checked in the transaction, so an archive racing the import cannot slip past.
-    const account = tx
-      .select({ archived: accounts.archived })
-      .from(accounts)
-      .where(and(eq(accounts.userId, userId), eq(accounts.id, accountId)))
-      .limit(1)
-      .get();
+    const account = await first(
+      tx
+        .select({ archived: accounts.archived })
+        .from(accounts)
+        .where(and(eq(accounts.userId, userId), eq(accounts.id, accountId)))
+        .limit(1),
+    );
     if (!account) throw notFound("Account");
     if (account.archived) {
       throw new LedgerError(
@@ -81,34 +85,35 @@ export async function confirmImport(
         "This account is archived; unarchive it to import into it.",
       );
     }
-    const imp = tx
-      .insert(imports)
-      .values({
-        userId,
-        accountId,
-        format: preview.format,
-        fileName: preview.fileName,
-        fileSha256: sha,
-        statementFrom: statement.fromDate,
-        statementTo: statement.toDate,
-        openingBalance: statement.openingBalance?.amount ?? null,
-        openingBalanceDate: statement.openingBalance?.date ?? null,
-        closingBalance: statement.closingBalance?.amount ?? null,
-        closingBalanceDate: statement.closingBalance?.date ?? null,
-        newCount: newRows.length,
-        duplicateCount: preview.counts.duplicate,
-        warnings: JSON.stringify([
-          ...preview.warnings,
-          ...preview.balanceWarnings.map(balanceWarningText),
-        ]),
-      })
-      .returning({ id: imports.id })
-      .get();
+    const imp = (await first(
+      tx
+        .insert(imports)
+        .values({
+          userId,
+          accountId,
+          format: preview.format,
+          fileName: preview.fileName,
+          fileSha256: sha,
+          statementFrom: statement.fromDate,
+          statementTo: statement.toDate,
+          openingBalance: statement.openingBalance?.amount ?? null,
+          openingBalanceDate: statement.openingBalance?.date ?? null,
+          closingBalance: statement.closingBalance?.amount ?? null,
+          closingBalanceDate: statement.closingBalance?.date ?? null,
+          newCount: newRows.length,
+          duplicateCount: preview.counts.duplicate,
+          warnings: JSON.stringify([
+            ...preview.warnings,
+            ...preview.balanceWarnings.map(balanceWarningText),
+          ]),
+        })
+        .returning({ id: imports.id }),
+    ))!;
 
     const insertedRows: { id: string; externalId: string }[] = [];
     for (let i = 0; i < newRows.length; i += INSERT_CHUNK) {
       insertedRows.push(
-        ...tx
+        ...(await tx
           .insert(transactions)
           .values(
             newRows.slice(i, i + INSERT_CHUNK).map(({ tx: t }) => ({
@@ -138,22 +143,22 @@ export async function confirmImport(
           .returning({
             id: transactions.id,
             externalId: transactions.externalId,
-          })
-          .all(),
+          })),
       );
     }
     const inserted = insertedRows.length;
     const duplicateCount = preview.counts.total - inserted;
     if (inserted !== newRows.length) {
-      tx.update(imports)
+      await tx
+        .update(imports)
         .set({ newCount: inserted, duplicateCount })
-        .where(eq(imports.id, imp.id))
-        .run();
+        .where(eq(imports.id, imp.id));
     }
 
     const closing = statement.closingBalance;
     if (closing) {
-      tx.insert(balanceSnapshots)
+      await tx
+        .insert(balanceSnapshots)
         .values({
           userId,
           accountId,
@@ -175,8 +180,7 @@ export async function confirmImport(
           },
           // An unchanged amount keeps pointing at the import that first wrote it.
           setWhere: sql`${balanceSnapshots.amount} != ${closing.amount}`,
-        })
-        .run();
+        });
     }
 
     // Real rows take over the mirrors they match, then everything new is linked.
@@ -185,10 +189,10 @@ export async function confirmImport(
     for (const row of newRows) {
       const id = idOf.get(row.tx.externalId);
       if (row.mirrorId === null || id === undefined) continue;
-      takeOverMirror(tx, userId, row.mirrorId, id);
+      await takeOverMirror(tx, userId, row.mirrorId, id);
       replaced += 1;
     }
-    const linked = linkAfterWrite(
+    const linked = await linkAfterWrite(
       tx,
       userId,
       accountId,

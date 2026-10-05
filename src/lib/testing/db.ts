@@ -1,5 +1,12 @@
 import { afterEach, beforeEach } from "vitest";
-import { migrateDatabase, openDatabase, setDB, type DB } from "$lib/server/db";
+import {
+  closeDatabase,
+  getDB,
+  migrateDatabase,
+  openDatabase,
+  setDB,
+  type DB,
+} from "$lib/server/db";
 
 /**
  * Call once at the top level of a test file (or inside a describe).
@@ -7,7 +14,10 @@ import { migrateDatabase, openDatabase, setDB, type DB } from "$lib/server/db";
  * `getDB()` in application code returns it. Usage:
  *
  *   const ctx = useTestDB();
- *   it("...", () => { const db = ctx.db; ... });
+ *   it("...", async () => { const db = ctx.db; ... });
+ *
+ * `ctx.db` is the same ambient object as `getDB()`, so it joins a transaction
+ * when used inside one.
  */
 export function useTestDB(): { readonly db: DB } {
   let current: DB | null = null;
@@ -16,15 +26,16 @@ export function useTestDB(): { readonly db: DB } {
     migrateDatabase(current);
     setDB(current);
   });
-  afterEach(() => {
-    current?.$client.close();
+  afterEach(async () => {
+    const opened = current;
     current = null;
+    if (opened) await closeDatabase(opened);
     setDB(null);
   });
   return {
     get db() {
       if (!current) throw new Error("useTestDB: no database outside a test");
-      return current;
+      return getDB();
     },
   };
 }

@@ -11,6 +11,8 @@ import {
   getDB,
   isUniqueViolation,
   type DB,
+  afterCommit,
+  transaction,
 } from "$lib/server/db";
 import { emitBillChanged } from "$lib/server/events";
 import { LedgerError, notFound } from "$lib/server/ledger/errors";
@@ -132,13 +134,13 @@ export async function getBill(userId: string, id: string): Promise<BillView> {
   return toView(row);
 }
 
-/** Sync twin of `getBill`, for the body of a transaction. */
-export function getBillInTx(
+/** `getBill` on a transaction you already hold. */
+export async function getBillInTx(
   tx: Pick<DB, "select">,
   userId: string,
   id: string,
-): BillView {
-  const row = ownedBillQuery(tx, userId, id).limit(1).get();
+): Promise<BillView> {
+  const row = await first(ownedBillQuery(tx, userId, id).limit(1));
   if (!row) throw notFound("Bill");
   return toView(row);
 }
@@ -153,32 +155,33 @@ export async function listBills(userId: string): Promise<BillView[]> {
   return rows.map(toView);
 }
 
-/** Sync twin of `listBills`, for the body of a transaction. */
-export function listBillsInTx(
+/** `listBills` on a transaction you already hold. */
+export async function listBillsInTx(
   tx: Pick<DB, "select">,
   userId: string,
-): BillView[] {
-  return tx
-    .select()
-    .from(bills)
-    .where(eq(bills.userId, userId))
-    .orderBy(desc(bills.createdAt), asc(bills.id))
-    .all()
-    .map(toView);
+): Promise<BillView[]> {
+  return (
+    await tx
+      .select()
+      .from(bills)
+      .where(eq(bills.userId, userId))
+      .orderBy(desc(bills.createdAt), asc(bills.id))
+  ).map(toView);
 }
 
-function assertOwnedAccountInTx(
+async function assertOwnedAccountInTx(
   tx: Pick<DB, "select">,
   userId: string,
   accountId: string | null,
 ) {
   if (accountId === null) return;
-  const found = tx
-    .select({ id: accounts.id })
-    .from(accounts)
-    .where(and(eq(accounts.userId, userId), eq(accounts.id, accountId)))
-    .limit(1)
-    .get();
+  const found = await first(
+    tx
+      .select({ id: accounts.id })
+      .from(accounts)
+      .where(and(eq(accounts.userId, userId), eq(accounts.id, accountId)))
+      .limit(1),
+  );
   if (!found) {
     throw new LedgerError(
       "invalid",
@@ -188,18 +191,19 @@ function assertOwnedAccountInTx(
   }
 }
 
-function assertOwnedDocumentInTx(
+async function assertOwnedDocumentInTx(
   tx: Pick<DB, "select">,
   userId: string,
   documentId: string | null,
 ) {
   if (documentId === null) return;
-  const found = tx
-    .select({ id: documents.id })
-    .from(documents)
-    .where(and(eq(documents.userId, userId), eq(documents.id, documentId)))
-    .limit(1)
-    .get();
+  const found = await first(
+    tx
+      .select({ id: documents.id })
+      .from(documents)
+      .where(and(eq(documents.userId, userId), eq(documents.id, documentId)))
+      .limit(1),
+  );
   if (!found) throw notFound("Document");
 }
 
@@ -220,24 +224,25 @@ export async function createBill(
   const ext = options.external;
   let view: BillView;
   try {
-    view = getDB().transaction((tx) => {
-      assertOwnedAccountInTx(tx, userId, input.expectedAccountId);
-      assertOwnedDocumentInTx(tx, userId, options.documentId ?? null);
-      const row = tx
-        .insert(bills)
-        .values({
-          ...input,
-          userId,
-          documentId: options.documentId ?? null,
-          externalSource: ext?.externalSource ?? null,
-          externalRef: ext?.externalRef ?? null,
-          externalUrl: ext?.externalUrl ?? null,
-          extraction: options.extraction
-            ? JSON.stringify(options.extraction)
-            : null,
-        })
-        .returning()
-        .get();
+    view = await transaction(async (tx) => {
+      await assertOwnedAccountInTx(tx, userId, input.expectedAccountId);
+      await assertOwnedDocumentInTx(tx, userId, options.documentId ?? null);
+      const row = (await first(
+        tx
+          .insert(bills)
+          .values({
+            ...input,
+            userId,
+            documentId: options.documentId ?? null,
+            externalSource: ext?.externalSource ?? null,
+            externalRef: ext?.externalRef ?? null,
+            externalUrl: ext?.externalUrl ?? null,
+            extraction: options.extraction
+              ? JSON.stringify(options.extraction)
+              : null,
+          })
+          .returning(),
+      ))!;
       return toView(row);
     });
   } catch (err) {
@@ -246,25 +251,27 @@ export async function createBill(
     }
     throw err;
   }
-  emitBillChanged(userId, view.id);
+  afterCommit(() => emitBillChanged(userId, view.id));
   return view;
 }
 
-function allocationCountInTx(
+async function allocationCountInTx(
   tx: Pick<DB, "select">,
   userId: string,
   billId: string,
-): number {
-  return tx
-    .select({ n: count() })
-    .from(billAllocations)
-    .where(
-      and(
-        eq(billAllocations.userId, userId),
-        eq(billAllocations.billId, billId),
-      ),
-    )
-    .get()!.n;
+): Promise<number> {
+  return (await first(
+    tx
+      .select({ n: count() })
+      .from(billAllocations)
+      .where(
+        and(
+          eq(billAllocations.userId, userId),
+          eq(billAllocations.billId, billId),
+        ),
+      )
+      .limit(1),
+  ))!.n;
 }
 
 /**
@@ -277,12 +284,12 @@ export async function updateBill(
   id: string,
   input: BillInput,
 ): Promise<BillView> {
-  const view = getDB().transaction((tx) => {
-    const current = getBillInTx(tx, userId, id);
-    assertOwnedAccountInTx(tx, userId, input.expectedAccountId);
+  const view = await transaction(async (tx) => {
+    const current = await getBillInTx(tx, userId, id);
+    await assertOwnedAccountInTx(tx, userId, input.expectedAccountId);
     if (
       (input.kind !== current.kind || input.currency !== current.currency) &&
-      allocationCountInTx(tx, userId, id) > 0
+      (await allocationCountInTx(tx, userId, id)) > 0
     ) {
       throw new LedgerError(
         "conflict",
@@ -290,16 +297,17 @@ export async function updateBill(
         input.kind !== current.kind ? "kind" : "currency",
       );
     }
-    const row = tx
-      .update(bills)
-      .set(input)
-      .where(and(eq(bills.userId, userId), eq(bills.id, id)))
-      .returning()
-      .get();
+    const row = await first(
+      tx
+        .update(bills)
+        .set(input)
+        .where(and(eq(bills.userId, userId), eq(bills.id, id)))
+        .returning(),
+    );
     if (!row) throw notFound("Bill");
     return toView(row);
   });
-  emitBillChanged(userId, id);
+  afterCommit(() => emitBillChanged(userId, id));
   return view;
 }
 
@@ -349,7 +357,7 @@ export async function setBillCancelled(
     .where(and(eq(bills.userId, userId), eq(bills.id, id)))
     .returning();
   if (!row) throw notFound("Bill");
-  emitBillChanged(userId, id);
+  afterCommit(() => emitBillChanged(userId, id));
   return toView(row);
 }
 
@@ -364,15 +372,16 @@ export async function attachDocument(
   billId: string,
   documentId: string,
 ): Promise<BillView> {
-  const { view, previous } = getDB().transaction((tx) => {
-    const current = getBillInTx(tx, userId, billId);
-    assertOwnedDocumentInTx(tx, userId, documentId);
-    const row = tx
-      .update(bills)
-      .set({ documentId })
-      .where(and(eq(bills.userId, userId), eq(bills.id, billId)))
-      .returning()
-      .get();
+  const { view, previous } = await transaction(async (tx) => {
+    const current = await getBillInTx(tx, userId, billId);
+    await assertOwnedDocumentInTx(tx, userId, documentId);
+    const row = await first(
+      tx
+        .update(bills)
+        .set({ documentId })
+        .where(and(eq(bills.userId, userId), eq(bills.id, billId)))
+        .returning(),
+    );
     if (!row) throw notFound("Bill");
     return { view: toView(row), previous: current.documentId };
   });

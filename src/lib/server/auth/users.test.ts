@@ -240,7 +240,7 @@ describe("users", () => {
       );
       expect(await listUsers()).toHaveLength(2);
       const seen: string[] = [];
-      await deleteUser(admin.id, member.id, (_tx, t) => {
+      await deleteUser(admin.id, member.id, async (_tx, t) => {
         seen.push(t.username);
       });
       expect(seen).toEqual([member.username]);
@@ -257,8 +257,10 @@ describe("users", () => {
             password: "a-long-enough-password",
             role: "member",
           },
-          (tx, user) => {
-            recordAdminActionInTx(tx, actor, "user_create", { target: user });
+          async (tx, user) => {
+            await recordAdminActionInTx(tx, actor, "user_create", {
+              target: user,
+            });
             throw new Error("later step failed");
           },
         ),

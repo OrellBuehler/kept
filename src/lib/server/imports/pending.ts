@@ -290,19 +290,22 @@ export async function deletePendingRow(
   return deleted.length > 0;
 }
 
-/** Sync: runs inside the transaction of confirmImport. */
-export function deletePendingRowInTx(
+/** Runs inside the transaction of confirmImport. */
+export async function deletePendingRowInTx(
   tx: Pick<DB, "delete">,
   userId: string,
   pendingId: string,
-): boolean {
+): Promise<boolean> {
   const id = checkId(pendingId);
   return (
-    tx
-      .delete(pendingImports)
-      .where(and(eq(pendingImports.userId, userId), eq(pendingImports.id, id)))
-      .returning({ id: pendingImports.id })
-      .all().length > 0
+    (
+      await tx
+        .delete(pendingImports)
+        .where(
+          and(eq(pendingImports.userId, userId), eq(pendingImports.id, id)),
+        )
+        .returning({ id: pendingImports.id })
+    ).length > 0
   );
 }
 

@@ -2,7 +2,7 @@ import { asc, eq } from "drizzle-orm";
 import { describe, expect, it } from "vitest";
 import { createTestUser } from "$lib/testing/auth";
 import { useTestDB } from "$lib/testing/db";
-import { first, isUniqueViolation, users } from "./db";
+import { first, isUniqueViolation, users } from "./index";
 
 describe("first", () => {
   const ctx = useTestDB();
@@ -59,6 +59,30 @@ describe("isUniqueViolation", () => {
     expect(
       isUniqueViolation(new Error("pg", { cause: { code: "23505" } })),
     ).toBe(true);
+  });
+
+  it("recognises a primary-key conflict and the Bun PostgreSQL error shape", () => {
+    const pk = Object.assign(new Error("x"), {
+      code: "SQLITE_CONSTRAINT_PRIMARYKEY",
+    });
+    expect(isUniqueViolation(pk)).toBe(true);
+    // Bun puts the SQLSTATE in errno (a string) and its own code in `code`.
+    const bunPg = Object.assign(new Error("duplicate key"), {
+      name: "PostgresError",
+      code: "ERR_POSTGRES_SERVER_ERROR",
+      errno: "23505",
+    });
+    expect(isUniqueViolation(bunPg)).toBe(true);
+    expect(isUniqueViolation(new Error("Failed query", { cause: bunPg }))).toBe(
+      true,
+    );
+    const notNull = Object.assign(new Error("x"), {
+      code: "ERR_POSTGRES_SERVER_ERROR",
+      errno: "23502",
+    });
+    expect(isUniqueViolation(notNull)).toBe(false);
+    // SQLite's numeric errno is not a SQLSTATE.
+    expect(isUniqueViolation({ errno: 2067 })).toBe(false);
   });
 
   it("is false for other failures and for non-errors", async () => {

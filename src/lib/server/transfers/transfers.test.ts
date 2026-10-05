@@ -7,6 +7,7 @@ import {
   getDB,
   transactions,
   transfers,
+  transaction,
 } from "$lib/server/db";
 import { allocate } from "$lib/server/bills/allocations";
 import { candidateTransactions } from "$lib/server/bills/candidates";
@@ -358,7 +359,7 @@ describe("linkTransfers", () => {
     await linkTransfers(user.id, {});
     expect(await listNeedsAmount(user.id, eur.id)).toHaveLength(1);
 
-    getDB().transaction((tx) => removeMirrors(tx, user.id, eur.id));
+    await transaction(async (tx) => removeMirrors(tx, user.id, eur.id));
     expect(await listNeedsAmount(user.id)).toEqual([]);
     expect(await countMirrors(user.id, b.id)).toBe(1);
   });
@@ -657,7 +658,7 @@ describe("foreign currency transfers", () => {
     });
     expect((await linkTransfers(user.id, {})).needsAmount).toBe(1);
     const credit = await euroCredit(user, eur.id);
-    const result = getDB().transaction((tx) =>
+    const result = await transaction(async (tx) =>
       linkAfterWrite(tx, user.id, eur.id, [credit.id], [credit.bookingDate]),
     );
     expect(result).toMatchObject({ paired: 1, needsAmount: 0, mirrored: 0 });
@@ -1418,10 +1419,10 @@ describe("keeping links valid", () => {
         expect.objectContaining({ method: "paired", status: "linked" }),
       ]);
       expect(
-        getDB().transaction((tx) => revalidateLinks(tx, user.id, eur.id)),
+        await transaction(async (tx) => revalidateLinks(tx, user.id, eur.id)),
       ).toBe(0);
       expect(
-        getDB().transaction((tx) => revalidateLinks(tx, user.id, a.id)),
+        await transaction(async (tx) => revalidateLinks(tx, user.id, a.id)),
       ).toBe(0);
       await updateTransaction(user.id, out.id, edit(out, { description: "x" }));
       expect(await allTransfers()).toEqual([
@@ -1947,16 +1948,18 @@ describe("consumers", () => {
   });
 });
 
-describe("the synchronous twins used inside transactions", () => {
+describe("the in-transaction variants", () => {
   it("loadPlanAccountsInTx matches loadPlanAccounts and only sees the user's accounts", async () => {
     const { user, a, b } = await setup();
     const other = await createTestUser();
     await seedAccount(other.id, { name: "Theirs", iban: EXAMPLE_IBAN_THIRD });
-    const inTx = getDB().transaction((tx) => loadPlanAccountsInTx(tx, user.id));
+    const inTx = await transaction(async (tx) =>
+      loadPlanAccountsInTx(tx, user.id),
+    );
     expect(inTx).toEqual(await loadPlanAccounts(user.id));
     expect(inTx.map((p) => p.id).sort()).toEqual([a.id, b.id].sort());
     expect(
-      getDB().transaction((tx) => loadPlanAccountsInTx(tx, other.id)),
+      await transaction(async (tx) => loadPlanAccountsInTx(tx, other.id)),
     ).toHaveLength(1);
   });
 
@@ -1967,10 +1970,10 @@ describe("the synchronous twins used inside transactions", () => {
     const other = await createTestUser();
     expect(await countMirrors(user.id, b.id)).toBe(1);
     expect(
-      getDB().transaction((tx) => countMirrorsInTx(tx, user.id, b.id)),
+      await transaction(async (tx) => countMirrorsInTx(tx, user.id, b.id)),
     ).toBe(1);
     expect(
-      getDB().transaction((tx) => countMirrorsInTx(tx, other.id, b.id)),
+      await transaction(async (tx) => countMirrorsInTx(tx, other.id, b.id)),
     ).toBe(0);
   });
 
@@ -1991,14 +1994,16 @@ describe("the synchronous twins used inside transactions", () => {
     const viaDb = await findReplacements(user.id, b.id, rows);
     expect(viaDb.size).toBe(1);
     expect(
-      getDB().transaction((tx) =>
+      await transaction(async (tx) =>
         findReplacementsInTx(tx, user.id, b.id, rows),
       ),
     ).toEqual(viaDb);
     const other = await createTestUser();
     expect(
-      getDB().transaction((tx) =>
-        findReplacementsInTx(tx, other.id, b.id, rows),
+      (
+        await transaction(async (tx) =>
+          findReplacementsInTx(tx, other.id, b.id, rows),
+        )
       ).size,
     ).toBe(0);
   });
@@ -2006,12 +2011,12 @@ describe("the synchronous twins used inside transactions", () => {
   it("linkTransfersInTx joins the caller's transaction, linkTransfers opens its own", async () => {
     const { user, send } = await setup();
     await send();
-    expect(() =>
-      getDB().transaction((tx) => {
-        linkTransfersInTx(tx, user.id);
+    await expect(
+      transaction(async (tx) => {
+        await linkTransfersInTx(tx, user.id);
         throw new Error("rollback");
       }),
-    ).toThrow("rollback");
+    ).rejects.toThrow("rollback");
     expect(await allTransfers()).toEqual([]);
     expect(await linkTransfers(user.id)).toMatchObject({ mirrored: 1 });
     expect(await allTransfers()).toHaveLength(1);

@@ -1,7 +1,13 @@
-import { and, eq, inArray, ne } from "drizzle-orm";
+import { and, eq, inArray, ne, sql } from "drizzle-orm";
 import { minor, type Minor } from "$lib/money";
 import type { Cadence, SeriesStatus } from "$lib/recurring-types";
-import { type DB, getDB, recurringSeries, transactions } from "$lib/server/db";
+import {
+  type DB,
+  getDB,
+  recurringSeries,
+  transaction,
+  transactions,
+} from "$lib/server/db";
 import { addDays } from "$lib/server/dashboard/dates";
 import { localToday } from "$lib/server/ledger/balances";
 import { LedgerError, notFound } from "$lib/server/ledger/errors";
@@ -89,11 +95,10 @@ function toView(row: Row, today: string): RecurringView {
   };
 }
 
-type Tx = Pick<DB, "select" | "insert" | "update" | "delete">;
+const MAX_SYNC_ATTEMPTS = 3;
 
-/** Sync: runs inside the transaction of syncRecurring. */
-function loadTransactionsInTx(tx: Tx, userId: string): DetectInput[] {
-  return tx
+async function loadTransactions(userId: string): Promise<DetectInput[]> {
+  return getDB()
     .select({
       bookingDate: transactions.bookingDate,
       amount: transactions.amount,
@@ -106,89 +111,140 @@ function loadTransactionsInTx(tx: Tx, userId: string): DetectInput[] {
     .from(transactions)
     .where(
       and(eq(transactions.userId, userId), ne(transactions.source, "mirror")),
-    )
-    .all();
+    );
 }
 
 /**
- * Re-runs detection over the user's transactions and stores the result. The
- * transactions, the stored series and the writes share one transaction, so two
- * overlapping runs cannot both insert a series or overwrite newer statistics
- * with older ones. New
+ * A cheap summary of the rows detection reads. It changes when a transaction
+ * is added (count, newest `seq`), removed (count) or edited (newest
+ * `updated_at`). Replacing one row by another that carries the same timestamp
+ * still moves the newest `seq`. No sum is used: it can cancel out, and the
+ * three aggregates are the same on every database backend.
+ */
+async function sourceFingerprint(tx: DB, userId: string): Promise<string> {
+  const [row] = await tx
+    .select({
+      n: sql<number>`count(*)`.mapWith(Number),
+      updated: sql<number>`coalesce(max(${transactions.updatedAt}), 0)`.mapWith(
+        Number,
+      ),
+      seq: sql<number>`coalesce(max(${transactions.seq}), 0)`.mapWith(Number),
+    })
+    .from(transactions)
+    .where(
+      and(eq(transactions.userId, userId), ne(transactions.source, "mirror")),
+    );
+  return `${row?.n}:${row?.updated}:${row?.seq}`;
+}
+
+/**
+ * Re-runs detection over the user's transactions and stores the result. New
  * series start as "suggested"; the status of known ones (confirmed or
  * dismissed) and any hand-edited name, cadence or amount are kept, only their
  * statistics (dates, last amount) are refreshed. Suggestions that no longer
  * hold are removed.
+ *
+ * Detection is CPU-heavy, so it runs outside the transaction (the database
+ * stays available meanwhile). The transaction is short: it re-reads the stored
+ * series and the fingerprint of the source rows, and applies the diff only if
+ * the source did not change since detection ran; otherwise it detects again.
+ * That keeps two overlapping runs from both inserting a series or overwriting
+ * newer statistics with older ones. After the last attempt the detection is
+ * redone inside the transaction instead, over the rows that transaction sees,
+ * so a stale result is never applied.
  */
 export async function syncRecurring(userId: string): Promise<void> {
-  getDB().transaction((tx) => {
-    const detected = detectSeries(loadTransactionsInTx(tx, userId));
-    const existing = new Map(
-      tx
+  for (let attempt = 1; ; attempt++) {
+    const fingerprint = await sourceFingerprint(getDB(), userId);
+    const detected = detectSeries(await loadTransactions(userId));
+    const applied = await transaction(async (tx) => {
+      if ((await sourceFingerprint(tx, userId)) === fingerprint) {
+        await applyDetected(tx, userId, detected);
+        return true;
+      }
+      if (attempt < MAX_SYNC_ATTEMPTS) return false;
+      // Writers kept changing the rows. The transaction now holds the
+      // database, so what it reads is what it applies; detection is the only
+      // work done under the lock, and it needs no further queries.
+      await applyDetected(
+        tx,
+        userId,
+        detectSeries(await loadTransactions(userId)),
+      );
+      return true;
+    });
+    if (applied) return;
+  }
+}
+
+async function applyDetected(
+  tx: DB,
+  userId: string,
+  detected: ReturnType<typeof detectSeries>,
+): Promise<void> {
+  const existing = new Map(
+    (
+      await tx
         .select()
         .from(recurringSeries)
         .where(eq(recurringSeries.userId, userId))
-        .all()
-        .map((r) => [r.key, r]),
-    );
-    for (const d of detected) {
-      const stats = {
-        counterpartyIban: d.counterpartyIban,
-        firstDate: d.firstDate,
-        lastDate: d.lastDate,
-        lastAmount: d.lastAmount,
-        previousAmount: d.previousAmount,
-        occurrences: d.occurrences,
-      };
-      const row = existing.get(d.key);
-      existing.delete(d.key);
-      if (!row) {
-        tx.insert(recurringSeries)
-          .values({
-            userId,
-            key: d.key,
-            name: d.name,
-            cadence: d.cadence,
-            currency: d.currency,
-            amount: d.amount,
-            ...stats,
-          })
-          .run();
-      } else {
-        tx.update(recurringSeries)
-          .set(
-            row.edited
-              ? stats
-              : {
-                  ...stats,
-                  name: d.name,
-                  cadence: d.cadence,
-                  amount: d.amount,
-                },
-          )
-          .where(
-            and(
-              eq(recurringSeries.userId, userId),
-              eq(recurringSeries.id, row.id),
-            ),
-          )
-          .run();
-      }
-    }
-    const stale = [...existing.values()]
-      .filter((r) => r.status === "suggested" && !r.edited)
-      .map((r) => r.id);
-    if (stale.length > 0) {
-      tx.delete(recurringSeries)
+    ).map((r) => [r.key, r]),
+  );
+  for (const d of detected) {
+    const stats = {
+      counterpartyIban: d.counterpartyIban,
+      firstDate: d.firstDate,
+      lastDate: d.lastDate,
+      lastAmount: d.lastAmount,
+      previousAmount: d.previousAmount,
+      occurrences: d.occurrences,
+    };
+    const row = existing.get(d.key);
+    existing.delete(d.key);
+    if (!row) {
+      await tx.insert(recurringSeries).values({
+        userId,
+        key: d.key,
+        name: d.name,
+        cadence: d.cadence,
+        currency: d.currency,
+        amount: d.amount,
+        ...stats,
+      });
+    } else {
+      await tx
+        .update(recurringSeries)
+        .set(
+          row.edited
+            ? stats
+            : {
+                ...stats,
+                name: d.name,
+                cadence: d.cadence,
+                amount: d.amount,
+              },
+        )
         .where(
           and(
             eq(recurringSeries.userId, userId),
-            inArray(recurringSeries.id, stale),
+            eq(recurringSeries.id, row.id),
           ),
-        )
-        .run();
+        );
     }
-  });
+  }
+  const stale = [...existing.values()]
+    .filter((r) => r.status === "suggested" && !r.edited)
+    .map((r) => r.id);
+  if (stale.length > 0) {
+    await tx
+      .delete(recurringSeries)
+      .where(
+        and(
+          eq(recurringSeries.userId, userId),
+          inArray(recurringSeries.id, stale),
+        ),
+      );
+  }
 }
 
 /** Stored series for the user, newest payment first. Does not run detection. */
@@ -260,19 +316,19 @@ export async function editSeries(
   id: string,
   input: SeriesEditInput,
 ): Promise<void> {
-  getDB().transaction((tx) => {
-    const row = tx
+  await transaction(async (tx) => {
+    const [row] = await tx
       .select()
       .from(recurringSeries)
       .where(
         and(eq(recurringSeries.userId, userId), eq(recurringSeries.id, id)),
       )
-      .limit(1)
-      .get();
+      .limit(1);
     if (!row) throw notFound("Recurring payment");
     const parsed = parseEditedAmount(input.amount, row.currency);
     if (!parsed.ok) throw new LedgerError("invalid", parsed.message, "amount");
-    tx.update(recurringSeries)
+    await tx
+      .update(recurringSeries)
       .set({
         name: input.name,
         cadence: input.cadence,
@@ -281,8 +337,7 @@ export async function editSeries(
       })
       .where(
         and(eq(recurringSeries.userId, userId), eq(recurringSeries.id, id)),
-      )
-      .run();
+      );
   });
 }
 

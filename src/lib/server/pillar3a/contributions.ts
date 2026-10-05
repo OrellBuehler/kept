@@ -31,6 +31,7 @@ import {
   portfolios,
   transactions,
   type DB,
+  transaction,
 } from "$lib/server/db";
 import { localToday } from "$lib/server/ledger/balances";
 import { LedgerError, notFound } from "$lib/server/ledger/errors";
@@ -152,12 +153,12 @@ export async function detectedContributions(
   return toDetected(await detectedQuery(getDB(), userId));
 }
 
-/** Sync twin of detectedContributions, for the body of a transaction. */
-function detectedContributionsInTx(
+/** `detectedContributions` on a transaction you already hold. */
+async function detectedContributionsInTx(
   tx: Reader,
   userId: string,
-): DetectedContribution[] {
-  return toDetected(detectedQuery(tx, userId).all());
+): Promise<DetectedContribution[]> {
+  return toDetected(await detectedQuery(tx, userId));
 }
 
 function loadAllQueries(conn: Reader, userId: string) {
@@ -277,14 +278,17 @@ async function loadAll(userId: string): Promise<ContributionView[]> {
   );
 }
 
-/** Sync twin of loadAll, for the body of a transaction. */
-function loadAllInTx(tx: Reader, userId: string): ContributionView[] {
+/** `loadAll` on a transaction you already hold. */
+async function loadAllInTx(
+  tx: Reader,
+  userId: string,
+): Promise<ContributionView[]> {
   const q = loadAllQueries(tx, userId);
   return assembleAll(
-    q.portfolios.all(),
-    q.rows.all(),
-    q.gaps.all(),
-    detectedContributionsInTx(tx, userId),
+    await q.portfolios,
+    await q.rows,
+    await q.gaps,
+    await detectedContributionsInTx(tx, userId),
   );
 }
 
@@ -333,9 +337,12 @@ export async function ageBenefitDrawn(userId: string): Promise<boolean> {
   return (await first(ageBenefitQuery(getDB(), userId))) !== undefined;
 }
 
-/** Sync twin of ageBenefitDrawn, for the body of a transaction. */
-function ageBenefitDrawnInTx(tx: Reader, userId: string): boolean {
-  return ageBenefitQuery(tx, userId).get() !== undefined;
+/** `ageBenefitDrawn` on a transaction you already hold. */
+async function ageBenefitDrawnInTx(
+  tx: Reader,
+  userId: string,
+): Promise<boolean> {
+  return (await first(ageBenefitQuery(tx, userId))) !== undefined;
 }
 
 /** The pure buy-in rules over facts the caller loaded. */
@@ -407,29 +414,30 @@ export async function checkBuyIn(
 }
 
 /** Annotation rows whose payment no longer matches a portfolio reference are dead weight; drop them. */
-function pruneOrphanAnnotations(tx: Tx, userId: string) {
+async function pruneOrphanAnnotations(tx: Tx, userId: string) {
   const live = new Set(
-    detectedContributionsInTx(tx, userId).map((d) => d.transactionId),
+    (await detectedContributionsInTx(tx, userId)).map((d) => d.transactionId),
   );
-  const orphans = tx
-    .select({
-      id: pillar3aContributions.id,
-      transactionId: pillar3aContributions.transactionId,
-    })
-    .from(pillar3aContributions)
-    .where(
-      and(
-        eq(pillar3aContributions.userId, userId),
-        isNotNull(pillar3aContributions.transactionId),
-      ),
-    )
-    .all()
+  const orphans = (
+    await tx
+      .select({
+        id: pillar3aContributions.id,
+        transactionId: pillar3aContributions.transactionId,
+      })
+      .from(pillar3aContributions)
+      .where(
+        and(
+          eq(pillar3aContributions.userId, userId),
+          isNotNull(pillar3aContributions.transactionId),
+        ),
+      )
+  )
     .filter((r) => !live.has(r.transactionId!))
     .map((r) => r.id);
   if (orphans.length > 0) {
-    tx.delete(pillar3aContributions)
-      .where(inArray(pillar3aContributions.id, orphans))
-      .run();
+    await tx
+      .delete(pillar3aContributions)
+      .where(inArray(pillar3aContributions.id, orphans));
   }
 }
 
@@ -476,12 +484,11 @@ async function save(
   spec: Spec,
   today: string,
 ): Promise<ContributionSaved> {
-  const db = getDB();
   let savedId = "";
   let warnings: string[] = [];
   try {
-    db.transaction((tx) => {
-      pruneOrphanAnnotations(tx, userId);
+    await transaction(async (tx) => {
+      await pruneOrphanAnnotations(tx, userId);
       const key = spec.transactionId
         ? `tx:${spec.transactionId}`
         : spec.existingId
@@ -492,9 +499,9 @@ async function save(
       if (spec.kind === "buy_in") {
         const check = evaluateBuyIn(
           {
-            views: loadAllInTx(tx, userId),
-            settings: listYearSettingsInTx(tx, userId),
-            ageBenefitDrawn: ageBenefitDrawnInTx(tx, userId),
+            views: await loadAllInTx(tx, userId),
+            settings: await listYearSettingsInTx(tx, userId),
+            ageBenefitDrawn: await ageBenefitDrawnInTx(tx, userId),
           },
           {
             key,
@@ -518,30 +525,31 @@ async function save(
         note: spec.note,
       };
       if (spec.existingId) {
-        tx.update(pillar3aContributions)
+        await tx
+          .update(pillar3aContributions)
           .set(values)
           .where(
             and(
               eq(pillar3aContributions.userId, userId),
               eq(pillar3aContributions.id, spec.existingId),
             ),
-          )
-          .run();
+          );
         savedId = spec.existingId;
       } else {
-        savedId = tx
-          .insert(pillar3aContributions)
-          .values({ ...values, userId, transactionId: spec.transactionId })
-          .returning({ id: pillar3aContributions.id })
-          .get().id;
+        savedId = (await first(
+          tx
+            .insert(pillar3aContributions)
+            .values({ ...values, userId, transactionId: spec.transactionId })
+            .returning({ id: pillar3aContributions.id }),
+        ))!.id;
       }
-      tx.delete(pillar3aBuyInYears)
-        .where(eq(pillar3aBuyInYears.contributionId, savedId))
-        .run();
+      await tx
+        .delete(pillar3aBuyInYears)
+        .where(eq(pillar3aBuyInYears.contributionId, savedId));
       for (const year of gapYears) {
-        tx.insert(pillar3aBuyInYears)
-          .values({ userId, contributionId: savedId, year })
-          .run();
+        await tx
+          .insert(pillar3aBuyInYears)
+          .values({ userId, contributionId: savedId, year });
       }
     });
   } catch (err) {

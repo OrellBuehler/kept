@@ -5,56 +5,7 @@ import globals from "globals";
 import ts from "typescript-eslint";
 import svelteConfig from "./svelte.config.js";
 
-/**
- * Temporary ban on the synchronous bun-sqlite terminals `.all()`, `.get()` and
- * `.run()` everywhere in `src/`: every query is awaited (or goes through
- * `first()`), so the driver swap (2.7) only has to touch the transaction
- * bodies. It keeps converted code from regressing until 2.7 makes the compiler
- * reject these calls and this rule is deleted.
- */
-const SYNC_TERMINAL_BAN_FILES = ["src/**"];
-
-/**
- * The sync terminals stay legal inside the synchronous transaction bodies and
- * the helpers that only run there (until 2.7 makes those async too). Both take
- * the transaction as their first parameter, named `tx`, so the ban skips any
- * call lexically inside a function declared that way.
- */
-const OUTSIDE_TX_BODY =
-  ":not(:matches(FunctionDeclaration, FunctionExpression, ArrowFunctionExpression)[params.0.name='tx'] *)";
-
-/**
- * bun-sqlite transactions are synchronous: an async callback commits (or rolls
- * back) at its first await, and the rest of the body runs outside the
- * transaction. Applies to every TypeScript file until phase 2.7 swaps the driver.
- * A later `no-restricted-syntax` block replaces this one wholesale, so any block
- * that sets the rule for a subset of files must repeat this entry.
- */
-const asyncTransactionBan = {
-  selector:
-    "CallExpression[callee.property.name='transaction'] > :matches(ArrowFunctionExpression, FunctionExpression)[async=true]",
-  message:
-    "bun-sqlite transactions must be synchronous until phase 2.7: do not pass an async callback to .transaction().",
-};
-
-const syncTerminalBan = [
-  {
-    files: SYNC_TERMINAL_BAN_FILES,
-    rules: {
-      "no-restricted-syntax": [
-        "error",
-        asyncTransactionBan,
-        {
-          selector:
-            "CallExpression[arguments.length=0] > MemberExpression.callee[property.name=/^(all|get|run)$/]" +
-            OUTSIDE_TX_BODY,
-          message:
-            "Await the query (or use first()) instead of .all()/.get()/.run().",
-        },
-      ],
-    },
-  },
-];
+import noQueryTerminals from "./eslint-rules/no-query-terminals.js";
 
 export default ts.config(
   {
@@ -126,14 +77,10 @@ export default ts.config(
     },
   },
   {
+    // Builders are awaited, never run through their sync-style terminals; see
+    // the rule for how a builder is recognised (by type, so Map.get is fine).
     files: ["src/**/*.ts"],
-    rules: { "no-restricted-syntax": ["error", asyncTransactionBan] },
-  },
-  ...syncTerminalBan,
-  {
-    // Raw bun:sqlite statements (`db.query(sql).get()`), not drizzle builders:
-    // this test inspects a backup file with the driver directly.
-    files: ["src/lib/server/backup/backup.test.ts"],
-    rules: { "no-restricted-syntax": ["error", asyncTransactionBan] },
+    plugins: { kept: { rules: { "no-query-terminals": noQueryTerminals } } },
+    rules: { "kept/no-query-terminals": "error" },
   },
 );

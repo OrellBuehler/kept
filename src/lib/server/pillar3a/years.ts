@@ -29,12 +29,12 @@ export async function listYearSettings(
   return await yearSettingsQuery(getDB(), userId);
 }
 
-/** Sync twin of listYearSettings, for the body of a transaction. */
-export function listYearSettingsInTx(
+/** `listYearSettings` on a transaction you already hold. */
+export async function listYearSettingsInTx(
   tx: Pick<DB, "select">,
   userId: string,
-): YearSettingView[] {
-  return yearSettingsQuery(tx, userId).all();
+): Promise<YearSettingView[]> {
+  return await yearSettingsQuery(tx, userId);
 }
 
 /** Sets the deduction type (and, for the large deduction, the earned income) of a year. */

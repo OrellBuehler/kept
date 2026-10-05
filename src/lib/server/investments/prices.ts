@@ -8,6 +8,7 @@ import {
   getDB,
   securities,
   securityPrices,
+  transaction,
 } from "$lib/server/db";
 import { LedgerError, notFound } from "$lib/server/ledger/errors";
 import type { PriceInput } from "./schemas";
@@ -45,13 +46,14 @@ const CHUNK = 500;
 
 type Tx = Pick<DB, "select" | "insert" | "update" | "delete">;
 
-function assertSecurityInTx(tx: Tx, userId: string, securityId: string) {
-  const found = tx
-    .select({ id: securities.id })
-    .from(securities)
-    .where(and(eq(securities.userId, userId), eq(securities.id, securityId)))
-    .limit(1)
-    .get();
+async function assertSecurityInTx(tx: Tx, userId: string, securityId: string) {
+  const found = await first(
+    tx
+      .select({ id: securities.id })
+      .from(securities)
+      .where(and(eq(securities.userId, userId), eq(securities.id, securityId)))
+      .limit(1),
+  );
   if (!found) throw notFound("Security");
 }
 
@@ -125,21 +127,22 @@ export async function setManualPrice(
   securityId: string,
   input: PriceInput,
 ): Promise<PriceView> {
-  const row = getDB().transaction((tx) => {
-    assertSecurityInTx(tx, userId, securityId);
-    return tx
-      .insert(securityPrices)
-      .values({ userId, securityId, ...input, source: "manual" })
-      .onConflictDoUpdate({
-        target: [
-          securityPrices.securityId,
-          securityPrices.date,
-          securityPrices.source,
-        ],
-        set: { price: input.price, updatedAt: new Date() },
-      })
-      .returning({ id: securityPrices.id })
-      .get();
+  const row = await transaction(async (tx) => {
+    await assertSecurityInTx(tx, userId, securityId);
+    return (await first(
+      tx
+        .insert(securityPrices)
+        .values({ userId, securityId, ...input, source: "manual" })
+        .onConflictDoUpdate({
+          target: [
+            securityPrices.securityId,
+            securityPrices.date,
+            securityPrices.source,
+          ],
+          set: { price: input.price, updatedAt: new Date() },
+        })
+        .returning({ id: securityPrices.id }),
+    ))!;
   });
   return await getPrice(userId, row.id);
 }
@@ -164,10 +167,11 @@ export async function upsertProviderPrices(
   allRows: readonly PriceRow[],
 ): Promise<number> {
   const rows = allRows.filter((r) => r.price > 0);
-  getDB().transaction((tx) => {
-    assertSecurityInTx(tx, userId, securityId);
+  await transaction(async (tx) => {
+    await assertSecurityInTx(tx, userId, securityId);
     for (let i = 0; i < rows.length; i += CHUNK) {
-      tx.insert(securityPrices)
+      await tx
+        .insert(securityPrices)
         .values(
           rows.slice(i, i + CHUNK).map((r) => ({
             userId,
@@ -187,8 +191,7 @@ export async function upsertProviderPrices(
             price: sql`excluded.price`,
             updatedAt: new Date(),
           },
-        })
-        .run();
+        });
     }
   });
   return rows.length;
@@ -198,9 +201,10 @@ export async function upsertFxRates(
   userId: string,
   rows: readonly FxRateRow[],
 ): Promise<number> {
-  getDB().transaction((tx) => {
+  await transaction(async (tx) => {
     for (let i = 0; i < rows.length; i += CHUNK) {
-      tx.insert(fxRates)
+      await tx
+        .insert(fxRates)
         .values(
           rows.slice(i, i + CHUNK).map((r) => ({
             userId,
@@ -220,8 +224,7 @@ export async function upsertFxRates(
             fxRates.source,
           ],
           set: { rate: sql`excluded.rate`, updatedAt: new Date() },
-        })
-        .run();
+        });
     }
   });
   return rows.length;

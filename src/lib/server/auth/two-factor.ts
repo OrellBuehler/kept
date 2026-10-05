@@ -9,6 +9,7 @@ import {
   sessions,
   totpCredentials,
   users,
+  transaction,
 } from "$lib/server/db";
 import {
   SecretUnreadableError,
@@ -128,26 +129,27 @@ export async function startTotpEnrolment(
 ): Promise<TotpEnrolment> {
   const secret = generateTotpSecret();
   const encrypted = encryptSecret(secret);
-  getDB().transaction(
-    (tx) => {
-      const existing = tx
-        .select({ confirmedAt: totpCredentials.confirmedAt })
-        .from(totpCredentials)
-        .where(eq(totpCredentials.userId, userId))
-        .limit(1)
-        .get();
+  await transaction(
+    async (tx) => {
+      const existing = await first(
+        tx
+          .select({ confirmedAt: totpCredentials.confirmedAt })
+          .from(totpCredentials)
+          .where(eq(totpCredentials.userId, userId))
+          .limit(1),
+      );
       if (existing?.confirmedAt) {
         throw new AuthError(
           "totp_already_enabled",
           "Authenticator app is already enabled.",
         );
       }
-      tx.delete(totpCredentials)
-        .where(eq(totpCredentials.userId, userId))
-        .run();
-      tx.insert(totpCredentials).values({ userId, secret: encrypted }).run();
+      await tx
+        .delete(totpCredentials)
+        .where(eq(totpCredentials.userId, userId));
+      await tx.insert(totpCredentials).values({ userId, secret: encrypted });
     },
-    { behavior: "immediate" },
+    { lock: `totp-enrolment:${userId}` },
   );
   return { secret, uri: otpauthUri(secret, username) };
 }
@@ -181,19 +183,23 @@ function hashRecoveryCode(code: string): string {
 
 type Tx = Pick<ReturnType<typeof getDB>, "delete" | "insert">;
 
-/** Sync: only runs inside an immediate transaction (a recovery-code set is replaced atomically). */
-function replaceRecoveryCodes(tx: Tx, userId: string): string[] {
-  tx.delete(recoveryCodes).where(eq(recoveryCodes.userId, userId)).run();
+/** Runs inside a transaction, so the recovery-code set is replaced atomically. */
+async function replaceRecoveryCodes(tx: Tx, userId: string): Promise<string[]> {
+  await tx.delete(recoveryCodes).where(eq(recoveryCodes.userId, userId));
   const codes = Array.from({ length: RECOVERY_CODE_COUNT }, newRecoveryCode);
-  tx.insert(recoveryCodes)
-    .values(codes.map((code) => ({ userId, codeHash: hashRecoveryCode(code) })))
-    .run();
+  await tx
+    .insert(recoveryCodes)
+    .values(
+      codes.map((code) => ({ userId, codeHash: hashRecoveryCode(code) })),
+    );
   return codes;
 }
 
 /**
- * Atomically checks `code` against the stored secret and records the matched
- * time step, so the same code (or an older one) is never accepted twice.
+ * Checks `code` against the stored secret and records the matched time step, so
+ * the same code (or an older one) is never accepted twice. The record is a
+ * compare-and-set on the step that was read: of two parallel attempts with the
+ * same code only the one whose update still finds that step wins.
  */
 export async function consumeTotpCode(
   userId: string,
@@ -201,41 +207,47 @@ export async function consumeTotpCode(
   now: number = Date.now(),
   opts: { confirming?: boolean } = {},
 ): Promise<boolean> {
-  return getDB().transaction(
-    (tx) => {
-      const row = tx
-        .select()
-        .from(totpCredentials)
-        .where(eq(totpCredentials.userId, userId))
-        .limit(1)
-        .get();
-      if (!row) return false;
-      if (!opts.confirming && !row.confirmedAt) return false;
-      // Confirming twice in parallel must not both pass: the check in
-      // confirmTotpEnrolment is not atomic with this one.
-      if (opts.confirming && row.confirmedAt) return false;
-      let secret: string;
-      try {
-        secret = decryptSecret(row.secret);
-      } catch (err) {
-        if (!(err instanceof SecretUnreadableError)) throw err;
-        // KEPT_SECRET_KEY changed: no authenticator code can match; recovery codes and an admin reset still work.
-        console.warn("totp code rejected", err.code);
-        return false;
-      }
-      const step = verifyTotp(secret, code, now, row.lastStep);
-      if (step === null) return false;
-      tx.update(totpCredentials)
-        .set({
-          lastStep: step,
-          ...(opts.confirming ? { confirmedAt: new Date(now) } : {}),
-        })
-        .where(eq(totpCredentials.userId, userId))
-        .run();
-      return true;
-    },
-    { behavior: "immediate" },
+  const row = await first(
+    getDB()
+      .select()
+      .from(totpCredentials)
+      .where(eq(totpCredentials.userId, userId))
+      .limit(1),
   );
+  if (!row) return false;
+  if (!opts.confirming && !row.confirmedAt) return false;
+  // Confirming twice in parallel must not both pass: the check in
+  // confirmTotpEnrolment is not atomic with this one.
+  if (opts.confirming && row.confirmedAt) return false;
+  let secret: string;
+  try {
+    secret = decryptSecret(row.secret);
+  } catch (err) {
+    if (!(err instanceof SecretUnreadableError)) throw err;
+    // KEPT_SECRET_KEY changed: no authenticator code can match; recovery codes and an admin reset still work.
+    console.warn("totp code rejected", err.code);
+    return false;
+  }
+  const step = verifyTotp(secret, code, now, row.lastStep);
+  if (step === null) return false;
+  const claimed = await getDB()
+    .update(totpCredentials)
+    .set({
+      lastStep: step,
+      ...(opts.confirming ? { confirmedAt: new Date(now) } : {}),
+    })
+    .where(
+      and(
+        eq(totpCredentials.userId, userId),
+        eq(totpCredentials.lastStep, row.lastStep),
+        eq(totpCredentials.secret, row.secret),
+        opts.confirming
+          ? isNull(totpCredentials.confirmedAt)
+          : isNotNull(totpCredentials.confirmedAt),
+      ),
+    )
+    .returning({ userId: totpCredentials.userId });
+  return claimed.length === 1;
 }
 
 /** Confirms enrolment with a code from the app and returns the recovery codes (shown once). */
@@ -257,9 +269,9 @@ export async function confirmTotpEnrolment(
   if (!(await consumeTotpCode(userId, code, now, { confirming: true }))) {
     throw new AuthError("invalid_code", "That code is not valid.");
   }
-  const codes = getDB().transaction((tx) => replaceRecoveryCodes(tx, userId), {
-    behavior: "immediate",
-  });
+  const codes = await transaction(
+    async (tx) => await replaceRecoveryCodes(tx, userId),
+  );
   await logAuthEvent("totp_enabled", userId);
   return codes;
 }
@@ -442,9 +454,9 @@ export async function disableTotp(
     );
   }
   await reauthenticate(userId, password, code, limiter, now);
-  getDB().transaction((tx) => {
-    tx.delete(totpCredentials).where(eq(totpCredentials.userId, userId)).run();
-    tx.delete(recoveryCodes).where(eq(recoveryCodes.userId, userId)).run();
+  await transaction(async (tx) => {
+    await tx.delete(totpCredentials).where(eq(totpCredentials.userId, userId));
+    await tx.delete(recoveryCodes).where(eq(recoveryCodes.userId, userId));
   });
   await logAuthEvent("totp_disabled", userId);
 }
@@ -463,9 +475,9 @@ export async function regenerateRecoveryCodes(
     );
   }
   await reauthenticate(userId, password, code, limiter, now);
-  const codes = getDB().transaction((tx) => replaceRecoveryCodes(tx, userId), {
-    behavior: "immediate",
-  });
+  const codes = await transaction(
+    async (tx) => await replaceRecoveryCodes(tx, userId),
+  );
   await logAuthEvent("recovery_codes_regenerated", userId);
   return codes;
 }
@@ -480,43 +492,29 @@ export async function resetTwoFactor(
   keepSessionId?: string,
   audit?: InTransaction<{ id: string; username: string }>,
 ): Promise<void> {
-  const afterCommit = getDB().transaction(
-    (tx) => {
-      const target = tx
+  await transaction(async (tx) => {
+    const target = await first(
+      tx
         .select({ id: users.id, username: users.username })
         .from(users)
         .where(eq(users.id, targetId))
-        .limit(1)
-        .get();
-      if (!target) throw new AuthError("user_not_found", "User not found.");
-      tx.delete(totpCredentials)
-        .where(eq(totpCredentials.userId, targetId))
-        .run();
-      tx.delete(recoveryCodes).where(eq(recoveryCodes.userId, targetId)).run();
-      tx.delete(passkeys).where(eq(passkeys.userId, targetId)).run();
-      tx.delete(authChallenges)
-        .where(eq(authChallenges.userId, targetId))
-        .run();
-      userSessionsDelete(
-        tx,
-        targetId,
-        actorId === targetId ? keepSessionId : undefined,
-      ).run();
-      const logEvent = logAuthEventInTx(
-        tx,
-        "two_factor_reset",
-        targetId,
-        actorId,
-      );
-      const logAudit = audit?.(tx, target);
-      return () => {
-        logEvent();
-        logAudit?.();
-      };
-    },
-    { behavior: "immediate" },
-  );
-  afterCommit();
+        .limit(1),
+    );
+    if (!target) throw new AuthError("user_not_found", "User not found.");
+    await tx
+      .delete(totpCredentials)
+      .where(eq(totpCredentials.userId, targetId));
+    await tx.delete(recoveryCodes).where(eq(recoveryCodes.userId, targetId));
+    await tx.delete(passkeys).where(eq(passkeys.userId, targetId));
+    await tx.delete(authChallenges).where(eq(authChallenges.userId, targetId));
+    await userSessionsDelete(
+      tx,
+      targetId,
+      actorId === targetId ? keepSessionId : undefined,
+    );
+    await logAuthEventInTx(tx, "two_factor_reset", targetId, actorId);
+    await audit?.(tx, target);
+  });
 }
 
 export async function usersWithTwoFactor(): Promise<Set<string>> {

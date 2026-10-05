@@ -21,6 +21,8 @@ import {
   pillar3aContributions,
   transactions,
   transfers,
+  first,
+  transaction,
 } from "$lib/server/db";
 import { getAccount } from "$lib/server/ledger/accounts";
 import { notFound } from "$lib/server/ledger/errors";
@@ -245,65 +247,69 @@ export async function undoImport(
   importId: string,
   accountId?: string,
 ): Promise<{ accountId: string; removedTransactions: number }> {
-  return getDB().transaction((tx) => {
-    const found = tx
-      .select({
-        accountId: imports.accountId,
-        n: imports.newCount,
-        closingDate: imports.closingBalanceDate,
-      })
-      .from(imports)
-      .where(and(eq(imports.id, importId), eq(imports.userId, userId)))
-      .get();
+  return await transaction(async (tx) => {
+    const found = await first(
+      tx
+        .select({
+          accountId: imports.accountId,
+          n: imports.newCount,
+          closingDate: imports.closingBalanceDate,
+        })
+        .from(imports)
+        .where(and(eq(imports.id, importId), eq(imports.userId, userId)))
+        .limit(1),
+    );
     if (!found || (accountId !== undefined && found.accountId !== accountId)) {
       throw notFound("Import");
     }
-    tx.delete(imports)
-      .where(and(eq(imports.id, importId), eq(imports.userId, userId)))
-      .run();
+    await tx
+      .delete(imports)
+      .where(and(eq(imports.id, importId), eq(imports.userId, userId)));
 
     if (found.closingDate !== null) {
-      const present = tx
-        .select({ id: balanceSnapshots.id })
-        .from(balanceSnapshots)
-        .where(
-          and(
-            eq(balanceSnapshots.accountId, found.accountId),
-            eq(balanceSnapshots.date, found.closingDate),
-            eq(balanceSnapshots.source, "import"),
-          ),
-        )
-        .get();
-      if (!present) {
-        const heir = tx
-          .select({ id: imports.id, amount: imports.closingBalance })
-          .from(imports)
+      const present = await first(
+        tx
+          .select({ id: balanceSnapshots.id })
+          .from(balanceSnapshots)
           .where(
             and(
-              eq(imports.userId, userId),
-              eq(imports.accountId, found.accountId),
-              eq(imports.closingBalanceDate, found.closingDate),
-              isNotNull(imports.closingBalance),
+              eq(balanceSnapshots.accountId, found.accountId),
+              eq(balanceSnapshots.date, found.closingDate),
+              eq(balanceSnapshots.source, "import"),
             ),
           )
-          .orderBy(desc(imports.createdAt), desc(imports.id))
-          .get();
+          .limit(1),
+      );
+      if (!present) {
+        const heir = await first(
+          tx
+            .select({ id: imports.id, amount: imports.closingBalance })
+            .from(imports)
+            .where(
+              and(
+                eq(imports.userId, userId),
+                eq(imports.accountId, found.accountId),
+                eq(imports.closingBalanceDate, found.closingDate),
+                isNotNull(imports.closingBalance),
+              ),
+            )
+            .orderBy(desc(imports.createdAt), desc(imports.id))
+            .limit(1),
+        );
         if (heir && heir.amount !== null) {
-          tx.insert(balanceSnapshots)
-            .values({
-              userId,
-              accountId: found.accountId,
-              importId: heir.id,
-              source: "import",
-              date: found.closingDate,
-              amount: heir.amount,
-            })
-            .run();
+          await tx.insert(balanceSnapshots).values({
+            userId,
+            accountId: found.accountId,
+            importId: heir.id,
+            source: "import",
+            date: found.closingDate,
+            amount: heir.amount,
+          });
         }
       }
     }
     // Real rows that had replaced mirrors are gone: the transfers they stood for are mirrored again.
-    linkTransfersInTx(tx, userId, { targetAccountId: found.accountId });
+    await linkTransfersInTx(tx, userId, { targetAccountId: found.accountId });
     return { accountId: found.accountId, removedTransactions: found.n };
   });
 }

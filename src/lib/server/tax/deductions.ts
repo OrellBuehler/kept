@@ -7,6 +7,8 @@ import {
   deductionMappings,
   getDB,
   transactions,
+  first,
+  transaction,
 } from "$lib/server/db";
 import { LedgerError, notFound } from "$lib/server/ledger/errors";
 import { updateUnlessMirror } from "$lib/server/transfers/guard";
@@ -140,32 +142,35 @@ export async function setCategoryDeduction(
   type: DeductionType | null,
 ): Promise<void> {
   // The ownership check and the write are one unit, so the category cannot go in between.
-  getDB().transaction((tx) => {
-    const category = tx
-      .select({ id: categories.id })
-      .from(categories)
-      .where(and(eq(categories.userId, userId), eq(categories.id, categoryId)))
-      .limit(1)
-      .get();
+  await transaction(async (tx) => {
+    const category = await first(
+      tx
+        .select({ id: categories.id })
+        .from(categories)
+        .where(
+          and(eq(categories.userId, userId), eq(categories.id, categoryId)),
+        )
+        .limit(1),
+    );
     if (!category) throw notFound("Category");
     if (type === null) {
-      tx.delete(deductionMappings)
+      await tx
+        .delete(deductionMappings)
         .where(
           and(
             eq(deductionMappings.userId, userId),
             eq(deductionMappings.categoryId, categoryId),
           ),
-        )
-        .run();
+        );
       return;
     }
-    tx.insert(deductionMappings)
+    await tx
+      .insert(deductionMappings)
       .values({ userId, categoryId, deductionType: type })
       .onConflictDoUpdate({
         target: [deductionMappings.userId, deductionMappings.categoryId],
         set: { deductionType: type, updatedAt: new Date() },
-      })
-      .run();
+      });
   });
 }
 

@@ -1,8 +1,11 @@
-import { describe, expect, it } from "vitest";
+import { eq } from "drizzle-orm";
+import { describe, expect, it, vi } from "vitest";
 import { minor } from "$lib/money";
 import { createTestUser } from "$lib/testing/auth";
 import { useTestDB } from "$lib/testing/db";
+import { afterCommit, getDB, transaction, transactions } from "$lib/server/db";
 import { seedAccount, seedImportedTransaction } from "$lib/testing/ledger";
+import * as detect from "./detect";
 import {
   confirmSeries,
   dismissSeries,
@@ -47,7 +50,7 @@ async function setup() {
       await pay(`2026-${String(i + 1).padStart(2, "0")}-${day}`, a, name, over);
     }
   };
-  return { user, pay, months };
+  return { user, account, pay, months };
 }
 
 describe("syncRecurring", () => {
@@ -84,6 +87,189 @@ describe("syncRecurring", () => {
     await months("Example Streaming", [-1290, -1290, -1290]);
     await Promise.all([syncRecurring(user.id), syncRecurring(user.id)]);
     expect(await listRecurring(user.id)).toHaveLength(1);
+  });
+
+  it("detects outside any transaction, so the database stays free meanwhile", async () => {
+    const { user, months } = await setup();
+    await months("Example Streaming", [-1290, -1290, -1290]);
+    const real = detect.detectSeries;
+    let insideTransaction: boolean | null = null;
+    const spy = vi.spyOn(detect, "detectSeries").mockImplementation((rows) => {
+      // afterCommit runs at once outside a transaction and is deferred inside one.
+      let ran = false;
+      afterCommit(() => {
+        ran = true;
+      });
+      insideTransaction = !ran;
+      return real(rows);
+    });
+    await syncRecurring(user.id);
+    spy.mockRestore();
+    expect(insideTransaction).toBe(false);
+    expect(await listRecurring(user.id)).toHaveLength(1);
+  });
+
+  it("detects again when the transactions changed while it was detecting", async () => {
+    const { user, account, months } = await setup();
+    await months("Example Streaming", [-1290, -1290, -1290]);
+    const real = detect.detectSeries;
+    let calls = 0;
+    let late: Promise<unknown> = Promise.resolve();
+    const spy = vi.spyOn(detect, "detectSeries").mockImplementation((rows) => {
+      const detected = real(rows);
+      if (++calls === 1) {
+        // A write lands after detection read its rows, before the result is applied.
+        late = getDB()
+          .insert(transactions)
+          .values({
+            userId: user.id,
+            accountId: account.id,
+            source: "manual",
+            externalId: "late",
+            bookingDate: "2026-04-05",
+            amount: minor(-1290),
+            currency: "CHF",
+            counterpartyName: "Example Streaming",
+            reversal: false,
+          })
+          .then(() => undefined);
+      }
+      return detected;
+    });
+    await syncRecurring(user.id);
+    spy.mockRestore();
+    await late;
+    expect(calls).toBe(2);
+    const [series] = await listRecurring(user.id);
+    expect(series).toMatchObject({ lastDate: "2026-04-05", occurrences: 4 });
+  });
+
+  describe("when the source rows change between detection and applying", () => {
+    const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+    /**
+     * Runs `change(n)` in its own transaction right after the n-th detection
+     * outside the sync's transaction (n starting at 1). It is queued on the
+     * gate before the sync's own transaction asks for it, so it commits first.
+     */
+    function changeAfterDetection(
+      times: number,
+      change: (n: number) => Promise<void>,
+    ) {
+      const real = detect.detectSeries;
+      const pending: Promise<void>[] = [];
+      let calls = 0;
+      const spy = vi
+        .spyOn(detect, "detectSeries")
+        .mockImplementation((rows) => {
+          const detected = real(rows);
+          if (++calls <= times) {
+            const n = calls;
+            pending.push(transaction(() => change(n)));
+          }
+          return detected;
+        });
+      return {
+        get calls() {
+          return calls;
+        },
+        async done() {
+          spy.mockRestore();
+          await Promise.all(pending);
+        },
+      };
+    }
+
+    it("notices an edited transaction", async () => {
+      const { user, pay, months } = await setup();
+      await months("Example Streaming", [-1290, -1290, -1290]);
+      const last = await pay("2026-04-05", -1290, "Example Streaming");
+      await sleep(5);
+      const probe = changeAfterDetection(1, async () => {
+        await getDB()
+          .update(transactions)
+          .set({ amount: minor(-1490) })
+          .where(eq(transactions.id, last.id));
+      });
+      await syncRecurring(user.id);
+      await probe.done();
+      expect(probe.calls).toBe(2);
+      const [series] = await listRecurring(user.id);
+      expect(series?.lastAmount).toBe(-1490);
+    });
+
+    it("notices a deleted transaction", async () => {
+      const { user, pay, months } = await setup();
+      await months("Example Streaming", [-1290, -1290, -1290]);
+      const last = await pay("2026-04-05", -1290, "Example Streaming");
+      const probe = changeAfterDetection(1, async () => {
+        await getDB().delete(transactions).where(eq(transactions.id, last.id));
+      });
+      await syncRecurring(user.id);
+      await probe.done();
+      expect(probe.calls).toBe(2);
+      const [series] = await listRecurring(user.id);
+      expect(series).toMatchObject({ lastDate: "2026-03-05", occurrences: 3 });
+    });
+
+    it("notices one transaction replaced by another with the same timestamp", async () => {
+      const { user, account, pay, months } = await setup();
+      await months("Example Streaming", [-1290, -1290, -1290]);
+      const last = await pay("2026-04-05", -1290, "Example Streaming");
+      const stamp = new Date("2026-04-06T10:00:00.000Z");
+      await getDB()
+        .update(transactions)
+        .set({ updatedAt: stamp })
+        .where(eq(transactions.id, last.id));
+      const probe = changeAfterDetection(1, async () => {
+        await getDB().delete(transactions).where(eq(transactions.id, last.id));
+        await getDB()
+          .insert(transactions)
+          .values({
+            userId: user.id,
+            accountId: account.id,
+            source: "manual",
+            externalId: "replacement",
+            updatedAt: stamp,
+            bookingDate: "2026-04-06",
+            amount: minor(-1290),
+            currency: "CHF",
+            counterpartyName: "Example Streaming",
+            reversal: false,
+          });
+      });
+      await syncRecurring(user.id);
+      await probe.done();
+      expect(probe.calls).toBe(2);
+      const [series] = await listRecurring(user.id);
+      expect(series).toMatchObject({ lastDate: "2026-04-06", occurrences: 4 });
+    });
+
+    it("applies fresh results, not stale ones, when every attempt is outdated", async () => {
+      const { user, account, months } = await setup();
+      await months("Example Streaming", [-1290, -1290, -1290]);
+      const probe = changeAfterDetection(3, async (n) => {
+        await getDB()
+          .insert(transactions)
+          .values({
+            userId: user.id,
+            accountId: account.id,
+            source: "manual",
+            externalId: `late-${n}`,
+            bookingDate: `2026-0${3 + n}-05`,
+            amount: minor(-1290),
+            currency: "CHF",
+            counterpartyName: "Example Streaming",
+            reversal: false,
+          });
+      });
+      await syncRecurring(user.id);
+      await probe.done();
+      // Three outdated attempts, then one more detection inside the transaction.
+      expect(probe.calls).toBe(4);
+      const [series] = await listRecurring(user.id);
+      expect(series).toMatchObject({ lastDate: "2026-06-05", occurrences: 6 });
+    });
   });
 
   it("flags a price change and an overdue payment", async () => {

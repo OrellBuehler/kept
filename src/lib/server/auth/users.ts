@@ -1,5 +1,12 @@
 import { and, asc, count, eq, ne } from "drizzle-orm";
-import { first, getDB, sessions, users, type UserRole } from "$lib/server/db";
+import {
+  first,
+  getDB,
+  sessions,
+  users,
+  type UserRole,
+  transaction,
+} from "$lib/server/db";
 import { hashPassword, verifyPassword } from "./password";
 import { passwordChangeLimiter, type LoginRateLimiter } from "./rate-limit";
 import { AuthError, type SessionUser } from "./types";
@@ -25,67 +32,65 @@ export async function countUsers(): Promise<number> {
   return row?.n ?? 0;
 }
 
-/** Sync: only runs inside the immediate transaction of createUser / createFirstAdmin. */
-function insertUser(
+/** Runs inside the transaction of createUser / createFirstAdmin. */
+async function insertUser(
   tx: Pick<ReturnType<typeof getDB>, "select" | "insert">,
   input: NewUser,
   passwordHash: string,
-): SessionUser {
+): Promise<SessionUser> {
   const username = normalizeUsername(input.username);
-  const existing = tx
-    .select({ id: users.id })
-    .from(users)
-    .where(eq(users.username, username))
-    .limit(1)
-    .get();
+  const existing = await first(
+    tx
+      .select({ id: users.id })
+      .from(users)
+      .where(eq(users.username, username))
+      .limit(1),
+  );
   if (existing) {
     throw new AuthError("username_taken", "Username is already taken.");
   }
-  return tx
-    .insert(users)
-    .values({
-      username,
-      passwordHash,
-      role: input.role,
-      displayName: input.displayName ?? null,
-    })
-    .returning({
-      id: users.id,
-      username: users.username,
-      displayName: users.displayName,
-      role: users.role,
-    })
-    .get();
+  return (await first(
+    tx
+      .insert(users)
+      .values({
+        username,
+        passwordHash,
+        role: input.role,
+        displayName: input.displayName ?? null,
+      })
+      .returning({
+        id: users.id,
+        username: users.username,
+        displayName: users.displayName,
+        role: users.role,
+      }),
+  ))!;
 }
 
 /**
  * Runs inside the transaction of the change, so the audit row commits or rolls
- * back with it. May return a log call, which runs only after the commit.
+ * back with it. Log calls go through `afterCommit`.
  */
 export type InTransaction<T> = (
   tx: Pick<ReturnType<typeof getDB>, "insert">,
   subject: T,
-) => void | (() => void);
+) => Promise<void>;
 
 export async function createUser(
   input: NewUser,
   audit?: InTransaction<SessionUser>,
 ): Promise<SessionUser> {
   const passwordHash = await hashPassword(input.password);
-  const { created, afterCommit } = getDB().transaction(
-    (tx) => {
-      const created = insertUser(tx, input, passwordHash);
-      return { created, afterCommit: audit?.(tx, created) };
-    },
-    { behavior: "immediate" },
-  );
-  afterCommit?.();
-  return created;
+  return await transaction(async (tx) => {
+    const created = await insertUser(tx, input, passwordHash);
+    await audit?.(tx, created);
+    return created;
+  });
 }
 
 /**
  * First-run setup: creates an admin only if no user exists. The check and the
- * insert share one immediate transaction, so concurrent attempts cannot both win.
+ * insert share one locked transaction, so concurrent attempts cannot both win.
  */
 export async function createFirstAdmin(
   input: Omit<NewUser, "role">,
@@ -94,18 +99,19 @@ export async function createFirstAdmin(
     throw new AuthError("setup_closed", "Setup has already been completed.");
   }
   const passwordHash = await hashPassword(input.password);
-  return getDB().transaction(
-    (tx) => {
-      const n = tx.select({ n: count() }).from(users).get()?.n ?? 0;
+  return await transaction(
+    async (tx) => {
+      const n =
+        (await first(tx.select({ n: count() }).from(users).limit(1)))?.n ?? 0;
       if (n > 0) {
         throw new AuthError(
           "setup_closed",
           "Setup has already been completed.",
         );
       }
-      return insertUser(tx, { ...input, role: "admin" }, passwordHash);
+      return await insertUser(tx, { ...input, role: "admin" }, passwordHash);
     },
-    { behavior: "immediate" },
+    { lock: "users:first-admin" },
   );
 }
 
@@ -135,15 +141,15 @@ export async function changePassword(
   }
   release();
   const passwordHash = await hashPassword(next);
-  db.transaction((tx) => {
-    tx.update(users).set({ passwordHash }).where(eq(users.id, userId)).run();
-    tx.delete(sessions)
+  await transaction(async (tx) => {
+    await tx.update(users).set({ passwordHash }).where(eq(users.id, userId));
+    await tx
+      .delete(sessions)
       .where(
         keepSessionId
           ? and(eq(sessions.userId, userId), ne(sessions.id, keepSessionId))
           : eq(sessions.userId, userId),
-      )
-      .run();
+      );
   });
 }
 
@@ -217,26 +223,31 @@ export async function assertCanDeleteUser(
   return assertDeletable(target, admins);
 }
 
-/** Sync twin of assertCanDeleteUser, for the body of deleteUser's transaction. */
-function assertCanDeleteUserInTx(
+/** `assertCanDeleteUser` inside deleteUser's transaction. */
+async function assertCanDeleteUserInTx(
   tx: Pick<ReturnType<typeof getDB>, "select">,
   actorId: string,
   targetId: string,
-): DeletableUser {
+): Promise<DeletableUser> {
   assertNotSelf(actorId, targetId);
-  const target = tx
-    .select({ id: users.id, username: users.username, role: users.role })
-    .from(users)
-    .where(eq(users.id, targetId))
-    .limit(1)
-    .get();
+  const target = await first(
+    tx
+      .select({ id: users.id, username: users.username, role: users.role })
+      .from(users)
+      .where(eq(users.id, targetId))
+      .limit(1),
+  );
   const admins =
     target?.role === "admin"
-      ? (tx
-          .select({ n: count() })
-          .from(users)
-          .where(eq(users.role, "admin"))
-          .get()?.n ?? 0)
+      ? ((
+          await first(
+            tx
+              .select({ n: count() })
+              .from(users)
+              .where(eq(users.role, "admin"))
+              .limit(1),
+          )
+        )?.n ?? 0)
       : 0;
   return assertDeletable(target, admins);
 }
@@ -246,15 +257,14 @@ export async function deleteUser(
   targetId: string,
   audit?: InTransaction<DeletableUser>,
 ): Promise<void> {
-  const afterCommit = getDB().transaction(
-    (tx) => {
-      const target = assertCanDeleteUserInTx(tx, actorId, targetId);
-      tx.delete(users).where(eq(users.id, targetId)).run();
-      return audit?.(tx, target);
+  await transaction(
+    async (tx) => {
+      const target = await assertCanDeleteUserInTx(tx, actorId, targetId);
+      await tx.delete(users).where(eq(users.id, targetId));
+      await audit?.(tx, target);
     },
-    { behavior: "immediate" },
+    { lock: "users:admin-set" },
   );
-  afterCommit?.();
 }
 
 export async function findUserByUsername(username: string) {

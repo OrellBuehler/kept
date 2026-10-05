@@ -1,7 +1,14 @@
 import { and, count, desc, eq, gte, lte, or, sql } from "drizzle-orm";
 import type { RowSource } from "$lib/ledger-types";
 import type { Minor } from "$lib/money";
-import { accounts, first, getDB, transactions, type DB } from "$lib/server/db";
+import {
+  accounts,
+  first,
+  getDB,
+  transactions,
+  type DB,
+  transaction,
+} from "$lib/server/db";
 import {
   mirrorRefs,
   transferRefs,
@@ -126,13 +133,13 @@ async function ownedAccount(userId: string, accountId: string) {
   return account;
 }
 
-/** Sync twin of ownedAccount, for the body of a transaction. */
-function ownedAccountInTx(
+/** `ownedAccount` on a transaction you already hold. */
+async function ownedAccountInTx(
   tx: Pick<DB, "select">,
   userId: string,
   accountId: string,
 ) {
-  const account = ownedAccountQuery(tx, userId, accountId).get();
+  const account = await first(ownedAccountQuery(tx, userId, accountId));
   if (!account) throw notFound("Account");
   return account;
 }
@@ -231,15 +238,15 @@ export async function getTransaction(
 }
 
 /**
- * Sync twin of getTransaction for the body of a transaction. It returns the
+ * `getTransaction` on a transaction you already hold. It returns the
  * plain row, without the transfer and mirror references `getTransaction` adds.
  */
-export function getTransactionRowInTx(
+export async function getTransactionRowInTx(
   tx: Pick<DB, "select">,
   userId: string,
   id: string,
-): Row {
-  const row = ownedTransactionQuery(tx, userId, id).get();
+): Promise<Row> {
+  const row = await first(ownedTransactionQuery(tx, userId, id));
   if (!row) throw notFound("Transaction");
   return row;
 }
@@ -249,36 +256,49 @@ export async function createManualTransaction(
   accountId: string,
   input: TransactionInput,
 ): Promise<TransactionView> {
-  const id = getDB().transaction((tx) => {
-    const { currency, openingDate } = ownedAccountInTx(tx, userId, accountId);
+  const id = await transaction(async (tx) => {
+    const { currency, openingDate } = await ownedAccountInTx(
+      tx,
+      userId,
+      accountId,
+    );
     assertNotBeforeOpening({ openingDate }, input.bookingDate);
-    const created = tx
-      .insert(transactions)
-      .values({
-        ...input,
-        userId,
-        accountId,
-        currency,
-        source: "manual",
-        externalId: `manual:${crypto.randomUUID()}`,
-        reversal: false,
-      })
-      .returning({ id: transactions.id })
-      .get();
+    const created = (await first(
+      tx
+        .insert(transactions)
+        .values({
+          ...input,
+          userId,
+          accountId,
+          currency,
+          source: "manual",
+          externalId: `manual:${crypto.randomUUID()}`,
+          reversal: false,
+        })
+        .returning({ id: transactions.id }),
+    ))!;
     // Like an imported row, a manual one takes over the mirror it stands for.
-    const mirrorId = findReplacementsInTx(tx, userId, accountId, [
-      {
-        key: created.id,
-        bookingDate: input.bookingDate,
-        amount: input.amount,
-        counterpartyIban: input.counterpartyIban,
-        reference: input.reference,
-        description: input.description,
-      },
-    ]).get(created.id);
+    const mirrorId = (
+      await findReplacementsInTx(tx, userId, accountId, [
+        {
+          key: created.id,
+          bookingDate: input.bookingDate,
+          amount: input.amount,
+          counterpartyIban: input.counterpartyIban,
+          reference: input.reference,
+          description: input.description,
+        },
+      ])
+    ).get(created.id);
     if (mirrorId !== undefined)
-      takeOverMirror(tx, userId, mirrorId, created.id);
-    linkAfterWrite(tx, userId, accountId, [created.id], [input.bookingDate]);
+      await takeOverMirror(tx, userId, mirrorId, created.id);
+    await linkAfterWrite(
+      tx,
+      userId,
+      accountId,
+      [created.id],
+      [input.bookingDate],
+    );
     return created.id;
   });
   return await getTransaction(userId, id);
@@ -298,16 +318,16 @@ export async function updateTransaction(
     if (!("bookingDate" in input)) {
       throw new LedgerError("invalid", "Missing transaction fields.");
     }
-    getDB().transaction((tx) => {
+    await transaction(async (tx) => {
       // Read again inside the transaction: the previous IBAN decides which links survive.
-      const previous = getTransactionRowInTx(tx, userId, id);
+      const previous = await getTransactionRowInTx(tx, userId, id);
       assertNotBeforeOpening(
-        ownedAccountInTx(tx, userId, previous.accountId),
+        await ownedAccountInTx(tx, userId, previous.accountId),
         input.bookingDate,
       );
-      tx.update(transactions).set(input).where(where).run();
+      await tx.update(transactions).set(input).where(where);
       // A mirror follows its source's amount, dates and text.
-      resyncSource(tx, userId, id, previous.counterpartyIban);
+      await resyncSource(tx, userId, id, previous.counterpartyIban);
     });
   }
   return await getTransaction(userId, id);

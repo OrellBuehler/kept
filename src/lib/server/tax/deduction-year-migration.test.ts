@@ -17,7 +17,7 @@ import {
 } from "./deduction-year-migration";
 import { addTaxCredit, upsertTaxYear } from "./tax";
 import { taxCreditInputSchema, taxYearInputSchema } from "./schemas";
-import { first } from "$lib/server/db";
+import { first, withExclusiveClient } from "$lib/server/db";
 
 const dir = join(process.cwd(), "drizzle");
 const file = readdirSync(dir).find((f) =>
@@ -59,9 +59,10 @@ describe("deduction year data migration", () => {
       color: null,
       icon: null,
     });
-  const run = () => {
-    for (const statement of dataStatements) ctx.db.$client.run(statement);
-  };
+  const run = () =>
+    withExclusiveClient((client) => {
+      for (const statement of dataStatements) client.run(statement);
+    });
   const read = async (id: string) =>
     await first(
       ctx.db
@@ -125,7 +126,7 @@ describe("deduction year data migration", () => {
     await upsertTaxYear(other.id, yearInput("2024"));
     await addTaxCredit(other.id, 2024, creditInput("50.00"));
 
-    run();
+    await run();
 
     expect(await read(donation.id)).toEqual({
       taxYear: null,
@@ -174,7 +175,7 @@ describe("deduction year data migration", () => {
       taxYear: 2024,
     });
 
-    run();
+    await run();
 
     expect(await read(payment.id)).toEqual({
       taxYear: 2024,
@@ -203,7 +204,7 @@ describe("deduction year data migration", () => {
     const grandchild = await tx({ categoryId: leaf.id, taxYear: 2024 });
     const child = await tx({ categoryId: mid.id, taxYear: 2024 });
 
-    run();
+    await run();
 
     expect(await read(grandchild.id)).toEqual({
       taxYear: 2024,
@@ -230,7 +231,7 @@ describe("deduction year data migration", () => {
       taxYear: 2024,
       amount: minor(-5000),
     });
-    run();
+    await run();
     expect(await countDeductionYearMoves(user.id, 2024)).toBe(1);
     expect(await countDeductionYearMoves(other.id, 2024)).toBe(1);
 
@@ -258,7 +259,7 @@ describe("deduction year data migration", () => {
     const gifts = await cat(user.id, "Gifts");
     await setCategoryDeduction(user.id, gifts.id, "donations");
     const a = await tx({ categoryId: gifts.id, taxYear: 2024 });
-    run();
+    await run();
     await ctx.db
       .update(transactions)
       .set({ deductionYear: 2022 })

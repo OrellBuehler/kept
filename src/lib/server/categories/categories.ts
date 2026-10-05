@@ -7,6 +7,7 @@ import {
   isUniqueViolation,
   transactions,
   type DB,
+  transaction,
 } from "$lib/server/db";
 import { LedgerError, notFound } from "$lib/server/ledger/errors";
 import type { CategoryInput } from "./schemas";
@@ -98,25 +99,26 @@ const nameTaken = () =>
     "name",
   );
 
-/** Sync: runs inside the transaction of createCategory / updateCategory. */
-function assertNameFree(
+/** Runs inside the transaction of createCategory / updateCategory. */
+async function assertNameFree(
   tx: Reader,
   userId: string,
   name: string,
   exceptId?: string,
 ) {
-  const clash = tx
-    .select({ id: categories.id })
-    .from(categories)
-    .where(
-      and(
-        eq(categories.userId, userId),
-        eq(categories.name, name),
-        exceptId ? ne(categories.id, exceptId) : undefined,
-      ),
-    )
-    .limit(1)
-    .get();
+  const clash = await first(
+    tx
+      .select({ id: categories.id })
+      .from(categories)
+      .where(
+        and(
+          eq(categories.userId, userId),
+          eq(categories.name, name),
+          exceptId ? ne(categories.id, exceptId) : undefined,
+        ),
+      )
+      .limit(1),
+  );
   if (clash) throw nameTaken();
 }
 
@@ -129,13 +131,13 @@ function mapNameViolation(err: unknown): never {
   throw err;
 }
 
-/** Sync: runs inside the transaction of createCategory / updateCategory. */
-function assertParent(
+/** Runs inside the transaction of createCategory / updateCategory. */
+async function assertParent(
   tx: Reader,
   userId: string,
   input: CategoryInput,
   selfId?: string,
-): void {
+): Promise<void> {
   if (input.parentId === null) return;
   if (input.parentId === selfId) {
     throw new LedgerError(
@@ -144,14 +146,15 @@ function assertParent(
       "parentId",
     );
   }
-  const parent = tx
-    .select(columns)
-    .from(categories)
-    .where(
-      and(eq(categories.userId, userId), eq(categories.id, input.parentId)),
-    )
-    .limit(1)
-    .get();
+  const parent = await first(
+    tx
+      .select(columns)
+      .from(categories)
+      .where(
+        and(eq(categories.userId, userId), eq(categories.id, input.parentId)),
+      )
+      .limit(1),
+  );
   if (!parent) {
     throw new LedgerError("invalid", "Choose a valid parent.", "parentId");
   }
@@ -170,13 +173,15 @@ function assertParent(
     );
   }
   if (selfId !== undefined) {
-    const children = tx
-      .select({ n: count() })
-      .from(categories)
-      .where(
-        and(eq(categories.userId, userId), eq(categories.parentId, selfId)),
-      )
-      .get()!.n;
+    const children = (await first(
+      tx
+        .select({ n: count() })
+        .from(categories)
+        .where(
+          and(eq(categories.userId, userId), eq(categories.parentId, selfId)),
+        )
+        .limit(1),
+    ))!.n;
     if (children > 0) {
       throw new LedgerError(
         "invalid",
@@ -187,25 +192,26 @@ function assertParent(
   }
 }
 
-/** Sync: runs inside the transaction of updateCategory. */
-function assertKindMatchesChildren(
+/** Runs inside the transaction of updateCategory. */
+async function assertKindMatchesChildren(
   tx: Reader,
   userId: string,
   id: string,
   kind: CategoryKind,
 ) {
-  const mismatched = tx
-    .select({ id: categories.id })
-    .from(categories)
-    .where(
-      and(
-        eq(categories.userId, userId),
-        eq(categories.parentId, id),
-        ne(categories.kind, kind),
-      ),
-    )
-    .limit(1)
-    .get();
+  const mismatched = await first(
+    tx
+      .select({ id: categories.id })
+      .from(categories)
+      .where(
+        and(
+          eq(categories.userId, userId),
+          eq(categories.parentId, id),
+          ne(categories.kind, kind),
+        ),
+      )
+      .limit(1),
+  );
   if (mismatched) {
     throw new LedgerError(
       "invalid",
@@ -220,14 +226,15 @@ export async function createCategory(
   input: CategoryInput,
 ): Promise<CategoryView> {
   try {
-    return getDB().transaction((tx) => {
-      assertNameFree(tx, userId, input.name);
-      assertParent(tx, userId, input);
-      return tx
-        .insert(categories)
-        .values({ userId, ...input })
-        .returning(columns)
-        .get();
+    return await transaction(async (tx) => {
+      await assertNameFree(tx, userId, input.name);
+      await assertParent(tx, userId, input);
+      return (await first(
+        tx
+          .insert(categories)
+          .values({ userId, ...input })
+          .returning(columns),
+      ))!;
     });
   } catch (err) {
     mapNameViolation(err);
@@ -240,21 +247,22 @@ export async function updateCategory(
   input: CategoryInput,
 ): Promise<CategoryView> {
   try {
-    getDB().transaction((tx) => {
-      const found = tx
-        .select({ id: categories.id })
-        .from(categories)
-        .where(and(eq(categories.userId, userId), eq(categories.id, id)))
-        .limit(1)
-        .get();
+    await transaction(async (tx) => {
+      const found = await first(
+        tx
+          .select({ id: categories.id })
+          .from(categories)
+          .where(and(eq(categories.userId, userId), eq(categories.id, id)))
+          .limit(1),
+      );
       if (!found) throw notFound("Category");
-      assertNameFree(tx, userId, input.name, id);
-      assertParent(tx, userId, input, id);
-      assertKindMatchesChildren(tx, userId, id, input.kind);
-      tx.update(categories)
+      await assertNameFree(tx, userId, input.name, id);
+      await assertParent(tx, userId, input, id);
+      await assertKindMatchesChildren(tx, userId, id, input.kind);
+      await tx
+        .update(categories)
         .set(input)
-        .where(and(eq(categories.userId, userId), eq(categories.id, id)))
-        .run();
+        .where(and(eq(categories.userId, userId), eq(categories.id, id)));
     });
   } catch (err) {
     mapNameViolation(err);
@@ -282,38 +290,40 @@ export async function assignCategory(
   transactionId: string,
   categoryId: string | null,
 ): Promise<void> {
-  getDB().transaction((tx) => {
-    const found = tx
-      .select({ id: transactions.id })
-      .from(transactions)
-      .where(
-        and(
-          eq(transactions.userId, userId),
-          eq(transactions.id, transactionId),
-        ),
-      )
-      .limit(1)
-      .get();
+  await transaction(async (tx) => {
+    const found = await first(
+      tx
+        .select({ id: transactions.id })
+        .from(transactions)
+        .where(
+          and(
+            eq(transactions.userId, userId),
+            eq(transactions.id, transactionId),
+          ),
+        )
+        .limit(1),
+    );
     if (!found) throw notFound("Transaction");
     if (categoryId !== null) {
-      const category = tx
-        .select({ id: categories.id })
-        .from(categories)
-        .where(
-          and(eq(categories.userId, userId), eq(categories.id, categoryId)),
-        )
-        .limit(1)
-        .get();
+      const category = await first(
+        tx
+          .select({ id: categories.id })
+          .from(categories)
+          .where(
+            and(eq(categories.userId, userId), eq(categories.id, categoryId)),
+          )
+          .limit(1),
+      );
       if (!category) throw notFound("Category");
     }
-    tx.update(transactions)
+    await tx
+      .update(transactions)
       .set({ categoryId })
       .where(
         and(
           eq(transactions.userId, userId),
           eq(transactions.id, transactionId),
         ),
-      )
-      .run();
+      );
   });
 }

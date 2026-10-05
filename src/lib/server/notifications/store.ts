@@ -11,6 +11,7 @@ import {
   notificationChannels,
   notificationSettings,
   notificationsSent,
+  transaction,
 } from "$lib/server/db";
 import type { EmailConfig } from "./channels/email";
 import type { NtfyConfig } from "./channels/ntfy";
@@ -145,23 +146,24 @@ export async function saveChannel(
   config: ChannelConfig,
   options: SaveChannelOptions = {},
 ): Promise<SaveChannelResult> {
-  return getDB().transaction((tx) => {
+  return await transaction(async (tx) => {
     const field = options.keepSecret;
     const next: ChannelConfig & { token?: string; secret?: string } = {
       ...config,
     };
     if (field && next[field] === undefined) {
-      const row = tx
-        .select()
-        .from(notificationChannels)
-        .where(
-          and(
-            eq(notificationChannels.userId, userId),
-            eq(notificationChannels.kind, kind),
-          ),
-        )
-        .limit(1)
-        .get();
+      const row = await first(
+        tx
+          .select()
+          .from(notificationChannels)
+          .where(
+            and(
+              eq(notificationChannels.userId, userId),
+              eq(notificationChannels.kind, kind),
+            ),
+          )
+          .limit(1),
+      );
       let previous: Record<string, string | undefined> | null = null;
       let unreadable = false;
       if (row) {
@@ -179,13 +181,13 @@ export async function saveChannel(
       }
     }
     const configEncrypted = encryptSecret(JSON.stringify(next));
-    tx.insert(notificationChannels)
+    await tx
+      .insert(notificationChannels)
       .values({ userId, kind, configEncrypted })
       .onConflictDoUpdate({
         target: [notificationChannels.userId, notificationChannels.kind],
         set: { configEncrypted, lastError: null, lastErrorAt: null },
-      })
-      .run();
+      });
     return { ok: true } as const;
   });
 }

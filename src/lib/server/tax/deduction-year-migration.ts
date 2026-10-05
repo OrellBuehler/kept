@@ -4,6 +4,7 @@ import {
   first,
   getDB,
   transactions,
+  transaction,
 } from "$lib/server/db";
 
 /** Rows the deduction-year update moved out of the tax payments of `year`, still awaiting review. */
@@ -34,8 +35,8 @@ export async function undoDeductionYearMoves(
   userId: string,
   year: number,
 ): Promise<number> {
-  return getDB().transaction((tx) => {
-    const records = tx
+  return await transaction(async (tx) => {
+    const records = await tx
       .select()
       .from(deductionYearMigration)
       .where(
@@ -43,11 +44,10 @@ export async function undoDeductionYearMoves(
           eq(deductionYearMigration.userId, userId),
           eq(deductionYearMigration.oldTaxYear, year),
         ),
-      )
-      .all();
+      );
     let restored = 0;
     for (const record of records) {
-      const updated = tx
+      const updated = await tx
         .update(transactions)
         .set({ taxYear: record.oldTaxYear, deductionYear: null })
         .where(
@@ -57,18 +57,17 @@ export async function undoDeductionYearMoves(
             eq(transactions.deductionYear, record.oldTaxYear),
           ),
         )
-        .returning({ id: transactions.id })
-        .all();
+        .returning({ id: transactions.id });
       restored += updated.length;
     }
-    tx.delete(deductionYearMigration)
+    await tx
+      .delete(deductionYearMigration)
       .where(
         and(
           eq(deductionYearMigration.userId, userId),
           eq(deductionYearMigration.oldTaxYear, year),
         ),
-      )
-      .run();
+      );
     return restored;
   });
 }

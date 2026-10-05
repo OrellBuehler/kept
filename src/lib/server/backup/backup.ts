@@ -12,7 +12,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Readable } from "node:stream";
 import { z } from "zod";
-import type { DB } from "$lib/server/db";
+import { withExclusiveClient, type DB } from "$lib/server/db";
 import { describeError } from "$lib/server/errors";
 
 const FILE_PATTERN = /^kept-backup-(\d{8}-\d{6})\.db$/;
@@ -65,9 +65,11 @@ export function backupFileName(date: Date = new Date()): string {
 }
 
 /** Writes a consistent, defragmented copy of the live database. `path` must not exist. */
-export function writeBackup(db: DB, path: string): void {
+export async function writeBackup(db: DB, path: string): Promise<void> {
   if (existsSync(path)) throw new Error("Backup target already exists");
-  db.$client.run("VACUUM INTO ?", [path]);
+  await withExclusiveClient((client) => {
+    client.run("VACUUM INTO ?", [path]);
+  }, db);
 }
 
 export interface BackupDownload {
@@ -80,17 +82,17 @@ export interface BackupDownload {
  * Backs up to a private temp file and returns it as a stream. The temp
  * directory is removed once the stream ends, fails or is cancelled.
  */
-export function createBackupDownload(
+export async function createBackupDownload(
   db: DB,
   now: Date = new Date(),
   tmpRoot: string = tmpdir(),
-): BackupDownload {
+): Promise<BackupDownload> {
   const dir = mkdtempSync(join(tmpRoot, "kept-backup-"));
   const cleanup = () => rmSync(dir, { recursive: true, force: true });
   try {
     const fileName = backupFileName(now);
     const path = join(dir, fileName);
-    writeBackup(db, path);
+    await writeBackup(db, path);
     const size = statSync(path).size;
     const source = createReadStream(path);
     source.once("close", cleanup);
@@ -141,17 +143,17 @@ export function pruneBackups(dir: string, keep: number): string[] {
 }
 
 /** Writes a backup into `dir` (via a partial file, so a crash never leaves a broken backup) and prunes. */
-export function runScheduledBackup(
+export async function runScheduledBackup(
   db: DB,
   config: BackupConfig,
   now: Date = new Date(),
-): string {
+): Promise<string> {
   mkdirSync(config.dir, { recursive: true });
   const name = backupFileName(now);
   const partial = join(config.dir, `${name}.partial`);
   rmSync(partial, { force: true });
   try {
-    writeBackup(db, partial);
+    await writeBackup(db, partial);
     renameSync(partial, join(config.dir, name));
   } catch (err) {
     rmSync(partial, { force: true });
@@ -178,19 +180,25 @@ export function startBackupScheduler(
   options: { intervalMs?: number; firstRunDelayMs?: number } = {},
 ): () => void {
   let running = false;
-  const tick = () => {
+  const tick = async () => {
     if (running) return;
     running = true;
     try {
-      if (isBackupDue(config.dir)) runScheduledBackup(getDb(), config);
+      if (isBackupDue(config.dir)) await runScheduledBackup(getDb(), config);
     } catch (err) {
       console.error("scheduled backup failed", describeError(err));
     } finally {
       running = false;
     }
   };
-  const first = setTimeout(tick, options.firstRunDelayMs ?? FIRST_RUN_DELAY_MS);
-  const timer = setInterval(tick, options.intervalMs ?? CHECK_INTERVAL_MS);
+  const first = setTimeout(
+    () => void tick(),
+    options.firstRunDelayMs ?? FIRST_RUN_DELAY_MS,
+  );
+  const timer = setInterval(
+    () => void tick(),
+    options.intervalMs ?? CHECK_INTERVAL_MS,
+  );
   first.unref?.();
   timer.unref?.();
   return () => {

@@ -1,7 +1,13 @@
 import { eq } from "drizzle-orm";
 import { describe, expect, it, vi } from "vitest";
 import { minor } from "$lib/money";
-import { billAllocations, getDB, transactions } from "$lib/server/db";
+import {
+  billAllocations,
+  getDB,
+  transactions,
+  transaction,
+} from "$lib/server/db";
+import * as dbModule from "$lib/server/db";
 import { clearEventListeners, onBillChanged } from "$lib/server/events";
 import { LedgerError } from "$lib/server/ledger/errors";
 import { createTestUser } from "$lib/testing/auth";
@@ -529,7 +535,7 @@ describe("allocateInTx", () => {
     const { u, account } = await setup();
     const bill = await seedBill(u.id);
     const tx = await pay(u.id, account.id, 10000);
-    const created = getDB().transaction((t) =>
+    const created = await transaction(async (t) =>
       allocateInTx(t, u.id, bill.id, tx.id, minor(10000), "auto"),
     );
     expect(created.id).toEqual(expect.any(String));
@@ -548,16 +554,17 @@ describe("allocateInTx", () => {
     const bill = await seedBill(u.id);
     const mine = await pay(u.id, account.id, 4000);
     const foreign = await pay(other.id, theirs.id, 4000);
-    const run = (transactionId: string, amount: number) => () =>
-      getDB().transaction((t) =>
+    const run = (transactionId: string, amount: number) =>
+      transaction(async (t) =>
         allocateInTx(t, u.id, bill.id, transactionId, minor(amount), "user"),
       );
-    expect(run(mine.id, 5000)).toThrow(
-      expect.objectContaining({ code: "invalid", field: "amount" }),
-    );
-    expect(run(foreign.id, 4000)).toThrow(
-      expect.objectContaining({ code: "not_found" }),
-    );
+    await expect(run(mine.id, 5000)).rejects.toMatchObject({
+      code: "invalid",
+      field: "amount",
+    });
+    await expect(run(foreign.id, 4000)).rejects.toMatchObject({
+      code: "not_found",
+    });
     expect(await listBillAllocations(u.id, bill.id)).toEqual([]);
   });
 });
@@ -752,7 +759,7 @@ describe("check-then-write", () => {
   it("does not turn other database failures into the duplicate message", async () => {
     const { u } = await setup();
     const boom = new Error("disk full");
-    vi.spyOn(getDB(), "transaction").mockImplementationOnce(() => {
+    vi.spyOn(dbModule, "transaction").mockImplementationOnce(async () => {
       throw boom;
     });
     await expect(

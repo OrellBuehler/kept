@@ -4,6 +4,8 @@ import {
   getDB,
   institutions,
   isUniqueViolation,
+  first,
+  transaction,
 } from "$lib/server/db";
 import { LedgerError, notFound } from "./errors";
 import type { InstitutionInput } from "./schemas";
@@ -111,27 +113,30 @@ export async function deleteInstitution(
   userId: string,
   id: string,
 ): Promise<void> {
-  getDB().transaction((tx) => {
-    const found = tx
-      .select({ id: institutions.id })
-      .from(institutions)
-      .where(and(eq(institutions.userId, userId), eq(institutions.id, id)))
-      .limit(1)
-      .get();
+  await transaction(async (tx) => {
+    const found = await first(
+      tx
+        .select({ id: institutions.id })
+        .from(institutions)
+        .where(and(eq(institutions.userId, userId), eq(institutions.id, id)))
+        .limit(1),
+    );
     if (!found) throw notFound("Institution");
-    const accountCount = tx
-      .select({ n: count() })
-      .from(accounts)
-      .where(and(eq(accounts.userId, userId), eq(accounts.institutionId, id)))
-      .get()!.n;
+    const accountCount = (await first(
+      tx
+        .select({ n: count() })
+        .from(accounts)
+        .where(and(eq(accounts.userId, userId), eq(accounts.institutionId, id)))
+        .limit(1),
+    ))!.n;
     if (accountCount > 0) {
       throw new LedgerError(
         "conflict",
         "This institution still has accounts. Move or delete them first.",
       );
     }
-    tx.delete(institutions)
-      .where(and(eq(institutions.userId, userId), eq(institutions.id, id)))
-      .run();
+    await tx
+      .delete(institutions)
+      .where(and(eq(institutions.userId, userId), eq(institutions.id, id)));
   });
 }
