@@ -1,10 +1,12 @@
-import { and, eq, lte } from "drizzle-orm";
+import { and, eq, inArray, lte } from "drizzle-orm";
 import { minor, type Minor } from "$lib/money";
 import {
   accounts,
   balanceSnapshots,
   first,
   getDB,
+  portfolios as portfolioRows,
+  readSnapshot,
   transactions,
 } from "$lib/server/db";
 import { loadHoldingsInputs } from "$lib/server/investments/load";
@@ -46,6 +48,11 @@ import { LedgerError, notFound } from "./errors";
  * - Pillar 3a portfolios (values entered by hand, see pillar3a/valuation.ts)
  *   come on top as well: per portfolio the latest value dated <= D, and 0 from
  *   the portfolio's closing date on.
+ * - A pillar 3a account with at least one portfolio is worth its portfolios
+ *   alone (`portfolioOnly`): the hand-entered portfolio values already contain
+ *   the deposits, so cash (opening balance, transactions, snapshots) and any
+ *   holdings are left out, which would count the same money twice. Without
+ *   portfolios a 3a account behaves like any other.
  * - Amounts are in the account's currency; securities in other currencies are
  *   converted inside the holdings valuation, nowhere else.
  */
@@ -59,6 +66,8 @@ export interface BalanceInput {
   cashMoves?: readonly CashMove[];
   holdings?: HoldingsInput;
   portfolios?: PortfoliosInput;
+  /** Value the account by its portfolios alone; see `portfolioOnlyAccounts`. */
+  portfolioOnly?: boolean;
 }
 
 export interface CashMove {
@@ -123,6 +132,12 @@ function lowerBound(sorted: readonly string[], target: string): number {
  * Builds a balance lookup from prefix sums: O(n log n) once, O(log n) per date.
  */
 export function makeBalanceAt(input: BalanceInput): BalanceAt {
+  if (input.portfolioOnly) {
+    const portfolios = input.portfolios
+      ? makePortfoliosValueAt(input.portfolios)
+      : null;
+    return (date) => minor(portfolios ? portfolios(date) : 0);
+  }
   const txs = ledgerMoves(input).sort((a, b) =>
     a.bookingDate < b.bookingDate ? -1 : a.bookingDate > b.bookingDate ? 1 : 0,
   );
@@ -181,9 +196,39 @@ export function makeBalanceAt(input: BalanceInput): BalanceAt {
 export function cashBalanceAt(input: BalanceInput, date: string): Minor {
   return makeBalanceAt({
     ...input,
+    portfolioOnly: false,
     holdings: undefined,
     portfolios: undefined,
   })(date);
+}
+
+/** The cash shown for an account: none for one valued by its portfolios alone. */
+function shownCash(input: BalanceInput, date: string): Minor {
+  return input.portfolioOnly ? minor(0) : cashBalanceAt(input, date);
+}
+
+/**
+ * Of `accountIds`, the pillar 3a accounts that have at least one portfolio:
+ * their value is the portfolio value alone (see the balance model above).
+ */
+export async function portfolioOnlyAccounts(
+  userId: string,
+  accountIds: readonly string[],
+): Promise<Set<string>> {
+  if (accountIds.length === 0) return new Set();
+  const rows = await getDB()
+    .selectDistinct({ id: portfolioRows.accountId })
+    .from(portfolioRows)
+    .innerJoin(accounts, eq(accounts.id, portfolioRows.accountId))
+    .where(
+      and(
+        eq(portfolioRows.userId, userId),
+        eq(accounts.userId, userId),
+        eq(accounts.type, "pillar_3a"),
+        inArray(portfolioRows.accountId, [...accountIds]),
+      ),
+    );
+  return new Set(rows.map((r) => r.id));
 }
 
 export function balanceAt(input: BalanceInput, date: string): Minor {
@@ -273,6 +318,19 @@ async function loadInput(
   upTo: string | null,
   withValues: boolean,
 ): Promise<BalanceInput> {
+  // One view for the several reads: a commit between them must not show up as
+  // a balance that never existed.
+  return readSnapshot(() =>
+    loadInputSnapshot(userId, accountId, upTo, withValues),
+  );
+}
+
+async function loadInputSnapshot(
+  userId: string,
+  accountId: string,
+  upTo: string | null,
+  withValues: boolean,
+): Promise<BalanceInput> {
   const db = getDB();
   const account = await first(
     db
@@ -286,6 +344,9 @@ async function loadInput(
       .limit(1),
   );
   if (!account) throw notFound("Account");
+  // Statements reconcile cash, so only the valuation reads leave it out.
+  const portfolioOnly =
+    withValues && (await portfolioOnlyAccounts(userId, [accountId])).size > 0;
 
   const txWhere = [
     eq(transactions.userId, userId),
@@ -318,6 +379,7 @@ async function loadInput(
     holdings,
     cashMoves: account.tradesMoveCash ? cashMovesOf(loaded) : undefined,
     portfolios,
+    portfolioOnly,
     transactions: await db
       .select({
         bookingDate: transactions.bookingDate,
@@ -383,10 +445,11 @@ export async function accountValue(
   today: string = localToday(),
 ): Promise<AccountValue> {
   const input = await loadInput(userId, accountId, today, true);
-  const cash = cashBalanceAt(input, today);
-  const held = input.holdings
-    ? makeHoldingsValueAt(input.holdings)(today)
-    : null;
+  const cash = shownCash(input, today);
+  const held =
+    input.holdings && !input.portfolioOnly
+      ? makeHoldingsValueAt(input.holdings)(today)
+      : null;
   const holdings = held?.value ?? minor(0);
   const portfolios = input.portfolios
     ? makePortfoliosValueAt(input.portfolios)(today)
@@ -442,6 +505,19 @@ export async function currentValues(
   }[],
   today: string = localToday(),
 ): Promise<Map<string, CurrentValue>> {
+  return readSnapshot(() => currentValuesSnapshot(userId, accountRows, today));
+}
+
+async function currentValuesSnapshot(
+  userId: string,
+  accountRows: readonly {
+    id: string;
+    openingBalance: number;
+    openingDate: string | null;
+    tradesMoveCash: boolean;
+  }[],
+  today: string,
+): Promise<Map<string, CurrentValue>> {
   const db = getDB();
   const txByAccount = new Map<string, BalanceInput["transactions"][number][]>();
   for (const t of await db
@@ -490,6 +566,10 @@ export async function currentValues(
     accountRows.map((a) => a.id),
     today,
   );
+  const portfolioOnly = await portfolioOnlyAccounts(
+    userId,
+    accountRows.map((a) => a.id),
+  );
   return new Map(
     accountRows.map((a) => {
       const input: BalanceInput = {
@@ -502,11 +582,13 @@ export async function currentValues(
         snapshots: snapByAccount.get(a.id) ?? [],
         holdings: holdings.get(a.id),
         portfolios: portfolios.get(a.id),
+        portfolioOnly: portfolioOnly.has(a.id),
       };
-      const cash = cashBalanceAt(input, today);
-      const held = input.holdings
-        ? makeHoldingsValueAt(input.holdings)(today)
-        : null;
+      const cash = shownCash(input, today);
+      const held =
+        input.holdings && !input.portfolioOnly
+          ? makeHoldingsValueAt(input.holdings)(today)
+          : null;
       const portfolioValue = input.portfolios
         ? makePortfoliosValueAt(input.portfolios)(today)
         : minor(0);

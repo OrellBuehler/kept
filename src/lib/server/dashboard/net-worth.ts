@@ -6,6 +6,7 @@ import {
   first,
   getDB,
   portfolios,
+  readSnapshot,
   portfolioValues,
   trades,
   transactions,
@@ -16,6 +17,7 @@ import {
   cashMovesOf,
   localToday,
   makeBalanceAt,
+  portfolioOnlyAccounts,
   type CashMove,
 } from "$lib/server/ledger/balances";
 import { loadPortfolioInputs } from "$lib/server/pillar3a/load";
@@ -57,6 +59,7 @@ interface Collected {
   snapshots: { date: string; amount: number; source: string }[];
   holdings?: HoldingsInput;
   portfolios?: PortfoliosInput;
+  portfolioOnly?: boolean;
 }
 
 /**
@@ -69,6 +72,15 @@ interface Collected {
  * (rounded per account and date, see `shareOf`) before summing.
  */
 export async function netWorthSeries(
+  userId: string,
+  options: NetWorthOptions,
+): Promise<NetWorthCurrencySeries[]> {
+  // Accounts, transactions, snapshots, trades and portfolios are separate
+  // reads; they must see one state or the sums can include a half-done change.
+  return readSnapshot(() => netWorthSeriesSnapshot(userId, options));
+}
+
+async function netWorthSeriesSnapshot(
   userId: string,
   options: NetWorthOptions,
 ): Promise<NetWorthCurrencySeries[]> {
@@ -142,6 +154,10 @@ export async function netWorthSeries(
   );
   for (const [accountId, input] of portfolioInputs) {
     collected.get(accountId)!.portfolios = input;
+  }
+
+  for (const id of await portfolioOnlyAccounts(userId, [...collected.keys()])) {
+    collected.get(id)!.portfolioOnly = true;
   }
 
   const sums = new Map<string, number[]>();

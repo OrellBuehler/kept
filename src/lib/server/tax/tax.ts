@@ -5,6 +5,7 @@ import {
   bills,
   first,
   getDB,
+  readSnapshot,
   taxCredits,
   taxYears,
   transactions,
@@ -442,6 +443,16 @@ export async function reconcileYear(
   year: number,
   opts: MatchOptions = {},
 ): Promise<Reconciliation | null> {
+  // The payments, credits and suggestions come from several reads that must
+  // describe one state of the books.
+  return readSnapshot(() => reconcileYearSnapshot(userId, year, opts));
+}
+
+async function reconcileYearSnapshot(
+  userId: string,
+  year: number,
+  opts: MatchOptions,
+): Promise<Reconciliation | null> {
   const view = await yearView(userId, year);
   if (!view) return null;
 
@@ -506,6 +517,10 @@ export async function reconcileYear(
 
 /** Every year with a details row or tagged payments/bills, newest first. */
 export async function listTaxYears(userId: string): Promise<TaxYearSummary[]> {
+  return readSnapshot(() => listTaxYearsSnapshot(userId));
+}
+
+async function listTaxYearsSnapshot(userId: string): Promise<TaxYearSummary[]> {
   const db = getDB();
   const years = new Set<number>();
   for (const r of await db

@@ -1,4 +1,5 @@
 import { FULL_SHARE_BPS } from "$lib/money";
+import { readSnapshot } from "$lib/server/db";
 import {
   accountBalances,
   balanceTotals,
@@ -80,6 +81,16 @@ export async function dashboard(
   userId: string,
   today: string,
   options: { range?: string | null } = {},
+): Promise<Dashboard> {
+  // Every figure on the page comes from one state of the database, so the
+  // net worth, the accounts and the month summary agree with each other.
+  return readSnapshot(() => dashboardSnapshot(userId, today, options));
+}
+
+async function dashboardSnapshot(
+  userId: string,
+  today: string,
+  options: { range?: string | null },
 ): Promise<Dashboard> {
   const range = parseRange(options.range);
   const window = rangeWindow(
