@@ -18,6 +18,7 @@ import {
 import { addTaxCredit, upsertTaxYear } from "./tax";
 import { taxCreditInputSchema, taxYearInputSchema } from "./schemas";
 import { first, withExclusiveClient } from "$lib/server/db";
+import { dialect } from "$lib/server/db/dialect";
 
 const dir = join(process.cwd(), "drizzle", "sqlite");
 const file = readdirSync(dir).find((f) =>
@@ -44,7 +45,11 @@ const creditInput = (amount: string) =>
     description: "",
   });
 
-describe("deduction year data migration", () => {
+// The data migration is a SQLite migration file (0021) that rewrites rows
+// existing installs already hold, applied here by hand on the SQLite connection.
+// The PostgreSQL baseline starts at the end state: there are no old rows to move
+// and no migration to run, so there is nothing to test on that dialect.
+describe.skipIf(dialect === "pg")("deduction year data migration", () => {
   const ctx = useTestDB();
 
   const cat = async (

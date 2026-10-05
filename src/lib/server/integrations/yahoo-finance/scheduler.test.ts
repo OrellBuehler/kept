@@ -116,14 +116,22 @@ describe("market data scheduler", () => {
   });
 
   it("runs on a timer, does not overlap and can be stopped", async () => {
+    // Real timers: the refresh does real database I/O, which fake timers cannot
+    // wait for, so the interval is short but long enough to tick several times
+    // while a refresh is blocked.
     await seedUser("A.SW", true);
+    const sleep = (ms: number) =>
+      new Promise<void>((resolve) => setTimeout(resolve, ms));
     let release!: () => void;
     const gate = new Promise<void>((r) => (release = r));
+    let started!: () => void;
+    const firstCall = new Promise<void>((r) => (started = r));
     let calls = 0;
     setQuoteProvider(
       provider({
         async history(_s, _f, to) {
           calls += 1;
+          started();
           await gate;
           return {
             currency: "CHF",
@@ -133,21 +141,23 @@ describe("market data scheduler", () => {
       }).provider,
     );
 
-    vi.useFakeTimers();
     const stop = startScheduler({
-      intervalMs: 1000,
-      firstRunDelayMs: 10,
+      intervalMs: 300,
+      firstRunDelayMs: 5,
       jitterMs: 0,
     });
-    await vi.advanceTimersByTimeAsync(10);
-    expect(calls).toBe(1);
-    await vi.advanceTimersByTimeAsync(3000);
-    expect(calls).toBe(1);
+    try {
+      await firstCall;
+      // At least two interval ticks fire while the first refresh is blocked.
+      await sleep(700);
+      expect(calls).toBe(1);
+    } finally {
+      stop();
+      release();
+    }
 
-    release();
-    await vi.advanceTimersByTimeAsync(0);
-    stop();
-    await vi.advanceTimersByTimeAsync(5000);
+    // Stopped: the refresh that was running finishes, and no tick follows it.
+    await sleep(700);
     expect(calls).toBe(1);
   });
 });
