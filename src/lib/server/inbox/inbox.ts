@@ -480,7 +480,7 @@ export async function scanInbox(
       const ctx: ScanContext = {
         userId: user.id,
         userDir,
-        accounts: listAccounts(user.id).filter((a) => !a.archived),
+        accounts: (await listAccounts(user.id)).filter((a) => !a.archived),
         now,
         settleMs,
       };

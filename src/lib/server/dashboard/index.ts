@@ -76,18 +76,18 @@ export interface Dashboard {
   overdueBills: number;
 }
 
-export function dashboard(
+export async function dashboard(
   userId: string,
   today: string,
   options: { range?: string | null } = {},
-): Dashboard {
+): Promise<Dashboard> {
   const range = parseRange(options.range);
   const window = rangeWindow(
     range,
     today,
     range === "all" ? earliestDataDate(userId) : null,
   );
-  const accounts = accountBalances(userId, today);
+  const accounts = await accountBalances(userId, today);
   const bills = billsSummary(userId, today);
   const hasShared = accounts.some((a) => a.shareBps < FULL_SHARE_BPS);
   const month = today.slice(0, 7);
@@ -97,26 +97,26 @@ export function dashboard(
     hasShared,
     netWorth: {
       ...window,
-      series: netWorthSeries(userId, { ...window, today }),
+      series: await netWorthSeries(userId, { ...window, today }),
       shareSeries: hasShared
-        ? netWorthSeries(userId, { ...window, today, basis: "share" })
+        ? await netWorthSeries(userId, { ...window, today, basis: "share" })
         : null,
       totals: balanceTotals(accounts),
     },
     accounts,
-    liquidity: liquidity(userId, today, accounts),
+    liquidity: await liquidity(userId, today, accounts),
     invested: investedTotals(accounts),
-    month: monthSummary(userId, { month }),
+    month: await monthSummary(userId, { month }),
     shareMonth: hasShared
-      ? monthSummary(userId, { month, basis: "share" })
+      ? await monthSummary(userId, { month, basis: "share" })
       : null,
-    spending: spendingByCategory(userId, month, "share"),
+    spending: await spendingByCategory(userId, month, "share"),
     spendingTotal: hasShared
-      ? spendingByCategory(userId, month, "total")
+      ? await spendingByCategory(userId, month, "total")
       : null,
     bills,
     unmatched: unmatchedTransactions(userId, { days: 60, today }),
-    imports: lastImports(userId, today, accounts),
+    imports: await lastImports(userId, today, accounts),
     staleAccounts: accounts.filter((a) => a.stale).length,
     overdueBills: bills.overdue.count,
   };

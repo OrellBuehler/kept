@@ -3,6 +3,7 @@ import { minor, type Minor } from "$lib/money";
 import {
   accounts,
   balanceSnapshots,
+  first,
   getDB,
   transactions,
 } from "$lib/server/db";
@@ -266,22 +267,24 @@ export function balanceSeriesOf(
 
 // --- database wrappers ----------------------------------------------------
 
-function loadInput(
+async function loadInput(
   userId: string,
   accountId: string,
   upTo: string | null,
   withValues: boolean,
-): BalanceInput {
+): Promise<BalanceInput> {
   const db = getDB();
-  const account = db
-    .select({
-      openingBalance: accounts.openingBalance,
-      openingDate: accounts.openingDate,
-      tradesMoveCash: accounts.tradesMoveCash,
-    })
-    .from(accounts)
-    .where(and(eq(accounts.userId, userId), eq(accounts.id, accountId)))
-    .get();
+  const account = await first(
+    db
+      .select({
+        openingBalance: accounts.openingBalance,
+        openingDate: accounts.openingDate,
+        tradesMoveCash: accounts.tradesMoveCash,
+      })
+      .from(accounts)
+      .where(and(eq(accounts.userId, userId), eq(accounts.id, accountId)))
+      .limit(1),
+  );
   if (!account) throw notFound("Account");
 
   const txWhere = [
@@ -299,15 +302,15 @@ function loadInput(
   // Trades are needed for the cash part too when they move cash.
   const loaded =
     withValues || account.tradesMoveCash
-      ? loadHoldingsInputs(userId, [accountId], upTo ?? "9999-12-31").get(
-          accountId,
-        )
+      ? (
+          await loadHoldingsInputs(userId, [accountId], upTo ?? "9999-12-31")
+        ).get(accountId)
       : undefined;
   const holdings = withValues ? loaded : undefined;
   const portfolios = withValues
-    ? loadPortfolioInputs(userId, [accountId], upTo ?? "9999-12-31").get(
-        accountId,
-      )
+    ? (
+        await loadPortfolioInputs(userId, [accountId], upTo ?? "9999-12-31")
+      ).get(accountId)
     : undefined;
   return {
     openingBalance: account.openingBalance,
@@ -315,23 +318,21 @@ function loadInput(
     holdings,
     cashMoves: account.tradesMoveCash ? cashMovesOf(loaded) : undefined,
     portfolios,
-    transactions: db
+    transactions: await db
       .select({
         bookingDate: transactions.bookingDate,
         amount: transactions.amount,
       })
       .from(transactions)
-      .where(and(...txWhere))
-      .all(),
-    snapshots: db
+      .where(and(...txWhere)),
+    snapshots: await db
       .select({
         date: balanceSnapshots.date,
         amount: balanceSnapshots.amount,
         source: balanceSnapshots.source,
       })
       .from(balanceSnapshots)
-      .where(and(...snapWhere))
-      .all(),
+      .where(and(...snapWhere)),
   };
 }
 
@@ -339,12 +340,12 @@ function loadInput(
  * Cash balance at the end of `date` (see the model above), without holdings:
  * statements reconcile opening balance, transactions and closing balance.
  */
-export function accountBalanceAt(
+export async function accountBalanceAt(
   userId: string,
   accountId: string,
   date: string,
-): Minor {
-  return balanceAt(loadInput(userId, accountId, date, false), date);
+): Promise<Minor> {
+  return balanceAt(await loadInput(userId, accountId, date, false), date);
 }
 
 export function localToday(now = new Date()): string {
@@ -356,12 +357,12 @@ export function localToday(now = new Date()): string {
  * Balance (cash plus holdings and portfolios) as of `today` (YYYY-MM-DD, default local
  * today): future-dated transactions, snapshots and trades do not count.
  */
-export function currentBalance(
+export async function currentBalance(
   userId: string,
   accountId: string,
   today: string = localToday(),
-): Minor {
-  return balanceAt(loadInput(userId, accountId, today, true), today);
+): Promise<Minor> {
+  return balanceAt(await loadInput(userId, accountId, today, true), today);
 }
 
 export interface AccountValue {
@@ -376,12 +377,12 @@ export interface AccountValue {
 }
 
 /** Cash, holdings and portfolios of an account as of `today`; `total` is their sum. */
-export function accountValue(
+export async function accountValue(
   userId: string,
   accountId: string,
   today: string = localToday(),
-): AccountValue {
-  const input = loadInput(userId, accountId, today, true);
+): Promise<AccountValue> {
+  const input = await loadInput(userId, accountId, today, true);
   const cash = cashBalanceAt(input, today);
   const held = input.holdings
     ? makeHoldingsValueAt(input.holdings)(today)
@@ -401,7 +402,7 @@ export function accountValue(
 }
 
 /** Current balances (cash plus holdings and portfolios) of several accounts with a handful of queries in total. */
-export function currentBalances(
+export async function currentBalances(
   userId: string,
   accountRows: readonly {
     id: string;
@@ -410,9 +411,9 @@ export function currentBalances(
     tradesMoveCash: boolean;
   }[],
   today: string = localToday(),
-): Map<string, Minor> {
+): Promise<Map<string, Minor>> {
   return new Map(
-    [...currentValues(userId, accountRows, today)].map(([id, v]) => [
+    [...(await currentValues(userId, accountRows, today))].map(([id, v]) => [
       id,
       v.total,
     ]),
@@ -431,7 +432,7 @@ export interface CurrentValue {
 }
 
 /** Per account: the cash balance, holdings and total as of `today`, with a handful of queries in total. */
-export function currentValues(
+export async function currentValues(
   userId: string,
   accountRows: readonly {
     id: string;
@@ -440,10 +441,10 @@ export function currentValues(
     tradesMoveCash: boolean;
   }[],
   today: string = localToday(),
-): Map<string, CurrentValue> {
+): Promise<Map<string, CurrentValue>> {
   const db = getDB();
   const txByAccount = new Map<string, BalanceInput["transactions"][number][]>();
-  for (const t of db
+  for (const t of await db
     .select({
       accountId: transactions.accountId,
       bookingDate: transactions.bookingDate,
@@ -455,14 +456,13 @@ export function currentValues(
         eq(transactions.userId, userId),
         lte(transactions.bookingDate, today),
       ),
-    )
-    .all()) {
+    )) {
     const list = txByAccount.get(t.accountId) ?? [];
     list.push(t);
     txByAccount.set(t.accountId, list);
   }
   const snapByAccount = new Map<string, BalanceInput["snapshots"][number][]>();
-  for (const s of db
+  for (const s of await db
     .select({
       accountId: balanceSnapshots.accountId,
       date: balanceSnapshots.date,
@@ -475,18 +475,17 @@ export function currentValues(
         eq(balanceSnapshots.userId, userId),
         lte(balanceSnapshots.date, today),
       ),
-    )
-    .all()) {
+    )) {
     const list = snapByAccount.get(s.accountId) ?? [];
     list.push(s);
     snapByAccount.set(s.accountId, list);
   }
-  const holdings = loadHoldingsInputs(
+  const holdings = await loadHoldingsInputs(
     userId,
     accountRows.map((a) => a.id),
     today,
   );
-  const portfolios = loadPortfolioInputs(
+  const portfolios = await loadPortfolioInputs(
     userId,
     accountRows.map((a) => a.id),
     today,
@@ -524,15 +523,15 @@ export function currentValues(
   );
 }
 
-export function balanceSeries(
+export async function balanceSeries(
   userId: string,
   accountId: string,
   from: string,
   to: string,
   step: SeriesStep,
-): BalancePoint[] {
+): Promise<BalancePoint[]> {
   return balanceSeriesOf(
-    loadInput(userId, accountId, to, true),
+    await loadInput(userId, accountId, to, true),
     from,
     to,
     step,

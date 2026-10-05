@@ -39,7 +39,7 @@ const post = (
 
 async function setup() {
   const user = await createTestUser();
-  const account = seedAccount(user.id, { iban: EXAMPLE_IBAN });
+  const account = await seedAccount(user.id, { iban: EXAMPLE_IBAN });
   const id = await uploadFixture(user.id, account.id, "csv/overlap-a.csv");
   return { user, account, id };
 }
@@ -159,7 +159,7 @@ describe("POST /api/imports/[pendingId]/preview", () => {
 
   it("camt uploads have no mapping", async () => {
     const user = await createTestUser();
-    const account = seedAccount(user.id, { iban: EXAMPLE_IBAN });
+    const account = await seedAccount(user.id, { iban: EXAMPLE_IBAN });
     const id = await uploadFixture(
       user.id,
       account.id,

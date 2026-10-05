@@ -49,16 +49,16 @@ function accountFacts(userId: string): AccountFact[] {
     });
 }
 
-function gatherFacts(
+async function gatherFacts(
   userId: string,
   settings: TriggerSettings,
   now: Date,
-): Facts {
+): Promise<Facts> {
   const today = todayLocal(now);
   const month = today.slice(0, 7);
   const needBills = settings.billDueEnabled || settings.billOverdueEnabled;
   const budgets: BudgetFact[] = settings.budgetEnabled
-    ? budgetReport(userId, month).currencies.flatMap((c) =>
+    ? (await budgetReport(userId, month)).currencies.flatMap((c) =>
         c.rows.map((r) => ({ ...r, currency: c.currency })),
       )
     : [];
@@ -86,7 +86,7 @@ export async function runNotifications(
       const done = sentKeys(userId);
       const events = evaluateTriggers(
         settings,
-        gatherFacts(userId, settings, now),
+        await gatherFacts(userId, settings, now),
       ).filter((e) => !done.has(e.key));
       const message = digest(events);
       if (!message) continue;

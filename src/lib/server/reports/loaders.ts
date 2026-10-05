@@ -20,13 +20,13 @@ import type { AccountStatementInput, StatementTransaction } from "./statement";
 /** A statement covers at most this many transactions; choose a shorter period otherwise. */
 export const MAX_STATEMENT_TRANSACTIONS = 10_000;
 
-export function loadAccountStatement(
+export async function loadAccountStatement(
   userId: string,
   accountId: string,
   from: string,
   to: string,
   today: string = localToday(),
-): AccountStatementInput {
+): Promise<AccountStatementInput> {
   if (from > to) {
     throw new LedgerError(
       "invalid",
@@ -34,7 +34,7 @@ export function loadAccountStatement(
       "from",
     );
   }
-  const account = getAccount(userId, accountId, today);
+  const account = await getAccount(userId, accountId, today);
   const where = and(
     eq(transactions.userId, userId),
     eq(transactions.accountId, accountId),
@@ -108,8 +108,12 @@ export function loadAccountStatement(
     },
     from,
     to,
-    openingBalance: accountBalanceAt(userId, accountId, addDays(from, -1)),
-    closingBalance: accountBalanceAt(userId, accountId, to),
+    openingBalance: await accountBalanceAt(
+      userId,
+      accountId,
+      addDays(from, -1),
+    ),
+    closingBalance: await accountBalanceAt(userId, accountId, to),
     transactions: rows,
     generatedOn: today,
   };
@@ -122,36 +126,38 @@ export function loadBillsReport(
   return { bills: billViews(userId, { today }), asOf: today };
 }
 
-export function loadNetWorthReport(
+export async function loadNetWorthReport(
   userId: string,
   today: string = localToday(),
   basis: ShareBasis = "total",
-): NetWorthReportInput {
+): Promise<NetWorthReportInput> {
   return {
-    series: netWorthSeries(userId, { today, basis }),
-    balances: accountBalances(userId, today).map(({ iban, ...balance }) => ({
-      ...balance,
-      ibanMasked: iban ? maskIban(iban) : null,
-    })),
+    series: await netWorthSeries(userId, { today, basis }),
+    balances: (await accountBalances(userId, today)).map(
+      ({ iban, ...balance }) => ({
+        ...balance,
+        ibanMasked: iban ? maskIban(iban) : null,
+      }),
+    ),
     asOf: today,
     basis,
   };
 }
 
-export function loadTaxReport(
+export async function loadTaxReport(
   userId: string,
   year: number,
   today: string = localToday(),
-): TaxReportInput {
-  const reconciliation = reconcileYear(userId, year);
+): Promise<TaxReportInput> {
+  const reconciliation = await reconcileYear(userId, year);
   if (!reconciliation) throw notFound("Tax year");
   return { reconciliation, asOf: today };
 }
 
-export function loadTaxDeductionsReport(
+export async function loadTaxDeductionsReport(
   userId: string,
   year: number,
   today: string = localToday(),
-): TaxDeductionsReportInput {
-  return { summary: deductionSummary(userId, year), asOf: today };
+): Promise<TaxDeductionsReportInput> {
+  return { summary: await deductionSummary(userId, year), asOf: today };
 }

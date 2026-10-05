@@ -82,9 +82,9 @@ describe("bill detail page", () => {
 
   it("update auto-matches a transaction that carries the bill's new reference", async () => {
     const u = await createTestUser();
-    const account = seedAccount(u.id);
+    const account = await seedAccount(u.id);
     const bill = seedBill(u.id);
-    seedImportedTransaction(u.id, account.id, {
+    await seedImportedTransaction(u.id, account.id, {
       amount: minor(-10000),
       bookingDate: "2026-09-10",
       reference: EXAMPLE_QRR,
@@ -123,12 +123,12 @@ describe("bill detail page", () => {
 
   it("the detail load never writes: a payment that arrived after the bill was saved stays a suggestion", async () => {
     const u = await createTestUser();
-    const account = seedAccount(u.id);
+    const account = await seedAccount(u.id);
     const bill = seedBill(u.id, {
       reference: EXAMPLE_QRR,
       referenceType: "QRR",
     });
-    seedImportedTransaction(u.id, account.id, {
+    await seedImportedTransaction(u.id, account.id, {
       amount: minor(-10000),
       bookingDate: "2026-09-10",
       reference: EXAMPLE_QRR,
@@ -144,8 +144,8 @@ describe("bill detail page", () => {
   it("does not match another user's transactions", async () => {
     const u = await createTestUser();
     const other = await createTestUser();
-    const account = seedAccount(other.id);
-    seedImportedTransaction(other.id, account.id, {
+    const account = await seedAccount(other.id);
+    await seedImportedTransaction(other.id, account.id, {
       amount: minor(-10000),
       bookingDate: "2026-09-10",
       reference: EXAMPLE_QRR,
@@ -159,17 +159,17 @@ describe("bill detail page", () => {
 
   it("load returns the bill, allocations, suggestions, candidates, accounts and document", async () => {
     const u = await createTestUser();
-    const account = seedAccount(u.id, { name: "Checking" });
+    const account = await seedAccount(u.id, { name: "Checking" });
     const bill = seedBill(u.id, { dueDate: "2000-01-01" });
-    const tx = seedImportedTransaction(u.id, account.id, {
+    const tx = await seedImportedTransaction(u.id, account.id, {
       amount: minor(-4000),
       counterpartyName: "Sample Payee",
     });
-    const other = seedImportedTransaction(u.id, account.id, {
+    const other = await seedImportedTransaction(u.id, account.id, {
       amount: minor(-3000),
       description: "other",
     });
-    allocate(u.id, bill.id, tx.id, minor(4000), "user");
+    await allocate(u.id, bill.id, tx.id, minor(4000), "user");
 
     const r = await loadAs(u, bill.id, "?q=other");
     expect(r.type).toBe("return");
@@ -236,9 +236,9 @@ describe("bill detail page", () => {
 
   it("allocates, rejects bad amounts and removes allocations", async () => {
     const u = await createTestUser();
-    const account = seedAccount(u.id);
+    const account = await seedAccount(u.id);
     const bill = seedBill(u.id);
-    const tx = seedImportedTransaction(u.id, account.id, {
+    const tx = await seedImportedTransaction(u.id, account.id, {
       amount: minor(-4000),
     });
     const tooMuch = await run("allocate", u, bill.id, {
@@ -276,9 +276,9 @@ describe("bill detail page", () => {
 
   it("dismisses a suggestion and brings it back with undismiss", async () => {
     const u = await createTestUser();
-    const account = seedAccount(u.id);
+    const account = await seedAccount(u.id);
     const bill = seedBill(u.id);
-    const tx = seedImportedTransaction(u.id, account.id, {
+    const tx = await seedImportedTransaction(u.id, account.id, {
       amount: minor(-4000),
     });
     await run("dismissSuggestion", u, bill.id, { transactionId: tx.id });
@@ -306,9 +306,9 @@ describe("bill detail page", () => {
 
   it("dismisses a suggestion for this bill", async () => {
     const u = await createTestUser();
-    const account = seedAccount(u.id);
+    const account = await seedAccount(u.id);
     const bill = seedBill(u.id);
-    const tx = seedImportedTransaction(u.id, account.id, {
+    const tx = await seedImportedTransaction(u.id, account.id, {
       amount: minor(-4000),
     });
     expect(
@@ -399,17 +399,17 @@ describe("bill detail page", () => {
   it("another user cannot see or change the bill, its allocations or its document", async () => {
     const a = await createTestUser();
     const b = await createTestUser();
-    const accountA = seedAccount(a.id);
-    const accountB = seedAccount(b.id);
+    const accountA = await seedAccount(a.id);
+    const accountB = await seedAccount(b.id);
     const billA = seedBill(a.id);
     const billB = seedBill(b.id);
-    const txA = seedImportedTransaction(a.id, accountA.id, {
+    const txA = await seedImportedTransaction(a.id, accountA.id, {
       amount: minor(-1000),
     });
-    const txB = seedImportedTransaction(b.id, accountB.id, {
+    const txB = await seedImportedTransaction(b.id, accountB.id, {
       amount: minor(-1000),
     });
-    const alloc = allocate(a.id, billA.id, txA.id, minor(1000), "user");
+    const alloc = await allocate(a.id, billA.id, txA.id, minor(1000), "user");
     const doc = await storeDocument(
       a.id,
       await qrPdf(),

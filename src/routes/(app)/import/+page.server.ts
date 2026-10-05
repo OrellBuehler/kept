@@ -10,9 +10,9 @@ import { listAccounts } from "$lib/server/ledger/accounts";
 import { ledgerFailure } from "$lib/server/ledger/http";
 import type { Actions, PageServerLoad } from "./$types";
 
-export const load: PageServerLoad = ({ locals, url }) => {
+export const load: PageServerLoad = async ({ locals, url }) => {
   const user = requireUser(locals);
-  const accounts = listAccounts(user.id)
+  const accounts = (await listAccounts(user.id))
     .filter((a) => !a.archived)
     .map((a) => ({
       id: a.id,

@@ -262,12 +262,13 @@ export function withdrawnThisPeriod(
 }
 
 /** Liquid cash and the notice ladder at the ownership share (see `computeLiquidity`). */
-export function liquidity(
+export async function liquidity(
   userId: string,
   today: string,
-  accounts: readonly AccountBalanceView[] = accountBalances(userId, today),
+  balances?: readonly AccountBalanceView[],
   investmentCashLiquid: boolean = getPreferences(userId).investmentCashLiquid,
-): CurrencyLiquidity[] {
+): Promise<CurrencyLiquidity[]> {
+  const accounts = balances ?? (await accountBalances(userId, today));
   return computeLiquidity(accounts, {
     today,
     investmentCashLiquid,

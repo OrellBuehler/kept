@@ -48,7 +48,7 @@ function form(fields: Record<string, string>) {
 
 async function setup() {
   const user = await createTestUser();
-  const account = seedAccount(user.id);
+  const account = await seedAccount(user.id);
   const security = seedSecurity(user.id);
   return { user, account, security };
 }
@@ -793,7 +793,7 @@ describe("trades", () => {
 
   it("keeps sequences per account and per security", async () => {
     const { user, account, security } = await setup();
-    const second = seedAccount(user.id, { name: "Second" });
+    const second = await seedAccount(user.id, { name: "Second" });
     const other = seedSecurity(user.id, { name: "Other" });
     seedTrade(user.id, account.id, security.id, { amount: 1000 });
     conflict(() =>
@@ -816,7 +816,7 @@ describe("trades", () => {
     const { user, account, security } = await setup();
     seedTrade(user.id, account.id, security.id, { amount: 1000 });
     const { deleteAccount } = await import("$lib/server/ledger");
-    deleteAccount(user.id, account.id);
+    await deleteAccount(user.id, account.id);
     expect(ctx.db.select().from(trades).all()).toEqual([]);
   });
 
@@ -824,7 +824,7 @@ describe("trades", () => {
     const { user, account, security } = await setup();
     const trade = seedTrade(user.id, account.id, security.id, { amount: 1000 });
     const other = await createTestUser();
-    const otherAccount = seedAccount(other.id);
+    const otherAccount = await seedAccount(other.id);
     const otherSecurity = seedSecurity(other.id);
     const input = {
       securityId: security.id,

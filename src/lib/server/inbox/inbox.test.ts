@@ -75,7 +75,10 @@ const names = (user: string, folder: string) => {
 
 async function setup() {
   const user = await createTestUser({ username: "alice" });
-  const account = seedAccount(user.id, { name: "Main", iban: EXAMPLE_IBAN });
+  const account = await seedAccount(user.id, {
+    name: "Main",
+    iban: EXAMPLE_IBAN,
+  });
   return { user, account };
 }
 
@@ -125,7 +128,7 @@ describe("scanInbox", () => {
 
   it("mirrors transfers from an inbox import onto an account filled from transfers", async () => {
     const { user, account } = await setup();
-    const savings = seedAccount(user.id, {
+    const savings = await seedAccount(user.id, {
       name: "Savings",
       iban: EXAMPLE_IBAN_OTHER,
       fillFromTransfers: true,
@@ -186,7 +189,7 @@ describe("scanInbox", () => {
 
   it("imports a csv in an account folder using the saved profile", async () => {
     const { user, account } = await setup();
-    saveCsvProfile(user.id, account.id, "Simple", SIMPLE_CSV_PROFILE);
+    await saveCsvProfile(user.id, account.id, "Simple", SIMPLE_CSV_PROFILE);
     drop("alice", "export.csv", fixture("csv/overlap-a.csv"), "main");
     const summary = await scan();
     expect(summary.imported).toBe(1);
@@ -310,7 +313,10 @@ describe("scanInbox", () => {
   it("only looks at the folder of each user", async () => {
     await setup();
     const bob = await createTestUser({ username: "bob" });
-    const bobAccount = seedAccount(bob.id, { name: "Bob", iban: EXAMPLE_IBAN });
+    const bobAccount = await seedAccount(bob.id, {
+      name: "Bob",
+      iban: EXAMPLE_IBAN,
+    });
     drop("bob", "stmt.xml", fixture("camt053/overlap-a.xml"));
     await scan();
     expect(count(bobAccount.id)).toBe(5);

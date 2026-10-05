@@ -35,15 +35,15 @@ const income = {
 
 async function setup() {
   const user = await createTestUser();
-  const account = seedAccount(user.id, { openingBalance: m(100000) });
-  const cat = (name: string, over: Partial<CategoryInput> = {}) =>
-    createCategory(user.id, { name, ...expense, ...over });
-  const tx = (
+  const account = await seedAccount(user.id, { openingBalance: m(100000) });
+  const cat = async (name: string, over: Partial<CategoryInput> = {}) =>
+    await createCategory(user.id, { name, ...expense, ...over });
+  const tx = async (
     amount: number,
     bookingDate: string,
     over: Parameters<typeof seedImportedTransaction>[2] = {},
   ) =>
-    seedImportedTransaction(user.id, account.id, {
+    await seedImportedTransaction(user.id, account.id, {
       amount: m(amount),
       bookingDate,
       ...over,
@@ -72,19 +72,19 @@ describe("review years", () => {
   it("lists years with transactions on active accounts, newest first", async () => {
     const { user, tx } = await setup();
     const other = await createTestUser();
-    const otherAccount = seedAccount(other.id);
-    seedImportedTransaction(other.id, otherAccount.id, {
+    const otherAccount = await seedAccount(other.id);
+    await seedImportedTransaction(other.id, otherAccount.id, {
       bookingDate: "2019-05-05",
     });
-    const archived = seedAccount(user.id, { name: "Old" });
-    seedImportedTransaction(user.id, archived.id, {
+    const archived = await seedAccount(user.id, { name: "Old" });
+    await seedImportedTransaction(user.id, archived.id, {
       bookingDate: "2018-05-05",
     });
-    setAccountArchived(user.id, archived.id, true);
-    tx(-10, "2024-02-01");
-    tx(-10, "2025-02-01");
-    tx(-10, "2025-03-01");
-    expect(reviewYears(user.id)).toEqual([2025, 2024]);
+    await setAccountArchived(user.id, archived.id, true);
+    await tx(-10, "2024-02-01");
+    await tx(-10, "2025-02-01");
+    await tx(-10, "2025-03-01");
+    expect(await reviewYears(user.id)).toEqual([2025, 2024]);
   });
 });
 
@@ -93,8 +93,8 @@ describe("yearReview", () => {
 
   it("is empty without transactions", async () => {
     const user = await createTestUser();
-    seedAccount(user.id);
-    const r = yearReview(user.id, { year: 2025, today: TODAY });
+    await seedAccount(user.id);
+    const r = await yearReview(user.id, { year: 2025, today: TODAY });
     expect(r).toMatchObject({
       year: 2025,
       from: "2025-01-01",
@@ -107,19 +107,19 @@ describe("yearReview", () => {
 
   it("totals income and expenses with refunds netted into their category", async () => {
     const { cat, tx, user } = await setup();
-    const salary = cat("Salary", income);
-    const food = cat("Food");
-    const rent = cat("Rent");
-    tx(5000, "2025-01-25", { categoryId: salary.id });
-    tx(5000, "2025-02-25", { categoryId: salary.id });
-    tx(-800, "2025-01-03", { categoryId: rent.id });
-    tx(-120, "2025-02-10", { categoryId: food.id });
-    tx(30, "2025-02-12", { categoryId: food.id });
-    tx(-50, "2025-03-01");
-    tx(-9999, "2024-12-31", { categoryId: food.id });
-    tx(-9999, "2026-01-01", { categoryId: food.id });
+    const salary = await cat("Salary", income);
+    const food = await cat("Food");
+    const rent = await cat("Rent");
+    await tx(5000, "2025-01-25", { categoryId: salary.id });
+    await tx(5000, "2025-02-25", { categoryId: salary.id });
+    await tx(-800, "2025-01-03", { categoryId: rent.id });
+    await tx(-120, "2025-02-10", { categoryId: food.id });
+    await tx(30, "2025-02-12", { categoryId: food.id });
+    await tx(-50, "2025-03-01");
+    await tx(-9999, "2024-12-31", { categoryId: food.id });
+    await tx(-9999, "2026-01-01", { categoryId: food.id });
 
-    const r = yearReview(user.id, { year: 2025, today: TODAY });
+    const r = await yearReview(user.id, { year: 2025, today: TODAY });
     const chf = r.currencies[0]!;
     expect(r.currencies).toHaveLength(1);
     expect(chf).toMatchObject({
@@ -161,11 +161,11 @@ describe("yearReview", () => {
 
   it("rolls subcategories up into their parent", async () => {
     const { cat, tx, user } = await setup();
-    const food = cat("Food");
-    const groceries = cat("Groceries", { parentId: food.id });
-    tx(-100, "2025-04-01", { categoryId: food.id });
-    tx(-50, "2025-04-02", { categoryId: groceries.id });
-    const chf = yearReview(user.id, { year: 2025, today: TODAY })
+    const food = await cat("Food");
+    const groceries = await cat("Groceries", { parentId: food.id });
+    await tx(-100, "2025-04-01", { categoryId: food.id });
+    await tx(-50, "2025-04-02", { categoryId: groceries.id });
+    const chf = (await yearReview(user.id, { year: 2025, today: TODAY }))
       .currencies[0]!;
     expect(chf.sankey.right.find((n) => n.label === "Food")?.value).toBe(150);
     expect(
@@ -175,8 +175,8 @@ describe("yearReview", () => {
 
   it("handles a year without a previous year", async () => {
     const { cat, tx, user } = await setup();
-    tx(-100, "2025-04-01", { categoryId: cat("Food").id });
-    const chf = yearReview(user.id, { year: 2025, today: TODAY })
+    await tx(-100, "2025-04-01", { categoryId: (await cat("Food")).id });
+    const chf = (await yearReview(user.id, { year: 2025, today: TODAY }))
       .currencies[0]!;
     expect(chf.hasPreviousYear).toBe(false);
     expect(chf.changes).toEqual([]);
@@ -184,20 +184,20 @@ describe("yearReview", () => {
 
   it("computes year-over-year changes in both directions", async () => {
     const { cat, tx, user } = await setup();
-    const food = cat("Food");
-    const travel = cat("Travel");
-    const fun = cat("Fun");
-    const salary = cat("Salary", income);
-    tx(-100, "2024-04-01", { categoryId: food.id });
-    tx(-400, "2024-05-01", { categoryId: travel.id });
-    tx(-10, "2024-05-01", { categoryId: fun.id });
-    tx(1000, "2024-05-01", { categoryId: salary.id });
-    tx(-300, "2025-04-01", { categoryId: food.id });
-    tx(-100, "2025-05-01", { categoryId: travel.id });
-    tx(-60, "2025-05-01", { categoryId: cat("New").id });
-    tx(1500, "2025-05-01", { categoryId: salary.id });
+    const food = await cat("Food");
+    const travel = await cat("Travel");
+    const fun = await cat("Fun");
+    const salary = await cat("Salary", income);
+    await tx(-100, "2024-04-01", { categoryId: food.id });
+    await tx(-400, "2024-05-01", { categoryId: travel.id });
+    await tx(-10, "2024-05-01", { categoryId: fun.id });
+    await tx(1000, "2024-05-01", { categoryId: salary.id });
+    await tx(-300, "2025-04-01", { categoryId: food.id });
+    await tx(-100, "2025-05-01", { categoryId: travel.id });
+    await tx(-60, "2025-05-01", { categoryId: (await cat("New")).id });
+    await tx(1500, "2025-05-01", { categoryId: salary.id });
 
-    const chf = yearReview(user.id, { year: 2025, today: TODAY })
+    const chf = (await yearReview(user.id, { year: 2025, today: TODAY }))
       .currencies[0]!;
     expect(chf.hasPreviousYear).toBe(true);
     const byName = Object.fromEntries(chf.changes.map((c) => [c.name, c]));
@@ -226,12 +226,12 @@ describe("yearReview", () => {
 
   it("reports uncategorised income and expenses as separate changes", async () => {
     const { tx, user } = await setup();
-    tx(-100, "2024-04-01");
-    tx(200, "2024-04-02");
-    tx(-150, "2025-04-01");
-    tx(300, "2025-04-02");
+    await tx(-100, "2024-04-01");
+    await tx(200, "2024-04-02");
+    await tx(-150, "2025-04-01");
+    await tx(300, "2025-04-02");
 
-    const chf = yearReview(user.id, { year: 2025, today: TODAY })
+    const chf = (await yearReview(user.id, { year: 2025, today: TODAY }))
       .currencies[0]!;
     expect(chf.changes.map((c) => [c.side, c.categoryId])).toEqual(
       expect.arrayContaining([
@@ -245,19 +245,19 @@ describe("yearReview", () => {
 
   it("keeps currencies apart", async () => {
     const { tx, user } = await setup();
-    const eur = seedAccount(user.id, { name: "Euro", currency: "EUR" });
-    tx(-100, "2025-04-01");
-    seedImportedTransaction(user.id, eur.id, {
+    const eur = await seedAccount(user.id, { name: "Euro", currency: "EUR" });
+    await tx(-100, "2025-04-01");
+    await seedImportedTransaction(user.id, eur.id, {
       amount: m(-70),
       currency: "EUR",
       bookingDate: "2025-04-01",
     });
-    seedImportedTransaction(user.id, eur.id, {
+    await seedImportedTransaction(user.id, eur.id, {
       amount: m(900),
       currency: "EUR",
       bookingDate: "2025-04-02",
     });
-    const r = yearReview(user.id, { year: 2025, today: TODAY });
+    const r = await yearReview(user.id, { year: 2025, today: TODAY });
     expect(r.currencies.map((c) => [c.currency, c.income, c.expenses])).toEqual(
       [
         ["CHF", 0, 100],
@@ -269,40 +269,43 @@ describe("yearReview", () => {
 
   it("excludes transfers between own accounts and counts them", async () => {
     const { user, tx } = await setup();
-    const savings = seedAccount(user.id, {
+    const savings = await seedAccount(user.id, {
       name: "Savings",
       iban: EXAMPLE_IBAN_OTHER,
     });
-    const checking = seedAccount(user.id, {
+    const checking = await seedAccount(user.id, {
       name: "Checking",
       iban: EXAMPLE_IBAN,
     });
-    seedImportedTransaction(user.id, checking.id, {
+    await seedImportedTransaction(user.id, checking.id, {
       amount: m(-500),
       bookingDate: "2025-06-01",
       counterpartyIban: EXAMPLE_IBAN_OTHER,
     });
-    seedImportedTransaction(user.id, savings.id, {
+    await seedImportedTransaction(user.id, savings.id, {
       amount: m(500),
       bookingDate: "2025-06-01",
       counterpartyIban: IBAN_CH_SPACED,
     });
-    tx(-20, "2025-06-02", { counterpartyIban: IBAN_DE });
-    const r = yearReview(user.id, { year: 2025, today: TODAY });
+    await tx(-20, "2025-06-02", { counterpartyIban: IBAN_DE });
+    const r = await yearReview(user.id, { year: 2025, today: TODAY });
     expect(r.excludedTransfers).toBe(2);
     expect(r.currencies[0]).toMatchObject({ income: 0, expenses: 20 });
   });
 
   it("ranks counterparties and the largest transactions", async () => {
     const { tx, user, cat } = await setup();
-    const food = cat("Food");
-    tx(-30, "2025-01-01", { counterpartyName: "Shop A", categoryId: food.id });
-    tx(-40, "2025-02-01", { counterpartyName: "shop a " });
-    tx(-60, "2025-03-01", { counterpartyName: "Shop B" });
-    tx(15, "2025-03-02", { counterpartyName: "Shop B" });
-    tx(-5, "2025-03-03");
-    tx(2000, "2025-03-04", { counterpartyName: "Employer" });
-    const chf = yearReview(user.id, { year: 2025, today: TODAY })
+    const food = await cat("Food");
+    await tx(-30, "2025-01-01", {
+      counterpartyName: "Shop A",
+      categoryId: food.id,
+    });
+    await tx(-40, "2025-02-01", { counterpartyName: "shop a " });
+    await tx(-60, "2025-03-01", { counterpartyName: "Shop B" });
+    await tx(15, "2025-03-02", { counterpartyName: "Shop B" });
+    await tx(-5, "2025-03-03");
+    await tx(2000, "2025-03-04", { counterpartyName: "Employer" });
+    const chf = (await yearReview(user.id, { year: 2025, today: TODAY }))
       .currencies[0]!;
     expect(chf.counterparties).toEqual([
       { name: "Shop A", spent: 70, count: 2 },
@@ -320,19 +323,19 @@ describe("yearReview", () => {
 
   it("measures net worth change from the end of the previous year", async () => {
     const { tx, user } = await setup();
-    tx(-1000, "2024-12-30");
-    tx(3000, "2025-03-01");
-    tx(-500, "2025-07-01");
-    const chf = yearReview(user.id, { year: 2025, today: TODAY })
+    await tx(-1000, "2024-12-30");
+    await tx(3000, "2025-03-01");
+    await tx(-500, "2025-07-01");
+    const chf = (await yearReview(user.id, { year: 2025, today: TODAY }))
       .currencies[0]!;
     expect(chf.netWorth).toEqual({ start: 99000, end: 101500, change: 2500 });
   });
 
   it("covers the current year up to today", async () => {
     const { tx, user } = await setup();
-    tx(-10, "2026-03-01");
-    tx(-20, "2026-12-01");
-    const r = yearReview(user.id, { year: 2026, today: TODAY });
+    await tx(-10, "2026-03-01");
+    await tx(-20, "2026-12-01");
+    const r = await yearReview(user.id, { year: 2026, today: TODAY });
     expect(r.partial).toBe(true);
     expect(r.to).toBe(TODAY);
     expect(r.currencies[0]!.expenses).toBe(10);
@@ -341,18 +344,18 @@ describe("yearReview", () => {
   it("only sees the given user's data and ignores archived accounts", async () => {
     const { tx, user } = await setup();
     const other = await createTestUser();
-    seedImportedTransaction(other.id, seedAccount(other.id).id, {
+    await seedImportedTransaction(other.id, (await seedAccount(other.id)).id, {
       amount: m(-777),
       bookingDate: "2025-01-01",
     });
-    const archived = seedAccount(user.id, { name: "Old" });
-    seedImportedTransaction(user.id, archived.id, {
+    const archived = await seedAccount(user.id, { name: "Old" });
+    await seedImportedTransaction(user.id, archived.id, {
       amount: m(-555),
       bookingDate: "2025-01-01",
     });
-    setAccountArchived(user.id, archived.id, true);
-    tx(-10, "2025-01-01");
-    const r = yearReview(user.id, { year: 2025, today: TODAY });
+    await setAccountArchived(user.id, archived.id, true);
+    await tx(-10, "2025-01-01");
+    const r = await yearReview(user.id, { year: 2025, today: TODAY });
     expect(r.currencies[0]!.expenses).toBe(10);
   });
 });

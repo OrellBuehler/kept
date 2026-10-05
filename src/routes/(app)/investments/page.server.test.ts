@@ -75,7 +75,7 @@ describe("investments page", () => {
 
   it("load returns securities, positions and the price history of one security", async () => {
     const u = await createTestUser();
-    const acc = seedAccount(u.id, { type: "investment" });
+    const acc = await seedAccount(u.id, { type: "investment" });
     const sec = seedSecurity(u.id);
     seedTrade(u.id, acc.id, sec.id, { qty: "2", price: "50", amount: 10000 });
     seedManualPrice(u.id, sec.id, "2024-02-01", "60");
@@ -172,7 +172,7 @@ describe("investments page", () => {
 
   it("refuses to delete a security that has trades", async () => {
     const u = await createTestUser();
-    const acc = seedAccount(u.id);
+    const acc = await seedAccount(u.id);
     const sec = seedSecurity(u.id);
     seedTrade(u.id, acc.id, sec.id, { amount: 100000 });
     expect(

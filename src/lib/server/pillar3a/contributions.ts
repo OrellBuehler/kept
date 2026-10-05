@@ -24,11 +24,13 @@ import {
 } from "$lib/pillar-3a";
 import type { Pillar3aContributionKind } from "$lib/pillar-3a-types";
 import {
+  first,
   getDB,
   pillar3aBuyInYears,
   pillar3aContributions,
   portfolios,
   transactions,
+  type DB,
 } from "$lib/server/db";
 import { localToday } from "$lib/server/ledger/balances";
 import { LedgerError, notFound } from "$lib/server/ledger/errors";
@@ -37,7 +39,14 @@ import type {
   ManualContributionInput,
 } from "./schemas";
 import { matchReferenceSql } from "./reference-match";
-import { listYearSettings } from "./years";
+import {
+  listYearSettings,
+  listYearSettingsInTx,
+  type YearSettingView,
+} from "./years";
+
+type Reader = Pick<DB, "select">;
+type Tx = Pick<DB, "select" | "insert" | "update" | "delete">;
 
 export interface DetectedContribution {
   transactionId: string;
@@ -90,13 +99,8 @@ export interface ContributionSaved {
 /** Whitespace-free, upper-case SQL form of `transactions.reference` (see `matchReference`). */
 const normalizedReference = matchReferenceSql(transactions.reference);
 
-/**
- * Outgoing CHF payments on any of the user's accounts whose reference equals
- * the deposit reference of one of the user's portfolios (open or closed).
- * One query joining transactions to portfolios; newest first.
- */
-export function detectedContributions(userId: string): DetectedContribution[] {
-  return getDB()
+function detectedQuery(conn: Reader, userId: string) {
+  return conn
     .select({
       transactionId: transactions.id,
       accountId: transactions.accountId,
@@ -122,39 +126,73 @@ export function detectedContributions(userId: string): DetectedContribution[] {
         eq(transactions.currency, PILLAR_3A_CURRENCY),
       ),
     )
-    .orderBy(desc(transactions.bookingDate), desc(transactions.id))
-    .all()
-    .map((r) => ({ ...r, amount: minor(-r.amount) }));
+    .orderBy(desc(transactions.bookingDate), desc(transactions.id));
 }
 
-function loadAll(userId: string): ContributionView[] {
-  const db = getDB();
-  const portfolioRows = new Map(
-    db
+function toDetected(
+  rows: readonly {
+    transactionId: string;
+    accountId: string;
+    portfolioId: string;
+    bookingDate: string;
+    amount: Minor;
+  }[],
+): DetectedContribution[] {
+  return rows.map((r) => ({ ...r, amount: minor(-r.amount) }));
+}
+
+/**
+ * Outgoing CHF payments on any of the user's accounts whose reference equals
+ * the deposit reference of one of the user's portfolios (open or closed).
+ * One query joining transactions to portfolios; newest first.
+ */
+export async function detectedContributions(
+  userId: string,
+): Promise<DetectedContribution[]> {
+  return toDetected(await detectedQuery(getDB(), userId));
+}
+
+/** Sync twin of detectedContributions, for the body of a transaction. */
+function detectedContributionsInTx(
+  tx: Reader,
+  userId: string,
+): DetectedContribution[] {
+  return toDetected(detectedQuery(tx, userId).all());
+}
+
+function loadAllQueries(conn: Reader, userId: string) {
+  return {
+    portfolios: conn
       .select({
         id: portfolios.id,
         name: portfolios.name,
         accountId: portfolios.accountId,
       })
       .from(portfolios)
-      .where(eq(portfolios.userId, userId))
-      .all()
-      .map((p) => [p.id, p]),
-  );
-  const rows = db
-    .select()
-    .from(pillar3aContributions)
-    .where(eq(pillar3aContributions.userId, userId))
-    .all();
+      .where(eq(portfolios.userId, userId)),
+    rows: conn
+      .select()
+      .from(pillar3aContributions)
+      .where(eq(pillar3aContributions.userId, userId)),
+    gaps: conn
+      .select({
+        contributionId: pillar3aBuyInYears.contributionId,
+        year: pillar3aBuyInYears.year,
+      })
+      .from(pillar3aBuyInYears)
+      .where(eq(pillar3aBuyInYears.userId, userId)),
+  };
+}
+
+function assembleAll(
+  portfolioList: readonly { id: string; name: string; accountId: string }[],
+  rows: readonly (typeof pillar3aContributions.$inferSelect)[],
+  gaps: readonly { contributionId: string; year: number }[],
+  detected: readonly DetectedContribution[],
+): ContributionView[] {
+  const portfolioRows = new Map(portfolioList.map((p) => [p.id, p]));
   const gapYearsOf = new Map<string, number[]>();
-  for (const g of db
-    .select({
-      contributionId: pillar3aBuyInYears.contributionId,
-      year: pillar3aBuyInYears.year,
-    })
-    .from(pillar3aBuyInYears)
-    .where(eq(pillar3aBuyInYears.userId, userId))
-    .all()) {
+  for (const g of gaps) {
     const list = gapYearsOf.get(g.contributionId) ?? [];
     list.push(g.year);
     gapYearsOf.set(g.contributionId, list);
@@ -166,7 +204,7 @@ function loadAll(userId: string): ContributionView[] {
   );
 
   const views: ContributionView[] = [];
-  for (const d of detectedContributions(userId)) {
+  for (const d of detected) {
     const portfolio = portfolioRows.get(d.portfolioId)!;
     const a = annotations.get(d.transactionId) ?? null;
     const date = a?.date ?? d.bookingDate;
@@ -229,15 +267,36 @@ function loadAll(userId: string): ContributionView[] {
   );
 }
 
+async function loadAll(userId: string): Promise<ContributionView[]> {
+  const q = loadAllQueries(getDB(), userId);
+  return assembleAll(
+    await q.portfolios,
+    await q.rows,
+    await q.gaps,
+    await detectedContributions(userId),
+  );
+}
+
+/** Sync twin of loadAll, for the body of a transaction. */
+function loadAllInTx(tx: Reader, userId: string): ContributionView[] {
+  const q = loadAllQueries(tx, userId);
+  return assembleAll(
+    q.portfolios.all(),
+    q.rows.all(),
+    q.gaps.all(),
+    detectedContributionsInTx(tx, userId),
+  );
+}
+
 /**
  * Detected payments merged with their annotations and the manual entries,
  * newest credit date first, optionally of one tax year.
  */
-export function listContributions(
+export async function listContributions(
   userId: string,
   opts: { year?: number } = {},
-): ContributionView[] {
-  const all = loadAll(userId);
+): Promise<ContributionView[]> {
+  const all = await loadAll(userId);
   return opts.year === undefined
     ? all
     : all.filter((c) => c.year === opts.year);
@@ -260,21 +319,32 @@ export function contributionFacts(
   return { contributions, buyInYears };
 }
 
-export function ageBenefitDrawn(userId: string): boolean {
-  return (
-    getDB()
-      .select({ id: portfolios.id })
-      .from(portfolios)
-      .where(
-        and(eq(portfolios.userId, userId), eq(portfolios.closeReason, "age")),
-      )
-      .get() !== undefined
-  );
+function ageBenefitQuery(conn: Reader, userId: string) {
+  return conn
+    .select({ id: portfolios.id })
+    .from(portfolios)
+    .where(
+      and(eq(portfolios.userId, userId), eq(portfolios.closeReason, "age")),
+    )
+    .limit(1);
 }
 
+export async function ageBenefitDrawn(userId: string): Promise<boolean> {
+  return (await first(ageBenefitQuery(getDB(), userId))) !== undefined;
+}
+
+/** Sync twin of ageBenefitDrawn, for the body of a transaction. */
+function ageBenefitDrawnInTx(tx: Reader, userId: string): boolean {
+  return ageBenefitQuery(tx, userId).get() !== undefined;
+}
+
+/** The pure buy-in rules over facts the caller loaded. */
 function evaluateBuyIn(
-  userId: string,
-  views: readonly ContributionView[],
+  facts: {
+    views: readonly ContributionView[];
+    settings: readonly YearSettingView[];
+    ageBenefitDrawn: boolean;
+  },
   input: {
     key: string | null;
     contributionId: string | null;
@@ -284,11 +354,11 @@ function evaluateBuyIn(
   },
   today: string,
 ): BuyInCheck {
-  const settings = listYearSettings(userId);
-  const facts = contributionFacts(views, input.key);
-  const gaps = gapsFor({ ...facts, settings, today });
+  const { settings } = facts;
+  const contribution = contributionFacts(facts.views, input.key);
+  const gaps = gapsFor({ ...contribution, settings, today });
   const year = taxYearOf(input.date);
-  const ordinaryPaid = facts.contributions
+  const ordinaryPaid = contribution.contributions
     .filter((c) => c.year === year && c.kind === "ordinary")
     .reduce((sum, c) => sum + c.amount, 0);
   return validateBuyIn({
@@ -296,7 +366,7 @@ function evaluateBuyIn(
     amount: input.amount,
     gapYears: input.gapYears,
     gaps,
-    ageBenefitDrawn: ageBenefitDrawn(userId),
+    ageBenefitDrawn: facts.ageBenefitDrawn,
     ordinaryPaid: minor(ordinaryPaid),
     ordinaryLimit: yearLimit(year, settingFor(year, settings)).limit,
     contributionId: input.contributionId,
@@ -307,7 +377,7 @@ function evaluateBuyIn(
  * Previews the buy-in rules for a contribution without saving. `key` names
  * the contribution being edited (see `ContributionView.key`), `null` for a new one.
  */
-export function checkBuyIn(
+export async function checkBuyIn(
   userId: string,
   input: {
     key?: string | null;
@@ -316,12 +386,15 @@ export function checkBuyIn(
     gapYears: readonly number[];
   },
   today: string = localToday(),
-): BuyInCheck {
-  const views = loadAll(userId);
+): Promise<BuyInCheck> {
+  const views = await loadAll(userId);
   const own = input.key ? views.find((v) => v.key === input.key) : undefined;
   return evaluateBuyIn(
-    userId,
-    views,
+    {
+      views,
+      settings: await listYearSettings(userId),
+      ageBenefitDrawn: await ageBenefitDrawn(userId),
+    },
     {
       key: input.key ?? null,
       contributionId: own?.id ?? null,
@@ -334,12 +407,11 @@ export function checkBuyIn(
 }
 
 /** Annotation rows whose payment no longer matches a portfolio reference are dead weight; drop them. */
-function pruneOrphanAnnotations(userId: string) {
+function pruneOrphanAnnotations(tx: Tx, userId: string) {
   const live = new Set(
-    detectedContributions(userId).map((d) => d.transactionId),
+    detectedContributionsInTx(tx, userId).map((d) => d.transactionId),
   );
-  const db = getDB();
-  const orphans = db
+  const orphans = tx
     .select({
       id: pillar3aContributions.id,
       transactionId: pillar3aContributions.transactionId,
@@ -355,7 +427,7 @@ function pruneOrphanAnnotations(userId: string) {
     .filter((r) => !live.has(r.transactionId!))
     .map((r) => r.id);
   if (orphans.length > 0) {
-    db.delete(pillar3aContributions)
+    tx.delete(pillar3aContributions)
       .where(inArray(pillar3aContributions.id, orphans))
       .run();
   }
@@ -381,13 +453,17 @@ interface Spec {
   note: string | null;
 }
 
-function save(userId: string, spec: Spec, today: string): ContributionSaved {
+async function save(
+  userId: string,
+  spec: Spec,
+  today: string,
+): Promise<ContributionSaved> {
   const db = getDB();
   let savedId = "";
   let warnings: string[] = [];
   try {
     db.transaction((tx) => {
-      pruneOrphanAnnotations(userId);
+      pruneOrphanAnnotations(tx, userId);
       const key = spec.transactionId
         ? `tx:${spec.transactionId}`
         : spec.existingId
@@ -397,8 +473,11 @@ function save(userId: string, spec: Spec, today: string): ContributionSaved {
         spec.kind === "buy_in" ? [...new Set(spec.gapYears)] : [];
       if (spec.kind === "buy_in") {
         const check = evaluateBuyIn(
-          userId,
-          loadAll(userId),
+          {
+            views: loadAllInTx(tx, userId),
+            settings: listYearSettingsInTx(tx, userId),
+            ageBenefitDrawn: ageBenefitDrawnInTx(tx, userId),
+          },
           {
             key,
             contributionId: spec.existingId,
@@ -457,28 +536,30 @@ function save(userId: string, spec: Spec, today: string): ContributionSaved {
     }
     throw err;
   }
-  const contribution = loadAll(userId).find((c) => c.id === savedId);
+  const contribution = (await loadAll(userId)).find((c) => c.id === savedId);
   if (!contribution) throw notFound("Contribution");
   return { contribution, warnings };
 }
 
-function assertPortfolio(userId: string, portfolioId: string) {
-  const found = getDB()
-    .select({ id: portfolios.id })
-    .from(portfolios)
-    .where(and(eq(portfolios.userId, userId), eq(portfolios.id, portfolioId)))
-    .get();
+async function assertPortfolio(userId: string, portfolioId: string) {
+  const found = await first(
+    getDB()
+      .select({ id: portfolios.id })
+      .from(portfolios)
+      .where(and(eq(portfolios.userId, userId), eq(portfolios.id, portfolioId)))
+      .limit(1),
+  );
   if (!found) throw notFound("Portfolio");
 }
 
 /** A contribution the app cannot see as a payment, e.g. one paid from an account that is not tracked. */
-export function addManualContribution(
+export async function addManualContribution(
   userId: string,
   input: ManualContributionInput,
   today: string = localToday(),
-): ContributionSaved {
-  assertPortfolio(userId, input.portfolioId);
-  return save(
+): Promise<ContributionSaved> {
+  await assertPortfolio(userId, input.portfolioId);
+  return await save(
     userId,
     {
       existingId: null,
@@ -494,26 +575,28 @@ export function addManualContribution(
   );
 }
 
-export function updateManualContribution(
+export async function updateManualContribution(
   userId: string,
   id: string,
   input: ManualContributionInput,
   today: string = localToday(),
-): ContributionSaved {
-  const row = getDB()
-    .select({ id: pillar3aContributions.id })
-    .from(pillar3aContributions)
-    .where(
-      and(
-        eq(pillar3aContributions.userId, userId),
-        eq(pillar3aContributions.id, id),
-        isNull(pillar3aContributions.transactionId),
-      ),
-    )
-    .get();
+): Promise<ContributionSaved> {
+  const row = await first(
+    getDB()
+      .select({ id: pillar3aContributions.id })
+      .from(pillar3aContributions)
+      .where(
+        and(
+          eq(pillar3aContributions.userId, userId),
+          eq(pillar3aContributions.id, id),
+          isNull(pillar3aContributions.transactionId),
+        ),
+      )
+      .limit(1),
+  );
   if (!row) throw notFound("Contribution");
-  assertPortfolio(userId, input.portfolioId);
-  return save(
+  await assertPortfolio(userId, input.portfolioId);
+  return await save(
     userId,
     {
       existingId: id,
@@ -533,27 +616,29 @@ export function updateManualContribution(
  * Annotates a detected payment: kind, credit date, gap years and note. The
  * amount always comes from the transaction.
  */
-export function updateDetectedContribution(
+export async function updateDetectedContribution(
   userId: string,
   transactionId: string,
   input: ContributionDetailsInput,
   today: string = localToday(),
-): ContributionSaved {
-  const detected = detectedContributions(userId).find(
+): Promise<ContributionSaved> {
+  const detected = (await detectedContributions(userId)).find(
     (d) => d.transactionId === transactionId,
   );
   if (!detected) throw notFound("Contribution");
-  const existing = getDB()
-    .select({ id: pillar3aContributions.id })
-    .from(pillar3aContributions)
-    .where(
-      and(
-        eq(pillar3aContributions.userId, userId),
-        eq(pillar3aContributions.transactionId, transactionId),
-      ),
-    )
-    .get();
-  return save(
+  const existing = await first(
+    getDB()
+      .select({ id: pillar3aContributions.id })
+      .from(pillar3aContributions)
+      .where(
+        and(
+          eq(pillar3aContributions.userId, userId),
+          eq(pillar3aContributions.transactionId, transactionId),
+        ),
+      )
+      .limit(1),
+  );
+  return await save(
     userId,
     {
       existingId: existing?.id ?? null,
@@ -573,11 +658,11 @@ export function updateDetectedContribution(
  * Deletes a manual contribution, or an annotation (which resets the payment to
  * a plain ordinary contribution). Gap years of a buy-in are released.
  */
-export function deleteContribution(
+export async function deleteContribution(
   userId: string,
   target: ContributionTarget,
-): void {
-  const deleted = getDB()
+): Promise<void> {
+  const deleted = await getDB()
     .delete(pillar3aContributions)
     .where(
       and(
@@ -587,7 +672,6 @@ export function deleteContribution(
           : eq(pillar3aContributions.transactionId, target.transactionId),
       ),
     )
-    .returning({ id: pillar3aContributions.id })
-    .all();
+    .returning({ id: pillar3aContributions.id });
   if (deleted.length === 0) throw notFound("Contribution");
 }

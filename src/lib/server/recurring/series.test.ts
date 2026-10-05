@@ -18,15 +18,15 @@ useTestDB();
 
 async function setup() {
   const user = await createTestUser();
-  const account = seedAccount(user.id);
-  const eur = seedAccount(user.id, { name: "Euro", currency: "EUR" });
-  const pay = (
+  const account = await seedAccount(user.id);
+  const eur = await seedAccount(user.id, { name: "Euro", currency: "EUR" });
+  const pay = async (
     bookingDate: string,
     amount: number,
     counterpartyName: string,
     over: { currency?: string; reversal?: boolean } = {},
   ) =>
-    seedImportedTransaction(
+    await seedImportedTransaction(
       user.id,
       over.currency === "EUR" ? eur.id : account.id,
       {
@@ -37,22 +37,23 @@ async function setup() {
         reversal: over.reversal ?? false,
       },
     );
-  const months = (
+  const months = async (
     name: string,
     amounts: number[],
     day = "05",
     over: { currency?: string } = {},
-  ) =>
-    amounts.forEach((a, i) =>
-      pay(`2026-${String(i + 1).padStart(2, "0")}-${day}`, a, name, over),
-    );
+  ) => {
+    for (const [i, a] of amounts.entries()) {
+      await pay(`2026-${String(i + 1).padStart(2, "0")}-${day}`, a, name, over);
+    }
+  };
   return { user, pay, months };
 }
 
 describe("syncRecurring", () => {
   it("stores detected series as suggestions", async () => {
     const { user, months } = await setup();
-    months("Example Streaming", [-1290, -1290, -1290]);
+    await months("Example Streaming", [-1290, -1290, -1290]);
     syncRecurring(user.id);
     const list = listRecurring(user.id, "2026-04-01");
     expect(list).toHaveLength(1);
@@ -72,7 +73,7 @@ describe("syncRecurring", () => {
 
   it("is idempotent", async () => {
     const { user, months } = await setup();
-    months("Example Streaming", [-1290, -1290, -1290]);
+    await months("Example Streaming", [-1290, -1290, -1290]);
     syncRecurring(user.id);
     syncRecurring(user.id);
     expect(listRecurring(user.id)).toHaveLength(1);
@@ -80,7 +81,7 @@ describe("syncRecurring", () => {
 
   it("flags a price change and an overdue payment", async () => {
     const { user, months } = await setup();
-    months("Example Streaming", [-1290, -1290, -1290, -1490]);
+    await months("Example Streaming", [-1290, -1290, -1290, -1490]);
     syncRecurring(user.id);
     const [s] = listRecurring(user.id, "2026-05-20");
     expect(s?.priceChange).toEqual({
@@ -94,11 +95,11 @@ describe("syncRecurring", () => {
 
   it("keeps a dismissal when detection runs again", async () => {
     const { user, months, pay } = await setup();
-    months("Example Streaming", [-1290, -1290, -1290]);
+    await months("Example Streaming", [-1290, -1290, -1290]);
     syncRecurring(user.id);
     const [s] = listRecurring(user.id);
     dismissSeries(user.id, s!.id);
-    pay("2026-04-05", -1290, "Example Streaming");
+    await pay("2026-04-05", -1290, "Example Streaming");
     syncRecurring(user.id);
     const after = listRecurring(user.id);
     expect(after).toHaveLength(1);
@@ -112,7 +113,7 @@ describe("syncRecurring", () => {
 
   it("keeps edits and refreshes statistics around them", async () => {
     const { user, months, pay } = await setup();
-    months("Example Streaming", [-1290, -1290, -1290]);
+    await months("Example Streaming", [-1290, -1290, -1290]);
     syncRecurring(user.id);
     const [s] = listRecurring(user.id);
     confirmSeries(user.id, s!.id);
@@ -121,7 +122,7 @@ describe("syncRecurring", () => {
       cadence: "monthly",
       amount: "13.00",
     });
-    pay("2026-04-05", -1490, "Example Streaming");
+    await pay("2026-04-05", -1490, "Example Streaming");
     syncRecurring(user.id);
     expect(listRecurring(user.id)[0]).toMatchObject({
       status: "confirmed",
@@ -134,8 +135,8 @@ describe("syncRecurring", () => {
 
   it("drops suggestions that no longer hold but keeps confirmed series", async () => {
     const { user, months } = await setup();
-    months("Gym", [-5000, -5000, -5000]);
-    months("Insurance", [-9000, -9000, -9000], "10");
+    await months("Gym", [-5000, -5000, -5000]);
+    await months("Insurance", [-9000, -9000, -9000], "10");
     syncRecurring(user.id);
     const insurance = listRecurring(user.id).find(
       (s) => s.name === "Insurance",
@@ -150,11 +151,11 @@ describe("syncRecurring", () => {
 
   it("ignores refunded charges", async () => {
     const { user, pay } = await setup();
-    pay("2026-01-05", -1290, "Example Streaming");
-    pay("2026-02-05", -1290, "Example Streaming");
-    pay("2026-02-10", 1290, "Example Streaming");
-    pay("2026-03-05", -1290, "Example Streaming");
-    pay("2026-04-05", -1290, "Example Streaming");
+    await pay("2026-01-05", -1290, "Example Streaming");
+    await pay("2026-02-05", -1290, "Example Streaming");
+    await pay("2026-02-10", 1290, "Example Streaming");
+    await pay("2026-03-05", -1290, "Example Streaming");
+    await pay("2026-04-05", -1290, "Example Streaming");
     syncRecurring(user.id);
     expect(listRecurring(user.id)[0]?.occurrences).toBe(3);
   });
@@ -162,7 +163,7 @@ describe("syncRecurring", () => {
   it("never touches another user's data", async () => {
     const a = await setup();
     const b = await setup();
-    a.months("Example Streaming", [-1290, -1290, -1290]);
+    await a.months("Example Streaming", [-1290, -1290, -1290]);
     syncRecurring(b.user.id);
     expect(listRecurring(b.user.id)).toEqual([]);
     syncRecurring(a.user.id);
@@ -183,7 +184,7 @@ describe("syncRecurring", () => {
 describe("editSeries", () => {
   it("keeps the direction and rejects bad amounts", async () => {
     const { user, months } = await setup();
-    months("Employer", [500000, 500000, 500000], "25");
+    await months("Employer", [500000, 500000, 500000], "25");
     syncRecurring(user.id);
     const [s] = listRecurring(user.id);
     editSeries(user.id, s!.id, {
@@ -212,10 +213,10 @@ describe("editSeries", () => {
 describe("recurringTotals", () => {
   it("sums confirmed series per currency without converting", async () => {
     const { user, months } = await setup();
-    months("Streaming", [-1000, -1000, -1000]);
-    months("Cloud", [-200, -200, -200], "07", { currency: "EUR" });
-    months("Employer", [400000, 400000, 400000], "25");
-    months("Pending", [-777, -777, -777], "12");
+    await months("Streaming", [-1000, -1000, -1000]);
+    await months("Cloud", [-200, -200, -200], "07", { currency: "EUR" });
+    await months("Employer", [400000, 400000, 400000], "25");
+    await months("Pending", [-777, -777, -777], "12");
     syncRecurring(user.id);
     for (const s of listRecurring(user.id)) {
       if (s.name !== "Pending") confirmSeries(user.id, s.id);
@@ -242,11 +243,11 @@ describe("recurringTotals", () => {
 describe("projectRecurring", () => {
   it("projects confirmed series after their last payment, sorted by date", async () => {
     const { user, months, pay } = await setup();
-    months("Streaming", [-1000, -1000, -1000]);
-    months("Rent", [-150000, -150000, -150000], "01");
-    pay("2026-01-15", -8000, "Insurer");
-    pay("2026-04-15", -8000, "Insurer");
-    pay("2026-07-15", -8000, "Insurer");
+    await months("Streaming", [-1000, -1000, -1000]);
+    await months("Rent", [-150000, -150000, -150000], "01");
+    await pay("2026-01-15", -8000, "Insurer");
+    await pay("2026-04-15", -8000, "Insurer");
+    await pay("2026-07-15", -8000, "Insurer");
     syncRecurring(user.id);
     for (const s of listRecurring(user.id)) confirmSeries(user.id, s.id);
 
@@ -267,9 +268,9 @@ describe("projectRecurring", () => {
 
   it("skips suggested and dismissed series and includes both bounds", async () => {
     const { user, months } = await setup();
-    months("Streaming", [-1000, -1000, -1000]);
-    months("Gym", [-5000, -5000, -5000], "10");
-    months("Cloud", [-200, -200, -200], "07");
+    await months("Streaming", [-1000, -1000, -1000]);
+    await months("Gym", [-5000, -5000, -5000], "10");
+    await months("Cloud", [-200, -200, -200], "07");
     syncRecurring(user.id);
     for (const s of listRecurring(user.id)) {
       if (s.name === "Streaming") confirmSeries(user.id, s.id);
@@ -281,8 +282,8 @@ describe("projectRecurring", () => {
 
   it("projects income as positive and keeps currencies apart", async () => {
     const { user, months } = await setup();
-    months("Employer", [400000, 400000, 400000], "25");
-    months("Cloud", [-200, -200, -200], "07", { currency: "EUR" });
+    await months("Employer", [400000, 400000, 400000], "25");
+    await months("Cloud", [-200, -200, -200], "07", { currency: "EUR" });
     syncRecurring(user.id);
     for (const s of listRecurring(user.id)) confirmSeries(user.id, s.id);
     const out = projectRecurring(user.id, "2026-04-01", "2026-04-30");
@@ -294,7 +295,7 @@ describe("projectRecurring", () => {
 
   it("starts from the latest amount after a price change", async () => {
     const { user, months } = await setup();
-    months("Streaming", [-1000, -1000, -1000, -1200]);
+    await months("Streaming", [-1000, -1000, -1000, -1200]);
     syncRecurring(user.id);
     confirmSeries(user.id, listRecurring(user.id)[0]!.id);
     const [o] = projectRecurring(user.id, "2026-05-01", "2026-05-31");

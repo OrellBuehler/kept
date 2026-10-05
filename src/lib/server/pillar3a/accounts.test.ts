@@ -111,16 +111,18 @@ describe("pillar_3a account input", () => {
 describe("pillar_3a account service", () => {
   it("returns both fields in views and dashboard balances", async () => {
     const u = await createTestUser();
-    const acc = seedPillar3aAccount(u.id);
-    expect(getAccount(u.id, acc.id)).toMatchObject({
+    const acc = await seedPillar3aAccount(u.id);
+    expect(await getAccount(u.id, acc.id)).toMatchObject({
       type: "pillar_3a",
       contractNumber: "TEST-0001",
       depositIban: QR_IBAN,
       iban: null,
       shareBps: 10000,
     });
-    expect(listAccounts(u.id)[0]).toMatchObject({ depositIban: QR_IBAN });
-    expect(accountBalances(u.id, "2026-01-01")[0]).toMatchObject({
+    expect((await listAccounts(u.id))[0]).toMatchObject({
+      depositIban: QR_IBAN,
+    });
+    expect((await accountBalances(u.id, "2026-01-01"))[0]).toMatchObject({
       contractNumber: "TEST-0001",
       depositIban: QR_IBAN,
     });
@@ -128,17 +130,19 @@ describe("pillar_3a account service", () => {
 
   it("allows the same deposit IBAN on several accounts (providers share it)", async () => {
     const u = await createTestUser();
-    seedPillar3aAccount(u.id, { name: "A" });
-    expect(() => seedPillar3aAccount(u.id, { name: "B" })).not.toThrow();
+    await seedPillar3aAccount(u.id, { name: "A" });
+    await expect(
+      seedPillar3aAccount(u.id, { name: "B" }),
+    ).resolves.not.toThrow();
   });
 
   it("blocks a currency change once portfolio values exist", async () => {
     const u = await createTestUser();
-    const acc = seedPillar3aAccount(u.id, { iban: EXAMPLE_IBAN });
-    const p = seedPortfolio(u.id, acc.id, {
+    const acc = await seedPillar3aAccount(u.id, { iban: EXAMPLE_IBAN });
+    const p = await seedPortfolio(u.id, acc.id, {
       depositReference: makeQrr(1),
     });
-    setValues(u.id, acc.id, "2026-01-01", [
+    await setValues(u.id, acc.id, "2026-01-01", [
       { portfolioId: p.id, amount: minor(100) },
     ]);
     const input = {
@@ -160,15 +164,17 @@ describe("pillar_3a account service", () => {
       sharedWith: null,
       sortOrder: null,
     };
-    expect(() => updateAccount(u.id, acc.id, input)).toThrow(LedgerError);
-    expect(() =>
+    await expect(updateAccount(u.id, acc.id, input)).rejects.toThrow(
+      LedgerError,
+    );
+    await expect(
       updateAccount(u.id, acc.id, { ...input, currency: "CHF" }),
-    ).not.toThrow();
+    ).resolves.not.toThrow();
   });
 
   describe("keeps portfolios consistent", () => {
     const inputOf = (
-      acc: ReturnType<typeof seedPillar3aAccount>,
+      acc: Awaited<ReturnType<typeof seedPillar3aAccount>>,
       over = {},
     ) => ({
       institutionId: null,
@@ -193,10 +199,10 @@ describe("pillar_3a account service", () => {
 
     it("rejects a type change while portfolios exist", async () => {
       const u = await createTestUser();
-      const acc = seedPillar3aAccount(u.id);
-      seedPortfolio(u.id, acc.id);
+      const acc = await seedPillar3aAccount(u.id);
+      await seedPortfolio(u.id, acc.id);
       expect(
-        errorCode(() =>
+        await errorCode(() =>
           updateAccount(
             u.id,
             acc.id,
@@ -204,24 +210,24 @@ describe("pillar_3a account service", () => {
           ),
         ),
       ).toBe("conflict:type");
-      expect(getAccount(u.id, acc.id).type).toBe("pillar_3a");
+      expect((await getAccount(u.id, acc.id)).type).toBe("pillar_3a");
 
-      const empty = seedPillar3aAccount(u.id, { name: "Empty" });
-      expect(() =>
+      const empty = await seedPillar3aAccount(u.id, { name: "Empty" });
+      await expect(
         updateAccount(
           u.id,
           empty.id,
           inputOf(empty, { type: "savings", contractNumber: null }),
         ),
-      ).not.toThrow();
+      ).resolves.not.toThrow();
     });
 
     it("revalidates references when the deposit IBAN changes", async () => {
       const u = await createTestUser();
-      const acc = seedPillar3aAccount(u.id);
-      seedPortfolio(u.id, acc.id, { depositReference: makeQrr(1) });
+      const acc = await seedPillar3aAccount(u.id);
+      await seedPortfolio(u.id, acc.id, { depositReference: makeQrr(1) });
       expect(
-        errorCode(() =>
+        await errorCode(() =>
           updateAccount(
             u.id,
             acc.id,
@@ -229,18 +235,20 @@ describe("pillar_3a account service", () => {
           ),
         ),
       ).toBe("invalid:depositIban");
-      expect(getAccount(u.id, acc.id).depositIban).toBe(QR_IBAN);
-      expect(() =>
+      expect((await getAccount(u.id, acc.id)).depositIban).toBe(QR_IBAN);
+      await expect(
         updateAccount(u.id, acc.id, inputOf(acc, { depositIban: null })),
-      ).not.toThrow();
+      ).resolves.not.toThrow();
     });
 
     it("rejects a creditor reference behind a QR-IBAN", async () => {
       const u = await createTestUser();
-      const acc = seedPillar3aAccount(u.id, { depositIban: EXAMPLE_IBAN });
-      seedPortfolio(u.id, acc.id, { depositReference: scor("12345") });
+      const acc = await seedPillar3aAccount(u.id, {
+        depositIban: EXAMPLE_IBAN,
+      });
+      await seedPortfolio(u.id, acc.id, { depositReference: scor("12345") });
       expect(
-        errorCode(() =>
+        await errorCode(() =>
           updateAccount(u.id, acc.id, inputOf(acc, { depositIban: QR_IBAN })),
         ),
       ).toBe("invalid:depositIban");
@@ -248,10 +256,10 @@ describe("pillar_3a account service", () => {
 
     it("blocks a currency change while portfolios exist, even without values", async () => {
       const u = await createTestUser();
-      const acc = seedPillar3aAccount(u.id);
-      seedPortfolio(u.id, acc.id);
+      const acc = await seedPillar3aAccount(u.id);
+      await seedPortfolio(u.id, acc.id);
       expect(
-        errorCode(() =>
+        await errorCode(() =>
           updateAccount(u.id, acc.id, inputOf(acc, { currency: "EUR" })),
         ),
       ).toBe("conflict:currency");

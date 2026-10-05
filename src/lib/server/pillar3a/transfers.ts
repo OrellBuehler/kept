@@ -7,19 +7,21 @@ import { matchReference } from "./reference-match";
  * Normalized deposit references of the user's portfolios. Used to treat
  * outgoing payments carrying one of them as internal transfers.
  */
-export function portfolioDepositReferences(userId: string): Set<string> {
+export async function portfolioDepositReferences(
+  userId: string,
+): Promise<Set<string>> {
   return new Set(
-    getDB()
-      .select({ reference: portfolios.depositReference })
-      .from(portfolios)
-      .where(
-        and(
-          eq(portfolios.userId, userId),
-          isNotNull(portfolios.depositReference),
-        ),
-      )
-      .all()
-      .map((r) => r.reference!),
+    (
+      await getDB()
+        .select({ reference: portfolios.depositReference })
+        .from(portfolios)
+        .where(
+          and(
+            eq(portfolios.userId, userId),
+            isNotNull(portfolios.depositReference),
+          ),
+        )
+    ).map((r) => r.reference!),
   );
 }
 

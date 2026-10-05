@@ -51,9 +51,9 @@ describe("buy-in check endpoint", () => {
 
   it("reports a gap year already closed by another buy-in", async () => {
     const u = await createTestUser();
-    const acc = seedPillar3aAccount(u.id);
-    const p = seedPortfolio(u.id, acc.id);
-    addManualContribution(
+    const acc = await seedPillar3aAccount(u.id);
+    const p = await seedPortfolio(u.id, acc.id);
+    await addManualContribution(
       u.id,
       {
         portfolioId: p.id,

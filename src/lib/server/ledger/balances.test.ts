@@ -208,11 +208,11 @@ describe("database balances", () => {
 
   it("combines opening balance, manual and imported transactions and snapshots", async () => {
     const user = await createTestUser();
-    const account = seedAccount(user.id, {
+    const account = await seedAccount(user.id, {
       openingBalance: minor(1000),
       openingDate: "2024-01-01",
     });
-    createManualTransaction(user.id, account.id, {
+    await createManualTransaction(user.id, account.id, {
       bookingDate: "2024-01-05",
       valueDate: null,
       amount: minor(-250),
@@ -222,23 +222,25 @@ describe("database balances", () => {
       reference: null,
       note: null,
     });
-    seedImportedTransaction(user.id, account.id, {
+    await seedImportedTransaction(user.id, account.id, {
       bookingDate: "2024-01-10",
       amount: minor(400),
     });
-    expect(accountBalanceAt(user.id, account.id, "2024-01-07")).toBe(750);
-    expect(currentBalance(user.id, account.id)).toBe(1150);
+    expect(await accountBalanceAt(user.id, account.id, "2024-01-07")).toBe(750);
+    expect(await currentBalance(user.id, account.id)).toBe(1150);
 
-    createSnapshot(user.id, account.id, {
+    await createSnapshot(user.id, account.id, {
       date: "2024-01-08",
       amount: minor(2000),
       note: null,
     });
-    expect(accountBalanceAt(user.id, account.id, "2024-01-07")).toBe(750);
-    expect(accountBalanceAt(user.id, account.id, "2024-01-08")).toBe(2000);
-    expect(currentBalance(user.id, account.id)).toBe(2400);
+    expect(await accountBalanceAt(user.id, account.id, "2024-01-07")).toBe(750);
+    expect(await accountBalanceAt(user.id, account.id, "2024-01-08")).toBe(
+      2000,
+    );
+    expect(await currentBalance(user.id, account.id)).toBe(2400);
 
-    const series = balanceSeries(
+    const series = await balanceSeries(
       user.id,
       account.id,
       "2024-01-01",
@@ -251,14 +253,14 @@ describe("database balances", () => {
   it("does not see another user's account", async () => {
     const a = await createTestUser();
     const b = await createTestUser();
-    const account = seedAccount(a.id);
-    expect(() => currentBalance(b.id, account.id)).toThrow(LedgerError);
-    expect(() => accountBalanceAt(b.id, account.id, "2024-01-01")).toThrow(
-      LedgerError,
-    );
-    expect(() =>
+    const account = await seedAccount(a.id);
+    await expect(currentBalance(b.id, account.id)).rejects.toThrow(LedgerError);
+    await expect(
+      accountBalanceAt(b.id, account.id, "2024-01-01"),
+    ).rejects.toThrow(LedgerError);
+    await expect(
       balanceSeries(b.id, account.id, "2024-01-01", "2024-01-02", "day"),
-    ).toThrow(LedgerError);
+    ).rejects.toThrow(LedgerError);
   });
 });
 
@@ -267,44 +269,46 @@ describe("current balance cap", () => {
 
   it("ignores future-dated transactions and snapshots", async () => {
     const user = await createTestUser();
-    const account = seedAccount(user.id, { openingBalance: minor(100) });
-    seedImportedTransaction(user.id, account.id, {
+    const account = await seedAccount(user.id, { openingBalance: minor(100) });
+    await seedImportedTransaction(user.id, account.id, {
       bookingDate: "2024-01-10",
       amount: minor(10),
     });
-    seedImportedTransaction(user.id, account.id, {
+    await seedImportedTransaction(user.id, account.id, {
       bookingDate: "2024-02-10",
       amount: minor(1000),
     });
-    expect(currentBalance(user.id, account.id, "2024-01-31")).toBe(110);
-    expect(currentBalance(user.id, account.id, "2024-02-10")).toBe(1110);
-    createSnapshot(user.id, account.id, {
+    expect(await currentBalance(user.id, account.id, "2024-01-31")).toBe(110);
+    expect(await currentBalance(user.id, account.id, "2024-02-10")).toBe(1110);
+    await createSnapshot(user.id, account.id, {
       date: "2024-03-01",
       amount: minor(5),
       note: null,
     });
-    expect(currentBalance(user.id, account.id, "2024-02-28")).toBe(1110);
-    expect(getAccount(user.id, account.id, "2024-01-31").balance).toBe(110);
-    expect(listAccounts(user.id, "2024-03-01")[0]!.balance).toBe(5);
+    expect(await currentBalance(user.id, account.id, "2024-02-28")).toBe(1110);
+    expect((await getAccount(user.id, account.id, "2024-01-31")).balance).toBe(
+      110,
+    );
+    expect((await listAccounts(user.id, "2024-03-01"))[0]!.balance).toBe(5);
   });
 
   it("currentBalances matches per-account results for several accounts", async () => {
     const user = await createTestUser();
-    const a = seedAccount(user.id, { openingBalance: minor(1) });
-    const b = seedAccount(user.id, { name: "B" });
-    seedImportedTransaction(user.id, b.id, { amount: minor(7) });
+    const a = await seedAccount(user.id, { openingBalance: minor(1) });
+    const b = await seedAccount(user.id, { name: "B" });
+    await seedImportedTransaction(user.id, b.id, { amount: minor(7) });
     const other = await createTestUser();
-    const c = seedAccount(other.id);
-    seedImportedTransaction(other.id, c.id, { amount: minor(999) });
-    const m = currentBalances(user.id, [a, b], "2024-12-31");
+    const c = await seedAccount(other.id);
+    await seedImportedTransaction(other.id, c.id, { amount: minor(999) });
+    const m = await currentBalances(user.id, [a, b], "2024-12-31");
     expect(m.get(a.id)).toBe(1);
     expect(m.get(b.id)).toBe(7);
   });
 
   it("currentValues splits cash and holdings and stays per user", async () => {
     const user = await createTestUser();
-    const cashOnly = seedAccount(user.id, { openingBalance: minor(500) });
-    const inv = seedAccount(user.id, {
+    const cashOnly = await seedAccount(user.id, { openingBalance: minor(500) });
+    const inv = await seedAccount(user.id, {
       name: "Inv",
       type: "investment",
       openingBalance: minor(1000),
@@ -318,7 +322,7 @@ describe("current balance cap", () => {
     });
     seedProviderPrice(user.id, sec.id, "2024-03-01", "120");
     const other = await createTestUser();
-    const foreign = seedAccount(other.id, {
+    const foreign = await seedAccount(other.id, {
       type: "investment",
       openingBalance: minor(7),
     });
@@ -327,7 +331,7 @@ describe("current balance cap", () => {
       date: "2024-02-01",
       amount: 100000,
     });
-    const v = currentValues(user.id, [cashOnly, inv], "2024-12-31");
+    const v = await currentValues(user.id, [cashOnly, inv], "2024-12-31");
     expect(v.get(cashOnly.id)).toMatchObject({
       cash: 500,
       holdings: null,
@@ -338,14 +342,17 @@ describe("current balance cap", () => {
       holdings: { value: 120000, cost: 100500, estimated: false },
       total: 121000,
     });
-    expect(currentBalances(user.id, [cashOnly, inv], "2024-12-31")).toEqual(
+    expect(
+      await currentBalances(user.id, [cashOnly, inv], "2024-12-31"),
+    ).toEqual(
       new Map([
         [cashOnly.id, 500],
         [inv.id, 121000],
       ]),
     );
     expect(
-      currentValues(user.id, [foreign], "2024-12-31").get(foreign.id)!.holdings,
+      (await currentValues(user.id, [foreign], "2024-12-31")).get(foreign.id)!
+        .holdings,
     ).toBeNull();
   });
 });

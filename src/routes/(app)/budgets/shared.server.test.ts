@@ -33,15 +33,15 @@ describe("budgets page with shared accounts", () => {
 
   it("counts shared spending at the share by default and in full on request", async () => {
     const u = await createTestUser();
-    const acc = seedAccount(u.id, { shareBps: 5000 });
-    const food = createCategory(u.id, {
+    const acc = await seedAccount(u.id, { shareBps: 5000 });
+    const food = await createCategory(u.id, {
       name: "Food",
       kind: "expense",
       parentId: null,
       color: null,
       icon: null,
     });
-    seedImportedTransaction(u.id, acc.id, {
+    await seedImportedTransaction(u.id, acc.id, {
       categoryId: food.id,
       amount: minor(-2501),
       bookingDate: "2026-03-10",
@@ -61,7 +61,7 @@ describe("budgets page with shared accounts", () => {
 
   it("reports no shared accounts for a plain user", async () => {
     const u = await createTestUser();
-    seedAccount(u.id);
+    await seedAccount(u.id);
     expect((await loadBudgets(u, "")).hasShared).toBe(false);
   });
 });

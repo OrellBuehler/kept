@@ -24,7 +24,7 @@ import {
 } from "$lib/server/db";
 import { getAccount } from "$lib/server/ledger/accounts";
 import { notFound } from "$lib/server/ledger/errors";
-import { linkTransfers } from "$lib/server/transfers/link";
+import { linkTransfersInTx } from "$lib/server/transfers/link";
 
 export interface ImportView {
   id: string;
@@ -86,8 +86,11 @@ function toView(
 }
 
 /** Imports of one account, newest first. */
-export function listImports(userId: string, accountId: string): ImportView[] {
-  getAccount(userId, accountId);
+export async function listImports(
+  userId: string,
+  accountId: string,
+): Promise<ImportView[]> {
+  await getAccount(userId, accountId);
   return select()
     .where(and(eq(imports.userId, userId), eq(imports.accountId, accountId)))
     .orderBy(desc(imports.createdAt), desc(imports.id))
@@ -307,7 +310,7 @@ export function undoImport(
       }
     }
     // Real rows that had replaced mirrors are gone: the transfers they stood for are mirrored again.
-    linkTransfers(userId, { targetAccountId: found.accountId }, tx);
+    linkTransfersInTx(tx, userId, { targetAccountId: found.accountId });
     return { accountId: found.accountId, removedTransactions: found.n };
   });
 }

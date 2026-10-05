@@ -25,8 +25,8 @@ describe("reports page", () => {
   it("lists only the user's accounts", async () => {
     const u = await createTestUser();
     const other = await createTestUser();
-    const a = seedAccount(u.id, { name: "Mine" });
-    seedAccount(other.id, { name: "Theirs" });
+    const a = await seedAccount(u.id, { name: "Mine" });
+    await seedAccount(other.id, { name: "Theirs" });
     const r = await outcome(() => load(createTestEvent({ user: u }) as never));
     expect(r.type).toBe("return");
     const value = (r as { value: { accounts: unknown[] } }).value;
@@ -41,7 +41,7 @@ describe("report download", () => {
 
   it("serves each kind as an attachment PDF", async () => {
     const u = await createTestUser();
-    const a = seedAccount(u.id);
+    const a = await seedAccount(u.id);
     seedBill(u.id);
     const cases: [string, string][] = [
       ["statement", `?account=${a.id}&from=2026-09-01&to=2026-09-30`],
@@ -67,7 +67,7 @@ describe("report download", () => {
   it("answers 404 for unknown kinds and other users' accounts", async () => {
     const u = await createTestUser();
     const other = await createTestUser();
-    const theirs = seedAccount(other.id);
+    const theirs = await seedAccount(other.id);
     const period = "from=2026-09-01&to=2026-09-30";
     expect(await get(u, "payroll")).toEqual({ type: "error", status: 404 });
     expect(
@@ -81,7 +81,7 @@ describe("report download", () => {
 
   it("answers 400 for bad parameters", async () => {
     const u = await createTestUser();
-    const a = seedAccount(u.id);
+    const a = await seedAccount(u.id);
     for (const query of [
       "",
       `?account=${a.id}`,

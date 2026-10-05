@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { minor } from "$lib/money";
+import { getDB } from "$lib/server/db";
 import { isValidQrr } from "$lib/references";
 import { parseForm } from "$lib/server/forms";
 import { createTestUser } from "$lib/testing/auth";
@@ -15,7 +16,11 @@ import {
 import { closePortfolio } from "./portfolios";
 import { parsePortfolioValuesForm, yearSettingSchema } from "./schemas";
 import { deleteValue, listValues, setValues } from "./values";
-import { listYearSettings, setYearSetting } from "./years";
+import {
+  listYearSettings,
+  listYearSettingsInTx,
+  setYearSetting,
+} from "./years";
 import { makePortfoliosValueAt } from "./valuation";
 
 useTestDB();
@@ -37,56 +42,56 @@ describe("test helpers", () => {
 describe("setValues", () => {
   it("upserts per (portfolio, date)", async () => {
     const u = await createTestUser();
-    const acc = seedPillar3aAccount(u.id);
-    const a = seedPortfolio(u.id, acc.id, { name: "A" });
-    const b = seedPortfolio(u.id, acc.id, { name: "B" });
-    const first = setValues(u.id, acc.id, "2026-01-10", [
+    const acc = await seedPillar3aAccount(u.id);
+    const a = await seedPortfolio(u.id, acc.id, { name: "A" });
+    const b = await seedPortfolio(u.id, acc.id, { name: "B" });
+    const first = await setValues(u.id, acc.id, "2026-01-10", [
       { portfolioId: a.id, amount: minor(1000) },
       { portfolioId: b.id, amount: minor(2000) },
     ]);
     expect(first.map((v) => v.amount).sort()).toEqual([1000, 2000]);
-    setValues(
+    await setValues(
       u.id,
       acc.id,
       "2026-01-10",
       [{ portfolioId: a.id, amount: minor(1500) }],
       "fixed",
     );
-    setValues(u.id, acc.id, "2026-02-10", [
+    await setValues(u.id, acc.id, "2026-02-10", [
       { portfolioId: a.id, amount: minor(1600) },
     ]);
-    const history = listValues(u.id, a.id);
+    const history = await listValues(u.id, a.id);
     expect(history.map((v) => [v.date, v.amount, v.note])).toEqual([
       ["2026-02-10", 1600, null],
       ["2026-01-10", 1500, "fixed"],
     ]);
-    expect(listValues(u.id, b.id)).toHaveLength(1);
+    expect(await listValues(u.id, b.id)).toHaveLength(1);
   });
 
   it("deletes a single value", async () => {
     const u = await createTestUser();
-    const acc = seedPillar3aAccount(u.id);
-    const p = seedPortfolio(u.id, acc.id);
-    setValues(u.id, acc.id, "2026-01-10", [
+    const acc = await seedPillar3aAccount(u.id);
+    const p = await seedPortfolio(u.id, acc.id);
+    await setValues(u.id, acc.id, "2026-01-10", [
       { portfolioId: p.id, amount: minor(1) },
     ]);
-    const [v] = listValues(u.id, p.id);
-    deleteValue(u.id, v!.id);
-    expect(listValues(u.id, p.id)).toEqual([]);
-    expect(errorCode(() => deleteValue(u.id, v!.id))).toBe("not_found:");
+    const [v] = await listValues(u.id, p.id);
+    await deleteValue(u.id, v!.id);
+    expect(await listValues(u.id, p.id)).toEqual([]);
+    expect(await errorCode(() => deleteValue(u.id, v!.id))).toBe("not_found:");
   });
 
   it("rejects bad batches", async () => {
     const u = await createTestUser();
-    const acc = seedPillar3aAccount(u.id);
-    const other = seedPillar3aAccount(u.id, { name: "Second" });
-    const p = seedPortfolio(u.id, acc.id);
-    const q = seedPortfolio(u.id, other.id, { name: "Q" });
-    expect(errorCode(() => setValues(u.id, acc.id, "2026-01-10", []))).toBe(
-      "invalid:",
-    );
+    const acc = await seedPillar3aAccount(u.id);
+    const other = await seedPillar3aAccount(u.id, { name: "Second" });
+    const p = await seedPortfolio(u.id, acc.id);
+    const q = await seedPortfolio(u.id, other.id, { name: "Q" });
     expect(
-      errorCode(() =>
+      await errorCode(() => setValues(u.id, acc.id, "2026-01-10", [])),
+    ).toBe("invalid:");
+    expect(
+      await errorCode(() =>
         setValues(u.id, acc.id, "2026-01-10", [
           { portfolioId: p.id, amount: minor(1) },
           { portfolioId: p.id, amount: minor(2) },
@@ -94,51 +99,54 @@ describe("setValues", () => {
       ),
     ).toBe("invalid:");
     expect(
-      errorCode(() =>
+      await errorCode(() =>
         setValues(u.id, acc.id, "2026-01-10", [
           { portfolioId: p.id, amount: minor(-1) },
         ]),
       ),
     ).toBe("invalid:");
     expect(
-      errorCode(() =>
+      await errorCode(() =>
         setValues(u.id, acc.id, "2026-01-10", [
           { portfolioId: q.id, amount: minor(1) },
         ]),
       ),
     ).toBe("not_found:");
-    expect(listValues(u.id, p.id)).toEqual([]);
+    expect(await listValues(u.id, p.id)).toEqual([]);
   });
 
   it("is atomic: a failing entry stores nothing", async () => {
     const u = await createTestUser();
-    const acc = seedPillar3aAccount(u.id);
-    const p = seedPortfolio(u.id, acc.id);
+    const acc = await seedPillar3aAccount(u.id);
+    const p = await seedPortfolio(u.id, acc.id);
     expect(
-      errorCode(() =>
+      await errorCode(() =>
         setValues(u.id, acc.id, "2026-01-10", [
           { portfolioId: p.id, amount: minor(5) },
           { portfolioId: "missing", amount: minor(5) },
         ]),
       ),
     ).toBe("not_found:");
-    expect(listValues(u.id, p.id)).toEqual([]);
+    expect(await listValues(u.id, p.id)).toEqual([]);
   });
 
   it("refuses values on or after a portfolio's closing date", async () => {
     const u = await createTestUser();
-    const acc = seedPillar3aAccount(u.id);
-    const p = seedPortfolio(u.id, acc.id);
-    closePortfolio(u.id, p.id, { closedOn: "2030-06-30", closeReason: "age" });
+    const acc = await seedPillar3aAccount(u.id);
+    const p = await seedPortfolio(u.id, acc.id);
+    await closePortfolio(u.id, p.id, {
+      closedOn: "2030-06-30",
+      closeReason: "age",
+    });
     expect(
-      errorCode(() =>
+      await errorCode(() =>
         setValues(u.id, acc.id, "2030-06-30", [
           { portfolioId: p.id, amount: minor(1) },
         ]),
       ),
     ).toBe("invalid:date");
     expect(
-      errorCode(() =>
+      await errorCode(() =>
         setValues(u.id, acc.id, "2030-06-29", [
           { portfolioId: p.id, amount: minor(1) },
         ]),
@@ -149,37 +157,41 @@ describe("setValues", () => {
   it("is invisible to other users", async () => {
     const owner = await createTestUser();
     const other = await createTestUser();
-    const acc = seedPillar3aAccount(owner.id);
-    const p = seedPortfolio(owner.id, acc.id);
-    setValues(owner.id, acc.id, "2026-01-10", [
+    const acc = await seedPillar3aAccount(owner.id);
+    const p = await seedPortfolio(owner.id, acc.id);
+    await setValues(owner.id, acc.id, "2026-01-10", [
       { portfolioId: p.id, amount: minor(10) },
     ]);
-    const [v] = listValues(owner.id, p.id);
-    const otherAcc = seedPillar3aAccount(other.id);
-    expect(errorCode(() => listValues(other.id, p.id))).toBe("not_found:");
-    expect(errorCode(() => deleteValue(other.id, v!.id))).toBe("not_found:");
+    const [v] = await listValues(owner.id, p.id);
+    const otherAcc = await seedPillar3aAccount(other.id);
+    expect(await errorCode(() => listValues(other.id, p.id))).toBe(
+      "not_found:",
+    );
+    expect(await errorCode(() => deleteValue(other.id, v!.id))).toBe(
+      "not_found:",
+    );
     expect(
-      errorCode(() =>
+      await errorCode(() =>
         setValues(other.id, acc.id, "2026-01-10", [
           { portfolioId: p.id, amount: minor(1) },
         ]),
       ),
     ).toBe("not_found:");
     expect(
-      errorCode(() =>
+      await errorCode(() =>
         setValues(other.id, otherAcc.id, "2026-01-10", [
           { portfolioId: p.id, amount: minor(1) },
         ]),
       ),
     ).toBe("not_found:");
-    expect(listValues(owner.id, p.id)[0]!.amount).toBe(10);
+    expect((await listValues(owner.id, p.id))[0]!.amount).toBe(10);
   });
 
   it("works on any owned account id check", async () => {
     const u = await createTestUser();
-    const acc = seedAccount(u.id);
+    const acc = await seedAccount(u.id);
     expect(
-      errorCode(() =>
+      await errorCode(() =>
         setValues(u.id, acc.id, "2026-01-10", [
           { portfolioId: "x", amount: minor(1) },
         ]),
@@ -274,22 +286,26 @@ describe("year settings", () => {
   it("upserts per year and scopes by user", async () => {
     const u = await createTestUser();
     const other = await createTestUser();
-    setYearSetting(u.id, {
+    await setYearSetting(u.id, {
       year: 2025,
       deduction: "large",
       earnedIncome: minor(5_000_000),
     });
-    setYearSetting(u.id, { year: 2025, deduction: "none", earnedIncome: null });
-    setYearSetting(u.id, {
+    await setYearSetting(u.id, {
+      year: 2025,
+      deduction: "none",
+      earnedIncome: null,
+    });
+    await setYearSetting(u.id, {
       year: 2026,
       deduction: "large",
       earnedIncome: minor(1),
     });
-    expect(listYearSettings(u.id)).toEqual([
+    expect(await listYearSettings(u.id)).toEqual([
       { year: 2025, deduction: "none", earnedIncome: null },
       { year: 2026, deduction: "large", earnedIncome: 1 },
     ]);
-    expect(listYearSettings(other.id)).toEqual([]);
+    expect(await listYearSettings(other.id)).toEqual([]);
   });
 
   it("parses the form and drops income unless large", () => {
@@ -312,5 +328,78 @@ describe("year settings", () => {
       ok: true,
       data: { year: 2026, deduction: "large", earnedIncome: 5_000_000 },
     });
+  });
+});
+
+describe("setValues is all or nothing", () => {
+  it("writes none of the entries when one is refused", async () => {
+    const u = await createTestUser();
+    const acc = await seedPillar3aAccount(u.id);
+    const open = await seedPortfolio(u.id, acc.id, { name: "Open" });
+    const closed = await seedPortfolio(u.id, acc.id, { name: "Closed" });
+    await closePortfolio(u.id, closed.id, {
+      closedOn: "2026-01-01",
+      closeReason: "age",
+    });
+    expect(
+      await errorCode(() =>
+        setValues(u.id, acc.id, "2026-02-10", [
+          { portfolioId: open.id, amount: minor(1000) },
+          { portfolioId: closed.id, amount: minor(2000) },
+        ]),
+      ),
+    ).toBe("invalid:date");
+    expect(await listValues(u.id, open.id)).toEqual([]);
+  });
+
+  it("refuses a portfolio of another account or user before writing anything", async () => {
+    const u = await createTestUser();
+    const other = await createTestUser();
+    const acc = await seedPillar3aAccount(u.id);
+    const mine = await seedPortfolio(u.id, acc.id);
+    const theirAcc = await seedPillar3aAccount(other.id);
+    const theirs = await seedPortfolio(other.id, theirAcc.id);
+    expect(
+      await errorCode(() =>
+        setValues(u.id, acc.id, "2026-02-10", [
+          { portfolioId: mine.id, amount: minor(1000) },
+          { portfolioId: theirs.id, amount: minor(2000) },
+        ]),
+      ),
+    ).toBe("not_found:");
+    expect(await listValues(u.id, mine.id)).toEqual([]);
+    expect(await listValues(other.id, theirs.id)).toEqual([]);
+  });
+
+  it("looks the account up first and requires at least one value", async () => {
+    const u = await createTestUser();
+    const other = await createTestUser();
+    const acc = await seedPillar3aAccount(u.id);
+    expect(
+      await errorCode(() => setValues(u.id, acc.id, "2026-02-10", [])),
+    ).toBe("invalid:");
+    expect(
+      await errorCode(() => setValues(other.id, acc.id, "2026-02-10", [])),
+    ).toBe("not_found:");
+  });
+});
+
+describe("listYearSettingsInTx", () => {
+  it("matches listYearSettings and only sees the user's years", async () => {
+    const u = await createTestUser();
+    const other = await createTestUser();
+    await setYearSetting(u.id, {
+      year: 2026,
+      deduction: "large",
+      earnedIncome: minor(9_000_000),
+    });
+    await setYearSetting(other.id, {
+      year: 2025,
+      deduction: "small",
+      earnedIncome: null,
+    });
+    const viaTx = getDB().transaction((tx) => listYearSettingsInTx(tx, u.id));
+    expect(viaTx).toEqual(await listYearSettings(u.id));
+    expect(viaTx.map((y) => y.year)).toEqual([2026]);
   });
 });

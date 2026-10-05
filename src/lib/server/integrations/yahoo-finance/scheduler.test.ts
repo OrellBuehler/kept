@@ -51,7 +51,7 @@ function provider(over: Partial<QuoteProvider> = {}): {
 
 async function seedUser(symbol: string, enabled: boolean) {
   const user = await createTestUser();
-  const account = seedAccount(user.id);
+  const account = await seedAccount(user.id);
   const security = seedSecurity(user.id, { symbol, currency: "CHF" });
   seedTrade(user.id, account.id, security.id, {
     date: "2024-01-10",

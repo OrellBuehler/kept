@@ -1,9 +1,15 @@
 import { and, asc, eq, isNull, ne } from "drizzle-orm";
 import type { AmountSign } from "$lib/category-types";
 import { normalizeIban } from "$lib/iban";
-import { categories, categoryRules, getDB, transactions } from "$lib/server/db";
+import {
+  categories,
+  categoryRules,
+  first,
+  getDB,
+  transactions,
+  type DB,
+} from "$lib/server/db";
 import { LedgerError, notFound } from "$lib/server/ledger/errors";
-import { getCategory } from "./categories";
 import type { RuleInput } from "./schemas";
 
 export interface CategoryRule {
@@ -78,8 +84,8 @@ const ruleColumns = {
 };
 
 /** The user's rules in the order they are applied. */
-export function loadRules(userId: string): CategoryRule[] {
-  return getDB()
+export async function loadRules(userId: string): Promise<CategoryRule[]> {
+  return await getDB()
     .select(ruleColumns)
     .from(categoryRules)
     .where(eq(categoryRules.userId, userId))
@@ -88,20 +94,19 @@ export function loadRules(userId: string): CategoryRule[] {
       asc(categoryRules.createdAt),
       asc(categoryRules.seq),
       asc(categoryRules.id),
-    )
-    .all();
+    );
 }
 
-export function listRules(userId: string): RuleView[] {
+export async function listRules(userId: string): Promise<RuleView[]> {
   const names = new Map(
-    getDB()
-      .select({ id: categories.id, name: categories.name })
-      .from(categories)
-      .where(eq(categories.userId, userId))
-      .all()
-      .map((c) => [c.id, c.name]),
+    (
+      await getDB()
+        .select({ id: categories.id, name: categories.name })
+        .from(categories)
+        .where(eq(categories.userId, userId))
+    ).map((c) => [c.id, c.name]),
   );
-  return loadRules(userId).map((r) => ({
+  return (await loadRules(userId)).map((r) => ({
     ...r,
     categoryName: names.get(r.categoryId) ?? "",
   }));
@@ -117,57 +122,76 @@ function normalized(input: RuleInput): RuleInput {
   };
 }
 
-function getRule(userId: string, id: string): CategoryRule {
-  const row = getDB()
-    .select(ruleColumns)
-    .from(categoryRules)
-    .where(and(eq(categoryRules.userId, userId), eq(categoryRules.id, id)))
-    .get();
+async function getRule(userId: string, id: string): Promise<CategoryRule> {
+  const row = await first(
+    getDB()
+      .select(ruleColumns)
+      .from(categoryRules)
+      .where(and(eq(categoryRules.userId, userId), eq(categoryRules.id, id)))
+      .limit(1),
+  );
   if (!row) throw notFound("Rule");
   return row;
 }
 
-function assertCategory(userId: string, categoryId: string) {
-  try {
-    getCategory(userId, categoryId);
-  } catch (err) {
-    if (err instanceof LedgerError && err.code === "not_found") {
-      throw new LedgerError("invalid", "Choose a category.", "categoryId");
-    }
-    throw err;
+/** Sync: runs inside the transaction of createRule / updateRule. */
+function assertCategory(
+  tx: Pick<DB, "select">,
+  userId: string,
+  categoryId: string,
+) {
+  const found = tx
+    .select({ id: categories.id })
+    .from(categories)
+    .where(and(eq(categories.userId, userId), eq(categories.id, categoryId)))
+    .limit(1)
+    .get();
+  if (!found) {
+    throw new LedgerError("invalid", "Choose a category.", "categoryId");
   }
 }
 
-export function createRule(userId: string, input: RuleInput): CategoryRule {
-  assertCategory(userId, input.categoryId);
-  return getDB()
-    .insert(categoryRules)
-    .values({ userId, ...normalized(input) })
-    .returning(ruleColumns)
-    .get();
+export async function createRule(
+  userId: string,
+  input: RuleInput,
+): Promise<CategoryRule> {
+  return getDB().transaction((tx) => {
+    assertCategory(tx, userId, input.categoryId);
+    return tx
+      .insert(categoryRules)
+      .values({ userId, ...normalized(input) })
+      .returning(ruleColumns)
+      .get();
+  });
 }
 
-export function updateRule(
+export async function updateRule(
   userId: string,
   id: string,
   input: RuleInput,
-): CategoryRule {
-  getRule(userId, id);
-  assertCategory(userId, input.categoryId);
-  getDB()
-    .update(categoryRules)
-    .set(normalized(input))
-    .where(and(eq(categoryRules.userId, userId), eq(categoryRules.id, id)))
-    .run();
-  return getRule(userId, id);
+): Promise<CategoryRule> {
+  getDB().transaction((tx) => {
+    const found = tx
+      .select({ id: categoryRules.id })
+      .from(categoryRules)
+      .where(and(eq(categoryRules.userId, userId), eq(categoryRules.id, id)))
+      .limit(1)
+      .get();
+    if (!found) throw notFound("Rule");
+    assertCategory(tx, userId, input.categoryId);
+    tx.update(categoryRules)
+      .set(normalized(input))
+      .where(and(eq(categoryRules.userId, userId), eq(categoryRules.id, id)))
+      .run();
+  });
+  return await getRule(userId, id);
 }
 
-export function deleteRule(userId: string, id: string): void {
-  getRule(userId, id);
-  getDB()
+export async function deleteRule(userId: string, id: string): Promise<void> {
+  await getRule(userId, id);
+  await getDB()
     .delete(categoryRules)
-    .where(and(eq(categoryRules.userId, userId), eq(categoryRules.id, id)))
-    .run();
+    .where(and(eq(categoryRules.userId, userId), eq(categoryRules.id, id)));
 }
 
 export interface ApplyResult {
@@ -181,10 +205,12 @@ export interface ApplyResult {
  * touched, so a manual choice always wins. Mirrors (counter-transactions Kept
  * created from a transfer) are never categorized by rules.
  */
-export function applyRulesToUncategorized(userId: string): ApplyResult {
-  const rules = loadRules(userId);
+export async function applyRulesToUncategorized(
+  userId: string,
+): Promise<ApplyResult> {
+  const rules = await loadRules(userId);
   const db = getDB();
-  const rows = db
+  const rows = await db
     .select({
       id: transactions.id,
       amount: transactions.amount,
@@ -199,8 +225,7 @@ export function applyRulesToUncategorized(userId: string): ApplyResult {
         isNull(transactions.categoryId),
         ne(transactions.source, "mirror"),
       ),
-    )
-    .all();
+    );
   if (rules.length === 0) return { scanned: rows.length, categorized: 0 };
   return db.transaction((tx) => {
     let categorized = 0;

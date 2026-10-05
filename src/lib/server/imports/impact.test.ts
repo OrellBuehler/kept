@@ -43,8 +43,8 @@ const entry = (over: Partial<CamtEntry> = {}): CamtEntry => ({
 
 async function setup() {
   const user = await createTestUser();
-  const a = seedAccount(user.id, { name: "Main", iban: EXAMPLE_IBAN });
-  const b = seedAccount(user.id, {
+  const a = await seedAccount(user.id, { name: "Main", iban: EXAMPLE_IBAN });
+  const b = await seedAccount(user.id, {
     name: "Savings",
     type: "savings",
     iban: EXAMPLE_IBAN_OTHER,
@@ -123,7 +123,7 @@ describe("getImportImpact", () => {
     const [r1, r2, r3, r4] = rowsOf(a.id).sort((x, y) =>
       x.bookingDate.localeCompare(y.bookingDate),
     );
-    const category = createCategory(user.id, {
+    const category = await createCategory(user.id, {
       name: "Food",
       kind: "expense",
       parentId: null,
@@ -153,9 +153,9 @@ describe("getImportImpact", () => {
         origin: "user",
       })
       .run();
-    const portfolio = seedPortfolio(
+    const portfolio = await seedPortfolio(
       user.id,
-      seedAccount(user.id, { name: "Pension", type: "pillar_3a" }).id,
+      (await seedAccount(user.id, { name: "Pension", type: "pillar_3a" })).id,
     );
     db.insert(pillar3aContributions)
       .values({

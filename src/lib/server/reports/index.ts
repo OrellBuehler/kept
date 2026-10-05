@@ -102,7 +102,7 @@ export async function buildReport(
         String(issue.path[0] ?? "form"),
       );
     }
-    const input = loadAccountStatement(
+    const input = await loadAccountStatement(
       userId,
       parsed.data.account,
       parsed.data.from,
@@ -128,7 +128,7 @@ export async function buildReport(
     if (!parsed.success) {
       throw new LedgerError("invalid", parsed.error.issues[0]!.message, "year");
     }
-    const input = loadTaxReport(userId, parsed.data.year, today);
+    const input = await loadTaxReport(userId, parsed.data.year, today);
     return {
       bytes: await taxReport(input),
       fileName: `kept-tax-${parsed.data.year}-${today}.pdf`,
@@ -140,7 +140,11 @@ export async function buildReport(
     if (!parsed.success) {
       throw new LedgerError("invalid", parsed.error.issues[0]!.message, "year");
     }
-    const input = loadTaxDeductionsReport(userId, parsed.data.year, today);
+    const input = await loadTaxDeductionsReport(
+      userId,
+      parsed.data.year,
+      today,
+    );
     return {
       bytes: await taxDeductionsReport(input),
       fileName: `kept-tax-deductions-${parsed.data.year}-${today}.pdf`,
@@ -153,7 +157,7 @@ export async function buildReport(
   if (!parsed.success) {
     throw new LedgerError("invalid", parsed.error.issues[0]!.message, "basis");
   }
-  const input = loadNetWorthReport(userId, today, parsed.data.basis);
+  const input = await loadNetWorthReport(userId, today, parsed.data.basis);
   return {
     bytes: await netWorthReport(input),
     fileName:

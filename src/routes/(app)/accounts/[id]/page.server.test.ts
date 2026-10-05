@@ -63,8 +63,12 @@ const loadAs = (user: User, accountId: string, query = "") =>
     ),
   );
 
-const manualTx = (userId: string, accountId: string, description = "coffee") =>
-  createManualTransaction(userId, accountId, {
+const manualTx = async (
+  userId: string,
+  accountId: string,
+  description = "coffee",
+) =>
+  await createManualTransaction(userId, accountId, {
     bookingDate: "2024-03-01",
     valueDate: null,
     amount: minor(-450),
@@ -90,8 +94,8 @@ describe("account detail page", () => {
 
   it("breaks the value of investment accounts into cash and holdings", async () => {
     const u = await createTestUser();
-    const plain = seedAccount(u.id);
-    const inv = seedAccount(u.id, {
+    const plain = await seedAccount(u.id);
+    const inv = await seedAccount(u.id, {
       type: "investment",
       openingBalance: minor(500),
     });
@@ -113,7 +117,7 @@ describe("account detail page", () => {
 
   it("adds, edits and deletes trades", async () => {
     const u = await createTestUser();
-    const acc = seedAccount(u.id, { type: "investment" });
+    const acc = await seedAccount(u.id, { type: "investment" });
     const sec = seedSecurity(u.id);
 
     const added = await run("addTrade", u, acc.id, tradeForm(sec.id));
@@ -145,7 +149,7 @@ describe("account detail page", () => {
 
   it("validates trades and echoes the values", async () => {
     const u = await createTestUser();
-    const acc = seedAccount(u.id, { type: "investment" });
+    const acc = await seedAccount(u.id, { type: "investment" });
     const sec = seedSecurity(u.id);
     const r = await run("addTrade", u, acc.id, {
       ...tradeForm(sec.id),
@@ -165,7 +169,7 @@ describe("account detail page", () => {
   it("refuses a sell that would leave a negative holding and a trade in another user's security", async () => {
     const u = await createTestUser();
     const other = await createTestUser();
-    const acc = seedAccount(u.id, { type: "investment" });
+    const acc = await seedAccount(u.id, { type: "investment" });
     const sec = seedSecurity(u.id);
     const foreign = seedSecurity(other.id);
     const sell = await run("addTrade", u, acc.id, {
@@ -186,7 +190,10 @@ describe("account detail page", () => {
 
   it("locks the account currency once it has trades", async () => {
     const u = await createTestUser();
-    const acc = seedAccount(u.id, { type: "investment", currency: "CHF" });
+    const acc = await seedAccount(u.id, {
+      type: "investment",
+      currency: "CHF",
+    });
     const sec = seedSecurity(u.id);
     seedTrade(u.id, acc.id, sec.id, { amount: 100000 });
     const r = await run("updateAccount", u, acc.id, {
@@ -199,16 +206,16 @@ describe("account detail page", () => {
       status: 400,
       data: { errors: { currency: [expect.any(String)] } },
     });
-    expect(getAccount(u.id, acc.id).currency).toBe("CHF");
+    expect((await getAccount(u.id, acc.id)).currency).toBe("CHF");
   });
 
   it("load returns account, balance, transactions, snapshots and filters", async () => {
     const u = await createTestUser();
-    const inst = seedInstitution(u.id);
-    const acc = seedAccount(u.id, { openingBalance: minor(1000) });
-    manualTx(u.id, acc.id, "coffee beans");
-    manualTx(u.id, acc.id, "rent");
-    createSnapshot(u.id, acc.id, {
+    const inst = await seedInstitution(u.id);
+    const acc = await seedAccount(u.id, { openingBalance: minor(1000) });
+    await manualTx(u.id, acc.id, "coffee beans");
+    await manualTx(u.id, acc.id, "rent");
+    await createSnapshot(u.id, acc.id, {
       date: "2024-01-01",
       amount: minor(5),
       note: null,
@@ -260,7 +267,7 @@ describe("account detail page", () => {
   it("page size defaults to the user's preference unless the query sets one", async () => {
     const u = await createTestUser();
     const other = await createTestUser();
-    const acc = seedAccount(u.id);
+    const acc = await seedAccount(u.id);
     updatePreferences(u.id, { pageSize: 25 });
     updatePreferences(other.id, { pageSize: 200 });
     const size = async (query = "") =>
@@ -277,7 +284,7 @@ describe("account detail page", () => {
 
   it("updates, archives, unarchives and deletes the account", async () => {
     const u = await createTestUser();
-    const acc = seedAccount(u.id);
+    const acc = await seedAccount(u.id);
     expect(
       await run("updateAccount", u, acc.id, {
         name: "Renamed",
@@ -289,52 +296,52 @@ describe("account detail page", () => {
       type: "return",
       value: { success: true, action: "updateAccount" },
     });
-    expect(getAccount(u.id, acc.id)).toMatchObject({
+    expect(await getAccount(u.id, acc.id)).toMatchObject({
       name: "Renamed",
       type: "savings",
       openingBalance: 1230,
     });
 
     await run("archive", u, acc.id);
-    expect(getAccount(u.id, acc.id).archived).toBe(true);
+    expect((await getAccount(u.id, acc.id)).archived).toBe(true);
     await run("unarchive", u, acc.id);
-    expect(getAccount(u.id, acc.id).archived).toBe(false);
+    expect((await getAccount(u.id, acc.id)).archived).toBe(false);
 
     expect(await run("deleteAccount", u, acc.id)).toEqual({
       type: "redirect",
       status: 303,
       location: "/accounts",
     });
-    expect(listAccounts(u.id)).toEqual([]);
+    expect(await listAccounts(u.id)).toEqual([]);
   });
 
   it("updateAccount turns filling off only when the form says the field was shown", async () => {
     const u = await createTestUser();
-    const acc = seedAccount(u.id, {
+    const acc = await seedAccount(u.id, {
       type: "savings",
       fillFromTransfers: true,
     });
     const form = { name: "Main", type: "savings", currency: "CHF" };
     await run("updateAccount", u, acc.id, form);
-    expect(getAccount(u.id, acc.id).fillFromTransfers).toBe(true);
+    expect((await getAccount(u.id, acc.id)).fillFromTransfers).toBe(true);
     await run("updateAccount", u, acc.id, {
       ...form,
       fillFromTransfersField: "1",
       fillFromTransfers: "on",
     });
-    expect(getAccount(u.id, acc.id).fillFromTransfers).toBe(true);
+    expect((await getAccount(u.id, acc.id)).fillFromTransfers).toBe(true);
     await run("updateAccount", u, acc.id, {
       ...form,
       fillFromTransfersField: "1",
     });
-    expect(getAccount(u.id, acc.id).fillFromTransfers).toBe(false);
+    expect((await getAccount(u.id, acc.id)).fillFromTransfers).toBe(false);
     await run("updateAccount", u, acc.id, form);
-    expect(getAccount(u.id, acc.id).fillFromTransfers).toBe(false);
+    expect((await getAccount(u.id, acc.id)).fillFromTransfers).toBe(false);
   });
 
   it("updateAccount validation failure echoes values", async () => {
     const u = await createTestUser();
-    const acc = seedAccount(u.id);
+    const acc = await seedAccount(u.id);
     const r = await run("updateAccount", u, acc.id, {
       name: "",
       type: "current",
@@ -353,14 +360,14 @@ describe("account detail page", () => {
 
   it("adds, edits and deletes manual transactions", async () => {
     const u = await createTestUser();
-    const acc = seedAccount(u.id);
+    const acc = await seedAccount(u.id);
     const added = await run("addTransaction", u, acc.id, {
       bookingDate: "2024-03-01",
       amount: "-12.50",
       description: "Groceries",
     });
     expect(added).toMatchObject({ type: "return", value: { success: true } });
-    const [tx] = listTransactions(u.id, acc.id).items;
+    const [tx] = (await listTransactions(u.id, acc.id)).items;
     expect(tx).toMatchObject({
       amount: -1250,
       currency: "CHF",
@@ -373,18 +380,18 @@ describe("account detail page", () => {
       amount: "-20",
       description: "Groceries 2",
     });
-    expect(getTransaction(u.id, tx!.id)).toMatchObject({
+    expect(await getTransaction(u.id, tx!.id)).toMatchObject({
       bookingDate: "2024-03-02",
       amount: -2000,
     });
 
     await run("deleteTransaction", u, acc.id, { transactionId: tx!.id });
-    expect(listTransactions(u.id, acc.id).total).toBe(0);
+    expect((await listTransactions(u.id, acc.id)).total).toBe(0);
   });
 
   it("validates transactions: zero amount, bad date", async () => {
     const u = await createTestUser();
-    const acc = seedAccount(u.id);
+    const acc = await seedAccount(u.id);
     const r = await run("addTransaction", u, acc.id, {
       bookingDate: "2024-02-30",
       amount: "0",
@@ -400,13 +407,13 @@ describe("account detail page", () => {
         values: { bookingDate: "2024-02-30", amount: "0" },
       },
     });
-    expect(listTransactions(u.id, acc.id).total).toBe(0);
+    expect((await listTransactions(u.id, acc.id)).total).toBe(0);
   });
 
   it("imported transactions accept only a note and cannot be deleted", async () => {
     const u = await createTestUser();
-    const acc = seedAccount(u.id);
-    const imp = seedImportedTransaction(u.id, acc.id, {
+    const acc = await seedAccount(u.id);
+    const imp = await seedImportedTransaction(u.id, acc.id, {
       description: "orig",
       amount: minor(-7),
     });
@@ -419,7 +426,7 @@ describe("account detail page", () => {
         description: "changed",
       }),
     ).toMatchObject({ type: "return", value: { success: true } });
-    expect(getTransaction(u.id, imp.id)).toMatchObject({
+    expect(await getTransaction(u.id, imp.id)).toMatchObject({
       note: "remember",
       description: "orig",
       amount: -7,
@@ -431,18 +438,18 @@ describe("account detail page", () => {
       status: 400,
       data: { errors: { form: [expect.any(String)] } },
     });
-    expect(getTransaction(u.id, imp.id).id).toBe(imp.id);
+    expect((await getTransaction(u.id, imp.id)).id).toBe(imp.id);
   });
 
   it("adds and deletes snapshots; duplicate date fails", async () => {
     const u = await createTestUser();
-    const acc = seedAccount(u.id);
+    const acc = await seedAccount(u.id);
     const form = { date: "2024-01-31", amount: "1500.25", note: "statement" };
     expect(await run("addSnapshot", u, acc.id, form)).toMatchObject({
       type: "return",
       value: { success: true, action: "addSnapshot" },
     });
-    expect(listSnapshots(u.id, acc.id)[0]).toMatchObject({
+    expect((await listSnapshots(u.id, acc.id))[0]).toMatchObject({
       amount: 150025,
       source: "manual",
     });
@@ -452,17 +459,17 @@ describe("account detail page", () => {
         errors: { date: ["A balance is already recorded for this date."] },
       },
     });
-    const [snap] = listSnapshots(u.id, acc.id);
+    const [snap] = await listSnapshots(u.id, acc.id);
     await run("deleteSnapshot", u, acc.id, { snapshotId: snap!.id });
-    expect(listSnapshots(u.id, acc.id)).toEqual([]);
+    expect(await listSnapshots(u.id, acc.id)).toEqual([]);
   });
 
   it("rejects ids that belong to a different account of the same user", async () => {
     const u = await createTestUser();
-    const one = seedAccount(u.id, { name: "One" });
-    const two = seedAccount(u.id, { name: "Two" });
-    const tx = manualTx(u.id, two.id);
-    const snap = createSnapshot(u.id, two.id, {
+    const one = await seedAccount(u.id, { name: "One" });
+    const two = await seedAccount(u.id, { name: "Two" });
+    const tx = await manualTx(u.id, two.id);
+    const snap = await createSnapshot(u.id, two.id, {
       date: "2024-01-01",
       amount: minor(1),
       note: null,
@@ -479,14 +486,14 @@ describe("account detail page", () => {
       type: "error",
       status: 404,
     });
-    expect(getTransaction(u.id, tx.id).id).toBe(tx.id);
+    expect((await getTransaction(u.id, tx.id)).id).toBe(tx.id);
   });
 
   it("sets and clears a category, also on imported rows", async () => {
     const u = await createTestUser();
-    const acc = seedAccount(u.id);
-    const tx = seedImportedTransaction(u.id, acc.id);
-    const c = createCategory(u.id, {
+    const acc = await seedAccount(u.id);
+    const tx = await seedImportedTransaction(u.id, acc.id);
+    const c = await createCategory(u.id, {
       name: "Food",
       kind: "expense",
       parentId: null,
@@ -499,21 +506,21 @@ describe("account detail page", () => {
         categoryId: c.id,
       }),
     ).toMatchObject({ type: "return", value: { success: true } });
-    expect(getTransaction(u.id, tx.id).categoryId).toBe(c.id);
+    expect((await getTransaction(u.id, tx.id)).categoryId).toBe(c.id);
     await run("setCategory", u, acc.id, {
       transactionId: tx.id,
       categoryId: "",
     });
-    expect(getTransaction(u.id, tx.id).categoryId).toBeNull();
+    expect((await getTransaction(u.id, tx.id)).categoryId).toBeNull();
   });
 
   it("setCategory refuses another user's category and transaction", async () => {
     const a = await createTestUser();
     const b = await createTestUser();
-    const accA = seedAccount(a.id);
-    const accB = seedAccount(b.id);
-    const tx = seedImportedTransaction(a.id, accA.id);
-    const theirs = createCategory(b.id, {
+    const accA = await seedAccount(a.id);
+    const accB = await seedAccount(b.id);
+    const tx = await seedImportedTransaction(a.id, accA.id);
+    const theirs = await createCategory(b.id, {
       name: "Theirs",
       kind: "expense",
       parentId: null,
@@ -532,22 +539,22 @@ describe("account detail page", () => {
         categoryId: theirs.id,
       }),
     ).toEqual({ type: "error", status: 404 });
-    expect(getTransaction(a.id, tx.id).categoryId).toBeNull();
+    expect((await getTransaction(a.id, tx.id)).categoryId).toBeNull();
   });
 
   describe("cross-user", () => {
     async function setup() {
       const a = await createTestUser();
       const b = await createTestUser();
-      const acc = seedAccount(a.id, { name: "A's account" });
-      const tx = manualTx(a.id, acc.id, "secret description");
-      const imported = seedImportedTransaction(a.id, acc.id);
-      const snap = createSnapshot(a.id, acc.id, {
+      const acc = await seedAccount(a.id, { name: "A's account" });
+      const tx = await manualTx(a.id, acc.id, "secret description");
+      const imported = await seedImportedTransaction(a.id, acc.id);
+      const snap = await createSnapshot(a.id, acc.id, {
         date: "2024-01-01",
         amount: minor(77),
         note: null,
       });
-      const bAcc = seedAccount(b.id, { name: "B's account" });
+      const bAcc = await seedAccount(b.id, { name: "B's account" });
       const sec = seedSecurity(a.id);
       const trade = seedTrade(a.id, acc.id, sec.id, { amount: 100000 });
       return { a, b, acc, tx, imported, snap, bAcc, sec, trade };
@@ -584,18 +591,18 @@ describe("account detail page", () => {
           status: 404,
         });
       }
-      expect(getAccount(a.id, acc.id)).toMatchObject({
+      expect(await getAccount(a.id, acc.id)).toMatchObject({
         name: "A's account",
         archived: false,
       });
-      expect(listTransactions(a.id, acc.id).total).toBe(2);
-      expect(getTransaction(a.id, tx.id).description).toBe(
+      expect((await listTransactions(a.id, acc.id)).total).toBe(2);
+      expect((await getTransaction(a.id, tx.id)).description).toBe(
         "secret description",
       );
-      expect(getTransaction(a.id, tx.id).taxYear).toBeNull();
-      expect(getTransaction(a.id, tx.id).deductionYear).toBeNull();
-      expect(getTransaction(a.id, imported.id).note).toBeNull();
-      expect(listSnapshots(a.id, acc.id)).toHaveLength(1);
+      expect((await getTransaction(a.id, tx.id)).taxYear).toBeNull();
+      expect((await getTransaction(a.id, tx.id)).deductionYear).toBeNull();
+      expect((await getTransaction(a.id, imported.id)).note).toBeNull();
+      expect(await listSnapshots(a.id, acc.id)).toHaveLength(1);
       expect(listTrades(a.id, acc.id)).toHaveLength(1);
     });
 
@@ -621,16 +628,16 @@ describe("account detail page", () => {
           status: 404,
         });
       }
-      expect(getTransaction(a.id, tx.id).description).toBe(
+      expect((await getTransaction(a.id, tx.id)).description).toBe(
         "secret description",
       );
-      expect(listSnapshots(a.id, snap.accountId)).toHaveLength(1);
+      expect(await listSnapshots(a.id, snap.accountId)).toHaveLength(1);
       expect(listTrades(a.id, trade.accountId)).toHaveLength(1);
     });
 
     it("a trade of another account of the same user is 404", async () => {
       const { a, acc, trade } = await setup();
-      const other = seedAccount(a.id, { name: "Other" });
+      const other = await seedAccount(a.id, { name: "Other" });
       for (const [name, form] of [
         ["updateTrade", { tradeId: trade.id, ...tradeForm(trade.securityId) }],
         ["deleteTrade", { tradeId: trade.id }],
@@ -645,15 +652,15 @@ describe("account detail page", () => {
   });
   it("marks a transaction as a tax payment and clears it again", async () => {
     const u = await createTestUser();
-    const acc = seedAccount(u.id);
-    const tx = manualTx(u.id, acc.id);
+    const acc = await seedAccount(u.id);
+    const tx = await manualTx(u.id, acc.id);
     expect(
       await run("setTaxYear", u, acc.id, {
         transactionId: tx.id,
         taxYear: "2025",
       }),
     ).toMatchObject({ type: "return" });
-    expect(getTransaction(u.id, tx.id).taxYear).toBe(2025);
+    expect((await getTransaction(u.id, tx.id)).taxYear).toBe(2025);
     expect(
       await run("setTaxYear", u, acc.id, {
         transactionId: tx.id,
@@ -661,13 +668,13 @@ describe("account detail page", () => {
       }),
     ).toMatchObject({ type: "fail", status: 400 });
     await run("setTaxYear", u, acc.id, { transactionId: tx.id, taxYear: "" });
-    expect(getTransaction(u.id, tx.id).taxYear).toBeNull();
+    expect((await getTransaction(u.id, tx.id)).taxYear).toBeNull();
   });
 
   it("sets and clears the deduction year without touching the tax payment tag", async () => {
     const u = await createTestUser();
-    const acc = seedAccount(u.id);
-    const tx = manualTx(u.id, acc.id);
+    const acc = await seedAccount(u.id);
+    const tx = await manualTx(u.id, acc.id);
     await run("setTaxYear", u, acc.id, {
       transactionId: tx.id,
       taxYear: "2025",
@@ -678,7 +685,7 @@ describe("account detail page", () => {
         deductionYear: "2024",
       }),
     ).toMatchObject({ type: "return" });
-    expect(getTransaction(u.id, tx.id)).toMatchObject({
+    expect(await getTransaction(u.id, tx.id)).toMatchObject({
       taxYear: 2025,
       deductionYear: 2024,
     });
@@ -692,7 +699,7 @@ describe("account detail page", () => {
       transactionId: tx.id,
       deductionYear: "",
     });
-    expect(getTransaction(u.id, tx.id)).toMatchObject({
+    expect(await getTransaction(u.id, tx.id)).toMatchObject({
       taxYear: 2025,
       deductionYear: null,
     });
@@ -708,9 +715,9 @@ describe("account detail page", () => {
 
     it("loads portfolios, values and the portfolio breakdown", async () => {
       const u = await createTestUser();
-      const acc = seedPillar3aAccount(u.id);
-      const p = seedPortfolio(u.id, acc.id, { name: "P1" });
-      setValues(u.id, acc.id, "2025-01-01", [
+      const acc = await seedPillar3aAccount(u.id);
+      const p = await seedPortfolio(u.id, acc.id, { name: "P1" });
+      await setValues(u.id, acc.id, "2025-01-01", [
         { portfolioId: p.id, amount: minor(123_400) },
       ]);
       const data = ((await loadAs(u, acc.id)) as { value: LoadData }).value;
@@ -724,7 +731,7 @@ describe("account detail page", () => {
 
     it("does not show portfolios on a plain account", async () => {
       const u = await createTestUser();
-      const acc = seedAccount(u.id);
+      const acc = await seedAccount(u.id);
       const data = ((await loadAs(u, acc.id)) as { value: LoadData }).value;
       expect(data.showPortfolios).toBe(false);
       expect(data.value).toBeNull();
@@ -732,12 +739,12 @@ describe("account detail page", () => {
 
     it("adds, edits, closes, reopens and deletes a portfolio", async () => {
       const u = await createTestUser();
-      const acc = seedPillar3aAccount(u.id);
+      const acc = await seedPillar3aAccount(u.id);
       expect(await run("addPortfolio", u, acc.id, pf())).toMatchObject({
         type: "return",
         value: { success: true, action: "addPortfolio" },
       });
-      const [p] = listPortfolios(u.id, acc.id);
+      const [p] = await listPortfolios(u.id, acc.id);
       expect(p).toMatchObject({ name: "Portfolio 1", closedOn: null });
 
       expect(
@@ -746,7 +753,7 @@ describe("account detail page", () => {
           ...pf({ name: "Renamed" }),
         }),
       ).toMatchObject({ type: "return", value: { success: true } });
-      expect(getPortfolio(u.id, p!.id).name).toBe("Renamed");
+      expect((await getPortfolio(u.id, p!.id)).name).toBe("Renamed");
 
       expect(
         await run("closePortfolio", u, acc.id, {
@@ -755,7 +762,7 @@ describe("account detail page", () => {
           closeReason: "age",
         }),
       ).toMatchObject({ type: "return", value: { success: true } });
-      expect(getPortfolio(u.id, p!.id)).toMatchObject({
+      expect(await getPortfolio(u.id, p!.id)).toMatchObject({
         closedOn: "2030-01-31",
         closeReason: "age",
       });
@@ -763,17 +770,17 @@ describe("account detail page", () => {
       expect(
         await run("reopenPortfolio", u, acc.id, { portfolioId: p!.id }),
       ).toMatchObject({ type: "return", value: { success: true } });
-      expect(getPortfolio(u.id, p!.id).closedOn).toBeNull();
+      expect((await getPortfolio(u.id, p!.id)).closedOn).toBeNull();
 
       expect(
         await run("deletePortfolio", u, acc.id, { portfolioId: p!.id }),
       ).toMatchObject({ type: "return", value: { success: true } });
-      expect(listPortfolios(u.id, acc.id)).toEqual([]);
+      expect(await listPortfolios(u.id, acc.id)).toEqual([]);
     });
 
     it("validates portfolio input and echoes the values", async () => {
       const u = await createTestUser();
-      const acc = seedPillar3aAccount(u.id);
+      const acc = await seedPillar3aAccount(u.id);
       const r = await run(
         "addPortfolio",
         u,
@@ -793,7 +800,7 @@ describe("account detail page", () => {
         },
       });
       const close = await run("closePortfolio", u, acc.id, {
-        portfolioId: seedPortfolio(u.id, acc.id).id,
+        portfolioId: (await seedPortfolio(u.id, acc.id)).id,
         closedOn: "nope",
         closeReason: "age",
       });
@@ -802,7 +809,7 @@ describe("account detail page", () => {
 
     it("refuses portfolios on a non-3a account with a field error", async () => {
       const u = await createTestUser();
-      const acc = seedAccount(u.id);
+      const acc = await seedAccount(u.id);
       expect(await run("addPortfolio", u, acc.id, pf())).toMatchObject({
         type: "fail",
         status: 400,
@@ -811,9 +818,9 @@ describe("account detail page", () => {
 
     it("sets values for several portfolios at once and deletes one", async () => {
       const u = await createTestUser();
-      const acc = seedPillar3aAccount(u.id);
-      const p1 = seedPortfolio(u.id, acc.id, { name: "P1" });
-      const p2 = seedPortfolio(u.id, acc.id, { name: "P2" });
+      const acc = await seedPillar3aAccount(u.id);
+      const p1 = await seedPortfolio(u.id, acc.id, { name: "P1" });
+      const p2 = await seedPortfolio(u.id, acc.id, { name: "P2" });
       expect(
         await run("setPortfolioValues", u, acc.id, {
           date: "2025-06-30",
@@ -821,9 +828,9 @@ describe("account detail page", () => {
           [`value:${p2.id}`]: "",
         }),
       ).toMatchObject({ type: "return", value: { success: true } });
-      const values = listValues(u.id, p1.id);
+      const values = await listValues(u.id, p1.id);
       expect(values).toMatchObject([{ date: "2025-06-30", amount: 100_050 }]);
-      expect(listValues(u.id, p2.id)).toEqual([]);
+      expect(await listValues(u.id, p2.id)).toEqual([]);
 
       expect(
         await run("setPortfolioValues", u, acc.id, {
@@ -841,18 +848,18 @@ describe("account detail page", () => {
           valueId: values[0]!.id,
         }),
       ).toMatchObject({ type: "return", value: { success: true } });
-      expect(listValues(u.id, p1.id)).toEqual([]);
+      expect(await listValues(u.id, p1.id)).toEqual([]);
     });
 
     it("refuses a portfolio of another account of the same user", async () => {
       const u = await createTestUser();
-      const acc = seedPillar3aAccount(u.id);
-      const other = seedPillar3aAccount(u.id, { name: "Other 3a" });
-      const p = seedPortfolio(u.id, other.id, { name: "Elsewhere" });
-      setValues(u.id, other.id, "2025-01-01", [
+      const acc = await seedPillar3aAccount(u.id);
+      const other = await seedPillar3aAccount(u.id, { name: "Other 3a" });
+      const p = await seedPortfolio(u.id, other.id, { name: "Elsewhere" });
+      await setValues(u.id, other.id, "2025-01-01", [
         { portfolioId: p.id, amount: minor(500) },
       ]);
-      const [v] = listValues(u.id, p.id);
+      const [v] = await listValues(u.id, p.id);
       const attempts: [keyof typeof actions, Record<string, string>][] = [
         ["updatePortfolio", { portfolioId: p.id, ...pf() }],
         [
@@ -870,41 +877,41 @@ describe("account detail page", () => {
           status: 404,
         });
       }
-      expect(getPortfolio(u.id, p.id)).toMatchObject({
+      expect(await getPortfolio(u.id, p.id)).toMatchObject({
         name: "Elsewhere",
         closedOn: null,
       });
-      expect(listValues(u.id, p.id)).toHaveLength(1);
+      expect(await listValues(u.id, p.id)).toHaveLength(1);
     });
 
     it("refuses a value id of another portfolio of the same account", async () => {
       const u = await createTestUser();
-      const acc = seedPillar3aAccount(u.id);
-      const p1 = seedPortfolio(u.id, acc.id, { name: "P1" });
-      const p2 = seedPortfolio(u.id, acc.id, { name: "P2" });
-      setValues(u.id, acc.id, "2025-01-01", [
+      const acc = await seedPillar3aAccount(u.id);
+      const p1 = await seedPortfolio(u.id, acc.id, { name: "P1" });
+      const p2 = await seedPortfolio(u.id, acc.id, { name: "P2" });
+      await setValues(u.id, acc.id, "2025-01-01", [
         { portfolioId: p1.id, amount: minor(500) },
       ]);
-      const [v] = listValues(u.id, p1.id);
+      const [v] = await listValues(u.id, p1.id);
       expect(
         await run("deletePortfolioValue", u, acc.id, {
           portfolioId: p2.id,
           valueId: v!.id,
         }),
       ).toEqual({ type: "error", status: 404 });
-      expect(listValues(u.id, p1.id)).toHaveLength(1);
+      expect(await listValues(u.id, p1.id)).toHaveLength(1);
     });
 
     it("refuses another user's account, portfolios and values", async () => {
       const a = await createTestUser();
       const b = await createTestUser();
-      const acc = seedPillar3aAccount(a.id);
-      const p = seedPortfolio(a.id, acc.id, { name: "A's portfolio" });
-      setValues(a.id, acc.id, "2025-01-01", [
+      const acc = await seedPillar3aAccount(a.id);
+      const p = await seedPortfolio(a.id, acc.id, { name: "A's portfolio" });
+      await setValues(a.id, acc.id, "2025-01-01", [
         { portfolioId: p.id, amount: minor(500) },
       ]);
-      const [v] = listValues(a.id, p.id);
-      const bAcc = seedPillar3aAccount(b.id);
+      const [v] = await listValues(a.id, p.id);
+      const bAcc = await seedPillar3aAccount(b.id);
 
       const attempts: [keyof typeof actions, Record<string, string>][] = [
         ["addPortfolio", pf()],
@@ -937,13 +944,13 @@ describe("account detail page", () => {
           status: 404,
         });
       }
-      expect(getPortfolio(a.id, p.id)).toMatchObject({
+      expect(await getPortfolio(a.id, p.id)).toMatchObject({
         name: "A's portfolio",
         closedOn: null,
       });
-      expect(listPortfolios(a.id, acc.id)).toHaveLength(1);
-      expect(listValues(a.id, p.id)).toHaveLength(1);
-      expect(listPortfolios(b.id, bAcc.id)).toEqual([]);
+      expect(await listPortfolios(a.id, acc.id)).toHaveLength(1);
+      expect(await listValues(a.id, p.id)).toHaveLength(1);
+      expect(await listPortfolios(b.id, bAcc.id)).toEqual([]);
     });
   });
 });
@@ -953,26 +960,25 @@ describe("account page: transfer linking", () => {
 
   async function setup(fill = true) {
     const u = await createTestUser();
-    const a = seedAccount(u.id, { name: "Main", iban: EXAMPLE_IBAN });
-    const b = seedAccount(u.id, {
+    const a = await seedAccount(u.id, { name: "Main", iban: EXAMPLE_IBAN });
+    const b = await seedAccount(u.id, {
       name: "Savings",
       type: "savings",
       iban: EXAMPLE_IBAN_OTHER,
       fillFromTransfers: fill,
     });
-    const out = seedImportedTransaction(u.id, a.id, {
+    const out = await seedImportedTransaction(u.id, a.id, {
       bookingDate: "2024-03-10",
       amount: minor(-10000),
       counterpartyIban: EXAMPLE_IBAN_OTHER,
     });
     return { u, a, b, out };
   }
-  const rowsOf = (accountId: string) =>
-    getDB()
+  const rowsOf = async (accountId: string) =>
+    await getDB()
       .select()
       .from(transactionsTable)
-      .where(eq(transactionsTable.accountId, accountId))
-      .all();
+      .where(eq(transactionsTable.accountId, accountId));
   const accountForm = (over: Record<string, string> = {}) => ({
     name: "Savings",
     type: "savings",
@@ -993,16 +999,16 @@ describe("account page: transfer linking", () => {
         accountForm({ fillFromTransfers: "on" }),
       ),
     ).toMatchObject({ type: "return", value: { success: true } });
-    expect(getAccount(u.id, b.id).fillFromTransfers).toBe(true);
-    expect(rowsOf(b.id)).toHaveLength(1);
+    expect((await getAccount(u.id, b.id)).fillFromTransfers).toBe(true);
+    expect(await rowsOf(b.id)).toHaveLength(1);
 
     // Deleting the mirrors has to be confirmed.
     expect(await run("updateAccount", u, b.id, accountForm())).toMatchObject({
       type: "fail",
       data: { errors: { fillFromTransfers: [expect.any(String)] } },
     });
-    expect(getAccount(u.id, b.id).fillFromTransfers).toBe(true);
-    expect(rowsOf(b.id)).toHaveLength(1);
+    expect((await getAccount(u.id, b.id)).fillFromTransfers).toBe(true);
+    expect(await rowsOf(b.id)).toHaveLength(1);
 
     await run(
       "updateAccount",
@@ -1010,14 +1016,14 @@ describe("account page: transfer linking", () => {
       b.id,
       accountForm({ confirmRemoveMirrors: "1" }),
     );
-    expect(getAccount(u.id, b.id).fillFromTransfers).toBe(false);
-    expect(rowsOf(b.id)).toEqual([]);
+    expect((await getAccount(u.id, b.id)).fillFromTransfers).toBe(false);
+    expect(await rowsOf(b.id)).toEqual([]);
   });
 
   it("stores trades move cash for investment accounts only", async () => {
     const u = await createTestUser();
-    const inv = seedAccount(u.id, { type: "investment" });
-    const cur = seedAccount(u.id, { name: "Cur" });
+    const inv = await seedAccount(u.id, { type: "investment" });
+    const cur = await seedAccount(u.id, { name: "Cur" });
     await run("updateAccount", u, inv.id, {
       name: "Broker",
       type: "investment",
@@ -1030,8 +1036,8 @@ describe("account page: transfer linking", () => {
       currency: "CHF",
       tradesMoveCash: "on",
     });
-    expect(getAccount(u.id, inv.id).tradesMoveCash).toBe(true);
-    expect(getAccount(u.id, cur.id).tradesMoveCash).toBe(false);
+    expect((await getAccount(u.id, inv.id)).tradesMoveCash).toBe(true);
+    expect((await getAccount(u.id, cur.id)).tradesMoveCash).toBe(false);
   });
 
   it("enables the toggle with a backfill and reports what it linked", async () => {
@@ -1069,7 +1075,7 @@ describe("account page: transfer linking", () => {
 
   it("refuses to enable filling on a pillar 3a account", async () => {
     const u = await createTestUser();
-    const p3a = seedPillar3aAccount(u.id, { iban: EXAMPLE_IBAN });
+    const p3a = await seedPillar3aAccount(u.id, { iban: EXAMPLE_IBAN });
     expect(await run("enableFillFromTransfers", u, p3a.id)).toMatchObject({
       type: "fail",
       status: 400,
@@ -1078,17 +1084,17 @@ describe("account page: transfer linking", () => {
 
   it("unlinks a transfer from either account's row and remembers it", async () => {
     const { u, a, b, out } = await setup();
-    linkTransfers(u.id, {});
-    const mirror = rowsOf(b.id)[0]!;
+    await linkTransfers(u.id, {});
+    const mirror = (await rowsOf(b.id))[0]!;
     expect(
       await run("unlinkTransfer", u, b.id, { transactionId: mirror.id }),
     ).toMatchObject({
       type: "return",
       value: { success: true, action: "unlinkTransfer" },
     });
-    expect(rowsOf(b.id)).toEqual([]);
-    linkTransfers(u.id, {});
-    expect(rowsOf(b.id)).toEqual([]);
+    expect(await rowsOf(b.id)).toEqual([]);
+    await linkTransfers(u.id, {});
+    expect(await rowsOf(b.id)).toEqual([]);
     // nothing left to unlink
     expect(
       await run("unlinkTransfer", u, a.id, { transactionId: out.id }),
@@ -1104,11 +1110,11 @@ describe("account page: transfer linking", () => {
 
   it("links two rows by hand, with candidates for the picker", async () => {
     const { u, a, b } = await setup(false);
-    const out = seedImportedTransaction(u.id, a.id, {
+    const out = await seedImportedTransaction(u.id, a.id, {
       bookingDate: "2024-04-02",
       amount: minor(-7000),
     });
-    const into = seedImportedTransaction(u.id, b.id, {
+    const into = await seedImportedTransaction(u.id, b.id, {
       bookingDate: "2024-04-03",
       amount: minor(7000),
     });
@@ -1164,20 +1170,20 @@ describe("account page: transfer linking", () => {
 
   it("resolves a transfer that needs an amount, on the receiving account's page only", async () => {
     const u = await createTestUser();
-    const a = seedAccount(u.id, { name: "Main", iban: EXAMPLE_IBAN });
-    const eur = seedAccount(u.id, {
+    const a = await seedAccount(u.id, { name: "Main", iban: EXAMPLE_IBAN });
+    const eur = await seedAccount(u.id, {
       name: "Euro",
       currency: "EUR",
       iban: EXAMPLE_IBAN_OTHER,
       fillFromTransfers: true,
     });
-    seedImportedTransaction(u.id, a.id, {
+    await seedImportedTransaction(u.id, a.id, {
       bookingDate: "2024-03-10",
       amount: minor(-10000),
       counterpartyIban: EXAMPLE_IBAN_OTHER,
     });
-    linkTransfers(u.id, {});
-    const [pending] = listNeedsAmount(u.id);
+    await linkTransfers(u.id, {});
+    const [pending] = await listNeedsAmount(u.id);
     const data = ((await loadAs(u, eur.id)) as { value: LoadData }).value;
     expect(data.transfers.needsAmount).toHaveLength(1);
     expect(
@@ -1216,31 +1222,34 @@ describe("account page: transfer linking", () => {
       type: "return",
       value: { success: true, action: "resolveNeedsAmount" },
     });
-    expect(rowsOf(eur.id)[0]).toMatchObject({ amount: 9300, currency: "EUR" });
-    expect(listNeedsAmount(u.id)).toEqual([]);
+    expect((await rowsOf(eur.id))[0]).toMatchObject({
+      amount: 9300,
+      currency: "EUR",
+    });
+    expect(await listNeedsAmount(u.id)).toEqual([]);
   });
 
   it("offers the row to link instead of an amount, and links it from the receiving account's page", async () => {
     const u = await createTestUser();
-    const a = seedAccount(u.id, { name: "Main", iban: EXAMPLE_IBAN });
-    const eur = seedAccount(u.id, {
+    const a = await seedAccount(u.id, { name: "Main", iban: EXAMPLE_IBAN });
+    const eur = await seedAccount(u.id, {
       name: "Euro",
       currency: "EUR",
       iban: EXAMPLE_IBAN_OTHER,
       fillFromTransfers: true,
     });
-    const out = seedImportedTransaction(u.id, a.id, {
+    const out = await seedImportedTransaction(u.id, a.id, {
       bookingDate: "2024-03-10",
       amount: minor(-10000),
       counterpartyIban: EXAMPLE_IBAN_OTHER,
     });
-    linkTransfers(u.id, {});
-    const real = seedImportedTransaction(u.id, eur.id, {
+    await linkTransfers(u.id, {});
+    const real = await seedImportedTransaction(u.id, eur.id, {
       bookingDate: "2024-03-11",
       amount: minor(9300),
       currency: "EUR",
     });
-    const [pending] = listNeedsAmount(u.id);
+    const [pending] = await listNeedsAmount(u.id);
     const data = ((await loadAs(u, eur.id)) as { value: LoadData }).value;
     expect(data.transfers.needsAmount[0]!.linkCandidate).toMatchObject({
       id: real.id,
@@ -1272,8 +1281,8 @@ describe("account page: transfer linking", () => {
       type: "return",
       value: { success: true, action: "linkNeedsAmount" },
     });
-    expect(listNeedsAmount(u.id)).toEqual([]);
-    expect(rowsOf(eur.id)).toHaveLength(1);
+    expect(await listNeedsAmount(u.id)).toEqual([]);
+    expect(await rowsOf(eur.id)).toHaveLength(1);
   });
 
   it("keeps mirrors in step with a manual source row", async () => {
@@ -1285,7 +1294,7 @@ describe("account page: transfer linking", () => {
       description: "Top up",
     });
     const id = (added as { value: { id: string } }).value.id;
-    const mirror = rowsOf(b.id).find((r) => r.mirrorOfId === id)!;
+    const mirror = (await rowsOf(b.id)).find((r) => r.mirrorOfId === id)!;
     expect(mirror).toMatchObject({ amount: 2000, description: "Top up" });
 
     await run("updateTransaction", u, a.id, {
@@ -1295,7 +1304,7 @@ describe("account page: transfer linking", () => {
       counterpartyIban: EXAMPLE_IBAN_OTHER,
       description: "Top up more",
     });
-    expect(rowsOf(b.id).find((r) => r.id === mirror.id)).toMatchObject({
+    expect((await rowsOf(b.id)).find((r) => r.id === mirror.id)).toMatchObject({
       amount: 2550,
       bookingDate: "2024-05-02",
       description: "Top up more",
@@ -1308,16 +1317,16 @@ describe("account page: transfer linking", () => {
       amount: "-25.50",
       description: "Top up more",
     });
-    expect(rowsOf(b.id).some((r) => r.mirrorOfId === id)).toBe(false);
+    expect((await rowsOf(b.id)).some((r) => r.mirrorOfId === id)).toBe(false);
 
     await run("deleteTransaction", u, a.id, { transactionId: id });
-    expect(rowsOf(a.id).some((r) => r.id === id)).toBe(false);
+    expect((await rowsOf(a.id)).some((r) => r.id === id)).toBe(false);
   });
 
   it("only lets mirrors change their note", async () => {
     const { u, b } = await setup();
-    linkTransfers(u.id, {});
-    const mirror = rowsOf(b.id)[0]!;
+    await linkTransfers(u.id, {});
+    const mirror = (await rowsOf(b.id))[0]!;
     expect(
       await run("updateTransaction", u, b.id, {
         transactionId: mirror.id,
@@ -1326,7 +1335,7 @@ describe("account page: transfer linking", () => {
         bookingDate: "2024-03-11",
       }),
     ).toMatchObject({ type: "return", value: { success: true } });
-    expect(rowsOf(b.id)[0]).toMatchObject({
+    expect((await rowsOf(b.id))[0]).toMatchObject({
       note: "checked",
       amount: 10000,
       bookingDate: "2024-03-10",
@@ -1335,11 +1344,11 @@ describe("account page: transfer linking", () => {
 
   it("answers 404 for every transfer action on another user's rows or accounts", async () => {
     const { u, a, b, out } = await setup();
-    linkTransfers(u.id, {});
-    const mirror = rowsOf(b.id)[0]!;
+    await linkTransfers(u.id, {});
+    const mirror = (await rowsOf(b.id))[0]!;
     const intruder = await createTestUser();
-    const own = seedAccount(intruder.id, { name: "Own" });
-    const mine = seedImportedTransaction(intruder.id, own.id, {
+    const own = await seedAccount(intruder.id, { name: "Own" });
+    const mine = await seedImportedTransaction(intruder.id, own.id, {
       amount: minor(10000),
     });
     const notFound = { type: "error", status: 404 };
@@ -1398,7 +1407,7 @@ describe("account page: transfer linking", () => {
     ).toEqual(notFound);
     expect(await loadAs(intruder, b.id)).toEqual(notFound);
 
-    expect(rowsOf(b.id)).toHaveLength(1);
-    expect(listNeedsAmount(intruder.id)).toEqual([]);
+    expect(await rowsOf(b.id)).toHaveLength(1);
+    expect(await listNeedsAmount(intruder.id)).toEqual([]);
   });
 });

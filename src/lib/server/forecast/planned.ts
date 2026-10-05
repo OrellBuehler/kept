@@ -47,11 +47,11 @@ function getPlannedItem(userId: string, id: string): PlannedItemView {
   return row;
 }
 
-function toValues(userId: string, input: PlannedItemInput) {
+async function toValues(userId: string, input: PlannedItemInput) {
   let currency = input.currency;
   if (input.accountId !== null) {
     try {
-      currency = getAccount(userId, input.accountId).currency;
+      currency = (await getAccount(userId, input.accountId)).currency;
     } catch (err) {
       if (err instanceof LedgerError && err.code === "not_found") {
         throw new LedgerError("invalid", "Choose an account.", "accountId");
@@ -83,26 +83,26 @@ function toValues(userId: string, input: PlannedItemInput) {
   };
 }
 
-export function createPlannedItem(
+export async function createPlannedItem(
   userId: string,
   input: PlannedItemInput,
-): PlannedItemView {
+): Promise<PlannedItemView> {
   return getDB()
     .insert(plannedItems)
-    .values({ userId, ...toValues(userId, input) })
+    .values({ userId, ...(await toValues(userId, input)) })
     .returning(columns)
     .get();
 }
 
-export function updatePlannedItem(
+export async function updatePlannedItem(
   userId: string,
   id: string,
   input: PlannedItemInput,
-): PlannedItemView {
+): Promise<PlannedItemView> {
   getPlannedItem(userId, id);
   getDB()
     .update(plannedItems)
-    .set(toValues(userId, input))
+    .set(await toValues(userId, input))
     .where(and(eq(plannedItems.userId, userId), eq(plannedItems.id, id)))
     .run();
   return getPlannedItem(userId, id);

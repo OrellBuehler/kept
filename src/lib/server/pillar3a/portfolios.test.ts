@@ -99,17 +99,20 @@ describe("portfolioInputSchema", () => {
 describe("portfolios", () => {
   it("creates, lists and updates portfolios of a 3a account", async () => {
     const u = await createTestUser();
-    const acc = seedPillar3aAccount(u.id);
-    const a = seedPortfolio(u.id, acc.id, {
+    const acc = await seedPillar3aAccount(u.id);
+    const a = await seedPortfolio(u.id, acc.id, {
       name: "A",
       strategy: "Global 100",
       depositReference: makeQrr(1),
     });
-    const b = seedPortfolio(u.id, acc.id, { name: "B" });
+    const b = await seedPortfolio(u.id, acc.id, { name: "B" });
     expect(a.sortOrder).toBe(0);
     expect(b.sortOrder).toBe(1);
-    expect(listPortfolios(u.id, acc.id).map((p) => p.name)).toEqual(["A", "B"]);
-    const updated = updatePortfolio(u.id, a.id, {
+    expect((await listPortfolios(u.id, acc.id)).map((p) => p.name)).toEqual([
+      "A",
+      "B",
+    ]);
+    const updated = await updatePortfolio(u.id, a.id, {
       name: "A2",
       number: "N-1",
       strategy: null,
@@ -130,15 +133,15 @@ describe("portfolios", () => {
 
   it("reports the latest value", async () => {
     const u = await createTestUser();
-    const acc = seedPillar3aAccount(u.id);
-    const p = seedPortfolio(u.id, acc.id);
-    setValues(u.id, acc.id, "2026-01-01", [
+    const acc = await seedPillar3aAccount(u.id);
+    const p = await seedPortfolio(u.id, acc.id);
+    await setValues(u.id, acc.id, "2026-01-01", [
       { portfolioId: p.id, amount: minor(100) },
     ]);
-    setValues(u.id, acc.id, "2026-03-01", [
+    await setValues(u.id, acc.id, "2026-03-01", [
       { portfolioId: p.id, amount: minor(150) },
     ]);
-    expect(getPortfolio(u.id, p.id)).toMatchObject({
+    expect(await getPortfolio(u.id, p.id)).toMatchObject({
       latestValue: 150,
       latestValueDate: "2026-03-01",
     });
@@ -146,32 +149,32 @@ describe("portfolios", () => {
 
   it("only allows portfolios on pillar 3a accounts", async () => {
     const u = await createTestUser();
-    const acc = seedAccount(u.id);
-    expect(errorCode(() => seedPortfolio(u.id, acc.id))).toBe("invalid:");
+    const acc = await seedAccount(u.id);
+    expect(await errorCode(() => seedPortfolio(u.id, acc.id))).toBe("invalid:");
   });
 
   it("requires a QRR when the deposit IBAN is a QR-IBAN", async () => {
     const u = await createTestUser();
-    const acc = seedPillar3aAccount(u.id);
+    const acc = await seedPillar3aAccount(u.id);
     expect(
-      errorCode(() =>
+      await errorCode(() =>
         seedPortfolio(u.id, acc.id, { depositReference: EXAMPLE_SCOR }),
       ),
     ).toBe("invalid:depositReference");
     expect(
-      errorCode(() =>
+      await errorCode(() =>
         seedPortfolio(u.id, acc.id, { depositReference: makeQrr(7) }),
       ),
     ).toBeUndefined();
     expect(
-      errorCode(() => seedPortfolio(u.id, acc.id, { name: "No ref" })),
+      await errorCode(() => seedPortfolio(u.id, acc.id, { name: "No ref" })),
     ).toBeUndefined();
-    const p = seedPortfolio(u.id, acc.id, {
+    const p = await seedPortfolio(u.id, acc.id, {
       name: "C",
       depositReference: makeQrr(8),
     });
     expect(
-      errorCode(() =>
+      await errorCode(() =>
         updatePortfolio(u.id, p.id, {
           name: "C",
           number: null,
@@ -186,23 +189,28 @@ describe("portfolios", () => {
 
   it("requires a QR-IBAN for a QRR, but accepts either without a deposit IBAN", async () => {
     const u = await createTestUser();
-    const plain = seedPillar3aAccount(u.id, {
+    const plain = await seedPillar3aAccount(u.id, {
       name: "P",
       depositIban: EXAMPLE_IBAN,
     });
     expect(
-      errorCode(() =>
+      await errorCode(() =>
         seedPortfolio(u.id, plain.id, { depositReference: makeQrr(1) }),
       ),
     ).toBe("invalid:depositReference");
     expect(
-      errorCode(() =>
-        seedPortfolio(u.id, plain.id, { depositReference: EXAMPLE_SCOR }),
+      await errorCode(() =>
+        seedPortfolio(u.id, plain.id, {
+          depositReference: EXAMPLE_SCOR,
+        }),
       ),
     ).toBeUndefined();
-    const none = seedPillar3aAccount(u.id, { name: "N", depositIban: null });
+    const none = await seedPillar3aAccount(u.id, {
+      name: "N",
+      depositIban: null,
+    });
     expect(
-      errorCode(() =>
+      await errorCode(() =>
         seedPortfolio(u.id, none.id, { depositReference: makeQrr(2) }),
       ),
     ).toBeUndefined();
@@ -211,22 +219,25 @@ describe("portfolios", () => {
   it("keeps the reference unique per user only", async () => {
     const u = await createTestUser();
     const other = await createTestUser();
-    const acc = seedPillar3aAccount(u.id);
-    const otherAcc = seedPillar3aAccount(other.id);
+    const acc = await seedPillar3aAccount(u.id);
+    const otherAcc = await seedPillar3aAccount(other.id);
     const ref = makeQrr(5);
-    const p = seedPortfolio(u.id, acc.id, { depositReference: ref });
+    const p = await seedPortfolio(u.id, acc.id, { depositReference: ref });
     expect(
-      errorCode(() =>
-        seedPortfolio(u.id, acc.id, { name: "B", depositReference: ref }),
+      await errorCode(() =>
+        seedPortfolio(u.id, acc.id, {
+          name: "B",
+          depositReference: ref,
+        }),
       ),
     ).toBe("conflict:depositReference");
     expect(
-      errorCode(() =>
+      await errorCode(() =>
         seedPortfolio(other.id, otherAcc.id, { depositReference: ref }),
       ),
     ).toBeUndefined();
     expect(
-      errorCode(() =>
+      await errorCode(() =>
         updatePortfolio(u.id, p.id, {
           name: "Same",
           number: null,
@@ -241,13 +252,13 @@ describe("portfolios", () => {
 
   it("closes, reopens and orders closed portfolios last", async () => {
     const u = await createTestUser();
-    const acc = seedPillar3aAccount(u.id);
-    const a = seedPortfolio(u.id, acc.id, {
+    const acc = await seedPillar3aAccount(u.id);
+    const a = await seedPortfolio(u.id, acc.id, {
       name: "A",
       openedOn: "2025-01-01",
     });
-    seedPortfolio(u.id, acc.id, { name: "B" });
-    const closed = closePortfolio(u.id, a.id, {
+    await seedPortfolio(u.id, acc.id, { name: "B" });
+    const closed = await closePortfolio(u.id, a.id, {
       closedOn: "2030-06-30",
       closeReason: "age",
     });
@@ -255,16 +266,16 @@ describe("portfolios", () => {
       closedOn: "2030-06-30",
       closeReason: "age",
     });
-    expect(listPortfolios(u.id).map((p) => p.name)).toEqual(["B", "A"]);
+    expect((await listPortfolios(u.id)).map((p) => p.name)).toEqual(["B", "A"]);
     expect(
-      errorCode(() =>
+      await errorCode(() =>
         closePortfolio(u.id, a.id, {
           closedOn: "2024-12-31",
           closeReason: "wef",
         }),
       ),
     ).toBe("invalid:closedOn");
-    expect(reopenPortfolio(u.id, a.id)).toMatchObject({
+    expect(await reopenPortfolio(u.id, a.id)).toMatchObject({
       closedOn: null,
       closeReason: null,
     });
@@ -272,14 +283,14 @@ describe("portfolios", () => {
 
   it("deletes only while there are no values or contributions", async () => {
     const u = await createTestUser();
-    const acc = seedPillar3aAccount(u.id);
-    const withValue = seedPortfolio(u.id, acc.id, { name: "V" });
-    const withContribution = seedPortfolio(u.id, acc.id, { name: "C" });
-    const empty = seedPortfolio(u.id, acc.id, { name: "E" });
-    setValues(u.id, acc.id, "2026-01-01", [
+    const acc = await seedPillar3aAccount(u.id);
+    const withValue = await seedPortfolio(u.id, acc.id, { name: "V" });
+    const withContribution = await seedPortfolio(u.id, acc.id, { name: "C" });
+    const empty = await seedPortfolio(u.id, acc.id, { name: "E" });
+    await setValues(u.id, acc.id, "2026-01-01", [
       { portfolioId: withValue.id, amount: minor(1) },
     ]);
-    addManualContribution(
+    await addManualContribution(
       u.id,
       {
         portfolioId: withContribution.id,
@@ -291,30 +302,32 @@ describe("portfolios", () => {
       },
       "2026-06-01",
     );
-    expect(errorCode(() => deletePortfolio(u.id, withValue.id))).toBe(
+    expect(await errorCode(() => deletePortfolio(u.id, withValue.id))).toBe(
       "conflict:",
     );
-    expect(errorCode(() => deletePortfolio(u.id, withContribution.id))).toBe(
-      "conflict:",
-    );
-    deletePortfolio(u.id, empty.id);
-    expect(listPortfolios(u.id).map((p) => p.name)).toEqual(["V", "C"]);
+    expect(
+      await errorCode(() => deletePortfolio(u.id, withContribution.id)),
+    ).toBe("conflict:");
+    await deletePortfolio(u.id, empty.id);
+    expect((await listPortfolios(u.id)).map((p) => p.name)).toEqual(["V", "C"]);
   });
 
   it("deleting the account removes its portfolios", async () => {
     const u = await createTestUser();
-    const acc = seedPillar3aAccount(u.id);
-    seedPortfolio(u.id, acc.id);
+    const acc = await seedPillar3aAccount(u.id);
+    await seedPortfolio(u.id, acc.id);
     const { deleteAccount } = await import("$lib/server/ledger");
-    deleteAccount(u.id, acc.id);
-    expect(listPortfolios(u.id)).toEqual([]);
+    await deleteAccount(u.id, acc.id);
+    expect(await listPortfolios(u.id)).toEqual([]);
   });
 
   it("hides other users' portfolios and accounts", async () => {
     const owner = await createTestUser();
     const other = await createTestUser();
-    const acc = seedPillar3aAccount(owner.id);
-    const p = seedPortfolio(owner.id, acc.id, { depositReference: makeQrr(9) });
+    const acc = await seedPillar3aAccount(owner.id);
+    const p = await seedPortfolio(owner.id, acc.id, {
+      depositReference: makeQrr(9),
+    });
     const input = {
       name: "x",
       number: null,
@@ -323,27 +336,108 @@ describe("portfolios", () => {
       openedOn: null,
       sortOrder: null,
     };
-    expect(listPortfolios(other.id)).toEqual([]);
-    expect(errorCode(() => listPortfolios(other.id, acc.id))).toBe(
+    expect(await listPortfolios(other.id)).toEqual([]);
+    expect(await errorCode(() => listPortfolios(other.id, acc.id))).toBe(
       "not_found:",
     );
-    expect(errorCode(() => getPortfolio(other.id, p.id))).toBe("not_found:");
-    expect(errorCode(() => createPortfolio(other.id, acc.id, input))).toBe(
-      "not_found:",
-    );
-    expect(errorCode(() => updatePortfolio(other.id, p.id, input))).toBe(
+    expect(await errorCode(() => getPortfolio(other.id, p.id))).toBe(
       "not_found:",
     );
     expect(
-      errorCode(() =>
+      await errorCode(() => createPortfolio(other.id, acc.id, input)),
+    ).toBe("not_found:");
+    expect(await errorCode(() => updatePortfolio(other.id, p.id, input))).toBe(
+      "not_found:",
+    );
+    expect(
+      await errorCode(() =>
         closePortfolio(other.id, p.id, {
           closedOn: "2030-01-01",
           closeReason: "age",
         }),
       ),
     ).toBe("not_found:");
-    expect(errorCode(() => reopenPortfolio(other.id, p.id))).toBe("not_found:");
-    expect(errorCode(() => deletePortfolio(other.id, p.id))).toBe("not_found:");
-    expect(getPortfolio(owner.id, p.id).closedOn).toBeNull();
+    expect(await errorCode(() => reopenPortfolio(other.id, p.id))).toBe(
+      "not_found:",
+    );
+    expect(await errorCode(() => deletePortfolio(other.id, p.id))).toBe(
+      "not_found:",
+    );
+    expect((await getPortfolio(owner.id, p.id)).closedOn).toBeNull();
+  });
+});
+
+describe("portfolio writes are atomic", () => {
+  it("assigns sort orders per account inside the creating transaction", async () => {
+    const u = await createTestUser();
+    const one = await seedPillar3aAccount(u.id, { name: "One" });
+    const two = await seedPillar3aAccount(u.id, { name: "Two" });
+    expect((await seedPortfolio(u.id, one.id, { name: "A" })).sortOrder).toBe(
+      0,
+    );
+    expect((await seedPortfolio(u.id, one.id, { name: "B" })).sortOrder).toBe(
+      1,
+    );
+    expect((await seedPortfolio(u.id, two.id, { name: "C" })).sortOrder).toBe(
+      0,
+    );
+  });
+
+  it("creates nothing when the reference is taken, and a rename keeps its own reference", async () => {
+    const u = await createTestUser();
+    const acc = await seedPillar3aAccount(u.id);
+    const ref = makeQrr(7);
+    const first = await seedPortfolio(u.id, acc.id, {
+      name: "A",
+      depositReference: ref,
+    });
+    expect(
+      await errorCode(() =>
+        seedPortfolio(u.id, acc.id, { name: "B", depositReference: ref }),
+      ),
+    ).toBe("conflict:depositReference");
+    expect(await listPortfolios(u.id)).toHaveLength(1);
+    expect(
+      (
+        await updatePortfolio(u.id, first.id, {
+          name: "A renamed",
+          number: null,
+          strategy: null,
+          depositReference: ref,
+          openedOn: null,
+          sortOrder: null,
+        })
+      ).name,
+    ).toBe("A renamed");
+  });
+
+  it("answers 404 for another user's portfolio on every write", async () => {
+    const u = await createTestUser();
+    const other = await createTestUser();
+    const acc = await seedPillar3aAccount(u.id);
+    const p = await seedPortfolio(u.id, acc.id);
+    const input = {
+      name: "x",
+      number: null,
+      strategy: null,
+      depositReference: null,
+      openedOn: null,
+      sortOrder: null,
+    };
+    expect(await errorCode(() => updatePortfolio(other.id, p.id, input))).toBe(
+      "not_found:",
+    );
+    expect(
+      await errorCode(() =>
+        closePortfolio(other.id, p.id, {
+          closedOn: "2026-01-01",
+          closeReason: "age",
+        }),
+      ),
+    ).toBe("not_found:");
+    expect(await errorCode(() => deletePortfolio(other.id, p.id))).toBe(
+      "not_found:",
+    );
+    expect(await getPortfolio(u.id, p.id)).toMatchObject({ closedOn: null });
   });
 });

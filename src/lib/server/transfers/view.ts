@@ -34,23 +34,23 @@ function chunks<T>(list: readonly T[]): T[][] {
   return out;
 }
 
-export function transferRefs(
+export async function transferRefs(
   userId: string,
   transactionIds: readonly string[],
-): Map<string, TransferRef> {
+): Promise<Map<string, TransferRef>> {
   const out = new Map<string, TransferRef>();
   if (transactionIds.length === 0) return out;
   const db = getDB();
   const names = new Map(
-    db
-      .select({ id: accounts.id, name: accounts.name })
-      .from(accounts)
-      .where(eq(accounts.userId, userId))
-      .all()
-      .map((a) => [a.id, a.name]),
+    (
+      await db
+        .select({ id: accounts.id, name: accounts.name })
+        .from(accounts)
+        .where(eq(accounts.userId, userId))
+    ).map((a) => [a.id, a.name]),
   );
   for (const ids of chunks(transactionIds)) {
-    const rows = db
+    const rows = await db
       .select()
       .from(transfers)
       .where(
@@ -62,8 +62,7 @@ export function transferRefs(
             inArray(transfers.inTransactionId, ids),
           ),
         ),
-      )
-      .all();
+      );
     const wanted = new Set(ids);
     for (const r of rows) {
       const status = r.status === "needs_amount" ? "needs_amount" : "linked";
@@ -90,10 +89,10 @@ export function transferRefs(
   return out;
 }
 
-export function mirrorRefs(
+export async function mirrorRefs(
   userId: string,
   mirrors: readonly { id: string; mirrorOfId: string | null }[],
-): Map<string, MirrorRef> {
+): Promise<Map<string, MirrorRef>> {
   const out = new Map<string, MirrorRef>();
   const withSource = mirrors.filter(
     (m): m is { id: string; mirrorOfId: string } => m.mirrorOfId !== null,
@@ -106,7 +105,7 @@ export function mirrorRefs(
   >();
   const sourceIds = [...new Set(withSource.map((m) => m.mirrorOfId))];
   for (const ids of chunks(sourceIds)) {
-    for (const s of db
+    for (const s of await db
       .select({
         id: transactions.id,
         accountId: transactions.accountId,
@@ -116,8 +115,7 @@ export function mirrorRefs(
       .innerJoin(accounts, eq(accounts.id, transactions.accountId))
       .where(
         and(eq(transactions.userId, userId), inArray(transactions.id, ids)),
-      )
-      .all()) {
+      )) {
       sourceOf.set(s.id, {
         transactionId: s.id,
         accountId: s.accountId,
@@ -127,7 +125,7 @@ export function mirrorRefs(
   }
   const insideImportedPeriod = new Set<string>();
   for (const ids of chunks(withSource.map((m) => m.id))) {
-    for (const r of db
+    for (const r of await db
       .select({ id: transactions.id })
       .from(transactions)
       .where(
@@ -136,8 +134,7 @@ export function mirrorRefs(
           inArray(transactions.id, ids),
           sql`exists (select 1 from imports where imports.account_id = ${transactions.accountId} and coalesce(min(imports.statement_from, imports.opening_balance_date), imports.statement_from, imports.opening_balance_date) <= ${transactions.bookingDate} and coalesce(max(imports.statement_to, imports.closing_balance_date), imports.statement_to, imports.closing_balance_date) >= ${transactions.bookingDate})`,
         ),
-      )
-      .all()) {
+      )) {
       insideImportedPeriod.add(r.id);
     }
   }

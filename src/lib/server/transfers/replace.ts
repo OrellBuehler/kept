@@ -1,33 +1,21 @@
 import { and, eq, gte, lte, or } from "drizzle-orm";
-import { getDB, transactions, transfers } from "$lib/server/db";
+import { getDB, transactions, transfers, type DB } from "$lib/server/db";
 import {
   LINK_WINDOW_DAYS,
   matchMirrors,
   shiftDate,
   type IncomingRow,
 } from "./plan";
-import type { Conn } from "./link";
+import type { Tx } from "./link";
 
-/**
- * Which rows of an incoming statement for `accountId` take over a mirror:
- * row key -> mirror id (see `matchMirrors`). Rows are matched by amount, date
- * counterparty and, for rows without a counterparty IBAN, reference or text;
- * they are not in the database yet.
- */
-export function findReplacements(
+function mirrorQuery(
+  conn: Pick<DB, "select">,
   userId: string,
   accountId: string,
-  rows: readonly IncomingRow[],
-  conn: Conn = getDB(),
-): Map<string, string> {
-  if (rows.length === 0) return new Map();
-  let first = rows[0]!.bookingDate;
-  let last = first;
-  for (const r of rows) {
-    if (r.bookingDate < first) first = r.bookingDate;
-    if (r.bookingDate > last) last = r.bookingDate;
-  }
-  const mirrors = conn
+  first: string,
+  last: string,
+) {
+  return conn
     .select({
       id: transactions.id,
       bookingDate: transactions.bookingDate,
@@ -45,9 +33,49 @@ export function findReplacements(
         gte(transactions.bookingDate, shiftDate(first, -LINK_WINDOW_DAYS)),
         lte(transactions.bookingDate, shiftDate(last, LINK_WINDOW_DAYS)),
       ),
-    )
-    .all();
+    );
+}
+
+function dateRange(rows: readonly IncomingRow[]): [string, string] {
+  let first = rows[0]!.bookingDate;
+  let last = first;
+  for (const r of rows) {
+    if (r.bookingDate < first) first = r.bookingDate;
+    if (r.bookingDate > last) last = r.bookingDate;
+  }
+  return [first, last];
+}
+
+/**
+ * Which rows of an incoming statement for `accountId` take over a mirror:
+ * row key -> mirror id (see `matchMirrors`). Rows are matched by amount, date
+ * counterparty and, for rows without a counterparty IBAN, reference or text;
+ * they are not in the database yet.
+ */
+export async function findReplacements(
+  userId: string,
+  accountId: string,
+  rows: readonly IncomingRow[],
+): Promise<Map<string, string>> {
+  if (rows.length === 0) return new Map();
+  const [first, last] = dateRange(rows);
+  const mirrors = await mirrorQuery(getDB(), userId, accountId, first, last);
   return matchMirrors(rows, mirrors);
+}
+
+/** Sync twin of findReplacements, for the body of a transaction. */
+export function findReplacementsInTx(
+  tx: Pick<DB, "select">,
+  userId: string,
+  accountId: string,
+  rows: readonly IncomingRow[],
+): Map<string, string> {
+  if (rows.length === 0) return new Map();
+  const [first, last] = dateRange(rows);
+  return matchMirrors(
+    rows,
+    mirrorQuery(tx, userId, accountId, first, last).all(),
+  );
 }
 
 /**
@@ -56,12 +84,12 @@ export function findReplacements(
  * category move to the real row; the mirror is deleted.
  */
 export function takeOverMirror(
+  tx: Tx,
   userId: string,
   mirrorId: string,
   realId: string,
-  conn: Conn,
 ): void {
-  const mirror = conn
+  const mirror = tx
     .select({
       note: transactions.note,
       categoryId: transactions.categoryId,
@@ -76,7 +104,7 @@ export function takeOverMirror(
     )
     .get();
   if (!mirror) return;
-  const row = conn
+  const row = tx
     .select()
     .from(transfers)
     .where(
@@ -90,8 +118,7 @@ export function takeOverMirror(
     )
     .get();
   if (row) {
-    conn
-      .update(transfers)
+    tx.update(transfers)
       .set({
         method: "paired",
         outTransactionId:
@@ -103,13 +130,12 @@ export function takeOverMirror(
       .run();
   }
   if (mirror.note !== null || mirror.categoryId !== null) {
-    const keep = conn
+    const keep = tx
       .select({ note: transactions.note, categoryId: transactions.categoryId })
       .from(transactions)
       .where(eq(transactions.id, realId))
       .get();
-    conn
-      .update(transactions)
+    tx.update(transactions)
       .set({
         note: keep?.note ?? mirror.note,
         categoryId: mirror.categoryId ?? keep?.categoryId ?? null,
@@ -117,8 +143,7 @@ export function takeOverMirror(
       .where(and(eq(transactions.userId, userId), eq(transactions.id, realId)))
       .run();
   }
-  conn
-    .delete(transactions)
+  tx.delete(transactions)
     .where(and(eq(transactions.userId, userId), eq(transactions.id, mirrorId)))
     .run();
 }

@@ -1,18 +1,28 @@
 import { and, count, eq } from "drizzle-orm";
-import { deductionYearMigration, getDB, transactions } from "$lib/server/db";
+import {
+  deductionYearMigration,
+  first,
+  getDB,
+  transactions,
+} from "$lib/server/db";
 
 /** Rows the deduction-year update moved out of the tax payments of `year`, still awaiting review. */
-export function countDeductionYearMoves(userId: string, year: number): number {
-  return getDB()
-    .select({ n: count() })
-    .from(deductionYearMigration)
-    .where(
-      and(
-        eq(deductionYearMigration.userId, userId),
-        eq(deductionYearMigration.oldTaxYear, year),
-      ),
-    )
-    .get()!.n;
+export async function countDeductionYearMoves(
+  userId: string,
+  year: number,
+): Promise<number> {
+  return (await first(
+    getDB()
+      .select({ n: count() })
+      .from(deductionYearMigration)
+      .where(
+        and(
+          eq(deductionYearMigration.userId, userId),
+          eq(deductionYearMigration.oldTaxYear, year),
+        ),
+      )
+      .limit(1),
+  ))!.n;
 }
 
 /**
@@ -20,7 +30,10 @@ export function countDeductionYearMoves(userId: string, year: number): number {
  * A transaction whose deduction year was changed since is left as the user set it.
  * Returns how many transactions were restored.
  */
-export function undoDeductionYearMoves(userId: string, year: number): number {
+export async function undoDeductionYearMoves(
+  userId: string,
+  year: number,
+): Promise<number> {
   return getDB().transaction((tx) => {
     const records = tx
       .select()
@@ -61,18 +74,19 @@ export function undoDeductionYearMoves(userId: string, year: number): number {
 }
 
 /** Keeps the move and forgets the records. Returns how many records were removed. */
-export function dismissDeductionYearMoves(
+export async function dismissDeductionYearMoves(
   userId: string,
   year: number,
-): number {
-  return getDB()
-    .delete(deductionYearMigration)
-    .where(
-      and(
-        eq(deductionYearMigration.userId, userId),
-        eq(deductionYearMigration.oldTaxYear, year),
-      ),
-    )
-    .returning({ id: deductionYearMigration.id })
-    .all().length;
+): Promise<number> {
+  return (
+    await getDB()
+      .delete(deductionYearMigration)
+      .where(
+        and(
+          eq(deductionYearMigration.userId, userId),
+          eq(deductionYearMigration.oldTaxYear, year),
+        ),
+      )
+      .returning({ id: deductionYearMigration.id })
+  ).length;
 }

@@ -126,7 +126,7 @@ describe("runNotifications", () => {
       staleImportDays: 7,
     });
     saveChannel(user.id, "webhook", { url: "https://hooks.example.org/k" });
-    seedAccount(user.id, { name: "Main" });
+    await seedAccount(user.id, { name: "Main" });
     const fetchFn = okFetch();
     await runNotifications(
       { fetch: fetchFn, smtp: null },

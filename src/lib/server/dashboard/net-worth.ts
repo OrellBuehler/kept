@@ -67,10 +67,10 @@ interface Collected {
  * With basis "share" each account's balance is scaled by its ownership share
  * (rounded per account and date, see `shareOf`) before summing.
  */
-export function netWorthSeries(
+export async function netWorthSeries(
   userId: string,
   options: NetWorthOptions,
-): NetWorthCurrencySeries[] {
+): Promise<NetWorthCurrencySeries[]> {
   const to = options.to ?? options.today;
   const from = options.from ?? addMonths(to, -12);
   const dates = stepDates(from, to, options.step ?? "month");
@@ -130,14 +130,14 @@ export function netWorthSeries(
     collected.get(s.accountId)?.snapshots.push(s);
   }
 
-  const holdings = loadHoldingsInputs(userId, [...collected.keys()], to);
+  const holdings = await loadHoldingsInputs(userId, [...collected.keys()], to);
   for (const [accountId, input] of holdings) {
     const account = collected.get(accountId)!;
     account.holdings = input;
     if (account.tradesMoveCash) account.cashMoves = cashMovesOf(input);
   }
 
-  const portfolioInputs = loadPortfolioInputs(
+  const portfolioInputs = await loadPortfolioInputs(
     userId,
     [...collected.keys()],
     to,

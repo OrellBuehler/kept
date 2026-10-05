@@ -50,7 +50,7 @@ function positiveInt(value: string | null): number {
     : 1;
 }
 
-export const load: PageServerLoad = ({ locals, params, url }) => {
+export const load: PageServerLoad = async ({ locals, params, url }) => {
   const user = requireUser(locals);
   const bill = orNotFound(() =>
     billView(user.id, params.id, { today: todayLocal() }),
@@ -66,7 +66,7 @@ export const load: PageServerLoad = ({ locals, params, url }) => {
       page: positiveInt(url.searchParams.get("page")),
     }),
     candidateQuery: q,
-    accounts: listAccounts(user.id)
+    accounts: (await listAccounts(user.id))
       .filter((a) => !a.archived || a.id === bill.expectedAccountId)
       .map((a) => ({ id: a.id, name: a.name, currency: a.currency })),
     document: bill.documentId
@@ -122,7 +122,7 @@ export const actions: Actions = {
       return fail(400, { action: "allocate", errors: parsed.errors, values });
     }
     try {
-      allocateFromInput(
+      await allocateFromInput(
         user.id,
         params.id,
         parsed.data.transactionId,

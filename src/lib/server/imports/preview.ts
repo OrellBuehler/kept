@@ -190,11 +190,11 @@ function previousDay(date: string): string {
   return d.toISOString().slice(0, 10);
 }
 
-function loadLedger(
+async function loadLedger(
   userId: string,
   accountId: string,
   excludeIds: ReadonlySet<string> = new Set(),
-): BalanceInput {
+): Promise<BalanceInput> {
   const db = getDB();
   const account = db
     .select({
@@ -210,7 +210,9 @@ function loadLedger(
     openingDate: account.openingDate,
     cashMoves: account.tradesMoveCash
       ? cashMovesOf(
-          loadHoldingsInputs(userId, [accountId], "9999-12-31").get(accountId),
+          (await loadHoldingsInputs(userId, [accountId], "9999-12-31")).get(
+            accountId,
+          ),
         )
       : undefined,
     transactions: db
@@ -435,7 +437,7 @@ export async function buildPreview(
   options: PreviewOptions = {},
 ): Promise<ImportPreview> {
   const meta = getPendingMeta(userId, pendingId);
-  const account = getAccount(userId, meta.accountId);
+  const account = await getAccount(userId, meta.accountId);
   const base = {
     pendingId: meta.id,
     account: {
@@ -468,7 +470,9 @@ export async function buildPreview(
   const profile =
     meta.format === "camt053"
       ? null
-      : (options.profile ?? getCsvProfile(userId, account.id)?.profile ?? null);
+      : (options.profile ??
+        (await getCsvProfile(userId, account.id))?.profile ??
+        null);
   const selection = await parseFile(
     meta,
     async () => (await readPending(userId, pendingId)).bytes,
@@ -528,7 +532,7 @@ export async function buildPreview(
   });
 
   // New rows that take over a mirror: the mirror goes, so it leaves the continuity check.
-  const replacements = findReplacements(
+  const replacements = await findReplacements(
     userId,
     account.id,
     rows
@@ -558,7 +562,7 @@ export async function buildPreview(
   if (errors.length === 0) {
     balanceWarnings.push(
       ...continuityWarnings(
-        loadLedger(userId, account.id, new Set(replacements.values())),
+        await loadLedger(userId, account.id, new Set(replacements.values())),
         statement,
         newRows.map((r) => r.tx),
         account.currency,

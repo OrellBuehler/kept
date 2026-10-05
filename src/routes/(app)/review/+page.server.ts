@@ -8,10 +8,10 @@ import {
 } from "$lib/server/review";
 import type { PageServerLoad } from "./$types";
 
-export const load: PageServerLoad = ({ locals, url }) => {
+export const load: PageServerLoad = async ({ locals, url }) => {
   const user = requireUser(locals);
   const today = localToday();
-  const years = reviewYears(user.id);
+  const years = await reviewYears(user.id);
   const requested = yearSchema(today).safeParse(url.searchParams.get("year"));
   const year = requested.success
     ? requested.data
@@ -20,6 +20,6 @@ export const load: PageServerLoad = ({ locals, url }) => {
     year,
     currentYear: Number(today.slice(0, 4)),
     firstYear: years.length ? Math.min(...years, year) : year,
-    review: yearReview(user.id, { year, today }),
+    review: await yearReview(user.id, { year, today }),
   };
 };

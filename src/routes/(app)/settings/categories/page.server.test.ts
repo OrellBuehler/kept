@@ -29,9 +29,9 @@ describe("settings/categories page", () => {
   it("load returns only the current user's categories and rules", async () => {
     const a = await createTestUser();
     const b = await createTestUser();
-    const mine = createCategory(a.id, { name: "Mine", ...plain });
-    const theirs = createCategory(b.id, { name: "Theirs", ...plain });
-    createRule(a.id, {
+    const mine = await createCategory(a.id, { name: "Mine", ...plain });
+    const theirs = await createCategory(b.id, { name: "Theirs", ...plain });
+    await createRule(a.id, {
       categoryId: mine.id,
       priority: 100,
       counterpartyContains: "x",
@@ -39,7 +39,7 @@ describe("settings/categories page", () => {
       counterpartyIban: null,
       amountSign: null,
     });
-    createRule(b.id, {
+    await createRule(b.id, {
       categoryId: theirs.id,
       priority: 100,
       counterpartyContains: "y",
@@ -68,7 +68,7 @@ describe("settings/categories page", () => {
       type: "return",
       value: { success: true, action: "createCategory" },
     });
-    const [food] = listCategories(u.id);
+    const [food] = await listCategories(u.id);
     expect(food).toMatchObject({ name: "Food", color: "#2563eb" });
 
     await run("updateCategory", u, {
@@ -79,13 +79,13 @@ describe("settings/categories page", () => {
       color: "",
       icon: "",
     });
-    expect(listCategories(u.id)[0]).toMatchObject({
+    expect((await listCategories(u.id))[0]).toMatchObject({
       name: "Groceries",
       color: null,
     });
 
     await run("deleteCategory", u, { id: food!.id });
-    expect(listCategories(u.id)).toEqual([]);
+    expect(await listCategories(u.id)).toEqual([]);
   });
 
   it("answers field errors with 400 and nothing is written", async () => {
@@ -100,26 +100,26 @@ describe("settings/categories page", () => {
       status: 400,
       data: { errors: { name: expect.any(Array), color: expect.any(Array) } },
     });
-    expect(listCategories(u.id)).toEqual([]);
+    expect(await listCategories(u.id)).toEqual([]);
   });
 
   it("requires a condition on a rule", async () => {
     const u = await createTestUser();
-    const c = createCategory(u.id, { name: "C", ...plain });
+    const c = await createCategory(u.id, { name: "C", ...plain });
     const r = await run("createRule", u, { categoryId: c.id, priority: "" });
     expect(r).toMatchObject({
       type: "fail",
       status: 400,
       data: { errors: { form: ["Set at least one condition."] } },
     });
-    expect(loadRules(u.id)).toEqual([]);
+    expect(await loadRules(u.id)).toEqual([]);
   });
 
   it("another user's ids answer 404 and change nothing", async () => {
     const a = await createTestUser();
     const b = await createTestUser();
-    const mine = createCategory(a.id, { name: "Mine", ...plain });
-    const rule = createRule(a.id, {
+    const mine = await createCategory(a.id, { name: "Mine", ...plain });
+    const rule = await createRule(a.id, {
       categoryId: mine.id,
       priority: 100,
       counterpartyContains: "x",
@@ -148,24 +148,24 @@ describe("settings/categories page", () => {
         counterpartyContains: "x",
       }),
     ).toMatchObject({ type: "fail", status: 400 });
-    expect(listCategories(a.id)[0]!.name).toBe("Mine");
-    expect(loadRules(a.id)).toHaveLength(1);
-    expect(loadRules(b.id)).toEqual([]);
+    expect((await listCategories(a.id))[0]!.name).toBe("Mine");
+    expect(await loadRules(a.id)).toHaveLength(1);
+    expect(await loadRules(b.id)).toEqual([]);
   });
 
   it("applies rules to uncategorized transactions of the user only", async () => {
     const a = await createTestUser();
     const b = await createTestUser();
-    const accA = seedAccount(a.id);
-    const accB = seedAccount(b.id);
-    seedImportedTransaction(a.id, accA.id, {
+    const accA = await seedAccount(a.id);
+    const accB = await seedAccount(b.id);
+    await seedImportedTransaction(a.id, accA.id, {
       counterpartyName: "Example Shop",
     });
-    seedImportedTransaction(b.id, accB.id, {
+    await seedImportedTransaction(b.id, accB.id, {
       counterpartyName: "Example Shop",
     });
-    const c = createCategory(a.id, { name: "Shopping", ...plain });
-    createRule(a.id, {
+    const c = await createCategory(a.id, { name: "Shopping", ...plain });
+    await createRule(a.id, {
       categoryId: c.id,
       priority: 100,
       counterpartyContains: "shop",
@@ -178,7 +178,11 @@ describe("settings/categories page", () => {
       type: "return",
       value: { success: true, scanned: 1, categorized: 1 },
     });
-    expect(listTransactions(a.id, accA.id).items[0]!.categoryId).toBe(c.id);
-    expect(listTransactions(b.id, accB.id).items[0]!.categoryId).toBeNull();
+    expect((await listTransactions(a.id, accA.id)).items[0]!.categoryId).toBe(
+      c.id,
+    );
+    expect(
+      (await listTransactions(b.id, accB.id)).items[0]!.categoryId,
+    ).toBeNull();
   });
 });

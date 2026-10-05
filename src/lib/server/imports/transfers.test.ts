@@ -25,8 +25,8 @@ useTestStore();
 
 async function setup(fill = true) {
   const user = await createTestUser();
-  const a = seedAccount(user.id, { name: "Main", iban: EXAMPLE_IBAN });
-  const b = seedAccount(user.id, {
+  const a = await seedAccount(user.id, { name: "Main", iban: EXAMPLE_IBAN });
+  const b = await seedAccount(user.id, {
     name: "Savings",
     type: "savings",
     iban: EXAMPLE_IBAN_OTHER,
@@ -77,7 +77,7 @@ describe("confirmImport links transfers", () => {
         counterpartyIban: EXAMPLE_IBAN,
       }),
     ]);
-    expect(currentBalance(user.id, b.id, "2024-12-31")).toBe(10000);
+    expect(await currentBalance(user.id, b.id, "2024-12-31")).toBe(10000);
   });
 
   it("creates nothing when the other account is not filled from transfers", async () => {
@@ -98,8 +98,8 @@ describe("confirmImport links transfers", () => {
 
   it("uses the counter-amount of a foreign-currency transfer, or asks for it", async () => {
     const user = await createTestUser();
-    const a = seedAccount(user.id, { iban: EXAMPLE_IBAN });
-    const eur = seedAccount(user.id, {
+    const a = await seedAccount(user.id, { iban: EXAMPLE_IBAN });
+    const eur = await seedAccount(user.id, {
       name: "Euro",
       currency: "EUR",
       iban: EXAMPLE_IBAN_OTHER,
@@ -151,8 +151,8 @@ describe("confirmImport links transfers", () => {
 
   it("pairs a debit that waits for an amount with the later foreign-currency import", async () => {
     const user = await createTestUser();
-    const a = seedAccount(user.id, { iban: EXAMPLE_IBAN });
-    const eur = seedAccount(user.id, {
+    const a = await seedAccount(user.id, { iban: EXAMPLE_IBAN });
+    const eur = await seedAccount(user.id, {
       name: "Euro",
       currency: "EUR",
       iban: EXAMPLE_IBAN_OTHER,
@@ -219,7 +219,10 @@ describe("confirmImport links transfers", () => {
       ),
     );
     const mirror = rowsOf(b.id).find((r) => r.bookingDate === "2024-03-10")!;
-    unlink(user.id, getTransaction(user.id, mirror.id).transfer!.id);
+    await unlink(
+      user.id,
+      (await getTransaction(user.id, mirror.id)).transfer!.id,
+    );
     const again = await confirmImport(
       user.id,
       await uploadBytes(
@@ -292,7 +295,7 @@ describe("a later real import replaces mirrors", () => {
   it("takes over the mirror, keeps the link and carries note and category", async () => {
     const { user, a, b } = await mirrored();
     const mirror = rowsOf(b.id).find((r) => r.amount === 10000)!;
-    const cat = createCategory(user.id, {
+    const cat = await createCategory(user.id, {
       name: "Moves",
       kind: "income",
       parentId: null,
@@ -327,7 +330,7 @@ describe("a later real import replaces mirrors", () => {
       toAccountId: b.id,
     });
     expect(allTransfers()).toHaveLength(2);
-    expect(currentBalance(user.id, b.id, "2024-12-31")).toBe(14000);
+    expect(await currentBalance(user.id, b.id, "2024-12-31")).toBe(14000);
   });
 
   it("does not warn about the balance when the real row replaces the mirror", async () => {
@@ -369,7 +372,7 @@ describe("a later real import replaces mirrors", () => {
     expect(result.transfers.replaced).toBe(1);
     const left = rowsOf(b.id).find((r) => r.source === "mirror")!;
     expect(left).toMatchObject({ amount: 4000 });
-    expect(getTransaction(user.id, left.id).mirrorOf).toMatchObject({
+    expect((await getTransaction(user.id, left.id)).mirrorOf).toMatchObject({
       noBankCounterpart: true,
     });
   });
@@ -407,7 +410,7 @@ describe("a later real import replaces mirrors", () => {
   it("does not touch another user's mirrors", async () => {
     const { user, b } = await mirrored();
     const other = await createTestUser();
-    const theirs = seedAccount(other.id, {
+    const theirs = await seedAccount(other.id, {
       name: "Theirs",
       iban: EXAMPLE_IBAN_OTHER,
     });

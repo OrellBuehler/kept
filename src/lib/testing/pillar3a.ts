@@ -19,11 +19,11 @@ export function makeQrr(body: string | number): string {
   return digits + String((10 - carry) % 10);
 }
 
-export function seedPillar3aAccount(
+export async function seedPillar3aAccount(
   userId: string,
   over: Parameters<typeof seedAccount>[1] = {},
 ) {
-  return seedAccount(userId, {
+  return await seedAccount(userId, {
     name: "Retirement 3a",
     type: "pillar_3a",
     currency: "CHF",
@@ -33,12 +33,12 @@ export function seedPillar3aAccount(
   });
 }
 
-export function seedPortfolio(
+export async function seedPortfolio(
   userId: string,
   accountId: string,
   over: Partial<PortfolioInput> = {},
 ) {
-  return createPortfolio(userId, accountId, {
+  return await createPortfolio(userId, accountId, {
     name: "Portfolio A",
     number: null,
     strategy: null,
@@ -52,9 +52,11 @@ export function seedPortfolio(
 export const chf = (n: number) => minor(n);
 
 /** `code:field` of the LedgerError `fn` throws, undefined when it does not throw. */
-export function errorCode(fn: () => unknown): string | undefined {
+export async function errorCode(
+  fn: () => unknown,
+): Promise<string | undefined> {
   try {
-    fn();
+    await fn();
   } catch (err) {
     if (err instanceof LedgerError) return `${err.code}:${err.field ?? ""}`;
     throw err;

@@ -61,7 +61,7 @@ function fakeProvider(
 
 async function setup(opts: { symbol?: string | null; currency?: string } = {}) {
   const user = await createTestUser();
-  const account = seedAccount(user.id);
+  const account = await seedAccount(user.id);
   const security = seedSecurity(user.id, {
     symbol: opts.symbol === undefined ? "AAA.SW" : opts.symbol,
     currency: opts.currency ?? "CHF",
@@ -182,7 +182,7 @@ describe("refreshPrices", () => {
 
   it("starts at the earliest trade across accounts", async () => {
     const { user, security } = await setup();
-    const second = seedAccount(user.id, { name: "Second" });
+    const second = await seedAccount(user.id, { name: "Second" });
     seedTrade(user.id, second.id, security.id, {
       date: "2023-12-01",
       amount: 1000,
@@ -400,7 +400,7 @@ describe("refreshPrices", () => {
   it("only touches the requesting user's data", async () => {
     const { user } = await setup();
     const other = await createTestUser();
-    const otherAccount = seedAccount(other.id);
+    const otherAccount = await seedAccount(other.id);
     const otherSecurity = seedSecurity(other.id, { symbol: "OTH.SW" });
     seedTrade(other.id, otherAccount.id, otherSecurity.id, { amount: 1 });
     setMarketDataEnabled(other.id, true);

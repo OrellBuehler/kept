@@ -26,7 +26,7 @@ const ctx = useTestStore();
 
 async function setup() {
   const user = await createTestUser();
-  const account = seedAccount(user.id, { iban: EXAMPLE_IBAN });
+  const account = await seedAccount(user.id, { iban: EXAMPLE_IBAN });
   return { user, account };
 }
 
@@ -101,7 +101,7 @@ describe("confirmImport", () => {
       amount: 123250,
       importId: r.importId,
     });
-    expect(currentBalance(user.id, account.id, "2024-07-31")).toBe(
+    expect(await currentBalance(user.id, account.id, "2024-07-31")).toBe(
       minor(123250),
     );
   });
@@ -172,7 +172,7 @@ describe("confirmImport", () => {
     );
     expect(b).toMatchObject({ newCount: 2, duplicateCount: 3 });
     expect(txCount(account.id)).toBe(7);
-    expect(accountBalanceAt(user.id, account.id, "2024-07-15")).toBe(
+    expect(await accountBalanceAt(user.id, account.id, "2024-07-15")).toBe(
       minor(118750),
     );
     const snaps = getDB()
@@ -279,7 +279,7 @@ describe("confirmImport", () => {
         }),
       ),
     );
-    const [newest] = listImports(user.id, account.id);
+    const [newest] = await listImports(user.id, account.id);
     expect(newest!.id).toBe(r.importId);
     expect(newest!.warnings).toHaveLength(1);
   });
@@ -309,7 +309,7 @@ describe("listImports / undoImport", () => {
       user.id,
       await uploadFixture(user.id, account.id, "camt053/overlap-b.xml"),
     );
-    const list = listImports(user.id, account.id);
+    const list = await listImports(user.id, account.id);
     expect(list.map((i) => i.id)).toEqual([b.importId, a.importId]);
     expect(list[0]).toMatchObject({
       accountName: account.name,
@@ -355,7 +355,7 @@ describe("listImports / undoImport", () => {
       .where(eq(balanceSnapshots.accountId, account.id))
       .all();
     expect(snaps.map((s) => s.date)).toEqual(["2024-07-10"]);
-    expect(listImports(user.id, account.id).map((i) => i.id)).toEqual([
+    expect((await listImports(user.id, account.id)).map((i) => i.id)).toEqual([
       a.importId,
     ]);
   });
@@ -399,7 +399,9 @@ describe("listImports / undoImport", () => {
       user.id,
       await uploadFixture(user.id, account.id, "camt053/overlap-a.xml"),
     );
-    expect(() => listImports(other.id, account.id)).toThrow(/not found/);
+    await expect(listImports(other.id, account.id)).rejects.toThrow(
+      /not found/,
+    );
     expect(listRecentImports(other.id)).toEqual([]);
     expect(() => undoImport(other.id, a.importId)).toThrow(/not found/);
     expect(txCount(account.id)).toBe(5);
@@ -420,21 +422,21 @@ describe("listImports / undoImport", () => {
   it("categorizes new rows with the user's rules only", async () => {
     const { user, account } = await setup();
     const other = await createTestUser();
-    const mine = createCategory(user.id, {
+    const mine = await createCategory(user.id, {
       name: "Incoming",
       kind: "income",
       parentId: null,
       color: null,
       icon: null,
     });
-    const theirs = createCategory(other.id, {
+    const theirs = await createCategory(other.id, {
       name: "Theirs",
       kind: "expense",
       parentId: null,
       color: null,
       icon: null,
     });
-    createRule(user.id, {
+    await createRule(user.id, {
       categoryId: mine.id,
       priority: 100,
       counterpartyContains: null,
@@ -442,7 +444,7 @@ describe("listImports / undoImport", () => {
       counterpartyIban: null,
       amountSign: "income",
     });
-    createRule(other.id, {
+    await createRule(other.id, {
       categoryId: theirs.id,
       priority: 100,
       counterpartyContains: null,

@@ -15,9 +15,9 @@ const run = (
 
 async function withSeries() {
   const user = await createTestUser();
-  const account = seedAccount(user.id);
+  const account = await seedAccount(user.id);
   for (const month of ["01", "02", "03"]) {
-    seedImportedTransaction(user.id, account.id, {
+    await seedImportedTransaction(user.id, account.id, {
       bookingDate: `2026-${month}-05`,
       amount: minor(-1290),
       counterpartyName: "Example Streaming",

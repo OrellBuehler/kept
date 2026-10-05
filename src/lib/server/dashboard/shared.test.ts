@@ -24,48 +24,48 @@ const m = minor;
  */
 async function setup() {
   const user = await createTestUser();
-  const full = seedAccount(user.id, {
+  const full = await seedAccount(user.id, {
     name: "Full",
     openingBalance: m(100000),
     openingDate: "2026-01-01",
   });
-  const half = seedAccount(user.id, {
+  const half = await seedAccount(user.id, {
     name: "Half",
     openingBalance: m(50001),
     openingDate: "2026-01-01",
     shareBps: 5000,
     sharedWith: "Housemate",
   });
-  const seventy = seedAccount(user.id, {
+  const seventy = await seedAccount(user.id, {
     name: "Seventy",
     openingBalance: m(10000),
     openingDate: "2026-01-01",
     shareBps: 7000,
   });
-  const euro = seedAccount(user.id, {
+  const euro = await seedAccount(user.id, {
     name: "Euro",
     currency: "EUR",
     openingBalance: m(2001),
     openingDate: "2026-01-01",
     shareBps: 5000,
   });
-  const tx = (
+  const tx = async (
     accountId: string,
     amount: number,
     bookingDate = "2026-10-05",
     currency = "CHF",
   ) =>
-    seedImportedTransaction(user.id, accountId, {
+    await seedImportedTransaction(user.id, accountId, {
       amount: m(amount),
       bookingDate,
       currency,
     });
-  tx(full.id, -2000);
-  tx(half.id, -3001);
-  tx(half.id, 501); // refund
-  tx(seventy.id, -1001);
-  tx(euro.id, -5, "2026-10-05", "EUR");
-  tx(half.id, -400, "2026-09-10"); // previous month
+  await tx(full.id, -2000);
+  await tx(half.id, -3001);
+  await tx(half.id, 501); // refund
+  await tx(seventy.id, -1001);
+  await tx(euro.id, -5, "2026-10-05", "EUR");
+  await tx(half.id, -400, "2026-09-10"); // previous month
   return { user, full, half, seventy, euro };
 }
 
@@ -74,9 +74,9 @@ describe("accounts with an ownership share", () => {
 
   it("stores 100% by default and exposes the share on the account views", async () => {
     const u = await createTestUser();
-    const plain = seedAccount(u.id, { name: "Plain" });
+    const plain = await seedAccount(u.id, { name: "Plain" });
     expect(plain).toMatchObject({ shareBps: 10000, sharedWith: null });
-    const shared = seedAccount(u.id, {
+    const shared = await seedAccount(u.id, {
       name: "Shared",
       openingBalance: m(1001),
       shareBps: 3333,
@@ -92,7 +92,7 @@ describe("accounts with an ownership share", () => {
 
   it("reports balances and totals at both bases", async () => {
     const { user } = await setup();
-    const list = accountBalances(user.id, TODAY);
+    const list = await accountBalances(user.id, TODAY);
     const by = Object.fromEntries(list.map((a) => [a.name, a]));
     expect(by.Full).toMatchObject({ balance: 98000, shareBalance: 98000 });
     // 50001 - 3001 + 501 - 400 = 47101, half = 23550.5 -> 23551
@@ -125,8 +125,8 @@ describe("netWorthSeries by basis", () => {
       step: "day" as const,
       today: TODAY,
     };
-    const total = netWorthSeries(user.id, opts);
-    const share = netWorthSeries(user.id, { ...opts, basis: "share" });
+    const total = await netWorthSeries(user.id, opts);
+    const share = await netWorthSeries(user.id, { ...opts, basis: "share" });
     expect(share.map((s) => s.currency)).toEqual(["CHF", "EUR"]);
     expect(share[0]!.points.map((p) => p.date)).toEqual(
       total[0]!.points.map((p) => p.date),
@@ -146,10 +146,13 @@ describe("netWorthSeries by basis", () => {
   it("defaults to the total and ignores other users", async () => {
     const { user } = await setup();
     const other = await createTestUser();
-    seedAccount(other.id, { openingBalance: m(999999), shareBps: 5000 });
-    const series = netWorthSeries(user.id, { today: TODAY });
+    await seedAccount(other.id, { openingBalance: m(999999), shareBps: 5000 });
+    const series = await netWorthSeries(user.id, { today: TODAY });
     expect(series.at(0)!.points.at(-1)!.amount).toBe(98000 + 47101 + 8999);
-    const share = netWorthSeries(other.id, { today: TODAY, basis: "share" });
+    const share = await netWorthSeries(other.id, {
+      today: TODAY,
+      basis: "share",
+    });
     expect(share[0]!.points.at(-1)!.amount).toBe(500000);
   });
 });
@@ -159,8 +162,11 @@ describe("monthSummary by basis", () => {
 
   it("counts shared transactions at their share, refunds included", async () => {
     const { user } = await setup();
-    const total = monthSummary(user.id, { month: "2026-10" });
-    const share = monthSummary(user.id, { month: "2026-10", basis: "share" });
+    const total = await monthSummary(user.id, { month: "2026-10" });
+    const share = await monthSummary(user.id, {
+      month: "2026-10",
+      basis: "share",
+    });
     expect(total.totals).toEqual([
       { currency: "CHF", income: 501, expenses: 6002, net: -5501 },
       { currency: "EUR", income: 0, expenses: 5, net: -5 },
@@ -177,21 +183,27 @@ describe("monthSummary by basis", () => {
 
   it("keeps the own-account transfer rule at either basis", async () => {
     const user = await createTestUser();
-    const a = seedAccount(user.id, {
+    const a = await seedAccount(user.id, {
       iban: EXAMPLE_IBAN,
       shareBps: 5000,
     });
-    const b = seedAccount(user.id, { name: "B", iban: EXAMPLE_IBAN_OTHER });
-    seedImportedTransaction(user.id, b.id, {
+    const b = await seedAccount(user.id, {
+      name: "B",
+      iban: EXAMPLE_IBAN_OTHER,
+    });
+    await seedImportedTransaction(user.id, b.id, {
       amount: m(-1000),
       bookingDate: "2026-10-02",
       counterpartyIban: a.iban,
     });
-    seedImportedTransaction(user.id, a.id, {
+    await seedImportedTransaction(user.id, a.id, {
       amount: m(300),
       bookingDate: "2026-10-03",
     });
-    const share = monthSummary(user.id, { month: "2026-10", basis: "share" });
+    const share = await monthSummary(user.id, {
+      month: "2026-10",
+      basis: "share",
+    });
     expect(share.totals).toEqual([
       { currency: "CHF", income: 150, expenses: 0, net: 150 },
     ]);
@@ -203,7 +215,7 @@ describe("dashboard with shared accounts", () => {
 
   it("adds the share variants only when an account is shared", async () => {
     const { user } = await setup();
-    const d = dashboard(user.id, TODAY, { range: "3m" });
+    const d = await dashboard(user.id, TODAY, { range: "3m" });
     expect(d.hasShared).toBe(true);
     expect(d.netWorth.shareSeries).not.toBeNull();
     expect(d.netWorth.shareSeries!.map((s) => s.currency)).toEqual([
@@ -224,8 +236,8 @@ describe("dashboard with shared accounts", () => {
 
   it("is unchanged for users without shared accounts", async () => {
     const user = await createTestUser();
-    seedAccount(user.id, { openingBalance: m(1000) });
-    const d = dashboard(user.id, TODAY);
+    await seedAccount(user.id, { openingBalance: m(1000) });
+    const d = await dashboard(user.id, TODAY);
     expect(d.hasShared).toBe(false);
     expect(d.netWorth.shareSeries).toBeNull();
     expect(d.shareMonth).toBeNull();
@@ -238,9 +250,9 @@ describe("dashboard with shared accounts", () => {
 
   it("does not count an archived shared account", async () => {
     const user = await createTestUser();
-    const a = seedAccount(user.id, { shareBps: 5000 });
+    const a = await seedAccount(user.id, { shareBps: 5000 });
     const { archiveAccount } = await import("$lib/server/ledger");
-    archiveAccount(user.id, a.id);
-    expect(dashboard(user.id, TODAY).hasShared).toBe(false);
+    await archiveAccount(user.id, a.id);
+    expect((await dashboard(user.id, TODAY)).hasShared).toBe(false);
   });
 });

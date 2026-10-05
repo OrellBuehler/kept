@@ -41,7 +41,7 @@ const querySchema = z.object({
   all: z.literal("1").optional(),
 });
 
-export const load: PageServerLoad = ({ locals, url }) => {
+export const load: PageServerLoad = async ({ locals, url }) => {
   const user = requireUser(locals);
   const query = querySchema.safeParse({
     prices: url.searchParams.get("prices") || undefined,
@@ -52,7 +52,7 @@ export const load: PageServerLoad = ({ locals, url }) => {
   const all = query.data.all === "1";
   const settings = getMarketDataSettings(user.id);
   return {
-    overview: investmentsOverview(user.id, localToday()),
+    overview: await investmentsOverview(user.id, localToday()),
     securities: listSecurities(user.id),
     marketData: {
       enabled: settings.enabled,

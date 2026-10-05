@@ -34,12 +34,15 @@ describe("dashboard page", () => {
     const u = await createTestUser();
     const other = await createTestUser();
     const today = localToday();
-    const a = seedAccount(u.id, { openingBalance: minor(1000) });
-    seedImportedTransaction(u.id, a.id, {
+    const a = await seedAccount(u.id, { openingBalance: minor(1000) });
+    await seedImportedTransaction(u.id, a.id, {
       bookingDate: today,
       amount: minor(-100),
     });
-    seedAccount(other.id, { name: "Other", openingBalance: minor(99999) });
+    await seedAccount(other.id, {
+      name: "Other",
+      openingBalance: minor(99999),
+    });
     seedBill(other.id, { dueDate: addDays(today, -2) });
 
     const data = await loadAs(u);
@@ -54,8 +57,8 @@ describe("dashboard page", () => {
   it("returns liquidity for the current user only", async () => {
     const u = await createTestUser();
     const other = await createTestUser();
-    seedAccount(u.id, { openingBalance: minor(1000) });
-    seedAccount(u.id, {
+    await seedAccount(u.id, { openingBalance: minor(1000) });
+    await seedAccount(u.id, {
       name: "Notice",
       type: "savings",
       openingBalance: minor(50000),
@@ -63,7 +66,7 @@ describe("dashboard page", () => {
       freeWithdrawal: minor(10000),
       freeWithdrawalPeriod: "year",
     });
-    seedAccount(other.id, {
+    await seedAccount(other.id, {
       name: "Other",
       type: "savings",
       openingBalance: minor(99999),
@@ -81,18 +84,18 @@ describe("dashboard page", () => {
   it("lists foreign-currency transfers that wait for an amount, for the current user only", async () => {
     const u = await createTestUser();
     const other = await createTestUser();
-    const a = seedAccount(u.id, { name: "Main", iban: EXAMPLE_IBAN });
-    seedAccount(u.id, {
+    const a = await seedAccount(u.id, { name: "Main", iban: EXAMPLE_IBAN });
+    await seedAccount(u.id, {
       name: "Euro",
       currency: "EUR",
       iban: EXAMPLE_IBAN_OTHER,
       fillFromTransfers: true,
     });
-    seedImportedTransaction(u.id, a.id, {
+    await seedImportedTransaction(u.id, a.id, {
       amount: minor(-100),
       counterpartyIban: EXAMPLE_IBAN_OTHER,
     });
-    linkTransfers(u.id, {});
+    await linkTransfers(u.id, {});
     expect((await loadAs(u)).needsAmount).toEqual([
       expect.objectContaining({
         sourceAccountName: "Main",
@@ -104,7 +107,7 @@ describe("dashboard page", () => {
 
   it("honours the range parameter and falls back to 12m", async () => {
     const u = await createTestUser();
-    seedAccount(u.id);
+    await seedAccount(u.id);
     const range = async (query: string) =>
       (await loadAs(u, `http://localhost/${query}`)).dashboard;
     expect((await range("?range=3m")).range).toBe("3m");

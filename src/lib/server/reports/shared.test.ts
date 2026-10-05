@@ -13,18 +13,18 @@ const norm = (s: string) => s.replace(/\s+/g, " ");
 
 async function setup() {
   const user = await createTestUser();
-  seedAccount(user.id, {
+  await seedAccount(user.id, {
     name: "Everyday",
     openingBalance: m(100000),
     openingDate: "2026-01-01",
   });
-  const joint = seedAccount(user.id, {
+  const joint = await seedAccount(user.id, {
     name: "Joint",
     openingBalance: m(50001),
     openingDate: "2026-01-01",
     shareBps: 5000,
   });
-  seedImportedTransaction(user.id, joint.id, {
+  await seedImportedTransaction(user.id, joint.id, {
     bookingDate: "2026-09-02",
     amount: m(-1001),
   });
@@ -36,8 +36,8 @@ describe("net worth report variants", () => {
 
   it("loads the total by default and the share on request", async () => {
     const u = await setup();
-    const total = loadNetWorthReport(u.id, TODAY);
-    const share = loadNetWorthReport(u.id, TODAY, "share");
+    const total = await loadNetWorthReport(u.id, TODAY);
+    const share = await loadNetWorthReport(u.id, TODAY, "share");
     expect(total.basis).toBe("total");
     expect(share.basis).toBe("share");
     expect(total.series[0]!.points.at(-1)!.amount).toBe(100000 + 49000);
@@ -71,7 +71,7 @@ describe("net worth report variants", () => {
     );
     expect(built.fileName).toBe("kept-net-worth-share-2026-10-15.pdf");
     expect(built.title).toBe(
-      netWorthReportTitle(loadNetWorthReport(u.id, TODAY, "share")),
+      netWorthReportTitle(await loadNetWorthReport(u.id, TODAY, "share")),
     );
     expect(built.title).toContain("my share");
     const text = await pdfText(built.bytes);

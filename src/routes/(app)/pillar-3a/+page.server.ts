@@ -22,14 +22,14 @@ import type { Actions, PageServerLoad } from "./$types";
 const detailFields = ["date", "kind", "gapYears", "note"] as const;
 const manualFields = [...detailFields, "portfolioId", "amount"] as const;
 
-export const load: PageServerLoad = ({ locals }) => {
+export const load: PageServerLoad = async ({ locals }) => {
   const user = requireUser(locals);
   const today = localToday();
   return {
     today,
-    overview: pillar3aOverview(user.id, today),
-    contributions: listContributions(user.id),
-    accounts: listAccounts(user.id, today)
+    overview: await pillar3aOverview(user.id, today),
+    contributions: await listContributions(user.id),
+    accounts: (await listAccounts(user.id, today))
       .filter((a) => a.type === "pillar_3a")
       .map((a) => ({ id: a.id, name: a.name, archived: a.archived })),
   };
@@ -45,7 +45,7 @@ export const actions: Actions = {
       return fail(400, { action: "setYear", errors: parsed.errors, values });
     }
     try {
-      setYearSetting(user.id, parsed.data);
+      await setYearSetting(user.id, parsed.data);
       return {
         success: true as const,
         action: "setYear" as const,
@@ -69,7 +69,11 @@ export const actions: Actions = {
       });
     }
     try {
-      const saved = addManualContribution(user.id, parsed.data, localToday());
+      const saved = await addManualContribution(
+        user.id,
+        parsed.data,
+        localToday(),
+      );
       return {
         success: true as const,
         action: "addContribution" as const,
@@ -110,7 +114,7 @@ export const actions: Actions = {
             values,
           });
         }
-        const saved = updateDetectedContribution(
+        const saved = await updateDetectedContribution(
           user.id,
           (idParsed.data as { transactionId: string }).transactionId,
           parsed.data,
@@ -130,7 +134,7 @@ export const actions: Actions = {
           values,
         });
       }
-      const saved = updateManualContribution(
+      const saved = await updateManualContribution(
         user.id,
         (idParsed.data as { contributionId: string }).contributionId,
         parsed.data,
@@ -163,7 +167,7 @@ export const actions: Actions = {
       });
     }
     try {
-      deleteContribution(
+      await deleteContribution(
         user.id,
         isDetected
           ? {

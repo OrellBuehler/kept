@@ -34,13 +34,13 @@ const qrBill = (userId: string, over = {}) =>
     ...over,
   });
 
-const payment = (
+const payment = async (
   userId: string,
   accountId: string,
   cents: number,
   over: Record<string, unknown> = {},
 ) =>
-  seedImportedTransaction(userId, accountId, {
+  await seedImportedTransaction(userId, accountId, {
     amount: minor(-cents),
     bookingDate: "2026-09-10",
     ...over,
@@ -48,7 +48,7 @@ const payment = (
 
 async function setup() {
   const u = await createTestUser();
-  return { u, account: seedAccount(u.id) };
+  return { u, account: await seedAccount(u.id) };
 }
 
 describe("auto matching", () => {
@@ -57,7 +57,9 @@ describe("auto matching", () => {
   it("confirms an exact reference match as an auto allocation, once", async () => {
     const { u, account } = await setup();
     const bill = qrBill(u.id);
-    const tx = payment(u.id, account.id, 10000, { reference: EXAMPLE_QRR });
+    const tx = await payment(u.id, account.id, 10000, {
+      reference: EXAMPLE_QRR,
+    });
     expect(runAutoMatching(u.id).matched).toBe(1);
     expect(runAutoMatching(u.id).matched).toBe(0);
     expect(listBillAllocations(u.id, bill.id)).toEqual([
@@ -74,7 +76,7 @@ describe("auto matching", () => {
   it("allocates only the bill's remaining amount of a larger payment", async () => {
     const { u, account } = await setup();
     const bill = qrBill(u.id, { amount: minor(4000) });
-    payment(u.id, account.id, 10000, { reference: EXAMPLE_QRR });
+    await payment(u.id, account.id, 10000, { reference: EXAMPLE_QRR });
     runAutoMatching(u.id);
     expect(billView(u.id, bill.id, { today: TODAY })).toMatchObject({
       status: "paid",
@@ -89,7 +91,7 @@ describe("auto matching", () => {
       issueDate: "2026-09-01",
       dueDate: "2026-10-01",
     });
-    const tx = payment(u.id, account.id, 10000, {
+    const tx = await payment(u.id, account.id, 10000, {
       counterpartyIban: EXAMPLE_IBAN,
     });
     expect(runAutoMatching(u.id).matched).toBe(0);
@@ -117,8 +119,8 @@ describe("auto matching", () => {
   it("leaves ambiguous reference matches (instalments) to the user", async () => {
     const { u, account } = await setup();
     qrBill(u.id);
-    payment(u.id, account.id, 5000, { reference: EXAMPLE_QRR });
-    payment(u.id, account.id, 5000, {
+    await payment(u.id, account.id, 5000, { reference: EXAMPLE_QRR });
+    await payment(u.id, account.id, 5000, {
       reference: EXAMPLE_QRR,
       bookingDate: "2026-09-12",
     });
@@ -131,7 +133,7 @@ describe("auto matching", () => {
   it("ignores cancelled and already paid bills", async () => {
     const { u, account } = await setup();
     const bill = qrBill(u.id);
-    payment(u.id, account.id, 10000, { reference: EXAMPLE_QRR });
+    await payment(u.id, account.id, 10000, { reference: EXAMPLE_QRR });
     const { cancelBill } = await import("./bills");
     cancelBill(u.id, bill.id);
     expect(runAutoMatching(u.id).matched).toBe(0);
@@ -141,12 +143,12 @@ describe("auto matching", () => {
   it("only looks at transactions near the open bills", async () => {
     const { u, account } = await setup();
     qrBill(u.id, { issueDate: "2026-09-01", dueDate: "2026-10-01" });
-    payment(u.id, account.id, 10000, {
+    await payment(u.id, account.id, 10000, {
       reference: EXAMPLE_QRR,
       bookingDate: "2026-06-01",
     });
     expect(getSuggestions(u.id)).toEqual([]);
-    payment(u.id, account.id, 10000, {
+    await payment(u.id, account.id, 10000, {
       reference: EXAMPLE_QRR,
       bookingDate: "2026-07-15",
     });
@@ -156,7 +158,7 @@ describe("auto matching", () => {
   it("considers every transaction when an open bill has no dates", async () => {
     const { u, account } = await setup();
     qrBill(u.id, { issueDate: null, dueDate: null });
-    payment(u.id, account.id, 10000, {
+    await payment(u.id, account.id, 10000, {
       reference: EXAMPLE_QRR,
       bookingDate: "2020-01-01",
     });
@@ -174,10 +176,10 @@ describe("dismissals", () => {
       issueDate: "2026-09-01",
       dueDate: "2026-10-01",
     });
-    const tx = payment(u.id, account.id, 10000, {
+    const tx = await payment(u.id, account.id, 10000, {
       counterpartyIban: EXAMPLE_IBAN,
     });
-    const other = payment(u.id, account.id, 10000, {
+    const other = await payment(u.id, account.id, 10000, {
       counterpartyIban: EXAMPLE_IBAN,
       bookingDate: "2026-09-11",
     });
@@ -194,7 +196,9 @@ describe("dismissals", () => {
   it("a dismissed reference match is not auto-confirmed", async () => {
     const { u, account } = await setup();
     const bill = qrBill(u.id);
-    const tx = payment(u.id, account.id, 10000, { reference: EXAMPLE_QRR });
+    const tx = await payment(u.id, account.id, 10000, {
+      reference: EXAMPLE_QRR,
+    });
     dismissSuggestion(u.id, bill.id, tx.id);
     expect(runAutoMatching(u.id).matched).toBe(0);
   });
@@ -207,10 +211,10 @@ describe("suggestions across users", () => {
     const a = await setup();
     const b = await setup();
     const billA = qrBill(a.u.id);
-    const txB = payment(b.u.id, b.account.id, 10000, {
+    const txB = await payment(b.u.id, b.account.id, 10000, {
       reference: EXAMPLE_QRR,
     });
-    const txA = payment(a.u.id, a.account.id, 10000, {
+    const txA = await payment(a.u.id, a.account.id, 10000, {
       counterpartyIban: EXAMPLE_IBAN,
     });
     expect(runAutoMatching(a.u.id).matched).toBe(0);
@@ -228,9 +232,9 @@ describe("suggestions across users", () => {
     };
     expect(dismiss(b.u.id, billA.id, txA.id)).toBe("not_found");
     expect(dismiss(a.u.id, billA.id, txB.id)).toBe("not_found");
-    expect(() =>
+    await expect(
       allocate(a.u.id, billA.id, txB.id, minor(10000), "user"),
-    ).toThrow(LedgerError);
+    ).rejects.toThrow(LedgerError);
   });
 });
 
@@ -240,7 +244,9 @@ describe("auto matching guards", () => {
   it("keeps a partial reference payment as a suggestion", async () => {
     const { u, account } = await setup();
     const bill = qrBill(u.id);
-    const tx = payment(u.id, account.id, 4000, { reference: EXAMPLE_QRR });
+    const tx = await payment(u.id, account.id, 4000, {
+      reference: EXAMPLE_QRR,
+    });
     const result = runAutoMatching(u.id);
     expect(result.matched).toBe(0);
     expect(result.suggestions).toEqual([
@@ -258,7 +264,7 @@ describe("auto matching guards", () => {
   it("auto-confirms an open-amount bill with a single reference match", async () => {
     const { u, account } = await setup();
     const bill = qrBill(u.id, { amount: null });
-    payment(u.id, account.id, 4321, { reference: EXAMPLE_QRR });
+    await payment(u.id, account.id, 4321, { reference: EXAMPLE_QRR });
     const result = runAutoMatching(u.id);
     expect(result).toMatchObject({ matched: 1, suggestions: [] });
     expect(listBillAllocations(u.id, bill.id)[0]).toMatchObject({
@@ -269,14 +275,14 @@ describe("auto matching guards", () => {
   it("returns the remaining suggestions from the same run", async () => {
     const { u, account } = await setup();
     qrBill(u.id);
-    payment(u.id, account.id, 10000, { reference: EXAMPLE_QRR });
+    await payment(u.id, account.id, 10000, { reference: EXAMPLE_QRR });
     const other = seedBill(u.id, {
       creditorIban: EXAMPLE_IBAN,
       issueDate: "2026-09-01",
       dueDate: "2026-10-01",
       amount: minor(777),
     });
-    const tx = payment(u.id, account.id, 777, {
+    const tx = await payment(u.id, account.id, 777, {
       counterpartyIban: EXAMPLE_IBAN,
     });
     const r = runAutoMatching(u.id);
@@ -318,7 +324,9 @@ describe("dismissals and removal", () => {
   it("removing an auto-confirmed allocation dismisses it so it does not come back", async () => {
     const { u, account } = await setup();
     const bill = qrBill(u.id);
-    const tx = payment(u.id, account.id, 10000, { reference: EXAMPLE_QRR });
+    const tx = await payment(u.id, account.id, 10000, {
+      reference: EXAMPLE_QRR,
+    });
     runAutoMatching(u.id);
     removeAllocation(u.id, listBillAllocations(u.id, bill.id)[0]!.id);
     expect(listDismissed(u.id, bill.id).map((t) => t.id)).toEqual([tx.id]);
@@ -332,10 +340,10 @@ describe("dismissals and removal", () => {
       issueDate: "2026-09-01",
       dueDate: "2026-10-01",
     });
-    const tx = payment(u.id, account.id, 10000, {
+    const tx = await payment(u.id, account.id, 10000, {
       counterpartyIban: EXAMPLE_IBAN,
     });
-    const { id } = allocate(u.id, bill.id, tx.id, minor(10000), "user");
+    const { id } = await allocate(u.id, bill.id, tx.id, minor(10000), "user");
     removeAllocation(u.id, id);
     expect(listDismissed(u.id, bill.id)).toEqual([]);
     expect(getSuggestions(u.id).map((s) => s.transactionId)).toEqual([tx.id]);
@@ -344,10 +352,10 @@ describe("dismissals and removal", () => {
   it("allocating a dismissed pair clears the dismissal", async () => {
     const { u, account } = await setup();
     const bill = seedBill(u.id);
-    const tx = payment(u.id, account.id, 10000);
+    const tx = await payment(u.id, account.id, 10000);
     dismissSuggestion(u.id, bill.id, tx.id);
     expect(listDismissed(u.id, bill.id)).toHaveLength(1);
-    allocate(u.id, bill.id, tx.id, minor(10000), "user");
+    await allocate(u.id, bill.id, tx.id, minor(10000), "user");
     expect(listDismissed(u.id, bill.id)).toEqual([]);
   });
 
@@ -359,7 +367,7 @@ describe("dismissals and removal", () => {
       issueDate: "2026-09-01",
       dueDate: "2026-10-01",
     });
-    const tx = payment(a.u.id, a.account.id, 10000, {
+    const tx = await payment(a.u.id, a.account.id, 10000, {
       counterpartyIban: EXAMPLE_IBAN,
     });
     dismissSuggestion(a.u.id, bill.id, tx.id);
