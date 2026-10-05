@@ -3,7 +3,7 @@ import { and, eq, lt } from "drizzle-orm";
 import { z } from "zod";
 import { IMPORT_FORMATS } from "$lib/ledger-types";
 import { MAX_UPLOAD_BYTES } from "$lib/import-constants";
-import { getDB, pendingImports } from "$lib/server/db";
+import { first, getDB, pendingImports, type DB } from "$lib/server/db";
 import { describeError } from "$lib/server/errors";
 import { LedgerError, notFound } from "$lib/server/ledger/errors";
 import { getStore } from "$lib/server/storage";
@@ -120,11 +120,10 @@ export function detectFormat(
  */
 export async function purgeExpired(now = Date.now()): Promise<void> {
   const db = getDB();
-  const expired = db
+  const expired = await db
     .select({ id: pendingImports.id, userId: pendingImports.userId })
     .from(pendingImports)
-    .where(lt(pendingImports.expiresAt, new Date(now)))
-    .all();
+    .where(lt(pendingImports.expiresAt, new Date(now)));
   const store = getStore();
   for (const { id, userId } of expired) {
     try {
@@ -137,7 +136,7 @@ export async function purgeExpired(now = Date.now()): Promise<void> {
       );
       continue;
     }
-    db.delete(pendingImports).where(eq(pendingImports.id, id)).run();
+    await db.delete(pendingImports).where(eq(pendingImports.id, id));
   }
 }
 
@@ -159,13 +158,15 @@ export async function sweepOrphanedPending(now = Date.now()): Promise<number> {
       id !== undefined &&
       rest.length === 0 &&
       pendingIdSchema.safeParse(id).success &&
-      db
-        .select({ id: pendingImports.id })
-        .from(pendingImports)
-        .where(
-          and(eq(pendingImports.id, id), eq(pendingImports.userId, userId)),
-        )
-        .get() !== undefined;
+      (await first(
+        db
+          .select({ id: pendingImports.id })
+          .from(pendingImports)
+          .where(
+            and(eq(pendingImports.id, id), eq(pendingImports.userId, userId)),
+          )
+          .limit(1),
+      )) !== undefined;
     if (!owned) orphans.push(blob.key);
   }
   let removed = 0;
@@ -224,7 +225,7 @@ export async function storePending(
   const store = getStore();
   await store.put(key, input.bytes);
   try {
-    const row = getDB()
+    const [row] = await getDB()
       .insert(pendingImports)
       .values({
         id,
@@ -237,9 +238,8 @@ export async function storePending(
         createdAt: new Date(now),
         expiresAt: new Date(now + PENDING_TTL_MS),
       })
-      .returning(columns)
-      .get();
-    return toMeta(row);
+      .returning(columns);
+    return toMeta(row!);
   } catch (err) {
     await store.delete(key);
     throw err;
@@ -247,17 +247,19 @@ export async function storePending(
 }
 
 /** Metadata of a pending upload; not found when missing, expired or not owned. */
-export function getPendingMeta(
+export async function getPendingMeta(
   userId: string,
   pendingId: string,
   now = Date.now(),
-): PendingMeta {
+): Promise<PendingMeta> {
   const id = checkId(pendingId);
-  const row = getDB()
-    .select(columns)
-    .from(pendingImports)
-    .where(and(eq(pendingImports.userId, userId), eq(pendingImports.id, id)))
-    .get();
+  const row = await first(
+    getDB()
+      .select(columns)
+      .from(pendingImports)
+      .where(and(eq(pendingImports.userId, userId), eq(pendingImports.id, id)))
+      .limit(1),
+  );
   if (!row || row.expiresAt.getTime() < now) throw notFound("Upload");
   return toMeta(row);
 }
@@ -266,24 +268,37 @@ export async function readPending(
   userId: string,
   pendingId: string,
 ): Promise<{ meta: PendingMeta; bytes: Uint8Array }> {
-  const meta = getPendingMeta(userId, pendingId);
+  const meta = await getPendingMeta(userId, pendingId);
   const bytes = await getStore().get(pendingBlobKey(userId, meta.id));
   if (bytes === null) throw notFound("Upload");
   return { meta, bytes };
 }
 
 /**
- * Deletes the row only (synchronous, so it can run inside a transaction);
- * false when this user has no such upload. Follow with `deletePendingBlob`.
+ * Deletes the row only; false when this user has no such upload. Follow with
+ * `deletePendingBlob`.
  */
-export function deletePendingRow(
+export async function deletePendingRow(
   userId: string,
   pendingId: string,
-  db: Pick<ReturnType<typeof getDB>, "delete"> = getDB(),
+): Promise<boolean> {
+  const id = checkId(pendingId);
+  const deleted = await getDB()
+    .delete(pendingImports)
+    .where(and(eq(pendingImports.userId, userId), eq(pendingImports.id, id)))
+    .returning({ id: pendingImports.id });
+  return deleted.length > 0;
+}
+
+/** Sync: runs inside the transaction of confirmImport. */
+export function deletePendingRowInTx(
+  tx: Pick<DB, "delete">,
+  userId: string,
+  pendingId: string,
 ): boolean {
   const id = checkId(pendingId);
   return (
-    db
+    tx
       .delete(pendingImports)
       .where(and(eq(pendingImports.userId, userId), eq(pendingImports.id, id)))
       .returning({ id: pendingImports.id })
@@ -303,6 +318,6 @@ export async function deletePending(
   userId: string,
   pendingId: string,
 ): Promise<void> {
-  if (!deletePendingRow(userId, pendingId)) throw notFound("Upload");
+  if (!(await deletePendingRow(userId, pendingId))) throw notFound("Upload");
   await deletePendingBlob(userId, pendingId);
 }

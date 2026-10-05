@@ -24,8 +24,8 @@ export const load: PageServerLoad = async ({ locals, url }) => {
   const requested = url.searchParams.get("account");
   return {
     accounts,
-    recentImports: listRecentImports(user.id, 10),
-    inbox: getInboxView(user.id, user.username),
+    recentImports: await listRecentImports(user.id, 10),
+    inbox: await getInboxView(user.id, user.username),
     selectedAccountId: accounts.find((a) => a.id === requested)?.id ?? null,
   };
 };

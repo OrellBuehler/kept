@@ -137,7 +137,7 @@ export async function mappingContext(
   pendingId: string,
   draftProfile?: unknown,
 ): Promise<MappingContext> {
-  const meta = getPendingMeta(userId, pendingId);
+  const meta = await getPendingMeta(userId, pendingId);
   const readBytes = async () => (await readPending(userId, pendingId)).bytes;
   if (meta.format === "camt053") {
     throw new LedgerError(

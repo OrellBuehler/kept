@@ -2,7 +2,13 @@ import { useTestStore } from "$lib/testing/store";
 import { and, eq } from "drizzle-orm";
 import { describe, expect, it } from "vitest";
 import { minor } from "$lib/money";
-import { balanceSnapshots, getDB, imports, transactions } from "$lib/server/db";
+import {
+  balanceSnapshots,
+  first,
+  getDB,
+  imports,
+  transactions,
+} from "$lib/server/db";
 import { parseMappingProfile } from "$lib/server/importers/mapping";
 import { accountBalanceAt, currentBalance } from "$lib/server/ledger/balances";
 import { createTestUser } from "$lib/testing/auth";
@@ -30,12 +36,13 @@ async function setup() {
   return { user, account };
 }
 
-const txCount = (accountId: string) =>
-  getDB()
-    .select()
-    .from(transactions)
-    .where(eq(transactions.accountId, accountId))
-    .all().length;
+const txCount = async (accountId: string) =>
+  (
+    await getDB()
+      .select()
+      .from(transactions)
+      .where(eq(transactions.accountId, accountId))
+  ).length;
 
 describe("confirmImport", () => {
   it("writes the import, its transactions and a closing-balance snapshot", async () => {
@@ -52,11 +59,9 @@ describe("confirmImport", () => {
       duplicateCount: 0,
     });
 
-    const imp = getDB()
-      .select()
-      .from(imports)
-      .where(eq(imports.id, r.importId))
-      .get()!;
+    const imp = (await first(
+      getDB().select().from(imports).where(eq(imports.id, r.importId)).limit(1),
+    ))!;
     expect(imp).toMatchObject({
       userId: user.id,
       accountId: account.id,
@@ -74,11 +79,10 @@ describe("confirmImport", () => {
     expect(imp.fileSha256).toMatch(/^[0-9a-f]{64}$/);
     expect(JSON.parse(imp.warnings)).toEqual([]);
 
-    const rows = getDB()
+    const rows = await getDB()
       .select()
       .from(transactions)
-      .where(eq(transactions.accountId, account.id))
-      .all();
+      .where(eq(transactions.accountId, account.id));
     expect(rows).toHaveLength(5);
     expect(
       rows.every(
@@ -89,11 +93,10 @@ describe("confirmImport", () => {
       ),
     ).toBe(true);
 
-    const snap = getDB()
+    const snap = await getDB()
       .select()
       .from(balanceSnapshots)
-      .where(eq(balanceSnapshots.accountId, account.id))
-      .all();
+      .where(eq(balanceSnapshots.accountId, account.id));
     expect(snap).toHaveLength(1);
     expect(snap[0]).toMatchObject({
       source: "import",
@@ -117,7 +120,7 @@ describe("confirmImport", () => {
     await expect(readPending(user.id, id)).rejects.toThrow(/not found/);
     expect(await ctx.store.has(pendingBlobKey(user.id, id))).toBe(false);
     await expect(confirmImport(user.id, id)).rejects.toThrow(/not found/);
-    expect(txCount(account.id)).toBe(5);
+    expect(await txCount(account.id)).toBe(5);
   });
 
   it("two concurrent confirms of one upload import it once", async () => {
@@ -135,8 +138,8 @@ describe("confirmImport", () => {
       "fulfilled",
       "rejected",
     ]);
-    expect(txCount(account.id)).toBe(5);
-    expect(getDB().select().from(imports).all()).toHaveLength(1);
+    expect(await txCount(account.id)).toBe(5);
+    expect(await getDB().select().from(imports)).toHaveLength(1);
   });
 
   it("importing the same file again adds nothing but is recorded", async () => {
@@ -150,13 +153,12 @@ describe("confirmImport", () => {
       await uploadFixture(user.id, account.id, "camt053/overlap-a.xml"),
     );
     expect(again).toMatchObject({ newCount: 0, duplicateCount: 5 });
-    expect(txCount(account.id)).toBe(5);
+    expect(await txCount(account.id)).toBe(5);
     expect(
-      getDB()
+      await getDB()
         .select()
         .from(balanceSnapshots)
-        .where(eq(balanceSnapshots.accountId, account.id))
-        .all(),
+        .where(eq(balanceSnapshots.accountId, account.id)),
     ).toHaveLength(1);
   });
 
@@ -171,15 +173,14 @@ describe("confirmImport", () => {
       await uploadFixture(user.id, account.id, "camt053/overlap-b.xml"),
     );
     expect(b).toMatchObject({ newCount: 2, duplicateCount: 3 });
-    expect(txCount(account.id)).toBe(7);
+    expect(await txCount(account.id)).toBe(7);
     expect(await accountBalanceAt(user.id, account.id, "2024-07-15")).toBe(
       minor(118750),
     );
-    const snaps = getDB()
+    const snaps = await getDB()
       .select()
       .from(balanceSnapshots)
-      .where(eq(balanceSnapshots.accountId, account.id))
-      .all();
+      .where(eq(balanceSnapshots.accountId, account.id));
     expect(snaps.map((s) => s.date).sort()).toEqual([
       "2024-07-10",
       "2024-07-15",
@@ -200,7 +201,7 @@ describe("confirmImport", () => {
       { profile },
     );
     expect(b).toMatchObject({ newCount: 1, duplicateCount: 4 });
-    expect(txCount(account.id)).toBe(6);
+    expect(await txCount(account.id)).toBe(6);
   });
 
   it("upserts the import snapshot for the same date instead of failing", async () => {
@@ -219,11 +220,10 @@ describe("confirmImport", () => {
       user.id,
       await uploadBytes(user.id, account.id, make("12.00", "U2")),
     );
-    const snaps = getDB()
+    const snaps = await getDB()
       .select()
       .from(balanceSnapshots)
-      .where(eq(balanceSnapshots.accountId, account.id))
-      .all();
+      .where(eq(balanceSnapshots.accountId, account.id));
     expect(snaps).toHaveLength(1);
     expect(snaps[0]).toMatchObject({ amount: 1200, importId: second.importId });
     expect(first.importId).not.toBe(second.importId);
@@ -243,8 +243,8 @@ describe("confirmImport", () => {
     await expect(confirmImport(user.id, wrongCurrency)).rejects.toThrow(
       /different IBAN/,
     );
-    expect(txCount(account.id)).toBe(0);
-    expect(getDB().select().from(imports).all()).toEqual([]);
+    expect(await txCount(account.id)).toBe(0);
+    expect(await getDB().select().from(imports)).toEqual([]);
     await expect(readPending(user.id, csv)).resolves.toBeDefined();
   });
 
@@ -293,7 +293,7 @@ describe("confirmImport", () => {
       "camt053/overlap-a.xml",
     );
     await expect(confirmImport(other.id, id)).rejects.toThrow(/not found/);
-    expect(txCount(account.id)).toBe(0);
+    expect(await txCount(account.id)).toBe(0);
     await expect(readPending(user.id, id)).resolves.toBeDefined();
   });
 });
@@ -323,7 +323,7 @@ describe("listImports / undoImport", () => {
       warnings: [],
     });
     expect(typeof list[0]!.createdAt).toBe("number");
-    expect(listRecentImports(user.id, 1).map((i) => i.id)).toEqual([
+    expect((await listRecentImports(user.id, 1)).map((i) => i.id)).toEqual([
       b.importId,
     ]);
   });
@@ -338,22 +338,20 @@ describe("listImports / undoImport", () => {
       user.id,
       await uploadFixture(user.id, account.id, "camt053/overlap-b.xml"),
     );
-    expect(undoImport(user.id, b.importId)).toEqual({
+    expect(await undoImport(user.id, b.importId)).toEqual({
       accountId: account.id,
       removedTransactions: 2,
     });
-    expect(txCount(account.id)).toBe(5);
-    const remaining = getDB()
+    expect(await txCount(account.id)).toBe(5);
+    const remaining = await getDB()
       .select()
       .from(transactions)
-      .where(eq(transactions.accountId, account.id))
-      .all();
+      .where(eq(transactions.accountId, account.id));
     expect(remaining.every((t) => t.importId === a.importId)).toBe(true);
-    const snaps = getDB()
+    const snaps = await getDB()
       .select()
       .from(balanceSnapshots)
-      .where(eq(balanceSnapshots.accountId, account.id))
-      .all();
+      .where(eq(balanceSnapshots.accountId, account.id));
     expect(snaps.map((s) => s.date)).toEqual(["2024-07-10"]);
     expect((await listImports(user.id, account.id)).map((i) => i.id)).toEqual([
       a.importId,
@@ -376,8 +374,8 @@ describe("listImports / undoImport", () => {
       user.id,
       await uploadBytes(user.id, account.id, make("12.00", "S2")),
     );
-    undoImport(user.id, older.importId);
-    const snap = getDB()
+    await undoImport(user.id, older.importId);
+    const snap = await getDB()
       .select()
       .from(balanceSnapshots)
       .where(
@@ -385,11 +383,10 @@ describe("listImports / undoImport", () => {
           eq(balanceSnapshots.accountId, account.id),
           eq(balanceSnapshots.date, "2024-05-31"),
         ),
-      )
-      .all();
+      );
     expect(snap).toHaveLength(1);
     expect(snap[0]).toMatchObject({ importId: newer.importId, amount: 1200 });
-    expect(txCount(account.id)).toBe(1);
+    expect(await txCount(account.id)).toBe(1);
   });
 
   it("another user can neither list nor undo an import", async () => {
@@ -402,9 +399,9 @@ describe("listImports / undoImport", () => {
     await expect(listImports(other.id, account.id)).rejects.toThrow(
       /not found/,
     );
-    expect(listRecentImports(other.id)).toEqual([]);
-    expect(() => undoImport(other.id, a.importId)).toThrow(/not found/);
-    expect(txCount(account.id)).toBe(5);
+    expect(await listRecentImports(other.id)).toEqual([]);
+    await expect(undoImport(other.id, a.importId)).rejects.toThrow(/not found/);
+    expect(await txCount(account.id)).toBe(5);
   });
 
   it("undo checks the account when one is given", async () => {
@@ -413,10 +410,10 @@ describe("listImports / undoImport", () => {
       user.id,
       await uploadFixture(user.id, account.id, "camt053/overlap-a.xml"),
     );
-    expect(() => undoImport(user.id, a.importId, "some-other-account")).toThrow(
-      /not found/,
-    );
-    expect(txCount(account.id)).toBe(5);
+    await expect(
+      undoImport(user.id, a.importId, "some-other-account"),
+    ).rejects.toThrow(/not found/);
+    expect(await txCount(account.id)).toBe(5);
   });
 
   it("categorizes new rows with the user's rules only", async () => {
@@ -456,11 +453,10 @@ describe("listImports / undoImport", () => {
       user.id,
       await uploadFixture(user.id, account.id, "camt053/overlap-a.xml"),
     );
-    const rows = getDB()
+    const rows = await getDB()
       .select()
       .from(transactions)
-      .where(eq(transactions.accountId, account.id))
-      .all();
+      .where(eq(transactions.accountId, account.id));
     expect(rows.some((t) => t.amount > 0)).toBe(true);
     for (const t of rows) {
       expect(t.categoryId).toBe(t.amount > 0 ? mine.id : null);

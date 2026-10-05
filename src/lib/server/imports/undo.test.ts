@@ -1,7 +1,7 @@
 import { useTestStore } from "$lib/testing/store";
 import { eq } from "drizzle-orm";
 import { describe, expect, it } from "vitest";
-import { balanceSnapshots, getDB, transactions } from "$lib/server/db";
+import { balanceSnapshots, getDB, imports, transactions } from "$lib/server/db";
 import { archiveAccount } from "$lib/server/ledger/accounts";
 import { createTestUser } from "$lib/testing/auth";
 import { useTestDB } from "$lib/testing/db";
@@ -11,6 +11,7 @@ import { uploadBytes, uploadFixture } from "$lib/testing/imports";
 import { seedAccount } from "$lib/testing/ledger";
 import { confirmImport } from "./confirm";
 import { undoImport } from "./history";
+import { getPendingMeta } from "./pending";
 
 useTestDB();
 useTestStore();
@@ -21,18 +22,18 @@ async function setup() {
   return { user, account };
 }
 
-const snapshotsOf = (accountId: string) =>
-  getDB()
+const snapshotsOf = async (accountId: string) =>
+  await getDB()
     .select()
     .from(balanceSnapshots)
-    .where(eq(balanceSnapshots.accountId, accountId))
-    .all();
-const txCount = (accountId: string) =>
-  getDB()
-    .select()
-    .from(transactions)
-    .where(eq(transactions.accountId, accountId))
-    .all().length;
+    .where(eq(balanceSnapshots.accountId, accountId));
+const txCount = async (accountId: string) =>
+  (
+    await getDB()
+      .select()
+      .from(transactions)
+      .where(eq(transactions.accountId, accountId))
+  ).length;
 
 const statement = (closing: string, ref: string) =>
   buildCamt({
@@ -52,15 +53,15 @@ describe("undo keeps balance anchors", () => {
       user.id,
       await uploadFixture(user.id, account.id, "camt053/overlap-a.xml"),
     );
-    expect(snapshotsOf(account.id)[0]!.importId).toBe(first.importId);
-    undoImport(user.id, again.importId);
-    const snaps = snapshotsOf(account.id);
+    expect((await snapshotsOf(account.id))[0]!.importId).toBe(first.importId);
+    await undoImport(user.id, again.importId);
+    const snaps = await snapshotsOf(account.id);
     expect(snaps).toHaveLength(1);
     expect(snaps[0]).toMatchObject({
       amount: 123250,
       importId: first.importId,
     });
-    expect(txCount(account.id)).toBe(5);
+    expect(await txCount(account.id)).toBe(5);
   });
 
   it("undoing the newer import restores the older import's closing snapshot", async () => {
@@ -73,8 +74,8 @@ describe("undo keeps balance anchors", () => {
       user.id,
       await uploadBytes(user.id, account.id, statement("12.00", "R2")),
     );
-    undoImport(user.id, newer.importId);
-    const snaps = snapshotsOf(account.id);
+    await undoImport(user.id, newer.importId);
+    const snaps = await snapshotsOf(account.id);
     expect(snaps).toHaveLength(1);
     expect(snaps[0]).toMatchObject({
       amount: 1000,
@@ -89,8 +90,8 @@ describe("undo keeps balance anchors", () => {
       user.id,
       await uploadFixture(user.id, account.id, "camt053/overlap-a.xml"),
     );
-    undoImport(user.id, a.importId);
-    expect(snapshotsOf(account.id)).toEqual([]);
+    await undoImport(user.id, a.importId);
+    expect(await snapshotsOf(account.id)).toEqual([]);
   });
 });
 
@@ -104,6 +105,20 @@ describe("confirm re-checks the account", () => {
     );
     await archiveAccount(user.id, account.id);
     await expect(confirmImport(user.id, id)).rejects.toThrow(/archived/);
-    expect(txCount(account.id)).toBe(0);
+    expect(await txCount(account.id)).toBe(0);
+  });
+
+  it("keeps the upload and writes no import row when the account is archived", async () => {
+    const { user, account } = await setup();
+    const id = await uploadFixture(
+      user.id,
+      account.id,
+      "camt053/overlap-a.xml",
+    );
+    await archiveAccount(user.id, account.id);
+    await expect(confirmImport(user.id, id)).rejects.toThrow(/archived/);
+    await expect(getPendingMeta(user.id, id)).resolves.toMatchObject({ id });
+    expect(await getDB().select().from(imports)).toEqual([]);
+    expect(await snapshotsOf(account.id)).toEqual([]);
   });
 });

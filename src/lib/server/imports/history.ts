@@ -69,9 +69,7 @@ function select() {
     .innerJoin(accounts, eq(accounts.id, imports.accountId));
 }
 
-function toView(
-  row: ReturnType<ReturnType<typeof select>["all"]>[number],
-): ImportView {
+function toView(row: Awaited<ReturnType<typeof select>>[number]): ImportView {
   let warnings: string[] = [];
   try {
     const parsed: unknown = JSON.parse(row.warnings);
@@ -91,21 +89,22 @@ export async function listImports(
   accountId: string,
 ): Promise<ImportView[]> {
   await getAccount(userId, accountId);
-  return select()
+  const rows = await select()
     .where(and(eq(imports.userId, userId), eq(imports.accountId, accountId)))
-    .orderBy(desc(imports.createdAt), desc(imports.id))
-    .all()
-    .map(toView);
+    .orderBy(desc(imports.createdAt), desc(imports.id));
+  return rows.map(toView);
 }
 
 /** The latest imports across all of the user's accounts, newest first. */
-export function listRecentImports(userId: string, limit = 10): ImportView[] {
-  return select()
+export async function listRecentImports(
+  userId: string,
+  limit = 10,
+): Promise<ImportView[]> {
+  const rows = await select()
     .where(eq(imports.userId, userId))
     .orderBy(desc(imports.createdAt), desc(imports.id))
-    .limit(limit)
-    .all()
-    .map(toView);
+    .limit(limit);
+  return rows.map(toView);
 }
 
 export type { ImportImpact };
@@ -132,18 +131,17 @@ const emptyImpact = (): ImportImpact => ({
  * What undoing each of the user's imports would touch, in a constant number of grouped
  * queries. Ids that are not the user's own imports are left out of the result.
  */
-export function getImportImpacts(
+export async function getImportImpacts(
   userId: string,
   importIds: string[],
-): Map<string, ImportImpact> {
+): Promise<Map<string, ImportImpact>> {
   const result = new Map<string, ImportImpact>();
   if (importIds.length === 0) return result;
   const db = getDB();
-  const owned = db
+  const owned = await db
     .select({ id: imports.id })
     .from(imports)
-    .where(and(eq(imports.userId, userId), inArray(imports.id, importIds)))
-    .all();
+    .where(and(eq(imports.userId, userId), inArray(imports.id, importIds)));
   if (owned.length === 0) return result;
   const ids = owned.map((o) => o.id);
   for (const id of ids) result.set(id, emptyImpact());
@@ -152,7 +150,7 @@ export function getImportImpacts(
     eq(transactions.userId, userId),
     inArray(transactions.importId, ids),
   );
-  const own = db
+  const own = await db
     .select({
       importId: transactions.importId,
       transactions: count(),
@@ -163,13 +161,12 @@ export function getImportImpacts(
     })
     .from(transactions)
     .where(mine)
-    .groupBy(transactions.importId)
-    .all();
+    .groupBy(transactions.importId);
   for (const { importId, ...rest } of own) {
     Object.assign(result.get(importId!)!, rest);
   }
 
-  const allocations = db
+  const allocations = await db
     .select({
       importId: transactions.importId,
       n: countDistinct(billAllocations.transactionId),
@@ -177,11 +174,10 @@ export function getImportImpacts(
     .from(billAllocations)
     .innerJoin(transactions, eq(transactions.id, billAllocations.transactionId))
     .where(and(eq(billAllocations.userId, userId), mine))
-    .groupBy(transactions.importId)
-    .all();
+    .groupBy(transactions.importId);
   for (const r of allocations) result.get(r.importId!)!.billAllocations = r.n;
 
-  const contributions = db
+  const contributions = await db
     .select({
       importId: transactions.importId,
       n: countDistinct(pillar3aContributions.transactionId),
@@ -192,11 +188,10 @@ export function getImportImpacts(
       eq(transactions.id, pillar3aContributions.transactionId),
     )
     .where(and(eq(pillar3aContributions.userId, userId), mine))
-    .groupBy(transactions.importId)
-    .all();
+    .groupBy(transactions.importId);
   for (const r of contributions) result.get(r.importId!)!.pillar3a = r.n;
 
-  const links = db
+  const links = await db
     .select({ importId: transactions.importId, n: countDistinct(transfers.id) })
     .from(transfers)
     .innerJoin(
@@ -207,28 +202,26 @@ export function getImportImpacts(
       ),
     )
     .where(and(eq(transfers.userId, userId), mine))
-    .groupBy(transactions.importId)
-    .all();
+    .groupBy(transactions.importId);
   for (const r of links) result.get(r.importId!)!.transferLinks = r.n;
 
   const mirrorRows = alias(transactions, "mirror_rows");
-  const mirrors = db
+  const mirrors = await db
     .select({ importId: transactions.importId, n: count() })
     .from(mirrorRows)
     .innerJoin(transactions, eq(transactions.id, mirrorRows.mirrorOfId))
     .where(and(eq(mirrorRows.userId, userId), mine))
-    .groupBy(transactions.importId)
-    .all();
+    .groupBy(transactions.importId);
   for (const r of mirrors) result.get(r.importId!)!.mirrors = r.n;
 
   return result;
 }
 
-export function getImportImpact(
+export async function getImportImpact(
   userId: string,
   importId: string,
-): ImportImpact {
-  const impact = getImportImpacts(userId, [importId]).get(importId);
+): Promise<ImportImpact> {
+  const impact = (await getImportImpacts(userId, [importId])).get(importId);
   if (!impact) throw notFound("Import");
   return impact;
 }
@@ -247,11 +240,11 @@ export function getImportImpact(
  * when the account is filled from transfers.
  * `accountId`, when given, must be the import's account.
  */
-export function undoImport(
+export async function undoImport(
   userId: string,
   importId: string,
   accountId?: string,
-): { accountId: string; removedTransactions: number } {
+): Promise<{ accountId: string; removedTransactions: number }> {
   return getDB().transaction((tx) => {
     const found = tx
       .select({

@@ -50,13 +50,12 @@ const statementA = (entries: CamtEntry[], over = {}) =>
 const statementB = (entries: CamtEntry[], over = {}) =>
   buildCamt({ iban: EXAMPLE_IBAN_OTHER, entries, ...over });
 
-const rowsOf = (accountId: string) =>
-  getDB()
+const rowsOf = async (accountId: string) =>
+  await getDB()
     .select()
     .from(transactions)
-    .where(eq(transactions.accountId, accountId))
-    .all();
-const allTransfers = () => getDB().select().from(transfers).all();
+    .where(eq(transactions.accountId, accountId));
+const allTransfers = async () => await getDB().select().from(transfers);
 
 describe("confirmImport links transfers", () => {
   it("mirrors a transfer onto an account filled from transfers", async () => {
@@ -69,7 +68,7 @@ describe("confirmImport links transfers", () => {
       newCount: 1,
       transfers: { paired: 0, mirrored: 1, replaced: 0, needsAmount: 0 },
     });
-    expect(rowsOf(b.id)).toEqual([
+    expect(await rowsOf(b.id)).toEqual([
       expect.objectContaining({
         source: "mirror",
         amount: 10000,
@@ -92,8 +91,8 @@ describe("confirmImport links transfers", () => {
       replaced: 0,
       needsAmount: 0,
     });
-    expect(rowsOf(b.id)).toEqual([]);
-    expect(allTransfers()).toEqual([]);
+    expect(await rowsOf(b.id)).toEqual([]);
+    expect(await allTransfers()).toEqual([]);
   });
 
   it("uses the counter-amount of a foreign-currency transfer, or asks for it", async () => {
@@ -117,7 +116,7 @@ describe("confirmImport links transfers", () => {
       ),
     );
     expect(result.transfers).toMatchObject({ mirrored: 1, needsAmount: 1 });
-    expect(rowsOf(eur.id)).toEqual([
+    expect(await rowsOf(eur.id)).toEqual([
       expect.objectContaining({ amount: 9300, currency: "EUR" }),
     ]);
   });
@@ -144,7 +143,7 @@ describe("confirmImport links transfers", () => {
     );
     // The statement names no counterparty, so the earlier row finds its partner.
     expect(result.transfers).toMatchObject({ paired: 1, mirrored: 0 });
-    expect(allTransfers()).toEqual([
+    expect(await allTransfers()).toEqual([
       expect.objectContaining({ status: "linked", method: "paired" }),
     ]);
   });
@@ -185,10 +184,10 @@ describe("confirmImport links transfers", () => {
       ),
     );
     expect(second.transfers).toMatchObject({ paired: 1, needsAmount: 0 });
-    expect(allTransfers()).toEqual([
+    expect(await allTransfers()).toEqual([
       expect.objectContaining({ status: "linked", method: "paired" }),
     ]);
-    expect(rowsOf(eur.id)).toEqual([
+    expect(await rowsOf(eur.id)).toEqual([
       expect.objectContaining({ source: "import", amount: 9300 }),
     ]);
   });
@@ -200,12 +199,12 @@ describe("confirmImport links transfers", () => {
       user.id,
       await uploadBytes(user.id, a.id, bytes),
     );
-    expect(rowsOf(b.id)).toHaveLength(1);
-    undoImport(user.id, first.importId);
-    expect(rowsOf(b.id)).toEqual([]);
-    expect(allTransfers()).toEqual([]);
+    expect(await rowsOf(b.id)).toHaveLength(1);
+    await undoImport(user.id, first.importId);
+    expect(await rowsOf(b.id)).toEqual([]);
+    expect(await allTransfers()).toEqual([]);
     await confirmImport(user.id, await uploadBytes(user.id, a.id, bytes));
-    expect(rowsOf(b.id)).toHaveLength(1);
+    expect(await rowsOf(b.id)).toHaveLength(1);
   });
 
   it("does not recreate a mirror the user unlinked when the file is imported again", async () => {
@@ -218,7 +217,9 @@ describe("confirmImport links transfers", () => {
         statementA([entry(), entry({ ref: "R2", date: "2024-04-01" })]),
       ),
     );
-    const mirror = rowsOf(b.id).find((r) => r.bookingDate === "2024-03-10")!;
+    const mirror = (await rowsOf(b.id)).find(
+      (r) => r.bookingDate === "2024-03-10",
+    )!;
     await unlink(
       user.id,
       (await getTransaction(user.id, mirror.id)).transfer!.id,
@@ -236,11 +237,10 @@ describe("confirmImport links transfers", () => {
       ),
     );
     expect(again.newCount).toBe(1);
-    expect(
-      rowsOf(b.id)
-        .map((r) => r.bookingDate)
-        .sort(),
-    ).toEqual(["2024-04-01", "2024-05-01"]);
+    expect((await rowsOf(b.id)).map((r) => r.bookingDate).sort()).toEqual([
+      "2024-04-01",
+      "2024-05-01",
+    ]);
   });
 });
 
@@ -270,7 +270,7 @@ describe("a later real import replaces mirrors", () => {
 
   it("marks matching rows in the preview and counts the replacement", async () => {
     const { user, b } = await mirrored();
-    const mirror = rowsOf(b.id).find((r) => r.amount === 10000)!;
+    const mirror = (await rowsOf(b.id)).find((r) => r.amount === 10000)!;
     const pendingId = await uploadBytes(
       user.id,
       b.id,
@@ -294,7 +294,7 @@ describe("a later real import replaces mirrors", () => {
 
   it("takes over the mirror, keeps the link and carries note and category", async () => {
     const { user, a, b } = await mirrored();
-    const mirror = rowsOf(b.id).find((r) => r.amount === 10000)!;
+    const mirror = (await rowsOf(b.id)).find((r) => r.amount === 10000)!;
     const cat = await createCategory(user.id, {
       name: "Moves",
       kind: "income",
@@ -302,12 +302,13 @@ describe("a later real import replaces mirrors", () => {
       color: null,
       icon: null,
     });
-    getDB()
+    await getDB()
       .update(transactions)
       .set({ note: "my note", categoryId: cat.id })
-      .where(eq(transactions.id, mirror.id))
-      .run();
-    const before = allTransfers().find((t) => t.inTransactionId === mirror.id)!;
+      .where(eq(transactions.id, mirror.id));
+    const before = (await allTransfers()).find(
+      (t) => t.inTransactionId === mirror.id,
+    )!;
 
     const result = await confirmImport(
       user.id,
@@ -317,10 +318,10 @@ describe("a later real import replaces mirrors", () => {
       newCount: 1,
       transfers: { replaced: 1, paired: 0, mirrored: 0 },
     });
-    expect(rowsOf(b.id).some((r) => r.id === mirror.id)).toBe(false);
-    const real = rowsOf(b.id).find((r) => r.source === "import")!;
+    expect((await rowsOf(b.id)).some((r) => r.id === mirror.id)).toBe(false);
+    const real = (await rowsOf(b.id)).find((r) => r.source === "import")!;
     expect(real).toMatchObject({ note: "my note", categoryId: cat.id });
-    const after = allTransfers().find((t) => t.id === before.id)!;
+    const after = (await allTransfers()).find((t) => t.id === before.id)!;
     expect(after).toMatchObject({
       status: "linked",
       method: "paired",
@@ -329,7 +330,7 @@ describe("a later real import replaces mirrors", () => {
       fromAccountId: a.id,
       toAccountId: b.id,
     });
-    expect(allTransfers()).toHaveLength(2);
+    expect(await allTransfers()).toHaveLength(2);
     expect(await currentBalance(user.id, b.id, "2024-12-31")).toBe(14000);
   });
 
@@ -370,7 +371,7 @@ describe("a later real import replaces mirrors", () => {
       ),
     );
     expect(result.transfers.replaced).toBe(1);
-    const left = rowsOf(b.id).find((r) => r.source === "mirror")!;
+    const left = (await rowsOf(b.id)).find((r) => r.source === "mirror")!;
     expect(left).toMatchObject({ amount: 4000 });
     expect((await getTransaction(user.id, left.id)).mirrorOf).toMatchObject({
       noBankCounterpart: true,
@@ -401,10 +402,14 @@ describe("a later real import replaces mirrors", () => {
       user.id,
       await uploadBytes(user.id, b.id, statementB([incoming()])),
     );
-    expect(rowsOf(b.id).filter((r) => r.source === "mirror")).toHaveLength(1);
-    undoImport(user.id, result.importId);
-    expect(rowsOf(b.id).filter((r) => r.source === "mirror")).toHaveLength(2);
-    expect(rowsOf(b.id).some((r) => r.source === "import")).toBe(false);
+    expect(
+      (await rowsOf(b.id)).filter((r) => r.source === "mirror"),
+    ).toHaveLength(1);
+    await undoImport(user.id, result.importId);
+    expect(
+      (await rowsOf(b.id)).filter((r) => r.source === "mirror"),
+    ).toHaveLength(2);
+    expect((await rowsOf(b.id)).some((r) => r.source === "import")).toBe(false);
   });
 
   it("does not touch another user's mirrors", async () => {
@@ -423,15 +428,16 @@ describe("a later real import replaces mirrors", () => {
       other.id,
       await uploadBytes(other.id, theirs.id, statementB([incoming()])),
     );
-    expect(rowsOf(b.id).filter((r) => r.source === "mirror")).toHaveLength(2);
     expect(
-      getDB()
+      (await rowsOf(b.id)).filter((r) => r.source === "mirror"),
+    ).toHaveLength(2);
+    expect(
+      await getDB()
         .select()
         .from(transfers)
         .where(
           and(eq(transfers.userId, user.id), eq(transfers.method, "paired")),
-        )
-        .all(),
+        ),
     ).toEqual([]);
   });
 });

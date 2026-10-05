@@ -44,6 +44,12 @@ const CONVERTED_TO_ASYNC = [
   "src/routes/(app)/budgets/**",
   "src/routes/(app)/settings/categories/**",
   "src/routes/(app)/taxes/**",
+  // 2.4 imports, inbox
+  "src/lib/server/imports/**",
+  "src/lib/server/inbox/**",
+  "src/lib/testing/imports.ts",
+  "src/routes/(app)/import/**",
+  "src/routes/api/imports/**",
 ];
 
 /**

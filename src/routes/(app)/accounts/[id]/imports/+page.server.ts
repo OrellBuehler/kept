@@ -15,7 +15,7 @@ export const load: PageServerLoad = async ({ locals, params }) => {
       account: await getAccount(user.id, params.id),
       imports,
       impacts: Object.fromEntries(
-        getImportImpacts(
+        await getImportImpacts(
           user.id,
           imports.map((i) => i.id),
         ),
@@ -36,7 +36,7 @@ export const actions: Actions = {
       return fail(400, { action: "undo", errors: parsed.errors, values: {} });
     }
     try {
-      const done = undoImport(user.id, parsed.data.importId, params.id);
+      const done = await undoImport(user.id, parsed.data.importId, params.id);
       return {
         success: true as const,
         action: "undo" as const,

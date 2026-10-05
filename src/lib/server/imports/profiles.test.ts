@@ -39,7 +39,7 @@ describe("csv profiles", () => {
       ...SIMPLE_CSV_PROFILE,
       dateFormat: "DD.MM.YYYY",
     });
-    expect(getDB().select().from(csvProfiles).all()).toHaveLength(1);
+    expect(await getDB().select().from(csvProfiles)).toHaveLength(1);
     expect(await getCsvProfile(user.id, account.id)).toMatchObject({
       name: "Second",
       profile: { dateFormat: "DD.MM.YYYY" },
@@ -68,12 +68,21 @@ describe("csv profiles", () => {
       saveCsvProfile(other.id, account.id, "Theirs", SIMPLE_CSV_PROFILE),
     ).rejects.toThrow(/not found/);
     expect((await getCsvProfile(user.id, account.id))?.name).toBe("Mine");
+    expect(await getDB().select().from(csvProfiles)).toHaveLength(1);
+  });
+
+  it("replaces the profile of an account instead of adding a second one", async () => {
+    const { user, account } = await setup();
+    await saveCsvProfile(user.id, account.id, "First", SIMPLE_CSV_PROFILE);
+    await saveCsvProfile(user.id, account.id, "Second", SIMPLE_CSV_PROFILE);
+    expect(await getDB().select().from(csvProfiles)).toHaveLength(1);
+    expect((await getCsvProfile(user.id, account.id))?.name).toBe("Second");
   });
 
   it("treats a stored profile that no longer validates as missing", async () => {
     const { user, account } = await setup();
     await saveCsvProfile(user.id, account.id, "Mine", SIMPLE_CSV_PROFILE);
-    getDB().update(csvProfiles).set({ profile: '{"amountMode":"nope"}' }).run();
+    await getDB().update(csvProfiles).set({ profile: '{"amountMode":"nope"}' });
     expect(await getCsvProfile(user.id, account.id)).toBeNull();
   });
 });

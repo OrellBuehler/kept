@@ -78,12 +78,11 @@ const store = (userId: string, accountId: string, name = "a.csv") =>
     bytes: enc("a,b\n1,2\n"),
   });
 
-const expire = (id: string, at: number) =>
-  getDB()
+const expire = async (id: string, at: number) =>
+  await getDB()
     .update(pendingImports)
     .set({ expiresAt: new Date(at) })
-    .where(eq(pendingImports.id, id))
-    .run();
+    .where(eq(pendingImports.id, id));
 
 async function blobKeys() {
   const keys: string[] = [];
@@ -110,7 +109,7 @@ describe("pending uploads", () => {
     const read = await readPending(user.id, meta.id);
     expect(read.bytes).toEqual(fixture("csv/comma-dot.csv"));
     expect(read.meta).toEqual(meta);
-    expect(getPendingMeta(user.id, meta.id)).toEqual(meta);
+    expect(await getPendingMeta(user.id, meta.id)).toEqual(meta);
   });
 
   it("generates distinct unguessable ids", async () => {
@@ -137,7 +136,7 @@ describe("pending uploads", () => {
       }),
     ).rejects.toThrow(/empty/);
     expect(await blobKeys()).toEqual([]);
-    expect(getDB().select().from(pendingImports).all()).toEqual([]);
+    expect(await getDB().select().from(pendingImports)).toEqual([]);
   });
 
   it("removes the blob when the row cannot be written", async () => {
@@ -149,7 +148,7 @@ describe("pending uploads", () => {
   it("treats malformed ids as not found without touching the store", async () => {
     const { user } = await setup();
     for (const id of ["../x", "..%2Fx", "a/b", "short", "", "a".repeat(33)]) {
-      expect(() => getPendingMeta(user.id, id)).toThrow(LedgerError);
+      await expect(getPendingMeta(user.id, id)).rejects.toThrow(LedgerError);
       await expect(readPending(user.id, id)).rejects.toThrow(LedgerError);
       await expect(deletePending(user.id, id)).rejects.toThrow(LedgerError);
     }
@@ -159,7 +158,9 @@ describe("pending uploads", () => {
     const { user, account } = await setup();
     const other = await createTestUser();
     const meta = await store(user.id, account.id);
-    expect(() => getPendingMeta(other.id, meta.id)).toThrow(/not found/);
+    await expect(getPendingMeta(other.id, meta.id)).rejects.toThrow(
+      /not found/,
+    );
     await expect(readPending(other.id, meta.id)).rejects.toThrow(/not found/);
     await expect(deletePending(other.id, meta.id)).rejects.toThrow(/not found/);
     expect(await ctx.store.has(pendingBlobKey(user.id, meta.id))).toBe(true);
@@ -186,26 +187,26 @@ describe("pending uploads", () => {
     const meta = await store(user.id, account.id);
     await deletePending(user.id, meta.id);
     expect(await blobKeys()).toEqual([]);
-    expect(getDB().select().from(pendingImports).all()).toEqual([]);
+    expect(await getDB().select().from(pendingImports)).toEqual([]);
     await expect(readPending(user.id, meta.id)).rejects.toThrow(/not found/);
   });
 
   it("deletePendingRow reports whether it removed a row", async () => {
     const { user, account } = await setup();
     const meta = await store(user.id, account.id);
-    expect(deletePendingRow(user.id, meta.id)).toBe(true);
-    expect(deletePendingRow(user.id, meta.id)).toBe(false);
+    expect(await deletePendingRow(user.id, meta.id)).toBe(true);
+    expect(await deletePendingRow(user.id, meta.id)).toBe(false);
   });
 
   it("is gone after two hours, even before it is purged", async () => {
     const { user, account } = await setup();
     const meta = await store(user.id, account.id);
-    expect(() =>
+    await expect(
       getPendingMeta(user.id, meta.id, meta.expiresAt),
-    ).not.toThrow();
-    expect(() => getPendingMeta(user.id, meta.id, meta.expiresAt + 1)).toThrow(
-      /not found/,
-    );
+    ).resolves.toMatchObject({ id: meta.id });
+    await expect(
+      getPendingMeta(user.id, meta.id, meta.expiresAt + 1),
+    ).rejects.toThrow(/not found/);
   });
 
   it("cascades with the account and the user", async () => {
@@ -213,10 +214,10 @@ describe("pending uploads", () => {
     const other = await seedAccount(user.id, { name: "Other" });
     await store(user.id, account.id);
     const kept = await store(user.id, other.id);
-    getDB().delete(accounts).where(eq(accounts.id, account.id)).run();
-    expect(getDB().select().from(pendingImports).all()).toHaveLength(1);
-    getDB().delete(users).where(eq(users.id, user.id)).run();
-    expect(getDB().select().from(pendingImports).all()).toEqual([]);
+    await getDB().delete(accounts).where(eq(accounts.id, account.id));
+    expect(await getDB().select().from(pendingImports)).toHaveLength(1);
+    await getDB().delete(users).where(eq(users.id, user.id));
+    expect(await getDB().select().from(pendingImports)).toEqual([]);
     // the blob is left for the orphan sweep
     expect(await ctx.store.has(pendingBlobKey(user.id, kept.id))).toBe(true);
   });
@@ -228,18 +229,18 @@ describe("purgeExpired", () => {
     const b = await setup();
     const old = await store(a.user.id, a.account.id);
     const fresh = await store(b.user.id, b.account.id);
-    expire(old.id, Date.now() - 1000);
+    await expire(old.id, Date.now() - 1000);
     await purgeExpired();
     expect(await blobKeys()).toEqual([pendingBlobKey(b.user.id, fresh.id)]);
     expect(
-      getDB().select({ id: pendingImports.id }).from(pendingImports).all(),
+      await getDB().select({ id: pendingImports.id }).from(pendingImports),
     ).toEqual([{ id: fresh.id }]);
   });
 
   it("an upload purges expired uploads", async () => {
     const { user, account } = await setup();
     const old = await store(user.id, account.id);
-    expire(old.id, Date.now() - 1000);
+    await expire(old.id, Date.now() - 1000);
     const next = await store(user.id, account.id);
     expect(await blobKeys()).toEqual([pendingBlobKey(user.id, next.id)]);
   });
@@ -247,13 +248,13 @@ describe("purgeExpired", () => {
   it("keeps the row when its blob cannot be deleted, so the next purge retries", async () => {
     const { user, account } = await setup();
     const old = await store(user.id, account.id);
-    expire(old.id, Date.now() - 1000);
+    await expire(old.id, Date.now() - 1000);
     const realDelete = ctx.store.delete.bind(ctx.store);
     ctx.store.delete = () => Promise.reject(new Error("offline"));
     const log = vi.spyOn(console, "error").mockImplementation(() => {});
     try {
       await purgeExpired();
-      expect(getDB().select().from(pendingImports).all()).toHaveLength(1);
+      expect(await getDB().select().from(pendingImports)).toHaveLength(1);
       expect(log).toHaveBeenCalledOnce();
       expect(JSON.stringify(log.mock.calls)).not.toContain("offline");
     } finally {
@@ -261,7 +262,7 @@ describe("purgeExpired", () => {
       ctx.store.delete = realDelete;
     }
     await purgeExpired();
-    expect(getDB().select().from(pendingImports).all()).toEqual([]);
+    expect(await getDB().select().from(pendingImports)).toEqual([]);
     expect(await blobKeys()).toEqual([]);
   });
 });
@@ -347,15 +348,15 @@ describe("sweepOrphanedPending", () => {
     vi.restoreAllMocks();
     expect(swept).toBe(0);
     expect(await blobKeys()).toEqual([pendingBlobKey(user.id, meta.id)]);
-    expect(getPendingMeta(user.id, meta.id).id).toBe(meta.id);
+    expect((await getPendingMeta(user.id, meta.id)).id).toBe(meta.id);
   });
 
   it("startPendingSweep purges expired uploads in the background", async () => {
     const { user, account } = await setup();
     const old = await store(user.id, account.id);
-    expire(old.id, Date.now() - 1000);
+    await expire(old.id, Date.now() - 1000);
     startPendingSweep();
     await vi.waitFor(async () => expect(await blobKeys()).toEqual([]));
-    expect(getDB().select().from(pendingImports).all()).toEqual([]);
+    expect(await getDB().select().from(pendingImports)).toEqual([]);
   });
 });
