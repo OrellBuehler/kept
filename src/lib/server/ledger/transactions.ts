@@ -165,7 +165,7 @@ function assertNotBeforeOpening(
   }
 }
 
-/** Newest first. Text search is case-insensitive (ASCII) over description, counterparty and note. */
+/** Newest first. Text search is case-insensitive (ASCII only on SQLite, Unicode on PostgreSQL) over description, counterparty and note. */
 export async function listTransactions(
   userId: string,
   accountId: string,
