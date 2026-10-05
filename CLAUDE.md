@@ -25,8 +25,9 @@ bun run verify           # format:check + lint + check + test — run before eve
 bun run format           # prettier --write
 bun run lint:fix         # eslint --fix
 bun run check            # svelte-kit sync + svelte-check
-bun run test             # vitest (unit)
+bun run test             # vitest (unit, SQLite)
 bun run test:coverage
+bun run test:pg          # the suite on PostgreSQL (needs KEPT_TEST_DATABASE_URL)
 bun run build && bun run start
 bun run db:generate      # after editing src/lib/server/db/schema.ts
 bun run leak-guard --all # scan the whole tree for private terms
@@ -95,8 +96,9 @@ src/lib/testing/fixtures/        synthetic sample files for importer tests
   takes `transaction(fn, { lock })`: a no-op on SQLite, an advisory lock on PostgreSQL. Every list a
   user sees has a total `ORDER BY`. Migrations: `bun run db:generate` writes both `drizzle/sqlite/` and
   `drizzle/postgres/` (never edit either by hand except for data fix-ups); `DATABASE_URL=postgres://…`
-  selects PostgreSQL (see `db/config.ts`), and `bun run test:pg` runs the PostgreSQL tests when
-  `KEPT_TEST_DATABASE_URL` is set.
+  selects PostgreSQL (see `db/config.ts`). `bun run test:pg` runs the whole suite on PostgreSQL
+  (`KEPT_TEST_DATABASE_URL=postgres://…` to a server of its own; each test file gets a database cloned
+  from a migrated template), and CI runs it on every push. Tests that only make sense on SQLite say why.
 - **No swallowed errors.** No empty `catch`, no `catch { return null }` without logging and a
   user-visible outcome.
 - Never log transaction descriptions, counterparties, IBANs or amounts.
