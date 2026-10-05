@@ -82,12 +82,13 @@ async function setup() {
   return { user, account };
 }
 
-const count = (accountId: string) =>
-  getDB()
-    .select()
-    .from(transactions)
-    .where(eq(transactions.accountId, accountId))
-    .all().length;
+const count = async (accountId: string) =>
+  (
+    await getDB()
+      .select()
+      .from(transactions)
+      .where(eq(transactions.accountId, accountId))
+  ).length;
 
 describe("readInboxConfig", () => {
   it("is off without KEPT_INBOX_DIR and validates the interval", () => {
@@ -108,13 +109,13 @@ describe("scanInbox", () => {
     drop("alice", "stmt.xml", fixture("camt053/overlap-a.xml"));
     const summary = await scan();
     expect(summary).toMatchObject({ imported: 1, failed: 0, review: 0 });
-    expect(count(account.id)).toBe(5);
+    expect(await count(account.id)).toBe(5);
     expect(names("alice", "processed")).toHaveLength(1);
     expect(names("alice", "processed")[0]).toMatch(/stmt\.xml$/);
     expect(readdirSync(join(config.dir, "alice")).sort()).toEqual([
       "processed",
     ]);
-    expect(listInboxEntries(user.id)[0]).toMatchObject({
+    expect((await listInboxEntries(user.id))[0]).toMatchObject({
       status: "imported",
       accountName: "Main",
       newCount: 5,
@@ -150,12 +151,11 @@ describe("scanInbox", () => {
       }),
     );
     expect(await scan()).toMatchObject({ imported: 1 });
-    expect(count(account.id)).toBe(1);
-    const mirrors = getDB()
+    expect(await count(account.id)).toBe(1);
+    const mirrors = await getDB()
       .select()
       .from(transactions)
-      .where(eq(transactions.accountId, savings.id))
-      .all();
+      .where(eq(transactions.accountId, savings.id));
     expect(mirrors).toEqual([
       expect.objectContaining({ source: "mirror", amount: 1000 }),
     ]);
@@ -174,7 +174,7 @@ describe("scanInbox", () => {
       }),
     );
     expect(await scan()).toMatchObject({ failed: 1, imported: 0 });
-    expect(count(account.id)).toBe(0);
+    expect(await count(account.id)).toBe(0);
     const failed = names("alice", "failed");
     expect(failed).toHaveLength(2);
     const reasonFile = failed.find((f) => f.endsWith(".reason.txt"))!;
@@ -184,7 +184,9 @@ describe("scanInbox", () => {
     );
     expect(reason).toMatch(/No account of yours has the statement's IBAN/);
     expect(reason).not.toContain(IBAN_DE);
-    expect(listInboxEntries(user.id)[0]).toMatchObject({ status: "failed" });
+    expect((await listInboxEntries(user.id))[0]).toMatchObject({
+      status: "failed",
+    });
   });
 
   it("imports a csv in an account folder using the saved profile", async () => {
@@ -193,7 +195,7 @@ describe("scanInbox", () => {
     drop("alice", "export.csv", fixture("csv/overlap-a.csv"), "main");
     const summary = await scan();
     expect(summary.imported).toBe(1);
-    expect(count(account.id)).toBeGreaterThan(0);
+    expect(await count(account.id)).toBeGreaterThan(0);
     expect(names("alice", "processed")).toHaveLength(1);
   });
 
@@ -201,14 +203,29 @@ describe("scanInbox", () => {
     const { user, account } = await setup();
     drop("alice", "export.csv", fixture("csv/overlap-a.csv"), "Main");
     expect(await scan()).toMatchObject({ review: 1, imported: 0 });
-    expect(count(account.id)).toBe(0);
+    expect(await count(account.id)).toBe(0);
     expect(names("alice", "review")).toHaveLength(1);
-    const [entry] = listInboxEntries(user.id);
+    const [entry] = await listInboxEntries(user.id);
     expect(entry).toMatchObject({ status: "review" });
     const target = await startInboxReview(config, user, entry!.id);
     expect(target).toMatch(/^\/import\/[\w-]+\/mapping$/);
-    expect(getInboxView(user.id, user.username, config).entries).toHaveLength(
-      1,
+    expect(
+      (await getInboxView(user.id, user.username, config)).entries,
+    ).toHaveLength(1);
+  });
+
+  it("does not show or let another user review an entry", async () => {
+    const { user } = await setup();
+    const other = await createTestUser();
+    drop("alice", "export.csv", fixture("csv/overlap-a.csv"), "Main");
+    await scan();
+    const [entry] = await listInboxEntries(user.id);
+    expect(await listInboxEntries(other.id)).toEqual([]);
+    expect(
+      (await getInboxView(other.id, other.username, config)).entries,
+    ).toEqual([]);
+    await expect(startInboxReview(config, other, entry!.id)).rejects.toThrow(
+      /no longer waiting/,
     );
   });
 
@@ -226,9 +243,9 @@ describe("scanInbox", () => {
     drop("alice", "copy.xml", fixture("camt053/overlap-a.xml"));
     const summary = await scan();
     expect(summary).toMatchObject({ duplicate: 1, imported: 0 });
-    expect(count(account.id)).toBe(5);
+    expect(await count(account.id)).toBe(5);
     expect(names("alice", "processed")).toHaveLength(2);
-    expect(getDB().select().from(inboxFiles).all()).toHaveLength(1);
+    expect(await getDB().select().from(inboxFiles)).toHaveLength(1);
   });
 
   it("skips files that are still being written", async () => {
@@ -242,7 +259,7 @@ describe("scanInbox", () => {
     );
     expect(await scan()).toMatchObject({ skipped: 1, imported: 0 });
     expect(existsSync(path)).toBe(true);
-    expect(count(account.id)).toBe(0);
+    expect(await count(account.id)).toBe(0);
     const t = new Date(NOW - 60_000);
     utimesSync(path, t, t);
     expect(await scan()).toMatchObject({ imported: 1 });
@@ -270,11 +287,10 @@ describe("scanInbox", () => {
     // Either imported cleanly or held back for review because of balance
     // warnings; in both cases no transaction exists twice.
     expect(summary.imported + summary.review).toBe(1);
-    const rows = getDB()
+    const rows = await getDB()
       .select({ id: transactions.externalId })
       .from(transactions)
-      .where(eq(transactions.accountId, account.id))
-      .all();
+      .where(eq(transactions.accountId, account.id));
     expect(new Set(rows.map((r) => r.id)).size).toBe(rows.length);
   });
 
@@ -306,7 +322,7 @@ describe("scanInbox", () => {
       }),
     );
     expect(await scan()).toMatchObject({ review: 1, imported: 0 });
-    expect(count(account.id)).toBe(1);
+    expect(await count(account.id)).toBe(1);
     expect(names("alice", "review")).toHaveLength(1);
   });
 
@@ -319,7 +335,7 @@ describe("scanInbox", () => {
     });
     drop("bob", "stmt.xml", fixture("camt053/overlap-a.xml"));
     await scan();
-    expect(count(bobAccount.id)).toBe(5);
+    expect(await count(bobAccount.id)).toBe(5);
     expect(names("alice", "processed")).toHaveLength(0);
   });
 });

@@ -1,12 +1,21 @@
-import { eq, sql } from "drizzle-orm";
-import { balanceSnapshots, getDB, imports, transactions } from "$lib/server/db";
+import { and, eq, sql } from "drizzle-orm";
+import {
+  accounts,
+  balanceSnapshots,
+  getDB,
+  imports,
+  transactions,
+} from "$lib/server/db";
 import type { CsvMappingProfile } from "$lib/server/importers/mapping";
 import { categorize, loadRules } from "$lib/server/categories/rules";
-import { getAccount } from "$lib/server/ledger/accounts";
 import { LedgerError, notFound } from "$lib/server/ledger/errors";
 import { linkAfterWrite } from "$lib/server/transfers/link";
 import { takeOverMirror } from "$lib/server/transfers/replace";
-import { deletePendingBlob, deletePendingRow, getPendingMeta } from "./pending";
+import {
+  deletePendingBlob,
+  deletePendingRowInTx,
+  getPendingMeta,
+} from "./pending";
 import { balanceWarningText, buildPreview } from "./preview";
 import { describeError } from "$lib/server/errors";
 
@@ -47,14 +56,8 @@ export async function confirmImport(
   }
   const { statement } = preview;
   if (!statement) throw new LedgerError("invalid", "Nothing to import.");
-  if ((await getAccount(userId, preview.account.id)).archived) {
-    throw new LedgerError(
-      "invalid",
-      "This account is archived; unarchive it to import into it.",
-    );
-  }
 
-  const sha = getPendingMeta(userId, pendingId).sha256;
+  const sha = (await getPendingMeta(userId, pendingId)).sha256;
   const accountId = preview.account.id;
   const newRows = preview.rows.filter(
     (r) => r.status === "new" || r.status === "replaces_mirror",
@@ -63,7 +66,21 @@ export async function confirmImport(
 
   const result = getDB().transaction((tx) => {
     // Claiming the upload first makes a concurrent second confirm fail and roll back.
-    if (!deletePendingRow(userId, pendingId, tx)) throw notFound("Upload");
+    if (!deletePendingRowInTx(tx, userId, pendingId)) throw notFound("Upload");
+    // Checked in the transaction, so an archive racing the import cannot slip past.
+    const account = tx
+      .select({ archived: accounts.archived })
+      .from(accounts)
+      .where(and(eq(accounts.userId, userId), eq(accounts.id, accountId)))
+      .limit(1)
+      .get();
+    if (!account) throw notFound("Account");
+    if (account.archived) {
+      throw new LedgerError(
+        "invalid",
+        "This account is archived; unarchive it to import into it.",
+      );
+    }
     const imp = tx
       .insert(imports)
       .values({

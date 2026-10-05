@@ -4,6 +4,7 @@ import { formatAmount, minor, type Minor } from "$lib/money";
 import {
   accounts,
   balanceSnapshots,
+  first,
   getDB,
   imports,
   transactions,
@@ -18,6 +19,7 @@ import {
   type NormalizedStatement,
   type NormalizedTransaction,
 } from "$lib/server/importers/types";
+import { notFound } from "$lib/server/ledger/errors";
 import { getAccount, type AccountView } from "$lib/server/ledger/accounts";
 import { findReplacements } from "$lib/server/transfers/replace";
 import {
@@ -196,15 +198,18 @@ async function loadLedger(
   excludeIds: ReadonlySet<string> = new Set(),
 ): Promise<BalanceInput> {
   const db = getDB();
-  const account = db
-    .select({
-      openingBalance: accounts.openingBalance,
-      openingDate: accounts.openingDate,
-      tradesMoveCash: accounts.tradesMoveCash,
-    })
-    .from(accounts)
-    .where(and(eq(accounts.userId, userId), eq(accounts.id, accountId)))
-    .get()!;
+  const account = await first(
+    db
+      .select({
+        openingBalance: accounts.openingBalance,
+        openingDate: accounts.openingDate,
+        tradesMoveCash: accounts.tradesMoveCash,
+      })
+      .from(accounts)
+      .where(and(eq(accounts.userId, userId), eq(accounts.id, accountId)))
+      .limit(1),
+  );
+  if (!account) throw notFound("Account");
   return {
     openingBalance: account.openingBalance,
     openingDate: account.openingDate,
@@ -215,22 +220,22 @@ async function loadLedger(
           ),
         )
       : undefined,
-    transactions: db
-      .select({
-        id: transactions.id,
-        bookingDate: transactions.bookingDate,
-        amount: transactions.amount,
-      })
-      .from(transactions)
-      .where(
-        and(
-          eq(transactions.userId, userId),
-          eq(transactions.accountId, accountId),
-        ),
-      )
-      .all()
-      .filter((t) => !excludeIds.has(t.id)),
-    snapshots: db
+    transactions: (
+      await db
+        .select({
+          id: transactions.id,
+          bookingDate: transactions.bookingDate,
+          amount: transactions.amount,
+        })
+        .from(transactions)
+        .where(
+          and(
+            eq(transactions.userId, userId),
+            eq(transactions.accountId, accountId),
+          ),
+        )
+    ).filter((t) => !excludeIds.has(t.id)),
+    snapshots: await db
       .select({
         date: balanceSnapshots.date,
         amount: balanceSnapshots.amount,
@@ -242,8 +247,7 @@ async function loadLedger(
           eq(balanceSnapshots.userId, userId),
           eq(balanceSnapshots.accountId, accountId),
         ),
-      )
-      .all(),
+      ),
   };
 }
 
@@ -405,16 +409,16 @@ async function parseFile(
   }
 }
 
-function existingExternalIds(
+async function existingExternalIds(
   userId: string,
   accountId: string,
   ids: string[],
-): Set<string> {
+): Promise<Set<string>> {
   const db = getDB();
   const found = new Set<string>();
   for (let i = 0; i < ids.length; i += 500) {
     const chunk = ids.slice(i, i + 500);
-    for (const r of db
+    const rows = await db
       .select({ id: transactions.externalId })
       .from(transactions)
       .where(
@@ -423,10 +427,8 @@ function existingExternalIds(
           eq(transactions.accountId, accountId),
           inArray(transactions.externalId, chunk),
         ),
-      )
-      .all()) {
-      found.add(r.id);
-    }
+      );
+    for (const r of rows) found.add(r.id);
   }
   return found;
 }
@@ -436,7 +438,7 @@ export async function buildPreview(
   pendingId: string,
   options: PreviewOptions = {},
 ): Promise<ImportPreview> {
-  const meta = getPendingMeta(userId, pendingId);
+  const meta = await getPendingMeta(userId, pendingId);
   const account = await getAccount(userId, meta.accountId);
   const base = {
     pendingId: meta.id,
@@ -451,18 +453,20 @@ export async function buildPreview(
     balanceWarnings: [] as BalanceWarning[],
   };
 
-  const alreadyImported = getDB()
-    .select({ createdAt: imports.createdAt })
-    .from(imports)
-    .where(
-      and(
-        eq(imports.userId, userId),
-        eq(imports.accountId, account.id),
-        eq(imports.fileSha256, meta.sha256),
-      ),
-    )
-    .orderBy(desc(imports.createdAt))
-    .get();
+  const alreadyImported = await first(
+    getDB()
+      .select({ createdAt: imports.createdAt })
+      .from(imports)
+      .where(
+        and(
+          eq(imports.userId, userId),
+          eq(imports.accountId, account.id),
+          eq(imports.fileSha256, meta.sha256),
+        ),
+      )
+      .orderBy(desc(imports.createdAt))
+      .limit(1),
+  );
   const alreadyImportedAt = alreadyImported
     ? alreadyImported.createdAt.getTime()
     : null;
@@ -507,7 +511,7 @@ export async function buildPreview(
     );
   }
 
-  const existing = existingExternalIds(
+  const existing = await existingExternalIds(
     userId,
     account.id,
     statement.transactions.flatMap((t) => [

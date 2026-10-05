@@ -195,8 +195,8 @@ describe("/import/[pendingId] actions", () => {
     expect((r as { location: string }).location).toMatch(
       new RegExp(`^/accounts/${account.id}\\?imported=[0-9a-f-]{36}$`),
     );
-    expect(getDB().select().from(transactions).all()).toHaveLength(5);
-    expect(() => getPendingMeta(user.id, id)).toThrow();
+    expect(await getDB().select().from(transactions)).toHaveLength(5);
+    await expect(getPendingMeta(user.id, id)).rejects.toThrow();
   });
 
   it("confirm reports linked transfers in the redirect and the preview marks replacements", async () => {
@@ -289,7 +289,7 @@ describe("/import/[pendingId] actions", () => {
     failMatching();
     const r = await act("confirm", user, id);
     expect(r).toMatchObject({ type: "redirect", status: 303 });
-    expect(getDB().select().from(transactions).all()).toHaveLength(5);
+    expect(await getDB().select().from(transactions)).toHaveLength(5);
   });
 
   it("confirm with blocking errors fails with 400 and imports nothing", async () => {
@@ -304,7 +304,7 @@ describe("/import/[pendingId] actions", () => {
         errors: { form: [expect.stringMatching(/mapping_required/)] },
       },
     });
-    expect(getDB().select().from(transactions).all()).toHaveLength(0);
+    expect(await getDB().select().from(transactions)).toHaveLength(0);
   });
 
   it("confirm twice never duplicates", async () => {
@@ -319,7 +319,7 @@ describe("/import/[pendingId] actions", () => {
       type: "error",
       status: 404,
     });
-    expect(getDB().select().from(transactions).all()).toHaveLength(5);
+    expect(await getDB().select().from(transactions)).toHaveLength(5);
   });
 
   it("cancel deletes the upload and redirects to /import", async () => {
@@ -334,7 +334,7 @@ describe("/import/[pendingId] actions", () => {
       status: 303,
       location: "/import",
     });
-    expect(() => getPendingMeta(user.id, id)).toThrow();
+    await expect(getPendingMeta(user.id, id)).rejects.toThrow();
   });
 
   it("another user cannot confirm or cancel my upload", async () => {
@@ -353,7 +353,7 @@ describe("/import/[pendingId] actions", () => {
       type: "error",
       status: 404,
     });
-    expect(getPendingMeta(user.id, id).id).toBe(id);
-    expect(getDB().select().from(transactions).all()).toHaveLength(0);
+    expect((await getPendingMeta(user.id, id)).id).toBe(id);
+    expect(await getDB().select().from(transactions)).toHaveLength(0);
   });
 });

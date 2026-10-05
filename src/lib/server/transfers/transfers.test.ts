@@ -487,7 +487,7 @@ describe("linkTransfers", () => {
     await linkTransfers(user.id, {});
     expect(await rowsOf(b.id)).toHaveLength(2);
 
-    undoImport(user.id, imp.id);
+    await undoImport(user.id, imp.id);
     expect((await rowsOf(a.id)).map((r) => r.id)).toEqual([manual.id]);
     expect(await rowsOf(b.id)).toHaveLength(1);
     expect((await rowsOf(a.id)).some((r) => r.id === fromImport.id)).toBe(

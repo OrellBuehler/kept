@@ -15,6 +15,7 @@ import { MAX_UPLOAD_BYTES } from "$lib/import-constants";
 import { maskIban, normalizeIban } from "$lib/iban";
 import {
   accounts,
+  first,
   getDB,
   imports,
   inboxFiles,
@@ -222,7 +223,8 @@ function listCandidates(userDir: string, list: AccountView[]): Candidate[] {
   return out;
 }
 
-function saveEntry(
+/** One upsert on the unique (user, sha256) index, so concurrent writers cannot duplicate an entry. */
+async function saveEntry(
   userId: string,
   name: string,
   sha: string,
@@ -238,14 +240,13 @@ function saveEntry(
     reviewFile: null,
     ...values,
   };
-  getDB()
+  await getDB()
     .insert(inboxFiles)
     .values({ userId, sha256: sha, ...set })
     .onConflictDoUpdate({
       target: [inboxFiles.userId, inboxFiles.sha256],
       set,
-    })
-    .run();
+    });
 }
 
 interface ScanContext {
@@ -294,9 +295,9 @@ async function importCandidate(
   );
   try {
     const preview = await buildPreview(userId, meta.id);
-    const review = (reason: string): Outcome => {
+    const review = async (reason: string): Promise<Outcome> => {
       const reviewFile = moveInto(userDir, "review", c.path, c.name, sha, now);
-      saveEntry(userId, c.name, sha, {
+      await saveEntry(userId, c.name, sha, {
         status: "review",
         reason,
         accountId: account.id,
@@ -305,14 +306,14 @@ async function importCandidate(
       return "review";
     };
     if (preview.errors.length === 1 && preview.errors[0] === MAPPING_REQUIRED) {
-      return review(
+      return await review(
         "No column mapping is saved for this account yet. Review the file to map its columns.",
       );
     }
     if (preview.errors.length > 0) throw new Rejected(preview.errors.join(" "));
     if (preview.alreadyImportedAt !== null) {
       moveInto(userDir, "processed", c.path, c.name, sha, now);
-      saveEntry(userId, c.name, sha, {
+      await saveEntry(userId, c.name, sha, {
         status: "duplicate",
         reason: "This exact file was already imported into the account.",
         accountId: account.id,
@@ -323,11 +324,11 @@ async function importCandidate(
       ...preview.warnings,
       ...preview.balanceWarnings.map(balanceWarningText),
     ];
-    if (warnings.length > 0) return review(warnings.join(" "));
+    if (warnings.length > 0) return await review(warnings.join(" "));
 
     const result = await confirmImport(userId, meta.id);
     moveInto(userDir, "processed", c.path, c.name, sha, now);
-    saveEntry(userId, c.name, sha, {
+    await saveEntry(userId, c.name, sha, {
       status: "imported",
       accountId: account.id,
       importId: result.importId,
@@ -350,7 +351,7 @@ async function processFile(ctx: ScanContext, c: Candidate): Promise<Outcome> {
     const sha = createHash("sha256")
       .update(`${c.name}:${before.size}`)
       .digest("hex");
-    return fail(
+    return await fail(
       ctx,
       c,
       sha,
@@ -364,11 +365,13 @@ async function processFile(ctx: ScanContext, c: Candidate): Promise<Outcome> {
   }
   const sha = createHash("sha256").update(bytes).digest("hex");
 
-  const known = getDB()
-    .select({ status: inboxFiles.status })
-    .from(inboxFiles)
-    .where(and(eq(inboxFiles.userId, ctx.userId), eq(inboxFiles.sha256, sha)))
-    .get();
+  const known = await first(
+    getDB()
+      .select({ status: inboxFiles.status })
+      .from(inboxFiles)
+      .where(and(eq(inboxFiles.userId, ctx.userId), eq(inboxFiles.sha256, sha)))
+      .limit(1),
+  );
   if (known && known.status !== "failed") {
     moveInto(ctx.userDir, "processed", c.path, c.name, sha, ctx.now);
     return "duplicate";
@@ -382,13 +385,13 @@ async function processFile(ctx: ScanContext, c: Candidate): Promise<Outcome> {
       err instanceof LedgerError ||
       err instanceof ImportFormatError
     ) {
-      return fail(ctx, c, sha, err.message);
+      return await fail(ctx, c, sha, err.message);
     }
     console.error(
       "inbox: unexpected error while importing a file: %s",
       describeError(err),
     );
-    return fail(
+    return await fail(
       ctx,
       c,
       sha,
@@ -397,13 +400,13 @@ async function processFile(ctx: ScanContext, c: Candidate): Promise<Outcome> {
   }
 }
 
-function fail(
+async function fail(
   ctx: ScanContext,
   c: Candidate,
   sha: string,
   reason: string,
-): Outcome {
-  saveEntry(ctx.userId, c.name, sha, {
+): Promise<Outcome> {
+  await saveEntry(ctx.userId, c.name, sha, {
     status: "failed",
     reason,
     accountId: c.account?.id ?? null,
@@ -417,21 +420,22 @@ function fail(
 }
 
 /** Files that waited for review and have since been imported move to processed/. */
-function reconcileReviews(userId: string, userDir: string) {
+async function reconcileReviews(userId: string, userDir: string) {
   const db = getDB();
-  const rows = db
+  const rows = await db
     .select()
     .from(inboxFiles)
-    .where(and(eq(inboxFiles.userId, userId), eq(inboxFiles.status, "review")))
-    .all();
+    .where(and(eq(inboxFiles.userId, userId), eq(inboxFiles.status, "review")));
   for (const row of rows) {
-    const imported = db
-      .select({ id: imports.id })
-      .from(imports)
-      .where(
-        and(eq(imports.userId, userId), eq(imports.fileSha256, row.sha256)),
-      )
-      .get();
+    const imported = await first(
+      db
+        .select({ id: imports.id })
+        .from(imports)
+        .where(
+          and(eq(imports.userId, userId), eq(imports.fileSha256, row.sha256)),
+        )
+        .limit(1),
+    );
     if (!imported) continue;
     if (row.reviewFile) {
       const from = join(userDir, "review", row.reviewFile);
@@ -440,15 +444,23 @@ function reconcileReviews(userId: string, userDir: string) {
         renameSync(from, join(userDir, "processed", row.reviewFile));
       }
     }
-    db.update(inboxFiles)
+    // Only a row still in review is promoted: a scan that meanwhile recorded a
+    // newer outcome for the file keeps it.
+    await db
+      .update(inboxFiles)
       .set({
         status: "imported",
         importId: imported.id,
         reason: null,
         reviewFile: null,
       })
-      .where(eq(inboxFiles.id, row.id))
-      .run();
+      .where(
+        and(
+          eq(inboxFiles.id, row.id),
+          eq(inboxFiles.userId, userId),
+          eq(inboxFiles.status, "review"),
+        ),
+      );
   }
 }
 
@@ -467,16 +479,15 @@ export async function scanInbox(
     duplicate: 0,
     skipped: 0,
   };
-  const all = getDB()
+  const all = await getDB()
     .select({ id: users.id, username: users.username })
-    .from(users)
-    .all();
+    .from(users);
   for (const user of all) {
     const userDir = userInboxDir(config, user.username);
     if (userDir === null) continue;
     try {
       mkdirSync(userDir, { recursive: true });
-      reconcileReviews(user.id, userDir);
+      await reconcileReviews(user.id, userDir);
       const ctx: ScanContext = {
         userId: user.id,
         userDir,
@@ -515,8 +526,11 @@ export interface InboxEntry {
   updatedAt: number;
 }
 
-export function listInboxEntries(userId: string, limit = 10): InboxEntry[] {
-  return getDB()
+export async function listInboxEntries(
+  userId: string,
+  limit = 10,
+): Promise<InboxEntry[]> {
+  const rows = await getDB()
     .select({
       id: inboxFiles.id,
       fileName: inboxFiles.fileName,
@@ -531,9 +545,8 @@ export function listInboxEntries(userId: string, limit = 10): InboxEntry[] {
     .leftJoin(accounts, eq(accounts.id, inboxFiles.accountId))
     .where(eq(inboxFiles.userId, userId))
     .orderBy(desc(inboxFiles.updatedAt))
-    .limit(limit)
-    .all()
-    .map((r) => ({ ...r, updatedAt: r.updatedAt.getTime() }));
+    .limit(limit);
+  return rows.map((r) => ({ ...r, updatedAt: r.updatedAt.getTime() }));
 }
 
 /**
@@ -545,11 +558,13 @@ export async function startInboxReview(
   user: { id: string; username: string },
   entryId: string,
 ): Promise<string> {
-  const row = getDB()
-    .select()
-    .from(inboxFiles)
-    .where(and(eq(inboxFiles.userId, user.id), eq(inboxFiles.id, entryId)))
-    .get();
+  const row = await first(
+    getDB()
+      .select()
+      .from(inboxFiles)
+      .where(and(eq(inboxFiles.userId, user.id), eq(inboxFiles.id, entryId)))
+      .limit(1),
+  );
   const userDir = userInboxDir(config, user.username);
   if (
     !row ||
@@ -592,16 +607,16 @@ export interface InboxView {
   entries: InboxEntry[];
 }
 
-export function getInboxView(
+export async function getInboxView(
   userId: string,
   username: string,
   config: InboxConfig | null = readInboxConfig(),
-): InboxView {
+): Promise<InboxView> {
   return {
     enabled: config !== null,
     folder: config ? userInboxDir(config, username) : null,
     lastScan,
-    entries: config ? listInboxEntries(userId) : [],
+    entries: config ? await listInboxEntries(userId) : [],
   };
 }
 
@@ -623,15 +638,18 @@ export function startInboxScheduler(
     }
   };
   // tick() handles its own errors, so nothing is left to await or catch here.
-  const first = setTimeout(() => void tick(), options.firstRunDelayMs ?? 5_000);
+  const firstRun = setTimeout(
+    () => void tick(),
+    options.firstRunDelayMs ?? 5_000,
+  );
   const timer = setInterval(
     () => void tick(),
     options.intervalMs ?? config.intervalSeconds * 1000,
   );
-  first.unref?.();
+  firstRun.unref?.();
   timer.unref?.();
   return () => {
-    clearTimeout(first);
+    clearTimeout(firstRun);
     clearInterval(timer);
   };
 }

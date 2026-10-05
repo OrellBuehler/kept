@@ -1,11 +1,11 @@
 import { and, eq } from "drizzle-orm";
 import { ZodError } from "zod";
-import { csvProfiles, getDB } from "$lib/server/db";
+import { accounts, csvProfiles, first, getDB } from "$lib/server/db";
 import {
   parseMappingProfile,
   type CsvMappingProfile,
 } from "$lib/server/importers/mapping";
-import { LedgerError } from "$lib/server/ledger/errors";
+import { LedgerError, notFound } from "$lib/server/ledger/errors";
 import { getAccount } from "$lib/server/ledger/accounts";
 
 export interface SavedCsvProfile {
@@ -27,13 +27,18 @@ export async function getCsvProfile(
   accountId: string,
 ): Promise<SavedCsvProfile | null> {
   await getAccount(userId, accountId);
-  const row = getDB()
-    .select()
-    .from(csvProfiles)
-    .where(
-      and(eq(csvProfiles.userId, userId), eq(csvProfiles.accountId, accountId)),
-    )
-    .get();
+  const row = await first(
+    getDB()
+      .select()
+      .from(csvProfiles)
+      .where(
+        and(
+          eq(csvProfiles.userId, userId),
+          eq(csvProfiles.accountId, accountId),
+        ),
+      )
+      .limit(1),
+  );
   if (!row) return null;
   let json: unknown;
   try {
@@ -88,20 +93,31 @@ export async function saveCsvProfile(
     throw new LedgerError("invalid", parsed.issues.join("; "), "profile");
   }
   const serialized = JSON.stringify(parsed.profile);
-  const row = getDB()
-    .insert(csvProfiles)
-    .values({
-      userId,
-      accountId,
-      name: trimmed,
-      profile: serialized,
-    })
-    .onConflictDoUpdate({
-      target: csvProfiles.accountId,
-      set: { name: trimmed, profile: serialized },
-    })
-    .returning()
-    .get();
+  // Ownership check and upsert share one transaction; the unique index on the
+  // account makes the upsert itself atomic.
+  const row = getDB().transaction((tx) => {
+    const owned = tx
+      .select({ id: accounts.id })
+      .from(accounts)
+      .where(and(eq(accounts.userId, userId), eq(accounts.id, accountId)))
+      .limit(1)
+      .get();
+    if (!owned) throw notFound("Account");
+    return tx
+      .insert(csvProfiles)
+      .values({
+        userId,
+        accountId,
+        name: trimmed,
+        profile: serialized,
+      })
+      .onConflictDoUpdate({
+        target: csvProfiles.accountId,
+        set: { name: trimmed, profile: serialized },
+      })
+      .returning()
+      .get();
+  });
   return {
     name: row.name,
     profile: parsed.profile,

@@ -54,12 +54,11 @@ async function setup() {
   return { user, a, b };
 }
 
-const rowsOf = (accountId: string) =>
-  getDB()
+const rowsOf = async (accountId: string) =>
+  await getDB()
     .select()
     .from(transactions)
-    .where(eq(transactions.accountId, accountId))
-    .all();
+    .where(eq(transactions.accountId, accountId));
 
 describe("getImportImpact", () => {
   it("is all zero for an untouched import without transfers", async () => {
@@ -75,7 +74,7 @@ describe("getImportImpact", () => {
         }),
       ),
     );
-    const impact = getImportImpact(user.id, done.importId);
+    const impact = await getImportImpact(user.id, done.importId);
     expect(impact).toEqual({
       transactions: 1,
       categorized: 0,
@@ -120,7 +119,7 @@ describe("getImportImpact", () => {
         }),
       ),
     );
-    const [r1, r2, r3, r4] = rowsOf(a.id).sort((x, y) =>
+    const [r1, r2, r3, r4] = (await rowsOf(a.id)).sort((x, y) =>
       x.bookingDate.localeCompare(y.bookingDate),
     );
     const category = await createCategory(user.id, {
@@ -131,45 +130,41 @@ describe("getImportImpact", () => {
       icon: null,
     });
     const db = getDB();
-    db.update(transactions)
+    await db
+      .update(transactions)
       .set({ categoryId: category.id, note: "lunch" })
-      .where(eq(transactions.id, r2!.id))
-      .run();
-    db.update(transactions)
+      .where(eq(transactions.id, r2!.id));
+    await db
+      .update(transactions)
       .set({ taxYear: 2024 })
-      .where(eq(transactions.id, r3!.id))
-      .run();
-    db.update(transactions)
+      .where(eq(transactions.id, r3!.id));
+    await db
+      .update(transactions)
       .set({ deductionYear: 2025 })
-      .where(eq(transactions.id, r4!.id))
-      .run();
+      .where(eq(transactions.id, r4!.id));
     const bill = seedBill(user.id);
-    db.insert(billAllocations)
-      .values({
-        userId: user.id,
-        billId: bill.id,
-        transactionId: r2!.id,
-        amount: minor(10000),
-        origin: "user",
-      })
-      .run();
+    await db.insert(billAllocations).values({
+      userId: user.id,
+      billId: bill.id,
+      transactionId: r2!.id,
+      amount: minor(10000),
+      origin: "user",
+    });
     const portfolio = await seedPortfolio(
       user.id,
       (await seedAccount(user.id, { name: "Pension", type: "pillar_3a" })).id,
     );
-    db.insert(pillar3aContributions)
-      .values({
-        userId: user.id,
-        portfolioId: portfolio.id,
-        transactionId: r3!.id,
-        date: "2024-03-12",
-        amount: minor(100),
-        kind: "ordinary",
-      })
-      .run();
+    await db.insert(pillar3aContributions).values({
+      userId: user.id,
+      portfolioId: portfolio.id,
+      transactionId: r3!.id,
+      date: "2024-03-12",
+      amount: minor(100),
+      kind: "ordinary",
+    });
 
-    expect(rowsOf(b.id)).toHaveLength(1);
-    const impact = getImportImpact(user.id, done.importId);
+    expect(await rowsOf(b.id)).toHaveLength(1);
+    const impact = await getImportImpact(user.id, done.importId);
     expect(impact).toEqual({
       transactions: 4,
       categorized: 1,
@@ -195,11 +190,11 @@ describe("getImportImpact", () => {
         buildCamt({ iban: EXAMPLE_IBAN, entries: [entry()] }),
       ),
     );
-    const impact = getImportImpact(user.id, done.importId);
+    const impact = await getImportImpact(user.id, done.importId);
     expect(impact.mirrors).toBe(1);
-    undoImport(user.id, done.importId);
-    expect(rowsOf(a.id)).toHaveLength(0);
-    expect(rowsOf(b.id)).toHaveLength(0);
+    await undoImport(user.id, done.importId);
+    expect(await rowsOf(a.id)).toHaveLength(0);
+    expect(await rowsOf(b.id)).toHaveLength(0);
   });
 
   it("does not see another user's import", async () => {
@@ -213,7 +208,9 @@ describe("getImportImpact", () => {
       ),
     );
     const other = await createTestUser();
-    expect(() => getImportImpact(other.id, done.importId)).toThrow(LedgerError);
+    await expect(getImportImpact(other.id, done.importId)).rejects.toThrow(
+      LedgerError,
+    );
   });
 
   it("batches several imports and agrees with the single lookup", async () => {
@@ -243,15 +240,15 @@ describe("getImportImpact", () => {
         }),
       ),
     );
-    const impacts = getImportImpacts(user.id, [
+    const impacts = await getImportImpacts(user.id, [
       first.importId,
       second.importId,
     ]);
     expect(impacts.get(first.importId)).toEqual(
-      getImportImpact(user.id, first.importId),
+      await getImportImpact(user.id, first.importId),
     );
     expect(impacts.get(second.importId)).toEqual(
-      getImportImpact(user.id, second.importId),
+      await getImportImpact(user.id, second.importId),
     );
     expect(impacts.get(first.importId)).toMatchObject({
       transactions: 1,
@@ -276,7 +273,9 @@ describe("getImportImpact", () => {
       ),
     );
     const other = await createTestUser();
-    expect(getImportImpacts(other.id, [done.importId, "nope"]).size).toBe(0);
-    expect(getImportImpacts(user.id, []).size).toBe(0);
+    expect(
+      (await getImportImpacts(other.id, [done.importId, "nope"])).size,
+    ).toBe(0);
+    expect((await getImportImpacts(user.id, [])).size).toBe(0);
   });
 });
