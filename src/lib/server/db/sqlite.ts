@@ -19,11 +19,18 @@ import type { Backend, BackendTransaction, DB } from "./backend";
 import { Gate, GateToken } from "./gate";
 
 export const DEFAULT_GATE_TIMEOUT_MS = 30_000;
+export const DEFAULT_TRANSACTION_TIMEOUT_MS = 60_000;
 const STATEMENT_CACHE_SIZE = 512;
 
 export interface SqliteOptions {
   /** How long a caller waits for the connection before failing. */
   gateTimeoutMs?: number;
+  /**
+   * How long one transaction may hold the connection. A transaction that is
+   * still open then is rolled back and the connection handed on, so a body
+   * that never settles cannot wedge the database.
+   */
+  transactionTimeoutMs?: number;
 }
 
 const tables = extractTablesRelationalConfig(
@@ -72,12 +79,16 @@ class SqliteBackend implements Backend {
   readonly root: DB;
   #statements = new Map<string, Statement>();
   #closed = false;
+  #watchdogs = new Set<ReturnType<typeof setTimeout>>();
+  readonly #transactionTimeoutMs: number;
 
   constructor(
     readonly client: Database,
     options: SqliteOptions,
   ) {
     this.gate = new Gate(options.gateTimeoutMs ?? DEFAULT_GATE_TIMEOUT_MS);
+    this.#transactionTimeoutMs =
+      options.transactionTimeoutMs ?? DEFAULT_TRANSACTION_TIMEOUT_MS;
     this.root = instance((sql, params, method) =>
       this.#plainQuery(sql, params, method),
     );
@@ -165,9 +176,42 @@ class SqliteBackend implements Backend {
       this.gate.release(token);
       throw err;
     }
+    const rollbackQuietly = () => {
+      if (this.#closed || !this.client.inTransaction) return;
+      try {
+        this.client.exec("ROLLBACK");
+      } catch (err) {
+        console.error("rollback failed: %s", describeError(err));
+      }
+    };
+    const watchdog = setTimeout(() => {
+      this.#watchdogs.delete(watchdog);
+      if (!token.active) return;
+      // The stack shows where the transaction was started; it holds code
+      // locations only, never query text or values.
+      console.error(
+        "transaction still open after %dms; rolling it back and releasing the database. Started at:\n%s",
+        this.#transactionTimeoutMs,
+        token.stack || "(no stack captured)",
+      );
+      token.active = false;
+      rollbackQuietly();
+      this.gate.release(token);
+    }, this.#transactionTimeoutMs);
+    watchdog.unref();
+    this.#watchdogs.add(watchdog);
+
     const owned = <T>(fn: () => T): T => {
       if (!token.active) {
         throw new Error("The transaction has already finished");
+      }
+      // The engine rolls a transaction back by itself on some errors (a full
+      // disk, an I/O failure). Past that point the connection autocommits, so
+      // a statement run now would be written outside the transaction.
+      if (!this.client.inTransaction) {
+        throw new Error(
+          "The transaction was rolled back by the database; the statement was not run",
+        );
       }
       return fn();
     };
@@ -181,22 +225,20 @@ class SqliteBackend implements Backend {
       db,
       commit: () => statement("COMMIT"),
       rollback: async () => {
-        // An error such as SQLITE_FULL can already have rolled it back.
-        owned(() => {
-          if (this.client.inTransaction) this.client.exec("ROLLBACK");
-        });
+        // Already ended by the watchdog, or by the engine itself.
+        if (!token.active) return;
+        if (this.client.inTransaction) this.client.exec("ROLLBACK");
       },
       savepoint: (name) => statement(`SAVEPOINT ${name}`),
       releaseSavepoint: (name) => statement(`RELEASE SAVEPOINT ${name}`),
       rollbackToSavepoint: (name) => statement(`ROLLBACK TO SAVEPOINT ${name}`),
       release: () => {
+        clearTimeout(watchdog);
+        this.#watchdogs.delete(watchdog);
+        if (!token.active) return;
         if (this.client.inTransaction) {
-          console.error("transaction left open; rolling back");
-          try {
-            this.client.exec("ROLLBACK");
-          } catch (err) {
-            console.error("rollback failed: %s", describeError(err));
-          }
+          console.error("transaction left open; rolling it back");
+          rollbackQuietly();
         }
         this.gate.release(token);
       },
@@ -216,7 +258,18 @@ class SqliteBackend implements Backend {
   }
 
   resetGate(): void {
+    for (const timer of this.#watchdogs) clearTimeout(timer);
+    this.#watchdogs.clear();
     this.gate.reset();
+    // A transaction that was abandoned mid-way must not leave BEGIN open for
+    // whoever uses the connection next.
+    if (!this.#closed && this.client.inTransaction) {
+      try {
+        this.client.exec("ROLLBACK");
+      } catch (err) {
+        console.error("rollback failed: %s", describeError(err));
+      }
+    }
   }
 
   async close(): Promise<void> {

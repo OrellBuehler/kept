@@ -79,6 +79,13 @@ src/lib/testing/fixtures/        synthetic sample files for importer tests
   transaction body** (the whole database waits behind it, FIFO): do I/O before it, or in `afterCommit()`,
   which also carries events (`emitBillChanged`) and log lines that must only follow a commit. CPU-heavy work
   (detection, hashing) runs outside too: read, compute, then a short transaction that re-checks and writes.
+  **Never await a promise or query builder that was created outside the current transaction from inside
+  its body**: if it needs the database it queues behind the transaction that is waiting for it, and both
+  hang until the gate timeout. `afterCommit` hooks are awaited before `transaction()` returns, so keep
+  them short; long I/O belongs in a detached task the hook starts. Work still running when a transaction
+  rolls back fails ("rolled back") instead of writing outside it, savepoints started side by side run one
+  after the other, and a transaction open longer than the watchdog (60 s) is rolled back by the database layer.
+  Query builders are never run with `.all()/.get()/.run()/.values()/.execute()` (lint, by receiver type).
 - **No swallowed errors.** No empty `catch`, no `catch { return null }` without logging and a
   user-visible outcome.
 - Never log transaction descriptions, counterparties, IBANs or amounts.

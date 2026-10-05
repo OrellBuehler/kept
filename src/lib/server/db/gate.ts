@@ -84,9 +84,14 @@ export class Gate {
     });
   }
 
-  /** Hands the gate to the longest-waiting caller, or frees it. */
+  /**
+   * Hands the gate to the longest-waiting caller, or frees it. A token that no
+   * longer holds the gate because it was released, reset or expired is
+   * ignored, so a late release can never fail or free somebody else's turn.
+   */
   release(token: GateToken): void {
     if (this.#owner !== token) {
+      if (!token.active) return;
       throw new Error(
         "Database gate released by a caller that does not own it",
       );

@@ -115,22 +115,26 @@ async function loadTransactions(userId: string): Promise<DetectInput[]> {
 }
 
 /**
- * A cheap summary of the rows detection reads: it changes when a transaction
- * is added, removed or edited (edits move `updated_at`).
+ * A cheap summary of the rows detection reads. It changes when a transaction
+ * is added (count, newest `seq`), removed (count) or edited (newest
+ * `updated_at`). Replacing one row by another that carries the same timestamp
+ * still moves the newest `seq`. No sum is used: it can cancel out, and the
+ * three aggregates are the same on every database backend.
  */
 async function sourceFingerprint(tx: DB, userId: string): Promise<string> {
   const [row] = await tx
     .select({
       n: sql<number>`count(*)`.mapWith(Number),
-      stamp: sql<number>`coalesce(sum(${transactions.updatedAt}), 0)`.mapWith(
+      updated: sql<number>`coalesce(max(${transactions.updatedAt}), 0)`.mapWith(
         Number,
       ),
+      seq: sql<number>`coalesce(max(${transactions.seq}), 0)`.mapWith(Number),
     })
     .from(transactions)
     .where(
       and(eq(transactions.userId, userId), ne(transactions.source, "mirror")),
     );
-  return `${row?.n}:${row?.stamp}`;
+  return `${row?.n}:${row?.updated}:${row?.seq}`;
 }
 
 /**
@@ -145,22 +149,28 @@ async function sourceFingerprint(tx: DB, userId: string): Promise<string> {
  * series and the fingerprint of the source rows, and applies the diff only if
  * the source did not change since detection ran; otherwise it detects again.
  * That keeps two overlapping runs from both inserting a series or overwriting
- * newer statistics with older ones.
+ * newer statistics with older ones. After the last attempt the detection is
+ * redone inside the transaction instead, over the rows that transaction sees,
+ * so a stale result is never applied.
  */
 export async function syncRecurring(userId: string): Promise<void> {
   for (let attempt = 1; ; attempt++) {
     const fingerprint = await sourceFingerprint(getDB(), userId);
     const detected = detectSeries(await loadTransactions(userId));
     const applied = await transaction(async (tx) => {
-      // The last attempt applies what it has: the data keeps changing only
-      // while other writers are active, and the next sync corrects it.
-      if (
-        attempt < MAX_SYNC_ATTEMPTS &&
-        (await sourceFingerprint(tx, userId)) !== fingerprint
-      ) {
-        return false;
+      if ((await sourceFingerprint(tx, userId)) === fingerprint) {
+        await applyDetected(tx, userId, detected);
+        return true;
       }
-      await applyDetected(tx, userId, detected);
+      if (attempt < MAX_SYNC_ATTEMPTS) return false;
+      // Writers kept changing the rows. The transaction now holds the
+      // database, so what it reads is what it applies; detection is the only
+      // work done under the lock, and it needs no further queries.
+      await applyDetected(
+        tx,
+        userId,
+        detectSeries(await loadTransactions(userId)),
+      );
       return true;
     });
     if (applied) return;

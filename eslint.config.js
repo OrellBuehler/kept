@@ -5,18 +5,7 @@ import globals from "globals";
 import ts from "typescript-eslint";
 import svelteConfig from "./svelte.config.js";
 
-/**
- * Query builders are awaited, never executed through their sync-style terminals:
- * `.get()` skips first() (and its limit), `.run()` hides the result shape, and
- * none of them exists on every database backend. The facade's `DB` type
- * already omits them on the connection itself; this covers the builders.
- */
-const queryTerminalBan = {
-  selector:
-    "CallExpression[arguments.length=0] > MemberExpression.callee[property.name=/^(all|get|run|execute)$/]",
-  message:
-    "Await the query (or use first()) instead of .all()/.get()/.run()/.execute().",
-};
+import noQueryTerminals from "./eslint-rules/no-query-terminals.js";
 
 export default ts.config(
   {
@@ -88,13 +77,10 @@ export default ts.config(
     },
   },
   {
+    // Builders are awaited, never run through their sync-style terminals; see
+    // the rule for how a builder is recognised (by type, so Map.get is fine).
     files: ["src/**/*.ts"],
-    rules: { "no-restricted-syntax": ["error", queryTerminalBan] },
-  },
-  {
-    // Raw bun:sqlite statements (`copy.query(sql).get()`), not drizzle
-    // builders: this test inspects a backup file with the driver directly.
-    files: ["src/lib/server/backup/backup.test.ts"],
-    rules: { "no-restricted-syntax": "off" },
+    plugins: { kept: { rules: { "no-query-terminals": noQueryTerminals } } },
+    rules: { "kept/no-query-terminals": "error" },
   },
 );

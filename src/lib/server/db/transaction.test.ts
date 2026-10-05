@@ -108,7 +108,7 @@ describe("transaction", () => {
           sql`rollback`,
         );
       }),
-    ).rejects.toThrow(/no transaction is active/);
+    ).rejects.toThrow(/rolled back by the database/);
     expect(await names()).toEqual([]);
   });
 

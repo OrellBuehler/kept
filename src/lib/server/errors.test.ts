@@ -50,6 +50,43 @@ describe("describeError", () => {
     expect(errorCode(err)).toBe("SQLITE_CONSTRAINT_UNIQUE");
   });
 
+  it("describes a Bun PostgreSQL error by SQLSTATE and constraint, never by detail", () => {
+    const secret = "Key (username)=(Example Person) already exists.";
+    const pg = Object.assign(
+      new Error('duplicate key value violates unique constraint "users_key"'),
+      {
+        name: "PostgresError",
+        code: "ERR_POSTGRES_SERVER_ERROR",
+        errno: "23505",
+        constraint: "users_username_key",
+        detail: secret,
+        table: "users",
+      },
+    );
+    const wrapped = new DrizzleQueryError(
+      `Failed query: insert into "users" values ($1)\nparams: Example Person`,
+      ["Example Person"],
+      pg,
+    );
+    const out = describeError(wrapped);
+    expect(out).toBe(
+      "DrizzleQueryError > PostgresError [ERR_POSTGRES_SERVER_ERROR sqlstate=23505 constraint=users_username_key]",
+    );
+    for (const leak of ["Example Person", "detail", "insert", "duplicate"]) {
+      expect(out).not.toContain(leak);
+    }
+    expect(errorCode(wrapped)).toBe("23505");
+  });
+
+  it("ignores a SQLSTATE or constraint that could carry free text", () => {
+    const odd = Object.assign(new Error("secret"), {
+      name: "PostgresError",
+      errno: "contains amount 123",
+      constraint: "has spaces 123",
+    });
+    expect(describeError(odd)).toBe("PostgresError");
+  });
+
   it("ignores codes and names that could carry free text", () => {
     const odd = Object.assign(new Error("secret"), {
       name: "has spaces and secret=1",

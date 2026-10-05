@@ -62,6 +62,21 @@ describe("Gate", () => {
     expect(() => gate.release(token())).toThrow(/does not own/);
   });
 
+  it("ignores a release from a token that was reset or already released", () => {
+    const gate = new Gate(1000);
+    const first = token("first");
+    gate.tryAcquire(first);
+    gate.reset();
+    const second = token("second");
+    expect(gate.tryAcquire(second)).toBe(true);
+    // The reset owner finishing late must not free the new owner's turn.
+    expect(() => gate.release(first)).not.toThrow();
+    expect(gate.owner).toBe(second);
+    gate.release(second);
+    expect(() => gate.release(second)).not.toThrow();
+    expect(gate.free).toBe(true);
+  });
+
   it("times out a waiter, logs the owner's stack and keeps serving the rest", async () => {
     const error = vi.spyOn(console, "error").mockImplementation(() => {});
     const gate = new Gate(20);
