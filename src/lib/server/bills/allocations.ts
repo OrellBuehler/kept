@@ -16,7 +16,13 @@ import { emitBillChanged } from "$lib/server/events";
 import { LedgerError } from "$lib/server/ledger/errors";
 import { parseMoneyInput } from "$lib/server/ledger/schemas";
 import { getTransactionRowInTx } from "$lib/server/ledger/transactions";
-import { getBill, getBillInTx, toMatchBill, type BillView } from "./bills";
+import {
+  billsLock,
+  getBill,
+  getBillInTx,
+  toMatchBill,
+  type BillView,
+} from "./bills";
 import { transactionDisplayColumns, type TransactionDisplay } from "./display";
 import {
   validateAllocation,
@@ -81,26 +87,16 @@ async function allocateAtomically(
   amountFor: (bill: BillView) => Minor,
   origin: AllocationOrigin,
 ): Promise<{ id: string }> {
-  const created = await transaction(
-    async (tx) => {
-      const bill = await getBillInTx(tx, userId, billId);
-      const amount = amountFor(bill);
-      const row = await getTransactionRowInTx(tx, userId, transactionId);
-      const allocated = await allocateRow(
-        tx,
-        userId,
-        bill,
-        row,
-        amount,
-        origin,
-      );
-      afterCommit(() => emitBillChanged(userId, billId));
-      return allocated;
-      // The checks read every other allocation; under PostgreSQL two concurrent
-      // allocations would both pass them without this lock.
-    },
-    { lock: `bills:${userId}` },
-  );
+  const created = await transaction(async (tx) => {
+    const bill = await getBillInTx(tx, userId, billId);
+    const amount = amountFor(bill);
+    const row = await getTransactionRowInTx(tx, userId, transactionId);
+    const allocated = await allocateRow(tx, userId, bill, row, amount, origin);
+    afterCommit(() => emitBillChanged(userId, billId));
+    return allocated;
+    // The checks read every other allocation; under PostgreSQL two concurrent
+    // allocations would both pass them without this lock.
+  }, billsLock(userId));
   return created;
 }
 
@@ -126,7 +122,8 @@ export async function allocate(
 }
 
 /**
- * `allocate` on a transaction you already hold. It does not announce
+ * `allocate` on a transaction you already hold, which must have been started
+ * with `billsLock(userId)`: the checks read every other allocation. It does not announce
  * the change: the caller announces it with `afterCommit(() => emitBillChanged(...))`.
  */
 export async function allocateInTx(

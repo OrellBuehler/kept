@@ -25,17 +25,31 @@ import {
   vi,
 } from "vitest";
 import { minor } from "$lib/money";
+import { allocateInTx } from "$lib/server/bills/allocations";
+import { updateBill } from "$lib/server/bills/bills";
+import { runAutoMatching } from "$lib/server/bills/suggestions";
+import { billInput, seedBill } from "$lib/testing/bills";
+import {
+  EXAMPLE_IBAN,
+  EXAMPLE_IBAN_OTHER,
+  EXAMPLE_QRR,
+} from "$lib/testing/fixtures/bill-identifiers";
 import { createFirstAdmin, createUser } from "$lib/server/auth/users";
 import { describeError } from "$lib/server/errors";
 import { createManualTransaction, listTransactions } from "$lib/server/ledger";
 import { currentBalance } from "$lib/server/ledger/balances";
 import { listAccounts } from "$lib/server/ledger/accounts";
 import { createTestUser } from "$lib/testing/auth";
-import { seedAccount, seedImport } from "$lib/testing/ledger";
+import {
+  seedAccount,
+  seedImport,
+  seedImportedTransaction,
+} from "$lib/testing/ledger";
 import { readDatabaseConfig, type PostgresDatabaseConfig } from "./config";
 import { dialect } from "./dialect";
 import {
   afterCommit,
+  billAllocations,
   closeDatabase,
   getDB,
   institutions,
@@ -1069,6 +1083,81 @@ describe.skipIf(!enabled)("postgres backend", () => {
       const accountsList = await listAccounts(user.id);
       expect(accountsList).toHaveLength(1);
       expect(accountsList[0]!.balance).toBe(8_500);
+    });
+
+    it("never over-allocates a payment to two bills when automatic matching races a manual allocation", async () => {
+      const user = await createTestUser();
+      const account = await seedAccount(user.id);
+      await seedBill(user.id, {
+        creditorIban: EXAMPLE_IBAN_OTHER,
+        reference: EXAMPLE_QRR,
+        referenceType: "QRR",
+        issueDate: "2026-09-01",
+        dueDate: "2026-10-01",
+      });
+      const other = await seedBill(user.id, { creditorIban: EXAMPLE_IBAN });
+      const payment = await seedImportedTransaction(user.id, account.id, {
+        amount: minor(-10_000),
+        bookingDate: "2026-09-10",
+        reference: EXAMPLE_QRR,
+      });
+      // The manual allocation is still uncommitted while automatic matching
+      // runs: without the shared per-user lock both would pass their checks.
+      const manual = transaction(
+        async (tx) => {
+          await allocateInTx(
+            tx,
+            user.id,
+            other.id,
+            payment.id,
+            minor(10_000),
+            "user",
+          );
+          await sleep(600);
+        },
+        { lock: `bills:${user.id}` },
+      );
+      await sleep(150);
+      await Promise.all([manual, runAutoMatching(user.id)]);
+      const rows = await getDB()
+        .select({ id: billAllocations.id })
+        .from(billAllocations)
+        .where(eq(billAllocations.transactionId, payment.id));
+      expect(rows).toHaveLength(1);
+    });
+
+    it("blocks a bill update while an allocation holds the user's bills lock", async () => {
+      const user = await createTestUser();
+      const account = await seedAccount(user.id);
+      const bill = await seedBill(user.id, { creditorIban: EXAMPLE_IBAN });
+      const payment = await seedImportedTransaction(user.id, account.id, {
+        amount: minor(-10_000),
+        bookingDate: "2026-09-10",
+      });
+      const manual = transaction(
+        async (tx) => {
+          await allocateInTx(
+            tx,
+            user.id,
+            bill.id,
+            payment.id,
+            minor(10_000),
+            "user",
+          );
+          await sleep(500);
+        },
+        { lock: `bills:${user.id}` },
+      );
+      await sleep(150);
+      const outcome = await updateBill(user.id, bill.id, {
+        ...billInput({ creditorIban: EXAMPLE_IBAN }),
+        kind: "credit_note",
+      }).then(
+        () => null,
+        (e: unknown) => e,
+      );
+      await manual;
+      expect(outcome).toMatchObject({ code: "conflict", field: "kind" });
     });
 
     it("lists newest first, breaking ties on insertion order", async () => {
