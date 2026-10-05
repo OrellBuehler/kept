@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
+  consumeDownloadToken,
   issueDownloadToken,
   resetDownloadTokens,
 } from "$lib/server/auth/admin-confirm";
@@ -157,6 +158,8 @@ describe("backup download", () => {
           ),
         ),
       ).toEqual({ type: "error", status: 404 });
+      // The 404 comes before the link is used up.
+      expect(consumeDownloadToken(token, admin.id)).toBe(true);
       expect(await getDB().select().from(adminAuditLog)).toHaveLength(0);
     },
   );

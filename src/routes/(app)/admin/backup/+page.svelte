@@ -66,9 +66,10 @@
         <Card.Title>Download a backup</Card.Title>
         <Card.Description>
           A consistent copy of the whole database: accounts, transactions,
-          bills, users and settings. Uploaded bill PDFs are stored next to the
-          database and are not included, so back up the data volume as well.
-          Keep the download safe, it contains all your financial data.
+          bills, users and settings. Uploaded bill PDFs live in your file
+          storage (the data volume, KEPT_STORAGE_DIR or the S3 bucket) and are
+          not included, so back that up as well. Keep the download safe, it
+          contains all your financial data.
         </Card.Description>
       </Card.Header>
       <Card.Content>
