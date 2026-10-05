@@ -17,6 +17,18 @@ suggestions.
 - Parse all external input with Zod at the boundary; inside, trust the types.
 - Schema changes: edit `src/lib/server/db/schema.ts` (columns via `db/columns.ts` only), then `bun run db:generate`, and commit the
   generated migration. Never edit an existing migration.
+- Every query must run on SQLite and PostgreSQL (CI runs `bun run test:pg`). Columns come from `db/columns.ts`;
+  text search uses `likeContains()`; aggregates and raw `sql<number>` use `.mapWith(Number)`; every list has a
+  total `ORDER BY`. `bun run db:generate` writes both `drizzle/sqlite/` and `drizzle/postgres/`: commit both.
+- Always `await` queries; never `.all()/.get()/.run()/.values()/.execute()`. No raw SQL outside the `db/`
+  helpers: a raw `sql` fragment only where it is portable and passes the lint rules.
+- Transactions are `transaction(async (tx) => …)` from `$lib/server/db`. No network or file I/O inside the body
+  (do it before, or in `afterCommit()`), and never await work created outside it. A check-then-write across
+  rows takes `transaction(fn, { lock: "key" })`: a no-op on SQLite, an advisory lock on PostgreSQL.
+- Never log a database error's `message` (it carries SQL and bound values): use `describeError(err)` /
+  `errorCode(err)` from `$lib/server/errors`.
+- User files (bills, pending imports) go only through `BlobStore` (`getStore()` from `$lib/server/storage`),
+  never `node:fs` or an S3 client directly.
 - `src/lib/server/integrations/**` may import from the core; the core never imports from it.
 - No empty `catch`. Errors are either handled with a user-visible outcome or rethrown.
 - Never log amounts, IBANs, counterparties or descriptions.

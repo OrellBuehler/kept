@@ -1,0 +1,102 @@
+# Kept with PostgreSQL and S3-compatible file storage.
+#
+# Everything secret comes from a `.env` file next to this one; nothing is stored here. Create it once:
+#
+#   cat > .env <<EOF
+#   KEPT_SECRET_KEY=$(openssl rand -base64 32)
+#   POSTGRES_PASSWORD=$(openssl rand -hex 24)
+#   S3_ACCESS_KEY_ID=kept$(openssl rand -hex 4)
+#   S3_SECRET_ACCESS_KEY=$(openssl rand -hex 24)
+#   EOF
+#
+# then `docker compose -f docker-compose.postgres-s3.yml up -d` and open http://localhost:3000/setup right
+# away: the first account created there becomes the administrator. Keep `.env` with your backups, the
+# secret key included. POSTGRES_PASSWORD is placed in a URL, so keep it to letters and digits (hex is fine).
+#
+# Optional variables: KEPT_IMAGE (defaults to the published image; pin a version), KEPT_ORIGIN (the public
+# URL, required behind a reverse proxy; defaults to http://localhost:3000) and KEPT_PORT (host port, 3000).
+#
+# Back up the `postgres-data` and `s3-data` volumes with your usual tools, or better, `pg_dump` the database
+# and copy the bucket; Kept's own backups cover SQLite only. See "Choosing a backend" in the README.
+
+name: kept
+
+services:
+  kept:
+    image: ${KEPT_IMAGE:-ghcr.io/orellbuehler/kept:latest}
+    restart: unless-stopped
+    ports:
+      - "${KEPT_PORT:-3000}:3000"
+    environment:
+      ORIGIN: ${KEPT_ORIGIN:-http://localhost:3000}
+      KEPT_SECRET_KEY: ${KEPT_SECRET_KEY:?set KEPT_SECRET_KEY in .env}
+      DATABASE_URL: postgres://kept:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}@postgres:5432/kept
+      KEPT_STORAGE: s3
+      KEPT_S3_ENDPOINT: http://s3:8333
+      KEPT_S3_BUCKET: kept
+      KEPT_S3_ACCESS_KEY_ID: ${S3_ACCESS_KEY_ID:?set S3_ACCESS_KEY_ID in .env}
+      KEPT_S3_SECRET_ACCESS_KEY: ${S3_SECRET_ACCESS_KEY:?set S3_SECRET_ACCESS_KEY in .env}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      s3:
+        condition: service_healthy
+      s3-bucket:
+        condition: service_completed_successfully
+    # The image defines its own health check (GET /api/health).
+
+  postgres:
+    image: postgres:18@sha256:5a5a84b19854a9ffaa54082c166ff4ec27473a361e496e5ea167f298f2da9722
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: kept
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+      POSTGRES_DB: kept
+    volumes:
+      # PostgreSQL 18 images keep the cluster in a versioned directory below /var/lib/postgresql.
+      - postgres-data:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U kept -d kept"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+      start_period: 10s
+
+  # A single-node S3-compatible server (path-style, like MinIO and Garage). The identity comes from the
+  # AWS_* variables. For production use a replicated store or a managed service instead.
+  s3:
+    image: chrislusf/seaweedfs:4.48@sha256:4e61d15fd35994cb1e43e1e553dff106794841fd9a99ade2fc8c8bfce4d7872d
+    restart: unless-stopped
+    command: ["server", "-s3", "-dir=/data"]
+    environment:
+      AWS_ACCESS_KEY_ID: ${S3_ACCESS_KEY_ID:?set S3_ACCESS_KEY_ID in .env}
+      AWS_SECRET_ACCESS_KEY: ${S3_SECRET_ACCESS_KEY:?set S3_SECRET_ACCESS_KEY in .env}
+    volumes:
+      - s3-data:/data
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "wget -q -O /dev/null http://127.0.0.1:9333/cluster/status",
+        ]
+      interval: 5s
+      timeout: 3s
+      retries: 24
+      start_period: 10s
+
+  # Kept expects the bucket to exist. This one-shot job creates it and is safe to run again.
+  s3-bucket:
+    image: chrislusf/seaweedfs:4.48@sha256:4e61d15fd35994cb1e43e1e553dff106794841fd9a99ade2fc8c8bfce4d7872d
+    restart: "no"
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        echo "s3.bucket.list" | weed shell -master=s3:9333 | grep -q "^ *kept[[:space:]]" ||
+          echo "s3.bucket.create -name kept" | weed shell -master=s3:9333
+    depends_on:
+      s3:
+        condition: service_healthy
+
+volumes:
+  postgres-data:
+  s3-data:
