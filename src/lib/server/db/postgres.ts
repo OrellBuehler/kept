@@ -8,9 +8,13 @@ import { migrate } from "drizzle-orm/bun-sql/migrator";
 import { PgDialect } from "drizzle-orm/pg-core";
 import { join } from "node:path";
 import { describeError, safeErrorInfo } from "$lib/server/errors";
+import { LedgerError } from "$lib/server/ledger/errors";
 import * as schema from "./schema";
 import type { Backend, BackendTransaction, DB } from "./backend";
-import type { PostgresDatabaseConfig } from "./config";
+import {
+  DEFAULT_PG_TRANSACTION_TIMEOUT_MS,
+  type PostgresDatabaseConfig,
+} from "./config";
 
 /** Schema holding drizzle's migration history, kept apart from the application tables. */
 export const MIGRATIONS_SCHEMA = "drizzle";
@@ -87,6 +91,11 @@ class RollbackSignal extends Error {
   }
 }
 
+const TIMED_OUT =
+  "The transaction was open too long and was rolled back; this work cannot continue";
+/** How long the client waits beyond the server's transaction timeout. */
+const WATCHDOG_SLACK_MS = 500;
+
 type Ended = { ok: true } | { ok: false; error: unknown };
 
 /**
@@ -107,8 +116,11 @@ class PostgresBackend implements Backend {
     this.root = instance(client);
   }
 
-  async beginTransaction(): Promise<BackendTransaction> {
+  async beginTransaction(onAbort?: () => void): Promise<BackendTransaction> {
     if (this.#closed) throw new Error("The database is closed");
+    // The stack shows where the transaction was started; it holds code
+    // locations only, never query text or values.
+    const startedAt = new Error("transaction owner").stack ?? "";
     let finish!: (commit: boolean) => void;
     const finishing = new Promise<boolean>((resolve) => (finish = resolve));
     let handOver!: (sql: Bun.TransactionSQL) => void;
@@ -140,6 +152,7 @@ class PostgresBackend implements Backend {
 
     let active = true;
     let settled = false;
+    let timedOut = false;
     const guarded: Queryable = {
       unsafe: (query, values) => {
         if (!active) throw new Error("The transaction has already finished");
@@ -147,18 +160,49 @@ class PostgresBackend implements Backend {
       },
     };
     const raw = async (query: string, values?: unknown[]) => {
+      if (!active) throw new Error("The transaction has already finished");
       await sql.unsafe(query, values);
     };
     const end = async (commit: boolean) => {
-      if (settled) return;
+      if (settled) {
+        // A body that outlived the watchdog must not report a commit.
+        if (commit && timedOut) throw new Error(TIMED_OUT);
+        return;
+      }
       settled = true;
       active = false;
+      clearTimeout(watchdog);
       finish(commit);
       const result = await ended;
       if (!result.ok && !(result.error instanceof RollbackSignal)) {
         throw result.error;
       }
     };
+    // `transaction_timeout` makes the server kill the backend, but the driver
+    // keeps counting the pool slot as in use until the callback settles. A
+    // body that never settles would leak the slot for good, so the client
+    // gives up shortly after the server would have.
+    const limit =
+      this.config.transactionTimeoutMs > 0
+        ? this.config.transactionTimeoutMs + WATCHDOG_SLACK_MS
+        : DEFAULT_PG_TRANSACTION_TIMEOUT_MS;
+    const watchdog = setTimeout(() => {
+      if (settled) return;
+      timedOut = true;
+      console.error(
+        "transaction still open after %dms; abandoning it and freeing its connection. Started at:\n%s",
+        limit,
+        startedAt || "(no stack captured)",
+      );
+      onAbort?.();
+      end(false).catch((error: unknown) =>
+        console.error(
+          "rollback after timeout failed: %s",
+          describeError(error),
+        ),
+      );
+    }, limit);
+    watchdog.unref();
     return {
       db: instance(guarded),
       commit: () => end(true),
@@ -168,10 +212,20 @@ class PostgresBackend implements Backend {
       rollbackToSavepoint: (name) => raw(`ROLLBACK TO SAVEPOINT ${name}`),
       // Session and transaction advisory locks share one key space, so the
       // prefix keeps these apart from the migration lock.
+      // Waiting for the lock counts against statement_timeout: a wait longer
+      // than that fails with 57014, reported as a conflict the caller can retry.
       lock: (key) =>
         raw("select pg_advisory_xact_lock(hashtextextended($1, 0))", [
           `kept:tx:${key}`,
-        ]),
+        ]).catch((error: unknown) => {
+          if (safeErrorInfo(error).sqlState === "57014") {
+            throw new LedgerError(
+              "conflict",
+              "Another change to the same data is still in progress. Try again in a moment.",
+            );
+          }
+          throw error;
+        }),
       release: () => {
         if (settled) return;
         // Nobody ended it: roll back so the connection returns clean.

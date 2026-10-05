@@ -41,7 +41,11 @@ export interface BackendTransaction {
 export interface Backend {
   /** Plain queries: serialised behind any open transaction. */
   readonly root: DB;
-  beginTransaction(): Promise<BackendTransaction>;
+  /**
+   * `onAbort` is called when the backend gives up on a transaction that stayed
+   * open too long (PostgreSQL); the facade then fails the body's further work.
+   */
+  beginTransaction(onAbort?: () => void): Promise<BackendTransaction>;
   /** Applies pending migrations; safe to run from several processes at once where the engine allows it. */
   migrate(): Promise<void>;
   /** Raw access to the connection while nothing else uses it. SQLite only. */

@@ -19,6 +19,8 @@ export interface TransactionOptions {
    * runs one transaction at a time. PostgreSQL takes a transaction-scoped
    * advisory lock on the key, which is only sound under READ COMMITTED (the
    * default, and the only level the facade uses). Keys are free-form text.
+   * A wait longer than the statement timeout fails with a `conflict`
+   * LedgerError.
    */
   lock?: string;
 }
@@ -242,8 +244,12 @@ export async function transaction<T>(
     return savepoint(parent, fn, options.lock);
   }
 
-  const btx = await currentBackend().beginTransaction();
+  const owner: { tx?: Tx0 } = {};
+  const btx = await currentBackend().beginTransaction(() => {
+    if (owner.tx) owner.tx.state = "aborted";
+  });
   const tx: Tx0 = { btx, state: "active", savepoints: 0 };
+  owner.tx = tx;
   const frame = newFrame(tx, null);
   let outcome: { ok: true; value: T } | { ok: false; error: unknown };
   try {

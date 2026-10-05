@@ -638,6 +638,22 @@ describe.skipIf(!enabled)("postgres backend", () => {
         expect(log).toEqual(["A got", "B got", "A done"]);
       });
 
+      it("reports a wait longer than the statement timeout as a conflict", async () => {
+        await closeDatabase(db);
+        await start({ KEPT_DB_STATEMENT_TIMEOUT_MS: "300" });
+        const holder = transaction(() => sleep(1200), { lock: "busy" });
+        await sleep(100);
+        const error = await transaction(async () => undefined, {
+          lock: "busy",
+        }).then(
+          () => null,
+          (e: unknown) => e,
+        );
+        expect(error).toMatchObject({ name: "LedgerError", code: "conflict" });
+        await holder;
+        await transaction(async () => undefined, { lock: "busy" });
+      });
+
       it("is released when the transaction rolls back", async () => {
         await transaction(
           async () => {
@@ -715,6 +731,86 @@ describe.skipIf(!enabled)("postgres backend", () => {
       // Both pool slots still work, including the one that was killed.
       await Promise.all([insertUser("p1"), insertUser("p2"), insertUser("p3")]);
       expect(await countUsers()).toBe(3);
+    });
+  });
+
+  describe("hung transaction bodies", () => {
+    it("recovers every pool slot from bodies that never settle", async () => {
+      await start({
+        KEPT_DB_POOL_MAX: "3",
+        KEPT_DB_TRANSACTION_TIMEOUT_MS: "300",
+      });
+      const spy = vi.spyOn(console, "error").mockImplementation(() => {});
+      const hung = [0, 1, 2].map(() =>
+        transaction(async (tx) => {
+          await tx.select({ x: sql`1` }).from(users);
+          await new Promise<never>(() => {});
+        }),
+      );
+      const outcomes = hung.map((h) =>
+        Promise.race([
+          h.then(
+            () => "settled",
+            () => "settled",
+          ),
+          sleep(5000).then(() => "hung"),
+        ]),
+      );
+      await sleep(1500);
+      const done = await Promise.race([
+        Promise.all(
+          [0, 1, 2, 3, 4].map((i) =>
+            transaction(async (tx) => {
+              await tx
+                .insert(users)
+                .values({ username: `ok${i}`, passwordHash: "x" });
+            }),
+          ),
+        ).then(() => "done"),
+        sleep(4000).then(() => "stuck"),
+      ]);
+      expect(done).toBe("done");
+      expect(await countUsers()).toBe(5);
+      const logged = spy.mock.calls.map((c) => String(c[0]) + String(c[2]));
+      expect(logged.some((l) => l.includes("Started at"))).toBe(true);
+      await Promise.all(outcomes);
+    }, 20_000);
+
+    it("fails the late body's next statement instead of hanging", async () => {
+      await start({
+        KEPT_DB_POOL_MAX: "1",
+        KEPT_DB_TRANSACTION_TIMEOUT_MS: "200",
+      });
+      vi.spyOn(console, "error").mockImplementation(() => {});
+      const error = await transaction(async (tx) => {
+        await sleep(1200);
+        await tx.insert(users).values({ username: "late", passwordHash: "x" });
+      }).then(
+        () => null,
+        (e: unknown) => e,
+      );
+      expect(error).not.toBeNull();
+      expect(await countUsers()).toBe(0);
+    });
+  });
+
+  describe("late bodies", () => {
+    it("does not report a commit for a body that returns after the watchdog", async () => {
+      await start({
+        KEPT_DB_POOL_MAX: "1",
+        KEPT_DB_TRANSACTION_TIMEOUT_MS: "200",
+      });
+      vi.spyOn(console, "error").mockImplementation(() => {});
+      const error = await transaction(async () => {
+        await sleep(1200);
+        return "done";
+      }).then(
+        () => null,
+        (e: unknown) => e,
+      );
+      expect((error as Error).message).toMatch(/open too long/);
+      await insertUser("after");
+      expect(await countUsers()).toBe(1);
     });
   });
 
