@@ -23,8 +23,11 @@ import {
   getDocumentMeta,
   hasPdfMagic,
   readDocument,
+  DOCUMENT_ORPHAN_GRACE_MS,
+  deleteDocumentBlobsOf,
   sanitizeFileName,
   storeDocument,
+  sweepOrphanedDocuments,
 } from "./documents";
 
 const pdf = (extra = "") =>
@@ -424,5 +427,119 @@ describe("documents stored by earlier versions", () => {
     expect(await Bun.file(join(dir, "documents", u.id, id)).exists()).toBe(
       false,
     );
+  });
+});
+
+describe("document blob cleanup", () => {
+  useTestDB();
+  const blobs = useTestStore();
+  const keys = async () =>
+    (await Array.fromAsync(blobs.store.list(""))).map((i) => i.key);
+
+  it("deleting a document succeeds and logs when the blob cannot be removed", async () => {
+    const u = await createTestUser();
+    const doc = await storeDocument(u.id, pdf("f"), "a.pdf", "application/pdf");
+    vi.spyOn(blobs.store, "delete").mockRejectedValue(new Error("timeout"));
+    const err = vi.spyOn(console, "error").mockImplementation(() => {});
+    await expect(deleteDocument(u.id, doc.id)).resolves.toBeUndefined();
+    expect(await getDB().select().from(documents)).toHaveLength(0);
+    expect(err).toHaveBeenCalled();
+    vi.restoreAllMocks();
+    expect(await keys()).toEqual([`documents/${u.id}/${doc.id}`]);
+  });
+
+  it("keeps the original error when the insert fails and the cleanup fails too", async () => {
+    vi.spyOn(blobs.store, "delete").mockRejectedValue(new Error("cleanup"));
+    const err = vi.spyOn(console, "error").mockImplementation(() => {});
+    // No such user: the insert violates the foreign key.
+    const failure = await storeDocument(
+      "missing-user",
+      pdf("g"),
+      "a.pdf",
+      "application/pdf",
+    ).catch((e: unknown) => e);
+    expect(failure).toBeInstanceOf(Error);
+    expect((failure as Error).message).not.toBe("cleanup");
+    expect(err).toHaveBeenCalled();
+    vi.restoreAllMocks();
+  });
+
+  it("deleteDocumentBlobsOf removes only that user's blobs", async () => {
+    const a = await createTestUser();
+    const b = await createTestUser();
+    const da = await storeDocument(a.id, pdf("1"), "a.pdf", "application/pdf");
+    await storeDocument(a.id, pdf("2"), "b.pdf", "application/pdf");
+    const db = await storeDocument(b.id, pdf("3"), "c.pdf", "application/pdf");
+    expect(await deleteDocumentBlobsOf(a.id)).toBe(2);
+    expect(await keys()).toEqual([`documents/${b.id}/${db.id}`]);
+    expect(await blobs.store.has(`documents/${a.id}/${da.id}`)).toBe(false);
+  });
+
+  it("deleteDocumentBlobsOf does not match a user id that is a prefix of another", async () => {
+    await blobs.store.put("documents/abc/x", pdf());
+    await blobs.store.put("documents/abcd/y", pdf());
+    await deleteDocumentBlobsOf("abc");
+    expect(await keys()).toEqual(["documents/abcd/y"]);
+  });
+
+  describe("sweepOrphanedDocuments", () => {
+    const later = () => Date.now() + DOCUMENT_ORPHAN_GRACE_MS + 1000;
+
+    it("deletes old blobs without a row and keeps owned ones", async () => {
+      const u = await createTestUser();
+      const doc = await storeDocument(
+        u.id,
+        pdf("k"),
+        "a.pdf",
+        "application/pdf",
+      );
+      await blobs.store.put(`documents/${u.id}/orphan`, pdf("o"));
+      await blobs.store.put("documents/gone-user/orphan", pdf("o"));
+      expect(await sweepOrphanedDocuments(later())).toBe(2);
+      expect(await keys()).toEqual([`documents/${u.id}/${doc.id}`]);
+    });
+
+    it("never touches a blob younger than the grace period", async () => {
+      const u = await createTestUser();
+      await blobs.store.put(`documents/${u.id}/fresh`, pdf("o"));
+      expect(await sweepOrphanedDocuments()).toBe(0);
+      expect(await keys()).toEqual([`documents/${u.id}/fresh`]);
+    });
+
+    it("does not treat another user's row as owning the key", async () => {
+      const a = await createTestUser();
+      const b = await createTestUser();
+      const doc = await storeDocument(
+        a.id,
+        pdf("k"),
+        "a.pdf",
+        "application/pdf",
+      );
+      await blobs.store.put(`documents/${b.id}/${doc.id}`, pdf("k"));
+      expect(await sweepOrphanedDocuments(later())).toBe(1);
+      expect(await keys()).toEqual([`documents/${a.id}/${doc.id}`]);
+    });
+
+    it("deletes a bounded batch per run", async () => {
+      for (let i = 0; i < 5; i++)
+        await blobs.store.put(`documents/u/o${i}`, pdf("o"));
+      expect(await sweepOrphanedDocuments(later(), 2)).toBe(2);
+      expect(await keys()).toHaveLength(3);
+    });
+
+    it("logs a failed delete and continues", async () => {
+      await blobs.store.put("documents/u/a", pdf("o"));
+      await blobs.store.put("documents/u/b", pdf("o"));
+      const real = blobs.store.delete.bind(blobs.store);
+      vi.spyOn(blobs.store, "delete").mockImplementation(async (k) => {
+        if (k.endsWith("/a")) throw new Error("boom");
+        await real(k);
+      });
+      const err = vi.spyOn(console, "error").mockImplementation(() => {});
+      expect(await sweepOrphanedDocuments(later())).toBe(1);
+      expect(err).toHaveBeenCalled();
+      vi.restoreAllMocks();
+      expect(await keys()).toEqual(["documents/u/a"]);
+    });
   });
 });

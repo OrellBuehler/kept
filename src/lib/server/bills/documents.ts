@@ -1,7 +1,8 @@
 import { createHash } from "node:crypto";
-import { and, eq, type SQL } from "drizzle-orm";
+import { and, eq, inArray, type SQL } from "drizzle-orm";
 import type { DocumentSource } from "$lib/bill-types";
 import { documents, first, getDB, isUniqueViolation } from "$lib/server/db";
+import { describeError } from "$lib/server/errors";
 import { LedgerError, notFound } from "$lib/server/ledger/errors";
 import { getStore } from "$lib/server/storage";
 import { MAX_PDF_BYTES } from "./pdf-extract";
@@ -20,8 +21,105 @@ export interface DocumentMeta {
 }
 
 /** Blob key of a document; `storageKey` (`<userId>/<id>`) is what the documents table keeps. */
+const BLOB_PREFIX = "documents/";
+
 function blobKey(storageKey: string): string {
-  return `documents/${storageKey}`;
+  return `${BLOB_PREFIX}${storageKey}`;
+}
+
+/** A blob younger than this is never swept: its row may not be written yet. */
+export const DOCUMENT_ORPHAN_GRACE_MS = 60 * 60 * 1000;
+const ORPHAN_SWEEP_INTERVAL_MS = 60 * 60 * 1000;
+const ORPHAN_BATCH = 500;
+const OWNER_LOOKUP_CHUNK = 200;
+let lastOrphanSweep = 0;
+
+/**
+ * Removes blobs below `documents/` that no row owns: leftovers of deleted users,
+ * failed deletes and failed uploads. Deletes at most `limit` blobs per run; the
+ * rest follow on the next run. A failed delete is logged and retried later.
+ */
+export async function sweepOrphanedDocuments(
+  now = Date.now(),
+  limit = ORPHAN_BATCH,
+): Promise<number> {
+  const db = getDB();
+  const store = getStore();
+  const orphans: string[] = [];
+  let chunk: string[] = [];
+  const check = async () => {
+    const batch = chunk;
+    chunk = [];
+    if (batch.length === 0) return;
+    const owned = new Set(
+      (
+        await db
+          .select({ storageKey: documents.storageKey })
+          .from(documents)
+          .where(
+            inArray(
+              documents.storageKey,
+              batch.map((k) => k.slice(BLOB_PREFIX.length)),
+            ),
+          )
+      ).map((r) => blobKey(r.storageKey)),
+    );
+    for (const key of batch) if (!owned.has(key)) orphans.push(key);
+  };
+  for await (const blob of store.list(BLOB_PREFIX)) {
+    if (now - blob.modifiedAt <= DOCUMENT_ORPHAN_GRACE_MS) continue;
+    chunk.push(blob.key);
+    if (chunk.length >= OWNER_LOOKUP_CHUNK) await check();
+    if (orphans.length >= limit) break;
+  }
+  await check();
+  let removed = 0;
+  for (const key of orphans.slice(0, limit)) {
+    try {
+      await store.delete(key);
+      removed++;
+    } catch (err) {
+      console.error("document orphan delete failed: %s", describeError(err));
+    }
+  }
+  return removed;
+}
+
+async function maintainDocuments(now: number): Promise<void> {
+  if (now - lastOrphanSweep < ORPHAN_SWEEP_INTERVAL_MS) return;
+  lastOrphanSweep = now;
+  try {
+    await sweepOrphanedDocuments(now);
+  } catch (err) {
+    // Housekeeping must not fail an upload; the next upload retries.
+    lastOrphanSweep = 0;
+    console.error("document orphan sweep failed: %s", describeError(err));
+  }
+}
+
+/**
+ * Deletes every blob of a user, for use after the user (and with it the document
+ * rows) is gone. Returns the number removed; a failing delete throws after the
+ * remaining blobs were attempted.
+ */
+export async function deleteDocumentBlobsOf(userId: string): Promise<number> {
+  const store = getStore();
+  const keys: string[] = [];
+  for await (const blob of store.list(`${BLOB_PREFIX}${userId}/`)) {
+    keys.push(blob.key);
+  }
+  let removed = 0;
+  let failure: unknown = null;
+  for (const key of keys) {
+    try {
+      await store.delete(key);
+      removed++;
+    } catch (err) {
+      failure ??= err;
+    }
+  }
+  if (failure !== null) throw failure;
+  return removed;
 }
 
 const meta = {
@@ -90,6 +188,7 @@ export async function storeDocument(
     throw new LedgerError("invalid", "The file is not a PDF.", "file");
   }
 
+  await maintainDocuments(Date.now());
   const sha256 = createHash("sha256").update(bytes).digest("hex");
   const store = getStore();
   const storedType = source === "upload" ? PDF_MIME : mimeType;
@@ -129,7 +228,15 @@ export async function storeDocument(
       .returning(meta);
     return toMeta(row!);
   } catch (err) {
-    await store.delete(key);
+    try {
+      await store.delete(key);
+    } catch (cleanupErr) {
+      // The sweep reclaims the blob; the insert error below is the one to report.
+      console.error(
+        "could not remove blob after failed insert: %s",
+        describeError(cleanupErr),
+      );
+    }
     // A concurrent upload of the same content won the unique (user, sha256) index.
     if (isUniqueViolation(err)) {
       const winner = await findBySha256(userId, sha256);
@@ -205,6 +312,11 @@ export async function deleteDocumentWhere(
     .where(and(eq(documents.userId, userId), eq(documents.id, id), condition))
     .returning({ storageKey: documents.storageKey });
   if (!deleted) return false;
-  await getStore().delete(blobKey(deleted.storageKey));
+  try {
+    await getStore().delete(blobKey(deleted.storageKey));
+  } catch (err) {
+    // The row is gone, so the delete succeeded for the user; the sweep reclaims the blob.
+    console.error("could not delete document blob: %s", describeError(err));
+  }
   return true;
 }

@@ -7,6 +7,8 @@ import {
   type UserRole,
   transaction,
 } from "$lib/server/db";
+import { deleteDocumentBlobsOf } from "$lib/server/bills/documents";
+import { describeError } from "$lib/server/errors";
 import { hashPassword, verifyPassword } from "./password";
 import { passwordChangeLimiter, type LoginRateLimiter } from "./rate-limit";
 import { AuthError, type SessionUser } from "./types";
@@ -265,6 +267,12 @@ export async function deleteUser(
     },
     { lock: "users:admin-set" },
   );
+  try {
+    await deleteDocumentBlobsOf(targetId);
+  } catch (err) {
+    // The user is already gone; the document orphan sweep reclaims the blobs.
+    console.error("could not delete document blobs: %s", describeError(err));
+  }
 }
 
 export async function findUserByUsername(username: string) {
