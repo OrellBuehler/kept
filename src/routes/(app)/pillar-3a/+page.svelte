@@ -12,6 +12,7 @@
   import PiggyBankIcon from "@lucide/svelte/icons/piggy-bank";
   import BriefcaseIcon from "@lucide/svelte/icons/briefcase-business";
   import ContributionsCard from "./ContributionsCard.svelte";
+  import OrphanAnnotationsCard from "./OrphanAnnotationsCard.svelte";
   import YearsCard from "./YearsCard.svelte";
   import type { PageProps } from "./$types";
 
@@ -179,5 +180,7 @@
       portfolios={overview.portfolios}
       gaps={overview.gaps}
     />
+
+    <OrphanAnnotationsCard orphans={overview.orphanAnnotations} />
   {/if}
 </div>

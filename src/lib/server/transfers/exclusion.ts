@@ -16,6 +16,8 @@ export interface TransferRow {
   currency: string;
   reference: string | null;
   counterpartyIban: string | null;
+  /** Pass it when known: a mirror is never a contribution payment. */
+  source?: string;
 }
 
 export interface TransferExclusion {
@@ -75,7 +77,9 @@ export async function loadTransferExclusion(
         const owner = ibanOwner.get(normalizeIban(row.counterpartyIban));
         if (owner !== undefined && owner !== row.accountId) return true;
       }
-      return isContributionPayment(depositReferences, row);
+      return (
+        !dismissed.has(row.id) && isContributionPayment(depositReferences, row)
+      );
     },
   };
 }

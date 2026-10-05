@@ -147,6 +147,23 @@ describe("portfolios", () => {
     });
   });
 
+  it("ignores values dated in the future for the latest value", async () => {
+    const u = await createTestUser();
+    const acc = await seedPillar3aAccount(u.id);
+    const p = await seedPortfolio(u.id, acc.id);
+    await setValues(u.id, acc.id, "2026-03-01", [
+      { portfolioId: p.id, amount: minor(150) },
+    ]);
+    await setValues(u.id, acc.id, "2099-01-01", [
+      { portfolioId: p.id, amount: minor(999) },
+    ]);
+    expect(await getPortfolio(u.id, p.id)).toMatchObject({
+      latestValue: 150,
+      latestValueDate: "2026-03-01",
+    });
+    expect((await listPortfolios(u.id))[0]).toMatchObject({ latestValue: 150 });
+  });
+
   it("only allows portfolios on pillar 3a accounts", async () => {
     const u = await createTestUser();
     const acc = await seedAccount(u.id);

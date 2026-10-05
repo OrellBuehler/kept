@@ -17,6 +17,8 @@ import {
   ageBenefitDrawn,
   contributionFacts,
   listContributions,
+  listOrphanAnnotations,
+  type OrphanAnnotation,
 } from "./contributions";
 import { listYearSettings } from "./years";
 
@@ -79,6 +81,11 @@ export interface Pillar3aOverview {
   };
   /** A portfolio was closed with the age benefit: no more buy-ins. */
   ageBenefitDrawn: boolean;
+  /**
+   * Annotations whose payment is no longer detected (reference edited, refunded,
+   * changed amount). Buy-in gap years they hold stay closed until deleted.
+   */
+  orphanAnnotations: OrphanAnnotation[];
 }
 
 export async function pillar3aOverview(
@@ -88,7 +95,8 @@ export async function pillar3aOverview(
   const db = getDB();
   const views = await listContributions(userId);
   const settings = await listYearSettings(userId);
-  const facts = contributionFacts(views);
+  const orphanAnnotations = await listOrphanAnnotations(userId);
+  const facts = contributionFacts(views, null, orphanAnnotations);
   const gaps = gapsFor({ ...facts, settings, today });
   const gapOf = new Map(gaps.map((g) => [g.year, g]));
 
@@ -219,5 +227,6 @@ export async function pillar3aOverview(
       accountsValue: minor(accountsValue),
     },
     ageBenefitDrawn: await ageBenefitDrawn(userId),
+    orphanAnnotations,
   };
 }

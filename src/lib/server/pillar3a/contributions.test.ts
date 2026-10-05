@@ -24,9 +24,11 @@ import {
   deleteContribution,
   detectedContributions,
   listContributions,
+  listOrphanAnnotations,
   updateDetectedContribution,
   updateManualContribution,
 } from "./contributions";
+import { pillar3aOverview } from "./overview";
 import { closePortfolio } from "./portfolios";
 import {
   contributionDetailsSchema,
@@ -145,6 +147,102 @@ describe("detectedContributions", () => {
       closeReason: "wef",
     });
     expect(await detectedContributions(user.id)).toHaveLength(1);
+  });
+
+  describe("refunds", () => {
+    const credit = (
+      userId: string,
+      accountId: string,
+      amount: number,
+      bookingDate: string,
+      reference: string | null = REF_A,
+      extra: Partial<typeof transactions.$inferInsert> = {},
+    ) =>
+      seedImportedTransaction(userId, accountId, {
+        reference,
+        amount: minor(amount),
+        bookingDate,
+        currency: "CHF",
+        ...extra,
+      });
+
+    it("takes a refund with the same reference off the payment", async () => {
+      const { user, current } = await setup();
+      const t = await pay(user.id, current.id, REF_A, 100_000, "2026-03-01");
+      await credit(user.id, current.id, 30_000, "2026-03-10");
+      expect(
+        (await detectedContributions(user.id)).map((d) => [
+          d.transactionId,
+          d.amount,
+        ]),
+      ).toEqual([[t.id, 70_000]]);
+      expect((await listContributions(user.id))[0]!.amount).toBe(70_000);
+    });
+
+    it("drops a fully refunded payment and ignores credits beyond what was paid", async () => {
+      const { user, current } = await setup();
+      await pay(user.id, current.id, REF_A, 100_000, "2026-03-01");
+      await credit(user.id, current.id, 100_000, "2026-03-10");
+      await credit(user.id, current.id, 50_000, "2026-03-11");
+      expect(await detectedContributions(user.id)).toEqual([]);
+    });
+
+    it("reduces the newest earlier payment first and not later ones", async () => {
+      const { user, current } = await setup();
+      const early = await pay(
+        user.id,
+        current.id,
+        REF_A,
+        100_000,
+        "2026-03-01",
+      );
+      const late = await pay(user.id, current.id, REF_A, 100_000, "2026-03-20");
+      await credit(user.id, current.id, 40_000, "2026-03-10");
+      const amounts = new Map(
+        (await detectedContributions(user.id)).map((d) => [
+          d.transactionId,
+          d.amount,
+        ]),
+      );
+      expect(amounts.get(early.id)).toBe(60_000);
+      expect(amounts.get(late.id)).toBe(100_000);
+    });
+
+    it("only nets a credit on the paying account, in CHF, and never mirrors", async () => {
+      const { user, current, savings } = await setup();
+      await pay(user.id, current.id, REF_A, 100_000, "2026-03-01");
+      await credit(user.id, savings.id, 30_000, "2026-03-10");
+      await credit(user.id, current.id, 30_000, "2026-03-10", REF_A, {
+        currency: "EUR",
+      });
+      await credit(user.id, current.id, 30_000, "2026-03-10", REF_A, {
+        source: "mirror",
+      });
+      await credit(user.id, current.id, 30_000, "2026-03-10", makeQrr(99));
+      expect(
+        (await detectedContributions(user.id)).map((d) => d.amount),
+      ).toEqual([100_000]);
+    });
+
+    it("does not net the deposit that shows up on the 3a account itself", async () => {
+      const { user, threeA, current } = await setup();
+      await pay(user.id, current.id, REF_A, 100_000, "2026-03-01");
+      await credit(user.id, threeA.id, 100_000, "2026-03-02");
+      expect(
+        (await detectedContributions(user.id)).map((d) => d.amount),
+      ).toEqual([100_000]);
+    });
+
+    it("does not net across users", async () => {
+      const { user, current } = await setup();
+      await pay(user.id, current.id, REF_A, 100_000, "2026-03-01");
+      const other = await createTestUser();
+      const otherAcc = await seedAccount(other.id);
+      await credit(other.id, otherAcc.id, 100_000, "2026-03-10");
+      expect(
+        (await detectedContributions(user.id)).map((d) => d.amount),
+      ).toEqual([100_000]);
+    });
   });
 
   it("does not leak across users with the same reference", async () => {
@@ -708,7 +806,7 @@ describe("buy-ins", () => {
     expect(await getDB().select().from(pillar3aBuyInYears)).toEqual([]);
   });
 
-  it("drops annotations of payments that no longer match before validating", async () => {
+  it("keeps an annotation whose payment stopped matching, with its gap years, and lists it as an orphan", async () => {
     const { user, current, a } = await setup();
     const t = await pay(user.id, current.id, REF_A, 300_000, "2027-01-15");
     await updateDetectedContribution(
@@ -721,18 +819,272 @@ describe("buy-ins", () => {
       .update(transactions)
       .set({ reference: makeQrr(55) })
       .where(eq(transactions.id, t.id));
+    const stranger = await createTestUser();
+    expect(await listOrphanAnnotations(stranger.id)).toEqual([]);
+    expect(await listOrphanAnnotations(user.id)).toEqual([
+      expect.objectContaining({
+        transactionId: t.id,
+        kind: "buy_in",
+        gapYears: [2025],
+      }),
+    ]);
+    // an unrelated save neither prunes it nor reopens its gap year
+    await addManualContribution(
+      user.id,
+      manual(a.id, { date: "2027-01-20", amount: minor(725_800) }),
+      TODAY,
+    );
+    expect(await getDB().select().from(pillar3aContributions)).toHaveLength(2);
+    expect(
+      await errorCode(() =>
+        addManualContribution(
+          user.id,
+          manual(a.id, {
+            date: "2027-02-01",
+            kind: "buy_in",
+            gapYears: [2025],
+            amount: minor(100_000),
+          }),
+          TODAY,
+        ),
+      ),
+    ).toBe("invalid:gapYears");
+    const overview = await pillar3aOverview(user.id, TODAY);
+    expect(overview.orphanAnnotations).toHaveLength(1);
+    expect(overview.gaps.find((g) => g.year === 2025)!.closedBy).toBe(
+      overview.orphanAnnotations[0]!.id,
+    );
+    // deleting the orphan releases the year; when the reference matches again it is no orphan
+    await deleteContribution(
+      user.id,
+      { id: overview.orphanAnnotations[0]!.id },
+      TODAY,
+    );
+    expect(await listOrphanAnnotations(user.id)).toEqual([]);
+    expect(await getDB().select().from(pillar3aBuyInYears)).toEqual([]);
+  });
+
+  it("an orphan annotation reattaches when the reference matches again", async () => {
+    const { user, current } = await setup();
+    const t = await pay(user.id, current.id, REF_A, 300_000, "2027-01-15");
+    await updateDetectedContribution(
+      user.id,
+      t.id,
+      details({ date: "2027-01-15", kind: "buy_in", gapYears: [2025] }),
+      TODAY,
+    );
+    await getDB()
+      .update(transactions)
+      .set({ reference: makeQrr(55) })
+      .where(eq(transactions.id, t.id));
+    await getDB()
+      .update(transactions)
+      .set({ reference: REF_A })
+      .where(eq(transactions.id, t.id));
+    expect(await listOrphanAnnotations(user.id)).toEqual([]);
+    expect((await listContributions(user.id))[0]).toMatchObject({
+      kind: "buy_in",
+      gapYears: [2025],
+    });
+  });
+
+  it("caps the total of all buy-ins of one year, across separate buy-ins", async () => {
+    const { user, a } = await setup();
+    const buyIn = (gapYear: number, amount: number, date = "2027-01-10") =>
+      manual(a.id, {
+        date,
+        kind: "buy_in",
+        gapYears: [gapYear],
+        amount: minor(amount),
+      });
+    const first = await addManualContribution(
+      user.id,
+      buyIn(2025, 725_800),
+      TODAY,
+    );
+    expect(
+      await errorCode(() =>
+        addManualContribution(
+          user.id,
+          buyIn(2026, 725_800, "2027-02-01"),
+          TODAY,
+        ),
+      ),
+    ).toBe("invalid:gapYears");
+    expect(
+      await errorCode(() =>
+        addManualContribution(user.id, buyIn(2026, 1, "2027-02-01"), TODAY),
+      ),
+    ).toBe("invalid:gapYears");
+    // a buy-in of another year has its own cap
+    expect(
+      await errorCode(() =>
+        addManualContribution(
+          user.id,
+          buyIn(2026, 725_800, "2028-01-10"),
+          "2028-01-15",
+        ),
+      ),
+    ).toBeUndefined();
+    // editing the first one does not count it twice
+    expect(
+      await errorCode(() =>
+        updateManualContribution(
+          user.id,
+          first.contribution.id!,
+          buyIn(2025, 700_000),
+          TODAY,
+        ),
+      ),
+    ).toBeUndefined();
+  });
+
+  it("lets one buy-in close several gap years within the yearly cap", async () => {
+    const { user, a } = await setup();
     const saved = await addManualContribution(
       user.id,
       manual(a.id, {
-        date: "2027-02-01",
+        date: "2027-01-10",
+        kind: "buy_in",
+        gapYears: [2025, 2026],
+        amount: minor(725_800),
+      }),
+      TODAY,
+    );
+    expect(saved.contribution.gapYears).toEqual([2025, 2026]);
+  });
+
+  it("only warns while the buy-in year is still running", async () => {
+    const { user, a } = await setup();
+    const saved = await addManualContribution(
+      user.id,
+      manual(a.id, {
+        date: "2026-12-10",
+        kind: "buy_in",
+        gapYears: [2025],
+        amount: minor(100_000),
+      }),
+      "2026-12-15",
+    );
+    expect(saved.warnings.join(" ")).toMatch(/not fully paid/);
+  });
+
+  it("rejects a buy-in of a finished year whose ordinary contribution is short (past year)", async () => {
+    const { user, a } = await setup();
+    expect(
+      await errorCode(() =>
+        addManualContribution(
+          user.id,
+          manual(a.id, {
+            date: "2026-11-10",
+            kind: "buy_in",
+            gapYears: [2025],
+            amount: minor(100_000),
+          }),
+          "2027-03-01",
+        ),
+      ),
+    ).toBe("invalid:gapYears");
+    await addManualContribution(
+      user.id,
+      manual(a.id, { date: "2026-06-01", amount: minor(725_800) }),
+      "2027-03-01",
+    );
+    expect(
+      await errorCode(() =>
+        addManualContribution(
+          user.id,
+          manual(a.id, {
+            date: "2026-11-10",
+            kind: "buy_in",
+            gapYears: [2025],
+            amount: minor(100_000),
+          }),
+          "2027-03-01",
+        ),
+      ),
+    ).toBeUndefined();
+  });
+
+  it("rejects a change that would invalidate an existing buy-in", async () => {
+    const { user, a } = await setup();
+    // the buy-in year 2026 is over and fully paid ordinary
+    const ordinary = await addManualContribution(
+      user.id,
+      manual(a.id, { date: "2026-02-01", amount: minor(725_800) }),
+      TODAY,
+    );
+    await addManualContribution(
+      user.id,
+      manual(a.id, {
+        date: "2026-10-01",
+        kind: "buy_in",
+        gapYears: [2025],
+        amount: minor(300_000),
+      }),
+      TODAY,
+    );
+    // deleting or shrinking the ordinary contribution that satisfied the precondition
+    expect(
+      await errorCode(() =>
+        deleteContribution(user.id, { id: ordinary.contribution.id! }, TODAY),
+      ),
+    ).toBe("invalid:");
+    expect(
+      await errorCode(() =>
+        updateManualContribution(
+          user.id,
+          ordinary.contribution.id!,
+          manual(a.id, { date: "2026-02-01", amount: minor(500_000) }),
+          TODAY,
+        ),
+      ),
+    ).toBe("invalid:");
+    // an ordinary contribution that fills the closed gap year 2025
+    expect(
+      await errorCode(() =>
+        addManualContribution(
+          user.id,
+          manual(a.id, { date: "2025-06-01", amount: minor(725_800) }),
+          TODAY,
+        ),
+      ),
+    ).toBe("invalid:");
+    // unrelated changes still go through
+    expect(
+      await errorCode(() =>
+        addManualContribution(
+          user.id,
+          manual(a.id, { date: "2027-01-05", amount: minor(100_000) }),
+          TODAY,
+        ),
+      ),
+    ).toBeUndefined();
+    expect(await listContributions(user.id)).toHaveLength(3);
+  });
+
+  it("does not let a buy-in that was already invalid block unrelated changes", async () => {
+    const { user, a } = await setup();
+    await addManualContribution(
+      user.id,
+      manual(a.id, {
+        date: "2027-01-10",
         kind: "buy_in",
         gapYears: [2025],
         amount: minor(100_000),
       }),
       TODAY,
     );
-    expect(saved.contribution.gapYears).toEqual([2025]);
-    expect(await getDB().select().from(pillar3aContributions)).toHaveLength(1);
+    // the year is over now and its ordinary contribution was never paid
+    expect(
+      await errorCode(() =>
+        addManualContribution(
+          user.id,
+          manual(a.id, { date: "2028-01-05", amount: minor(100_000) }),
+          "2028-01-10",
+        ),
+      ),
+    ).toBeUndefined();
   });
 
   it("previews the rules without saving", async () => {

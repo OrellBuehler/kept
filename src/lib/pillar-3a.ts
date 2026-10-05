@@ -9,11 +9,13 @@ import type {
  *
  * - The yearly limit is per person across all 3a accounts: the small
  *   deduction (with a pension fund) is 8% of the BVG upper limit, the large
- *   one (no pension fund) is 20% of net earned income, capped at 40% of it.
+ *   one (no pension fund) is 20% of net earned income, capped at 40% of the BVG upper limit.
  * - A contribution counts for the year it is credited.
  * - Buy-ins (since 2026) close gaps of years from 2025 on, at most ten years
- *   back, each gap year only once, up to the small deduction of the buy-in
- *   year, and not once an age benefit has been drawn.
+ *   back, each gap year only once. All buy-ins made in one calendar year
+ *   together may not exceed the small deduction of that year, the ordinary
+ *   contribution of that year must be paid in full, and no buy-in is possible
+ *   once an age benefit has been drawn.
  */
 
 export const PILLAR_3A_CURRENCY = "CHF";
@@ -200,6 +202,10 @@ export interface BuyInCheck {
  * `gapsFor`. `contributionId` is the buy-in being edited, whose own gap years
  * do not count as closed. `ordinaryPaid` and `ordinaryLimit` are those of
  * the buy-in year (it may be the running year, which `gaps` does not cover).
+ * `otherBuyInsInYear` is the total of the other buy-ins dated in the buy-in
+ * year; together with this one it may not exceed the small deduction of that
+ * year. A short ordinary contribution is an error once the buy-in year is
+ * over, a warning while it is running.
  */
 export function validateBuyIn(input: {
   year: number;
@@ -209,6 +215,8 @@ export function validateBuyIn(input: {
   ageBenefitDrawn: boolean;
   ordinaryPaid: Minor;
   ordinaryLimit: Minor;
+  today: string;
+  otherBuyInsInYear?: Minor;
   contributionId?: string | null;
 }): BuyInCheck {
   const errors: string[] = [];
@@ -265,9 +273,10 @@ export function validateBuyIn(input: {
   }
 
   const small = limitFor(year).small;
-  if (input.amount > small) {
+  const others = input.otherBuyInsInYear ?? 0;
+  if (input.amount + others > small) {
     errors.push(
-      `A buy-in can be at most the small deduction of ${year} (${formatAmount(small, "CHF")}).`,
+      `All buy-ins made in ${year} together can be at most the small deduction of ${year} (${formatAmount(small, "CHF")}); ${formatAmount(minor(others), "CHF")} is already used.`,
     );
   }
   if (errors.length === 0 && input.amount > gapSum) {
@@ -277,9 +286,15 @@ export function validateBuyIn(input: {
   }
 
   if (input.ordinaryPaid < input.ordinaryLimit) {
-    warnings.push(
-      `The ordinary contribution of ${year} is not fully paid yet. It must be paid in full for the buy-in to count.`,
-    );
+    if (year < Number(input.today.slice(0, 4))) {
+      errors.push(
+        `The ordinary contribution of ${year} was not paid in full; it is required for a buy-in made in ${year}.`,
+      );
+    } else {
+      warnings.push(
+        `The ordinary contribution of ${year} is not fully paid yet. It must be paid in full for the buy-in to count.`,
+      );
+    }
   }
   return { errors, warnings };
 }
