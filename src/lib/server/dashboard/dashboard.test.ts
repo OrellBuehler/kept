@@ -431,7 +431,7 @@ describe("monthSummary", () => {
       amount: number,
       currency = "CHF",
     ) =>
-      await seedImportedTransaction(u.id, accountId, {
+      seedImportedTransaction(u.id, accountId, {
         bookingDate,
         amount: m(amount),
         currency,
@@ -537,22 +537,26 @@ describe("billsSummary and unmatchedTransactions", () => {
 
   it("groups bills with totals per currency and lists upcoming ones", async () => {
     const u = await createTestUser();
-    seedBill(u.id, { dueDate: addDays(TODAY, -3), amount: m(10000) });
-    seedBill(u.id, { dueDate: addDays(TODAY, -1), amount: m(2500) });
-    seedBill(u.id, {
+    await seedBill(u.id, { dueDate: addDays(TODAY, -3), amount: m(10000) });
+    await seedBill(u.id, { dueDate: addDays(TODAY, -1), amount: m(2500) });
+    await seedBill(u.id, {
       dueDate: addDays(TODAY, -1),
       amount: m(700),
       currency: "EUR",
     });
-    seedBill(u.id, { dueDate: addDays(TODAY, 5), amount: m(3000) });
-    seedBill(u.id, { dueDate: addDays(TODAY, 14), amount: m(1000) });
-    seedBill(u.id, { dueDate: addDays(TODAY, 15), amount: m(4000) });
-    seedBill(u.id, { dueDate: addDays(TODAY, 40), amount: m(5000) });
-    seedBill(u.id, { dueDate: addDays(TODAY, 50), amount: m(6000) });
-    seedBill(u.id, { dueDate: null, amount: null });
-    seedBill(u.id, { kind: "credit_note", amount: m(1500), dueDate: null });
-    seedBill(u.id, { dueDate: addDays(TODAY, 1), amount: m(1) });
-    const s = billsSummary(u.id, TODAY);
+    await seedBill(u.id, { dueDate: addDays(TODAY, 5), amount: m(3000) });
+    await seedBill(u.id, { dueDate: addDays(TODAY, 14), amount: m(1000) });
+    await seedBill(u.id, { dueDate: addDays(TODAY, 15), amount: m(4000) });
+    await seedBill(u.id, { dueDate: addDays(TODAY, 40), amount: m(5000) });
+    await seedBill(u.id, { dueDate: addDays(TODAY, 50), amount: m(6000) });
+    await seedBill(u.id, { dueDate: null, amount: null });
+    await seedBill(u.id, {
+      kind: "credit_note",
+      amount: m(1500),
+      dueDate: null,
+    });
+    await seedBill(u.id, { dueDate: addDays(TODAY, 1), amount: m(1) });
+    const s = await billsSummary(u.id, TODAY);
     expect(s.overdue.count).toBe(3);
     expect(s.overdue.totals).toEqual([
       { currency: "CHF", amount: 12500 },
@@ -572,13 +576,13 @@ describe("billsSummary and unmatchedTransactions", () => {
       addDays(TODAY, 15),
       addDays(TODAY, 40),
     ]);
-    expect(overdueBillCount(u.id, TODAY)).toBe(3);
+    expect(await overdueBillCount(u.id, TODAY)).toBe(3);
   });
 
   it("counts overpaid invoices as refunds and open-amount bills without a total", async () => {
     const u = await createTestUser();
     const a = await seedAccount(u.id);
-    const bill = seedBill(u.id, {
+    const bill = await seedBill(u.id, {
       amount: m(1000),
       dueDate: addDays(TODAY, 3),
     });
@@ -587,8 +591,8 @@ describe("billsSummary and unmatchedTransactions", () => {
       amount: m(-1300),
     });
     await allocate(u.id, bill.id, tx.id, m(1300), "user");
-    seedBill(u.id, { amount: null, dueDate: addDays(TODAY, -2) });
-    const s = billsSummary(u.id, TODAY);
+    await seedBill(u.id, { amount: null, dueDate: addDays(TODAY, -2) });
+    const s = await billsSummary(u.id, TODAY);
     expect(s.awaitingRefund.totals).toEqual([{ currency: "CHF", amount: 300 }]);
     expect(s.overdue).toMatchObject({ count: 1, openAmountCount: 1 });
     expect(s.overdue.totals).toEqual([{ currency: "CHF", amount: 0 }]);
@@ -597,7 +601,7 @@ describe("billsSummary and unmatchedTransactions", () => {
   it("counts read-only suggestions without matching anything", async () => {
     const u = await createTestUser();
     const a = await seedAccount(u.id);
-    seedBill(u.id, {
+    await seedBill(u.id, {
       amount: m(10000),
       creditorIban: EXAMPLE_IBAN_OTHER,
       reference: EXAMPLE_QRR,
@@ -611,10 +615,10 @@ describe("billsSummary and unmatchedTransactions", () => {
       reference: EXAMPLE_QRR,
       referenceType: "QRR",
     });
-    expect(billsSummary(u.id, TODAY).unmatchedSuggestions).toBe(1);
+    expect((await billsSummary(u.id, TODAY)).unmatchedSuggestions).toBe(1);
     expect(unmatchedTransactions(u.id, { today: TODAY }).count).toBe(1);
     // nothing was allocated by reading the summary
-    expect(billsSummary(u.id, TODAY).unmatchedSuggestions).toBe(1);
+    expect((await billsSummary(u.id, TODAY)).unmatchedSuggestions).toBe(1);
   });
 
   it("finds outgoing referenced payments without allocation", async () => {
@@ -624,7 +628,7 @@ describe("billsSummary and unmatchedTransactions", () => {
     const foreign = await seedAccount(other.id);
     const ref = { referenceType: "SCOR" as const, reference: EXAMPLE_SCOR };
     const hit = async (date: string, amount = -500, over = {}) =>
-      await seedImportedTransaction(u.id, a.id, {
+      seedImportedTransaction(u.id, a.id, {
         bookingDate: date,
         amount: m(amount),
         ...ref,
@@ -640,7 +644,7 @@ describe("billsSummary and unmatchedTransactions", () => {
       reference: null,
     });
     const allocated = await hit(addDays(TODAY, -3));
-    const bill = seedBill(u.id, { amount: m(500) });
+    const bill = await seedBill(u.id, { amount: m(500) });
     await allocate(u.id, bill.id, allocated.id, m(500), "user");
     await seedImportedTransaction(other.id, foreign.id, {
       bookingDate: addDays(TODAY, -1),
@@ -672,7 +676,7 @@ describe("dashboard", () => {
       amount: m(-1000),
     });
     const foreign = await seedAccount(other.id, { openingBalance: m(123456) });
-    seedBill(other.id, { dueDate: addDays(TODAY, -5) });
+    await seedBill(other.id, { dueDate: addDays(TODAY, -5) });
     await seedImportedTransaction(other.id, foreign.id, {
       bookingDate: "2026-10-02",
     });

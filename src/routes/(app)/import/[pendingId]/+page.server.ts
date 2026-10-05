@@ -65,7 +65,7 @@ export const actions: Actions = {
     } catch (err) {
       return ledgerFailure("confirm", err);
     }
-    autoMatchQuietly(user.id);
+    await autoMatchQuietly(user.id);
     redirect(303, target);
   },
 

@@ -40,7 +40,7 @@ afterEach(() => vi.restoreAllMocks());
 describe("runNotifications", () => {
   it("notifies once per event and never again", async () => {
     const user = await setup();
-    seedBill(user.id, { dueDate: "2026-09-20" });
+    await seedBill(user.id, { dueDate: "2026-09-20" });
     const fetchFn = okFetch();
 
     await runNotifications({ fetch: fetchFn, smtp: null }, NOW);
@@ -53,7 +53,7 @@ describe("runNotifications", () => {
     await runNotifications({ fetch: fetchFn, smtp: null }, NOW);
     expect(fetchFn).toHaveBeenCalledTimes(1);
 
-    seedBill(user.id, { dueDate: "2026-09-25" });
+    await seedBill(user.id, { dueDate: "2026-09-25" });
     await runNotifications({ fetch: fetchFn, smtp: null }, NOW);
     expect(fetchFn).toHaveBeenCalledTimes(2);
     expect(sentCount()).toBe(2);
@@ -61,8 +61,8 @@ describe("runNotifications", () => {
 
   it("batches several new events into one message", async () => {
     const user = await setup();
-    seedBill(user.id, { dueDate: "2026-09-20" });
-    seedBill(user.id, { dueDate: "2026-09-21" });
+    await seedBill(user.id, { dueDate: "2026-09-20" });
+    await seedBill(user.id, { dueDate: "2026-09-21" });
     const fetchFn = okFetch();
     await runNotifications({ fetch: fetchFn, smtp: null }, NOW);
     expect(fetchFn).toHaveBeenCalledTimes(1);
@@ -74,7 +74,7 @@ describe("runNotifications", () => {
 
   it("keeps events unsent when delivery fails, records the error and retries", async () => {
     const user = await setup();
-    seedBill(user.id, { dueDate: "2026-09-20" });
+    await seedBill(user.id, { dueDate: "2026-09-20" });
     const errors = vi.spyOn(console, "error").mockImplementation(() => {});
     const failing = vi.fn<FetchFn>(
       async () => new Response(null, { status: 500 }),
@@ -98,7 +98,7 @@ describe("runNotifications", () => {
 
   it("does nothing without enabled channels or enabled triggers", async () => {
     const user = await setup();
-    seedBill(user.id, { dueDate: "2026-09-20" });
+    await seedBill(user.id, { dueDate: "2026-09-20" });
     const fetchFn = okFetch();
     getDB().update(notificationChannels).set({ enabled: false }).run();
     await runNotifications({ fetch: fetchFn, smtp: null }, NOW);
@@ -111,7 +111,7 @@ describe("runNotifications", () => {
   it("only looks at the user's own data", async () => {
     const user = await setup();
     const other = await createTestUser();
-    seedBill(other.id, { dueDate: "2026-09-20" });
+    await seedBill(other.id, { dueDate: "2026-09-20" });
     const fetchFn = okFetch();
     await runNotifications({ fetch: fetchFn, smtp: null }, NOW);
     expect(fetchFn).not.toHaveBeenCalled();
@@ -203,7 +203,7 @@ describe("channels encrypted with another KEPT_SECRET_KEY", () => {
 
   it("are skipped when sending: nothing is fetched, nothing is marked sent, only a code is logged", async () => {
     const user = await withUnreadable();
-    seedBill(user.id, { dueDate: "2026-09-20" });
+    await seedBill(user.id, { dueDate: "2026-09-20" });
     const fetchFn = okFetch();
     const errors = vi.spyOn(console, "error").mockImplementation(() => {});
     const warns = vi.spyOn(console, "warn").mockImplementation(() => {});
@@ -227,7 +227,7 @@ describe("channels encrypted with another KEPT_SECRET_KEY", () => {
     const user = await withUnreadable();
     saveChannel(user.id, "webhook", { url: "https://hooks.example.org/k" });
     const fetchFn = okFetch();
-    seedBill(user.id, { dueDate: "2026-09-20" });
+    await seedBill(user.id, { dueDate: "2026-09-20" });
     await runNotifications({ fetch: fetchFn, smtp: null }, NOW);
     expect(fetchFn).toHaveBeenCalledTimes(1);
     expect(String(fetchFn.mock.calls[0]![0])).toBe(

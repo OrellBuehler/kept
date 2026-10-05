@@ -65,7 +65,7 @@ async function gatherFacts(
   return {
     today,
     month,
-    bills: needBills ? billViews(userId, { today }) : [],
+    bills: needBills ? await billViews(userId, { today }) : [],
     budgets,
     accounts: settings.staleImportEnabled ? accountFacts(userId) : [],
   };

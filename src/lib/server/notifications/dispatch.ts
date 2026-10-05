@@ -15,11 +15,11 @@ export interface DispatchDeps {
   sendMail?: SendMail;
 }
 
-function buildChannel(
+async function buildChannel(
   userId: string,
   kind: ChannelKind,
   deps: DispatchDeps,
-): Channel {
+): Promise<Channel> {
   let config;
   try {
     config = getChannelConfig(userId, kind);
@@ -36,14 +36,14 @@ function buildChannel(
       return ntfyChannel(
         config as never,
         deps.fetch,
-        privateNetworkAllowedForUser(userId),
+        await privateNetworkAllowedForUser(userId),
       );
     case "webhook":
       return webhookChannel(
         config as never,
         deps.fetch,
         undefined,
-        privateNetworkAllowedForUser(userId),
+        await privateNetworkAllowedForUser(userId),
       );
     case "email":
       if (!deps.smtp) {
@@ -66,7 +66,7 @@ export async function sendVia(
   deps: DispatchDeps,
 ): Promise<SendResult> {
   try {
-    await buildChannel(userId, kind, deps).send(message);
+    await (await buildChannel(userId, kind, deps)).send(message);
     recordChannelResult(userId, kind, null);
     return { ok: true };
   } catch (err) {

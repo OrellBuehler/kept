@@ -28,12 +28,12 @@ export type ItemSource = (
   userId: string,
   from: string,
   to: string,
-) => ProjectedItem[];
+) => Promise<ProjectedItem[]>;
 
-const billSource: ItemSource = (userId, from) =>
-  billsToItems(loadBills(userId, from), from);
+const billSource: ItemSource = async (userId, from) =>
+  billsToItems(await loadBills(userId, from), from);
 
-const plannedSource: ItemSource = (userId) =>
+const plannedSource: ItemSource = async (userId) =>
   plannedToItems(listPlannedItems(userId));
 
 /**
@@ -71,7 +71,9 @@ export async function forecast(
   days: Horizon | number,
 ): Promise<ForecastView> {
   const to = addDays(today, days);
-  const items = itemSources.flatMap((source) => source(userId, today, to));
+  const items = (
+    await Promise.all(itemSources.map((source) => source(userId, today, to)))
+  ).flat();
   return {
     ...projectForecast({
       accounts: await forecastAccounts(userId, today),
@@ -80,7 +82,7 @@ export async function forecast(
       days,
     }),
     today,
-    unprojectedBills: unprojectedBills(loadBills(userId, today)),
+    unprojectedBills: unprojectedBills(await loadBills(userId, today)),
   };
 }
 

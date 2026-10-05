@@ -12,11 +12,8 @@ import {
 import { emitBillChanged } from "$lib/server/events";
 import { LedgerError } from "$lib/server/ledger/errors";
 import { parseMoneyInput } from "$lib/server/ledger/schemas";
-import {
-  getTransaction,
-  getTransactionRowInTx,
-} from "$lib/server/ledger/transactions";
-import { getBill, toMatchBill } from "./bills";
+import { getTransactionRowInTx } from "$lib/server/ledger/transactions";
+import { getBill, getBillInTx, toMatchBill, type BillView } from "./bills";
 import { transactionDisplayColumns, type TransactionDisplay } from "./display";
 import {
   validateAllocation,
@@ -54,7 +51,7 @@ export function toMatchTransaction(tx: {
 }
 
 /** Every allocation of the user; the engine needs them across all bills. */
-export function loadAllocations(userId: string): Allocation[] {
+export function loadAllocations(userId: string): Promise<Allocation[]> {
   return getDB()
     .select({
       billId: billAllocations.billId,
@@ -62,11 +59,34 @@ export function loadAllocations(userId: string): Allocation[] {
       amount: billAllocations.amount,
     })
     .from(billAllocations)
-    .where(eq(billAllocations.userId, userId))
-    .all();
+    .where(eq(billAllocations.userId, userId));
 }
 
-type AllocationTransaction = Awaited<ReturnType<typeof getTransaction>>;
+type AllocationTransaction = ReturnType<typeof getTransactionRowInTx>;
+type AllocationTx = Pick<DB, "select" | "insert" | "delete">;
+
+/**
+ * Reads the bill and the transaction, validates against the existing
+ * allocations and writes in one transaction, so a concurrent allocation cannot
+ * slip between the check and the insert. `amountFor` runs on the bill read
+ * inside the transaction (it may throw a LedgerError).
+ */
+function allocateAtomically(
+  userId: string,
+  billId: string,
+  transactionId: string,
+  amountFor: (bill: BillView) => Minor,
+  origin: AllocationOrigin,
+): { id: string } {
+  const created = getDB().transaction((tx) => {
+    const bill = getBillInTx(tx, userId, billId);
+    const amount = amountFor(bill);
+    const row = getTransactionRowInTx(tx, userId, transactionId);
+    return allocateRow(tx, userId, bill, row, amount, origin);
+  });
+  emitBillChanged(userId, billId);
+  return created;
+}
 
 /**
  * Allocates (part of) a transaction to a bill. The amount is signed in the bill's
@@ -80,29 +100,37 @@ export async function allocate(
   amount: Minor,
   origin: AllocationOrigin,
 ): Promise<{ id: string }> {
-  const bill = getBill(userId, billId);
-  const row = await getTransaction(userId, transactionId);
-  return allocateRow(userId, bill, row, amount, origin);
+  return allocateAtomically(
+    userId,
+    billId,
+    transactionId,
+    () => amount,
+    origin,
+  );
 }
 
-/** Sync twin of `allocate`, for the body of a transaction. */
+/**
+ * Sync twin of `allocate`, for the body of a transaction. It does not announce
+ * the change: the caller emits `emitBillChanged` once the transaction committed.
+ */
 export function allocateInTx(
-  tx: Pick<DB, "select">,
+  tx: AllocationTx,
   userId: string,
   billId: string,
   transactionId: string,
   amount: Minor,
   origin: AllocationOrigin,
 ): { id: string } {
-  const bill = getBill(userId, billId);
+  const bill = getBillInTx(tx, userId, billId);
   const row = getTransactionRowInTx(tx, userId, transactionId);
-  return allocateRow(userId, bill, row, amount, origin);
+  return allocateRow(tx, userId, bill, row, amount, origin);
 }
 
 function allocateRow(
+  tx: AllocationTx,
   userId: string,
-  bill: ReturnType<typeof getBill>,
-  row: Omit<AllocationTransaction, "mirrorOf" | "transfer">,
+  bill: BillView,
+  row: AllocationTransaction,
   amount: Minor,
   origin: AllocationOrigin,
 ): { id: string } {
@@ -115,7 +143,7 @@ function allocateRow(
       "transactionId",
     );
   }
-  const related: Allocation[] = getDB()
+  const related: Allocation[] = tx
     .select({
       billId: billAllocations.billId,
       transactionId: billAllocations.transactionId,
@@ -150,9 +178,8 @@ function allocateRow(
     related,
   );
   if (problem !== null) throw new LedgerError("invalid", problem, "amount");
-  const db = getDB();
   // Allocating a pair that was dismissed means the user changed their mind.
-  db.delete(matchDismissals)
+  tx.delete(matchDismissals)
     .where(
       and(
         eq(matchDismissals.userId, userId),
@@ -161,13 +188,11 @@ function allocateRow(
       ),
     )
     .run();
-  const created = db
+  return tx
     .insert(billAllocations)
     .values({ userId, billId, transactionId, amount, origin })
     .returning({ id: billAllocations.id })
     .get();
-  emitBillChanged(userId, billId);
-  return created;
 }
 
 /** Like `allocate`, with the amount typed in the bill's currency (may be negative for refunds). */
@@ -178,18 +203,26 @@ export async function allocateFromInput(
   amountText: string,
   origin: AllocationOrigin,
 ): Promise<{ id: string }> {
-  const bill = getBill(userId, billId);
-  const parsed = parseMoneyInput(amountText, bill.currency);
-  if (!parsed.ok) throw new LedgerError("invalid", parsed.message, "amount");
-  return await allocate(userId, billId, transactionId, parsed.value, origin);
+  return allocateAtomically(
+    userId,
+    billId,
+    transactionId,
+    (bill) => {
+      const parsed = parseMoneyInput(amountText, bill.currency);
+      if (!parsed.ok)
+        throw new LedgerError("invalid", parsed.message, "amount");
+      return parsed.value;
+    },
+    origin,
+  );
 }
 
-export function listBillAllocations(
+export async function listBillAllocations(
   userId: string,
   billId: string,
-): AllocationView[] {
-  getBill(userId, billId);
-  return getDB()
+): Promise<AllocationView[]> {
+  await getBill(userId, billId);
+  const rows = await getDB()
     .select({
       allocationId: billAllocations.id,
       allocationAmount: billAllocations.amount,
@@ -207,14 +240,13 @@ export function listBillAllocations(
         eq(billAllocations.billId, billId),
       ),
     )
-    .orderBy(desc(transactions.bookingDate), desc(billAllocations.createdAt))
-    .all()
-    .map((r) => ({
-      id: r.allocationId,
-      billId,
-      amount: r.allocationAmount,
-      origin: r.origin,
-      createdAt: r.allocatedAt.getTime(),
-      transaction: r.tx,
-    }));
+    .orderBy(desc(transactions.bookingDate), desc(billAllocations.createdAt));
+  return rows.map((r) => ({
+    id: r.allocationId,
+    billId,
+    amount: r.allocationAmount,
+    origin: r.origin,
+    createdAt: r.allocatedAt.getTime(),
+    transaction: r.tx,
+  }));
 }

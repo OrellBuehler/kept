@@ -88,7 +88,7 @@ export async function dashboard(
     range === "all" ? earliestDataDate(userId) : null,
   );
   const accounts = await accountBalances(userId, today);
-  const bills = billsSummary(userId, today);
+  const bills = await billsSummary(userId, today);
   const hasShared = accounts.some((a) => a.shareBps < FULL_SHARE_BPS);
   const month = today.slice(0, 7);
   return {

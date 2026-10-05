@@ -22,6 +22,7 @@ import {
   paperlessDocuments,
   paperlessPending,
   users,
+  first,
 } from "$lib/server/db";
 import { createTestUser, type TestUser } from "$lib/testing/auth";
 import { useTestDB } from "$lib/testing/db";
@@ -81,7 +82,7 @@ describe("syncConnection", () => {
     fake.token = "test-token";
     fake.prefix = "";
     user = await createTestUser();
-    seedConnection(user.id, fake);
+    await seedConnection(user.id, fake);
   });
   afterEach(() => {
     clearEventListeners();
@@ -89,16 +90,18 @@ describe("syncConnection", () => {
   });
 
   const linkOf = (paperlessId: number, userId = user.id) =>
-    getDB()
-      .select()
-      .from(paperlessDocuments)
-      .where(
-        and(
-          eq(paperlessDocuments.userId, userId),
-          eq(paperlessDocuments.paperlessId, paperlessId),
-        ),
-      )
-      .get();
+    first(
+      getDB()
+        .select()
+        .from(paperlessDocuments)
+        .where(
+          and(
+            eq(paperlessDocuments.userId, userId),
+            eq(paperlessDocuments.paperlessId, paperlessId),
+          ),
+        )
+        .limit(1),
+    );
 
   describe("with KEPT_ALLOW_PRIVATE_NETWORK cleared", () => {
     beforeEach(() => vi.stubEnv("KEPT_ALLOW_PRIVATE_NETWORK", ""));
@@ -110,20 +113,19 @@ describe("syncConnection", () => {
       const r = await syncConnection(user.id);
       expect(r.error).toBe("blocked_address");
       expect(fake.requests).toHaveLength(0);
-      expect(listBills(user.id)).toHaveLength(0);
+      expect(await listBills(user.id)).toHaveLength(0);
     });
 
     it("an administrator is allowed, and blocked from the next sync after losing the role", async () => {
       const admin = await createTestUser({ role: "admin" });
-      seedConnection(admin.id, fake);
+      await seedConnection(admin.id, fake);
       fake.addDoc({ id: 11, original: pdfEnergy, tags: [1] });
       expect((await syncConnection(admin.id)).imported).toBe(1);
 
-      getDB()
+      await getDB()
         .update(users)
         .set({ role: "member" })
-        .where(eq(users.id, admin.id))
-        .run();
+        .where(eq(users.id, admin.id));
       fake.requests = [];
       fake.addDoc({ id: 12, original: pdfWater, tags: [1] });
       const r = await syncConnection(admin.id);
@@ -146,10 +148,10 @@ describe("syncConnection", () => {
       skipped: 0,
       error: null,
     });
-    const all = listBills(user.id);
+    const all = await listBills(user.id);
     expect(all).toHaveLength(1);
     const bill = all[0]!;
-    const base = getConnectionRow(user.id)!.baseUrl;
+    const base = (await getConnectionRow(user.id))!.baseUrl;
     expect(bill).toMatchObject({
       creditorName: "Example Energy Ltd",
       amount: 194975,
@@ -159,18 +161,18 @@ describe("syncConnection", () => {
       externalUrl: `${base}/documents/11/details`,
       notes: null,
     });
-    const doc = getDB().select().from(documents).get()!;
+    const doc = (await first(getDB().select().from(documents).limit(1)))!;
     expect(doc).toMatchObject({
       userId: user.id,
       source: "integration",
       id: bill.documentId,
     });
-    expect(linkOf(11)).toMatchObject({
+    expect(await linkOf(11)).toMatchObject({
       status: "imported",
       billId: bill.id,
       documentId: doc.id,
     });
-    expect(linkOf(12)).toBeUndefined();
+    expect(await linkOf(12)).toBeUndefined();
 
     const list = fake
       .requestsTo("/api/documents/", "GET")
@@ -179,8 +181,8 @@ describe("syncConnection", () => {
     expect(list.query.get("fields")).not.toContain("content");
     const download = fake.requestsTo("/download/")[0]!;
     expect(download.query.get("original")).toBe("true");
-    expect(getConnectionRow(user.id)).toMatchObject({ lastError: null });
-    expect(getConnectionRow(user.id)!.lastSyncAt).toBeInstanceOf(Date);
+    expect(await getConnectionRow(user.id)).toMatchObject({ lastError: null });
+    expect((await getConnectionRow(user.id))!.lastSyncAt).toBeInstanceOf(Date);
   });
 
   it("auto-matches an imported bill against a payment that is already booked", async () => {
@@ -194,8 +196,8 @@ describe("syncConnection", () => {
 
     await syncConnection(user.id);
 
-    const [bill] = listBills(user.id);
-    expect(listBillAllocations(user.id, bill!.id)).toHaveLength(1);
+    const [bill] = await listBills(user.id);
+    expect(await listBillAllocations(user.id, bill!.id)).toHaveLength(1);
   });
 
   it("does not duplicate on re-sync and does not download unchanged documents again", async () => {
@@ -206,12 +208,12 @@ describe("syncConnection", () => {
     const r = await syncConnection(user.id);
 
     expect(r).toMatchObject({ imported: 0, unchanged: 1 });
-    expect(listBills(user.id)).toHaveLength(1);
+    expect(await listBills(user.id)).toHaveLength(1);
     expect(fake.requestsTo("/download/")).toHaveLength(0);
   });
 
   it("uses a saved view's rules as the source and re-reads them each time", async () => {
-    setBillSourceRow(user.id, {
+    await setBillSourceRow(user.id, {
       kind: "saved_view",
       id: 5,
       label: "Bills view",
@@ -229,7 +231,7 @@ describe("syncConnection", () => {
     const r = await syncConnection(user.id);
 
     expect(r).toMatchObject({ imported: 1, error: null });
-    expect(listBills(user.id)[0]!.creditorName).toBe("Sample Water AG");
+    expect((await listBills(user.id))[0]!.creditorName).toBe("Sample Water AG");
     const list = fake
       .requestsTo("/api/documents/", "GET")
       .find((q) => q.query.has("ordering"))!;
@@ -237,7 +239,11 @@ describe("syncConnection", () => {
   });
 
   it("stops with a clear code for a saved view it cannot apply", async () => {
-    setBillSourceRow(user.id, { kind: "saved_view", id: 5, label: "Fulltext" });
+    await setBillSourceRow(user.id, {
+      kind: "saved_view",
+      id: 5,
+      label: "Fulltext",
+    });
     fake.savedViews = [
       {
         id: 5,
@@ -251,20 +257,22 @@ describe("syncConnection", () => {
     const r = await syncConnection(user.id);
 
     expect(r.error).toBe("source_unsupported");
-    expect(listBills(user.id)).toHaveLength(0);
-    expect(getConnectionRow(user.id)!.lastError).toBe("source_unsupported");
+    expect(await listBills(user.id)).toHaveLength(0);
+    expect((await getConnectionRow(user.id))!.lastError).toBe(
+      "source_unsupported",
+    );
   });
 
   it("reports a missing source and a rejected token without throwing", async () => {
     const other = await createTestUser();
-    seedConnection(other.id, fake, { source: null });
+    await seedConnection(other.id, fake, { source: null });
     vi.spyOn(console, "error").mockImplementation(() => {});
     expect((await syncConnection(other.id)).error).toBe("no_source");
 
     fake.token = "rotated";
     const r = await syncConnection(user.id);
     expect(r.error).toBe("unauthorized");
-    expect(getConnectionRow(user.id)!.lastError).toBe("unauthorized");
+    expect((await getConnectionRow(user.id))!.lastError).toBe("unauthorized");
   });
 
   it("follows pagination, ignoring hosts named in next links", async () => {
@@ -289,9 +297,9 @@ describe("syncConnection", () => {
     const r = await syncConnection(user.id);
 
     expect(r).toMatchObject({ listed: 3, imported: 3 });
-    expect(listBills(user.id)).toHaveLength(3);
+    expect(await listBills(user.id)).toHaveLength(3);
     // The same bytes are stored once.
-    expect(getDB().select().from(documents).all()).toHaveLength(1);
+    expect(await getDB().select().from(documents)).toHaveLength(1);
   });
 
   it("moves the watermark and asks only for newer documents with a five minute overlap", async () => {
@@ -301,7 +309,7 @@ describe("syncConnection", () => {
       modified: "2026-09-01T10:00:00+00:00",
     });
     await syncConnection(user.id);
-    expect(getConnectionRow(user.id)!.lastSyncModified).toBe(
+    expect((await getConnectionRow(user.id))!.lastSyncModified).toBe(
       Date.parse("2026-09-01T10:00:00+00:00"),
     );
 
@@ -323,8 +331,8 @@ describe("syncConnection", () => {
       .find((q) => q.query.has("ordering"))!;
     expect(list.query.get("modified__gt")).toBe("2026-09-01T09:55:00.000Z");
     expect(r).toMatchObject({ listed: 2, imported: 1, unchanged: 1 });
-    expect(linkOf(40)).toBeUndefined();
-    expect(getConnectionRow(user.id)!.lastSyncModified).toBe(
+    expect(await linkOf(40)).toBeUndefined();
+    expect((await getConnectionRow(user.id))!.lastSyncModified).toBe(
       Date.parse("2026-09-01T10:02:00+00:00"),
     );
   });
@@ -346,8 +354,8 @@ describe("syncConnection", () => {
     const first = await syncConnection(user.id);
 
     expect(first.error).toBe("unauthorized");
-    expect(listBills(user.id)).toHaveLength(0);
-    expect(getConnectionRow(user.id)!.lastSyncModified).toBeNull();
+    expect(await listBills(user.id)).toHaveLength(0);
+    expect((await getConnectionRow(user.id))!.lastSyncModified).toBeNull();
 
     fake.downloadStatus = 200;
     const second = await syncConnection(user.id);
@@ -375,18 +383,18 @@ describe("syncConnection", () => {
     const r = await syncConnection(user.id);
 
     expect(r).toMatchObject({ failed: 3, imported: 1, error: null });
-    expect(linkOf(51)).toMatchObject({
+    expect(await linkOf(51)).toMatchObject({
       status: "failed",
       error: "Paperless sent an unreadable response for this document.",
     });
-    expect(linkOf(52)!.error).toBe(
+    expect((await linkOf(52))!.error).toBe(
       "Paperless did not allow reading this document.",
     );
-    expect(linkOf(54)).toMatchObject({ status: "imported" });
-    expect(getConnectionRow(user.id)!.lastSyncModified).toBe(
+    expect(await linkOf(54)).toMatchObject({ status: "imported" });
+    expect((await getConnectionRow(user.id))!.lastSyncModified).toBe(
       Date.parse("2026-09-01T13:00:00+00:00"),
     );
-    expect(getConnectionRow(user.id)!.lastError).toBeNull();
+    expect((await getConnectionRow(user.id))!.lastError).toBeNull();
   });
 
   it.each([502, 503, 429, 408])(
@@ -412,17 +420,17 @@ describe("syncConnection", () => {
         pending: 1,
         error: null,
       });
-      expect(linkOf(41)).toBeUndefined();
-      expect(linkOf(42)).toMatchObject({ status: "imported" });
+      expect(await linkOf(41)).toBeUndefined();
+      expect(await linkOf(42)).toMatchObject({ status: "imported" });
       // The watermark must not move past the document that still needs a retry.
-      expect(getConnectionRow(user.id)!.lastSyncModified).toBeNull();
+      expect((await getConnectionRow(user.id))!.lastSyncModified).toBeNull();
 
       fake.downloadStatuses.delete(41);
       const second = await syncConnection(user.id);
 
       expect(second).toMatchObject({ imported: 1, failed: 0, pending: 0 });
-      expect(linkOf(41)).toMatchObject({ status: "imported" });
-      expect(getConnectionRow(user.id)!.lastSyncModified).toBe(
+      expect(await linkOf(41)).toMatchObject({ status: "imported" });
+      expect((await getConnectionRow(user.id))!.lastSyncModified).toBe(
         Date.parse("2026-09-01T11:00:00+00:00"),
       );
     },
@@ -469,17 +477,17 @@ describe("syncConnection", () => {
       failed: 0,
       error: null,
     });
-    expect(linkOf(141)).toBeUndefined();
-    expect(linkOf(142)).toMatchObject({ status: "imported" });
-    expect(linkOf(143)).toMatchObject({ status: "imported" });
-    expect(getConnectionRow(user.id)!.lastSyncModified).toBeNull();
-    expect(getConnectionRow(user.id)!.lastError).toBeNull();
+    expect(await linkOf(141)).toBeUndefined();
+    expect(await linkOf(142)).toMatchObject({ status: "imported" });
+    expect(await linkOf(143)).toMatchObject({ status: "imported" });
+    expect((await getConnectionRow(user.id))!.lastSyncModified).toBeNull();
+    expect((await getConnectionRow(user.id))!.lastError).toBeNull();
 
     spy.mockRestore();
     const second = await syncConnection(user.id);
     expect(second).toMatchObject({ imported: 1, pending: 0, error: null });
-    expect(getDB().select().from(paperlessPending).all()).toHaveLength(0);
-    expect(getConnectionRow(user.id)!.lastSyncModified).toBe(
+    expect(await getDB().select().from(paperlessPending)).toHaveLength(0);
+    expect((await getConnectionRow(user.id))!.lastSyncModified).toBe(
       Date.parse("2026-09-01T12:00:00+00:00"),
     );
   });
@@ -505,8 +513,8 @@ describe("syncConnection", () => {
 
     expect(r.error).toBe("network");
     expect(r.pending).toBeLessThan(4);
-    expect(getConnectionRow(user.id)!.lastSyncModified).toBeNull();
-    expect(getDB().select().from(paperlessPending).all()).toHaveLength(0);
+    expect((await getConnectionRow(user.id))!.lastSyncModified).toBeNull();
+    expect(await getDB().select().from(paperlessPending)).toHaveLength(0);
   });
 
   it("gives up on a document that keeps failing after the attempt cap and releases the watermark", async () => {
@@ -527,17 +535,20 @@ describe("syncConnection", () => {
     for (let run = 1; run < MAX_DOCUMENT_ATTEMPTS; run++) {
       const r = await syncConnection(user.id);
       expect(r).toMatchObject({ pending: 1, failed: 0 });
-      expect(getConnectionRow(user.id)!.lastSyncModified).toBeNull();
-      expect(getDB().select().from(paperlessPending).get()!.attempts).toBe(run);
+      expect((await getConnectionRow(user.id))!.lastSyncModified).toBeNull();
+      expect(
+        (await first(getDB().select().from(paperlessPending).limit(1)))!
+          .attempts,
+      ).toBe(run);
     }
 
     const last = await syncConnection(user.id);
 
     expect(last).toMatchObject({ pending: 0, failed: 1 });
-    expect(linkOf(161)).toMatchObject({ status: "failed" });
-    expect(linkOf(161)!.error).toMatch(/repeatedly|several/i);
-    expect(getDB().select().from(paperlessPending).all()).toHaveLength(0);
-    expect(getConnectionRow(user.id)!.lastSyncModified).toBe(
+    expect(await linkOf(161)).toMatchObject({ status: "failed" });
+    expect((await linkOf(161))!.error).toMatch(/repeatedly|several/i);
+    expect(await getDB().select().from(paperlessPending)).toHaveLength(0);
+    expect((await getConnectionRow(user.id))!.lastSyncModified).toBe(
       Date.parse("2026-09-01T11:00:00+00:00"),
     );
     // Failed documents are left alone until they change.
@@ -560,17 +571,16 @@ describe("syncConnection", () => {
     vi.spyOn(console, "error").mockImplementation(() => {});
 
     expect(await syncConnection(user.id)).toMatchObject({ pending: 1 });
-    getDB()
+    await getDB()
       .update(paperlessPending)
-      .set({ firstFailedAt: new Date(Date.now() - 25 * 60 * 60 * 1000) })
-      .run();
+      .set({ firstFailedAt: new Date(Date.now() - 25 * 60 * 60 * 1000) });
 
     expect(await syncConnection(user.id)).toMatchObject({
       pending: 0,
       failed: 1,
     });
-    expect(linkOf(171)).toMatchObject({ status: "failed" });
-    expect(getConnectionRow(user.id)!.lastSyncModified).toBe(
+    expect(await linkOf(171)).toMatchObject({ status: "failed" });
+    expect((await getConnectionRow(user.id))!.lastSyncModified).toBe(
       Date.parse("2026-09-01T10:00:00+00:00"),
     );
   });
@@ -584,7 +594,7 @@ describe("syncConnection", () => {
       failed: 1,
       pending: 0,
     });
-    expect(linkOf(43)).toMatchObject({ status: "failed" });
+    expect(await linkOf(43)).toMatchObject({ status: "failed" });
     fake.downloadStatuses.delete(43);
     expect(await syncConnection(user.id)).toMatchObject({
       failed: 0,
@@ -615,15 +625,15 @@ describe("syncConnection", () => {
     const r = await syncConnection(user.id);
 
     expect(r).toMatchObject({ listed: 5, imported: 1, skipped: 4, failed: 0 });
-    expect(linkOf(61)).toMatchObject({ status: "skipped" });
-    expect(linkOf(64)).toMatchObject({
+    expect(await linkOf(61)).toMatchObject({ status: "skipped" });
+    expect(await linkOf(64)).toMatchObject({
       status: "skipped",
       error: "The file is not a PDF.",
     });
-    expect(linkOf(63)).toMatchObject({ status: "imported" });
+    expect(await linkOf(63)).toMatchObject({ status: "imported" });
     const archiveDownload = fake.requestsTo("/63/download/")[0]!;
     expect(archiveDownload.query.has("original")).toBe(false);
-    expect(listBills(user.id)).toHaveLength(1);
+    expect(await listBills(user.id)).toHaveLength(1);
   });
 
   it("records a failure with a reason for documents without bill data and keeps no file", async () => {
@@ -632,13 +642,13 @@ describe("syncConnection", () => {
     const r = await syncConnection(user.id);
 
     expect(r).toMatchObject({ failed: 1, imported: 0 });
-    expect(listBills(user.id)).toHaveLength(0);
-    expect(linkOf(71)).toMatchObject({
+    expect(await listBills(user.id)).toHaveLength(0);
+    expect(await linkOf(71)).toMatchObject({
       status: "failed",
       billId: null,
       error: "No creditor name or IBAN was found in the document.",
     });
-    expect(getDB().select().from(documents).all()).toHaveLength(0);
+    expect(await getDB().select().from(documents)).toHaveLength(0);
     // A failed document is not retried until it changes.
     fake.requests = [];
     expect((await syncConnection(user.id)).failed).toBe(0);
@@ -651,7 +661,7 @@ describe("syncConnection", () => {
     const r = await syncConnection(user.id);
 
     expect(r.imported).toBe(1);
-    const bill = listBills(user.id)[0]!;
+    const bill = (await listBills(user.id))[0]!;
     expect(bill).toMatchObject({
       creditorName: "Open Amount Co",
       amount: null,
@@ -667,24 +677,20 @@ describe("syncConnection", () => {
       modified: "2026-09-01T10:00:00+00:00",
     });
     await syncConnection(user.id);
-    const before = listBills(user.id)[0]!;
+    const before = (await listBills(user.id))[0]!;
 
     fake.docs.get(91)!.original = pdfWater;
     fake.docs.get(91)!.modified = "2026-09-02T10:00:00+00:00";
     const r = await syncConnection(user.id);
 
     expect(r).toMatchObject({ updated: 1, imported: 0 });
-    const after = getBill(user.id, before.id);
+    const after = await getBill(user.id, before.id);
     expect(after.documentId).not.toBe(before.documentId);
-    expect(listBills(user.id)).toHaveLength(1);
+    expect(await listBills(user.id)).toHaveLength(1);
     // The replaced integration file is gone.
-    expect(
-      getDB()
-        .select()
-        .from(documents)
-        .all()
-        .map((d) => d.id),
-    ).toEqual([after.documentId]);
+    expect((await getDB().select().from(documents)).map((d) => d.id)).toEqual([
+      after.documentId,
+    ]);
   });
 
   it("only touches modified when the metadata changed but the file did not", async () => {
@@ -699,7 +705,9 @@ describe("syncConnection", () => {
     const r = await syncConnection(user.id);
 
     expect(r).toMatchObject({ unchanged: 1, updated: 0 });
-    expect(linkOf(92)!.modified).toBe(Date.parse("2026-09-03T10:00:00+00:00"));
+    expect((await linkOf(92))!.modified).toBe(
+      Date.parse("2026-09-03T10:00:00+00:00"),
+    );
   });
 
   it("does not bring back a bill the user deleted", async () => {
@@ -709,82 +717,91 @@ describe("syncConnection", () => {
       modified: "2026-09-01T10:00:00+00:00",
     });
     await syncConnection(user.id);
-    await deleteBill(user.id, listBills(user.id)[0]!.id);
-    expect(linkOf(93)).toMatchObject({ billId: null, status: "imported" });
+    await deleteBill(user.id, (await listBills(user.id))[0]!.id);
+    expect(await linkOf(93)).toMatchObject({
+      billId: null,
+      status: "imported",
+    });
 
     fake.docs.get(93)!.modified = "2026-09-04T10:00:00+00:00";
     await syncConnection(user.id);
 
-    expect(listBills(user.id)).toHaveLength(0);
+    expect(await listBills(user.id)).toHaveLength(0);
   });
 
   it("links the existing bill instead of importing a duplicate after reconnecting", async () => {
     fake.addDoc({ id: 94, original: pdfEnergy });
     await syncConnection(user.id);
-    const original = listBills(user.id)[0]!;
+    const original = (await listBills(user.id))[0]!;
 
-    deleteConnection(user.id);
-    expect(getDB().select().from(paperlessDocuments).all()).toHaveLength(0);
-    expect(getBill(user.id, original.id).externalUrl).toBe(
+    await deleteConnection(user.id);
+    expect(await getDB().select().from(paperlessDocuments)).toHaveLength(0);
+    expect((await getBill(user.id, original.id)).externalUrl).toBe(
       original.externalUrl,
     );
-    seedConnection(user.id, fake);
+    await seedConnection(user.id, fake);
     const r = await syncConnection(user.id);
 
     expect(r).toMatchObject({ imported: 0, unchanged: 1 });
-    expect(listBills(user.id)).toHaveLength(1);
-    expect(linkOf(94)).toMatchObject({ billId: original.id });
+    expect(await listBills(user.id)).toHaveLength(1);
+    expect(await linkOf(94)).toMatchObject({ billId: original.id });
   });
 
   it("does not bring back a deleted bill after reconnecting", async () => {
     fake.addDoc({ id: 96, original: pdfEnergy });
     await syncConnection(user.id);
-    await deleteBill(user.id, listBills(user.id)[0]!.id);
+    await deleteBill(user.id, (await listBills(user.id))[0]!.id);
 
-    deleteConnection(user.id);
-    seedConnection(user.id, fake);
+    await deleteConnection(user.id);
+    await seedConnection(user.id, fake);
     const r = await syncConnection(user.id);
 
     expect(r).toMatchObject({ imported: 0, unchanged: 1 });
-    expect(listBills(user.id)).toHaveLength(0);
-    expect(linkOf(96)).toMatchObject({ billId: null, status: "imported" });
+    expect(await listBills(user.id)).toHaveLength(0);
+    expect(await linkOf(96)).toMatchObject({
+      billId: null,
+      status: "imported",
+    });
   });
 
   it("does not bring back a deleted bill after moving to another address and back", async () => {
     fake.addDoc({ id: 97, original: pdfEnergy });
     await syncConnection(user.id);
-    await deleteBill(user.id, listBills(user.id)[0]!.id);
+    await deleteBill(user.id, (await listBills(user.id))[0]!.id);
 
     const input = { token: null, allowInsecureTls: false };
-    saveConnection(user.id, { ...input, baseUrl: `${fake.origin}/other` });
-    saveConnection(user.id, { ...input, baseUrl: fake.baseUrl });
+    await saveConnection(user.id, {
+      ...input,
+      baseUrl: `${fake.origin}/other`,
+    });
+    await saveConnection(user.id, { ...input, baseUrl: fake.baseUrl });
     await syncConnection(user.id);
 
-    expect(listBills(user.id)).toHaveLength(0);
+    expect(await listBills(user.id)).toHaveLength(0);
   });
 
   it("changing the address keeps the links, the watermark and the bill urls", async () => {
     fake.addDoc({ id: 95, original: pdfEnergy });
     await syncConnection(user.id);
-    const [bill] = listBills(user.id);
-    const watermark = getConnectionRow(user.id)!.lastSyncModified;
+    const [bill] = await listBills(user.id);
+    const watermark = (await getConnectionRow(user.id))!.lastSyncModified;
     expect(watermark).not.toBeNull();
     const oldBase = fake.baseUrl;
 
-    saveConnection(user.id, {
+    await saveConnection(user.id, {
       baseUrl: `${fake.origin}/other`,
       token: null,
       allowInsecureTls: false,
     });
 
-    expect(getDB().select().from(paperlessDocuments).all()).toHaveLength(1);
-    expect(getConnectionRow(user.id)).toMatchObject({
+    expect(await getDB().select().from(paperlessDocuments)).toHaveLength(1);
+    expect(await getConnectionRow(user.id)).toMatchObject({
       lastSyncModified: watermark,
     });
-    expect(getBill(user.id, bill!.id).externalUrl).toBe(
+    expect((await getBill(user.id, bill!.id)).externalUrl).toBe(
       `${fake.origin}/other/documents/95/details`,
     );
-    expect(getBill(user.id, bill!.id).externalRef).toBe(
+    expect((await getBill(user.id, bill!.id)).externalRef).toBe(
       externalRef(oldBase, 95),
     );
   });
@@ -794,114 +811,114 @@ describe("syncConnection", () => {
     await syncConnection(user.id);
     // Same server, new address: here the fake keeps answering on the old one too.
     fake.prefix = "/other";
-    saveConnection(user.id, {
+    await saveConnection(user.id, {
       baseUrl: `${fake.origin}/other`,
       token: null,
       allowInsecureTls: false,
     });
-    getDB().update(paperlessConnections).set({ lastSyncModified: null }).run();
+    await getDB().update(paperlessConnections).set({ lastSyncModified: null });
     const r = await syncConnection(user.id);
     expect(r).toMatchObject({ imported: 0, unchanged: 1, failed: 0 });
-    expect(listBills(user.id)).toHaveLength(1);
+    expect(await listBills(user.id)).toHaveLength(1);
   });
 
   it("keeps a legacy connection (no stored key) on the key its bills already have", async () => {
     fake.addDoc({ id: 95, original: pdfEnergy });
     await syncConnection(user.id);
-    getDB().update(paperlessConnections).set({ instanceKey: null }).run();
+    await getDB().update(paperlessConnections).set({ instanceKey: null });
     const legacyKey = instanceKey(fake.baseUrl);
     fake.prefix = "/other";
-    saveConnection(user.id, {
+    await saveConnection(user.id, {
       baseUrl: `${fake.origin}/other`,
       token: null,
       allowInsecureTls: false,
     });
-    expect(getConnectionRow(user.id)!.instanceKey).toBe(legacyKey);
+    expect((await getConnectionRow(user.id))!.instanceKey).toBe(legacyKey);
   });
 
   it("a different instance resets links and watermark and gets a fresh key", async () => {
     fake.addDoc({ id: 95, original: pdfEnergy });
     await syncConnection(user.id);
-    const before = getConnectionRow(user.id)!;
+    const before = (await getConnectionRow(user.id))!;
 
-    saveConnection(user.id, {
+    await saveConnection(user.id, {
       baseUrl: `${fake.origin}/other`,
       token: null,
       allowInsecureTls: false,
       differentInstance: true,
     });
 
-    expect(getDB().select().from(paperlessDocuments).all()).toHaveLength(0);
-    const after = getConnectionRow(user.id)!;
+    expect(await getDB().select().from(paperlessDocuments)).toHaveLength(0);
+    const after = (await getConnectionRow(user.id))!;
     expect(after.lastSyncModified).toBeNull();
     expect(after.instanceKey).not.toBe(before.instanceKey);
-    expect(listBills(user.id)).toHaveLength(1);
+    expect(await listBills(user.id)).toHaveLength(1);
 
     fake.prefix = "/other";
     await syncConnection(user.id);
-    expect(listBills(user.id)).toHaveLength(2);
+    expect(await listBills(user.id)).toHaveLength(2);
   });
 
   it("reconnecting after a different-server reset reuses the key and creates no duplicates", async () => {
     fake.addDoc({ id: 95, original: pdfEnergy });
     fake.prefix = "/other";
-    saveConnection(user.id, {
+    await saveConnection(user.id, {
       baseUrl: fake.baseUrl,
       token: null,
       allowInsecureTls: false,
       differentInstance: true,
     });
     await syncConnection(user.id);
-    const [bill] = listBills(user.id);
-    const key = getConnectionRow(user.id)!.instanceKey;
+    const [bill] = await listBills(user.id);
+    const key = (await getConnectionRow(user.id))!.instanceKey;
 
-    deleteConnection(user.id);
-    seedConnection(user.id, fake);
-    expect(getConnectionRow(user.id)!.instanceKey).toBe(key);
+    await deleteConnection(user.id);
+    await seedConnection(user.id, fake);
+    expect((await getConnectionRow(user.id))!.instanceKey).toBe(key);
     const r = await syncConnection(user.id);
 
     expect(r).toMatchObject({ imported: 0, unchanged: 1, failed: 0 });
-    expect(listBills(user.id)).toHaveLength(1);
-    expect(linkOf(95)).toMatchObject({ billId: bill!.id });
+    expect(await listBills(user.id)).toHaveLength(1);
+    expect(await linkOf(95)).toMatchObject({ billId: bill!.id });
   });
 
   it("reconnecting at the new address after a move reuses the key and creates no duplicates", async () => {
     fake.addDoc({ id: 95, original: pdfEnergy });
     await syncConnection(user.id);
-    const [bill] = listBills(user.id);
-    const key = getConnectionRow(user.id)!.instanceKey;
+    const [bill] = await listBills(user.id);
+    const key = (await getConnectionRow(user.id))!.instanceKey;
     fake.prefix = "/other";
-    saveConnection(user.id, {
+    await saveConnection(user.id, {
       baseUrl: fake.baseUrl,
       token: null,
       allowInsecureTls: false,
     });
 
-    deleteConnection(user.id);
-    seedConnection(user.id, fake);
-    expect(getConnectionRow(user.id)!.instanceKey).toBe(key);
+    await deleteConnection(user.id);
+    await seedConnection(user.id, fake);
+    expect((await getConnectionRow(user.id))!.instanceKey).toBe(key);
     expect(key).not.toBe(instanceKey(fake.baseUrl));
     const r = await syncConnection(user.id);
 
     expect(r).toMatchObject({ imported: 0, unchanged: 1, failed: 0 });
-    expect(listBills(user.id)).toHaveLength(1);
-    expect(linkOf(95)).toMatchObject({ billId: bill!.id });
+    expect(await listBills(user.id)).toHaveLength(1);
+    expect(await linkOf(95)).toMatchObject({ billId: bill!.id });
   });
 
   it("does not reuse another user's remembered key", async () => {
     const other = await createTestUser();
     fake.prefix = "/other";
-    saveConnection(user.id, {
+    await saveConnection(user.id, {
       baseUrl: fake.baseUrl,
       token: null,
       allowInsecureTls: false,
       differentInstance: true,
     });
-    const key = getConnectionRow(user.id)!.instanceKey;
-    deleteConnection(user.id);
+    const key = (await getConnectionRow(user.id))!.instanceKey;
+    await deleteConnection(user.id);
 
-    seedConnection(other.id, fake);
-    expect(getConnectionRow(other.id)!.instanceKey).toBe(
+    await seedConnection(other.id, fake);
+    expect((await getConnectionRow(other.id))!.instanceKey).toBe(
       instanceKey(fake.baseUrl),
     );
     expect(key).not.toBe(instanceKey(fake.baseUrl));
@@ -913,11 +930,11 @@ describe("syncConnection", () => {
 
       const first = await syncConnection(user.id, { documentIds: [101] });
       expect(first.missing).toEqual([101]);
-      expect(listBills(user.id)).toHaveLength(0);
+      expect(await listBills(user.id)).toHaveLength(0);
 
       const second = await syncConnection(user.id, { documentIds: [101] });
       expect(second).toMatchObject({ imported: 1, missing: [] });
-      expect(getConnectionRow(user.id)!.lastSyncModified).toBeNull();
+      expect((await getConnectionRow(user.id))!.lastSyncModified).toBeNull();
     });
 
     it("ignores documents outside the bill source", async () => {
@@ -926,7 +943,7 @@ describe("syncConnection", () => {
       const r = await syncConnection(user.id, { documentIds: [102] });
 
       expect(r).toMatchObject({ listed: 0, imported: 0, missing: [] });
-      expect(listBills(user.id)).toHaveLength(0);
+      expect(await listBills(user.id)).toHaveLength(0);
     });
 
     it("is idempotent for repeated deliveries", async () => {
@@ -934,7 +951,7 @@ describe("syncConnection", () => {
       await syncConnection(user.id, { documentIds: [103] });
       const again = await syncConnection(user.id, { documentIds: [103] });
       expect(again).toMatchObject({ imported: 0, unchanged: 1 });
-      expect(listBills(user.id)).toHaveLength(1);
+      expect(await listBills(user.id)).toHaveLength(1);
     });
   });
 
@@ -945,31 +962,28 @@ describe("syncConnection", () => {
       syncConnection(user.id),
     ]);
     expect(a.imported + b.imported).toBe(1);
-    expect(listBills(user.id)).toHaveLength(1);
+    expect(await listBills(user.id)).toHaveLength(1);
   });
 
   it("keeps users apart: one user's sync never creates or shows another user's bills", async () => {
     const other = await createTestUser();
-    seedConnection(other.id, fake);
+    await seedConnection(other.id, fake);
     fake.addDoc({ id: 121, original: pdfEnergy });
 
     await syncConnection(user.id);
 
-    expect(listBills(user.id)).toHaveLength(1);
-    expect(listBills(other.id)).toHaveLength(0);
-    expect(linkOf(121, other.id)).toBeUndefined();
+    expect(await listBills(user.id)).toHaveLength(1);
+    expect(await listBills(other.id)).toHaveLength(0);
+    expect(await linkOf(121, other.id)).toBeUndefined();
     expect(
-      getDB().select().from(bills).where(eq(bills.userId, other.id)).all(),
+      await getDB().select().from(bills).where(eq(bills.userId, other.id)),
     ).toHaveLength(0);
     // The other user can sync the same Paperless document into their own account.
     await syncConnection(other.id);
-    expect(listBills(other.id)).toHaveLength(1);
-    expect(listBills(user.id)).toHaveLength(1);
+    expect(await listBills(other.id)).toHaveLength(1);
+    expect(await listBills(user.id)).toHaveLength(1);
     expect(
-      getDB()
-        .select()
-        .from(paperlessConnections)
-        .all()
+      (await getDB().select().from(paperlessConnections))
         .map((c) => c.userId)
         .sort(),
     ).toEqual([user.id, other.id].sort());

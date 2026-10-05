@@ -23,7 +23,7 @@ export const billInput = (over: Partial<BillInput> = {}): BillInput => ({
 export function seedBill(
   userId: string,
   over: Partial<BillInput> = {},
-): BillView {
+): Promise<BillView> {
   return createBill(userId, billInput(over));
 }
 

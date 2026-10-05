@@ -121,7 +121,7 @@ describe("account settings", () => {
     await saveAccountSettings(u.id, { accountId: b.id, defaultPayment: "on" });
     const f = await forecast(u.id, TODAY, 30);
     expect(f.accounts).toHaveLength(2);
-    seedBill(u.id, { dueDate: addDays(TODAY, 3) });
+    await seedBill(u.id, { dueDate: addDays(TODAY, 3) });
     const g = await forecast(u.id, TODAY, 30);
     expect(g.accounts.find((x) => x.accountId === b.id)!.endBalance).toBe(
       -10_000,
@@ -148,7 +148,7 @@ describe("forecast", () => {
   it("combines balance, open bills (net of partial payments) and planned items", async () => {
     const u = await createTestUser();
     const acc = await seedAccount(u.id, { openingBalance: minor(50_000) });
-    const bill = seedBill(u.id, {
+    const bill = await seedBill(u.id, {
       amount: minor(30_000),
       dueDate: "2026-10-10",
       expectedAccountId: acc.id,
@@ -158,7 +158,7 @@ describe("forecast", () => {
       amount: minor(-10_000),
     });
     await allocateFromInput(u.id, bill.id, tx.id, "100.00", "user");
-    seedBill(u.id, {
+    await seedBill(u.id, {
       amount: minor(5_000),
       dueDate: "2026-09-15",
       expectedAccountId: acc.id,
@@ -210,7 +210,7 @@ describe("forecast", () => {
       openingBalance: minor(1_000_000),
     });
     await seedImportedTransaction(u.id, fine.id, { bookingDate: "2026-09-20" });
-    seedBill(u.id, {
+    await seedBill(u.id, {
       amount: minor(5_000),
       dueDate: "2026-10-08",
       expectedAccountId: low.id,
@@ -233,7 +233,7 @@ describe("forecast", () => {
     const other = await createTestUser();
     await seedAccount(u.id);
     const foreign = await seedAccount(other.id);
-    seedBill(other.id, {
+    await seedBill(other.id, {
       dueDate: "2026-10-05",
       expectedAccountId: foreign.id,
     });

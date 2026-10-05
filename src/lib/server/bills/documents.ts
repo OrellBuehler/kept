@@ -1,8 +1,7 @@
 import { createHash } from "node:crypto";
-import { and, eq } from "drizzle-orm";
+import { and, eq, type SQL } from "drizzle-orm";
 import type { DocumentSource } from "$lib/bill-types";
-import { documents, getDB } from "$lib/server/db";
-import { safeErrorInfo } from "$lib/server/errors";
+import { documents, first, getDB, isUniqueViolation } from "$lib/server/db";
 import { LedgerError, notFound } from "$lib/server/ledger/errors";
 import { getStore } from "$lib/server/storage";
 import { MAX_PDF_BYTES } from "./pdf-extract";
@@ -94,7 +93,7 @@ export async function storeDocument(
   const sha256 = createHash("sha256").update(bytes).digest("hex");
   const store = getStore();
   const storedType = source === "upload" ? PDF_MIME : mimeType;
-  const existing = findBySha256(userId, sha256);
+  const existing = await findBySha256(userId, sha256);
   if (existing) {
     const key = blobKey(existing.storageKey);
     let restored = false;
@@ -103,7 +102,7 @@ export async function storeDocument(
       restored = true;
     }
     // A concurrent delete may have removed the row while we awaited the store.
-    const stillThere = findBySha256(userId, sha256);
+    const stillThere = await findBySha256(userId, sha256);
     if (stillThere?.id === existing.id) return toMeta(existing);
     if (restored) await store.delete(key);
     if (stillThere) return toMeta(stillThere);
@@ -115,7 +114,7 @@ export async function storeDocument(
   const key = blobKey(storageKey);
   await store.put(key, bytes, storedType);
   try {
-    const row = getDB()
+    const [row] = await getDB()
       .insert(documents)
       .values({
         id,
@@ -127,14 +126,13 @@ export async function storeDocument(
         storageKey,
         source,
       })
-      .returning(meta)
-      .get();
-    return toMeta(row);
+      .returning(meta);
+    return toMeta(row!);
   } catch (err) {
     await store.delete(key);
     // A concurrent upload of the same content won the unique (user, sha256) index.
-    if (safeErrorInfo(err).code === "SQLITE_CONSTRAINT_UNIQUE") {
-      const winner = findBySha256(userId, sha256);
+    if (isUniqueViolation(err)) {
+      const winner = await findBySha256(userId, sha256);
       if (winner) return toMeta(winner);
     }
     throw err;
@@ -142,19 +140,26 @@ export async function storeDocument(
 }
 
 function findBySha256(userId: string, sha256: string) {
-  return getDB()
-    .select({ ...meta, storageKey: documents.storageKey })
-    .from(documents)
-    .where(and(eq(documents.userId, userId), eq(documents.sha256, sha256)))
-    .get();
+  return first(
+    getDB()
+      .select({ ...meta, storageKey: documents.storageKey })
+      .from(documents)
+      .where(and(eq(documents.userId, userId), eq(documents.sha256, sha256)))
+      .limit(1),
+  );
 }
 
-export function getDocumentMeta(userId: string, id: string): DocumentMeta {
-  const row = getDB()
-    .select(meta)
-    .from(documents)
-    .where(and(eq(documents.userId, userId), eq(documents.id, id)))
-    .get();
+export async function getDocumentMeta(
+  userId: string,
+  id: string,
+): Promise<DocumentMeta> {
+  const row = await first(
+    getDB()
+      .select(meta)
+      .from(documents)
+      .where(and(eq(documents.userId, userId), eq(documents.id, id)))
+      .limit(1),
+  );
   if (!row) throw notFound("Document");
   return toMeta(row);
 }
@@ -163,11 +168,13 @@ export async function readDocument(
   userId: string,
   id: string,
 ): Promise<{ meta: DocumentMeta; bytes: Uint8Array }> {
-  const row = getDB()
-    .select({ ...meta, storageKey: documents.storageKey })
-    .from(documents)
-    .where(and(eq(documents.userId, userId), eq(documents.id, id)))
-    .get();
+  const row = await first(
+    getDB()
+      .select({ ...meta, storageKey: documents.storageKey })
+      .from(documents)
+      .where(and(eq(documents.userId, userId), eq(documents.id, id)))
+      .limit(1),
+  );
   if (!row) throw notFound("Document");
   const bytes = await getStore().get(blobKey(row.storageKey));
   if (bytes === null) throw notFound("Document file");
@@ -179,15 +186,25 @@ export async function deleteDocument(
   userId: string,
   id: string,
 ): Promise<void> {
-  const row = getDB()
-    .select({ storageKey: documents.storageKey })
-    .from(documents)
-    .where(and(eq(documents.userId, userId), eq(documents.id, id)))
-    .get();
-  if (!row) throw notFound("Document");
-  getDB()
+  if (!(await deleteDocumentWhere(userId, id))) throw notFound("Document");
+}
+
+/**
+ * Deletes the row, then its file, only if `condition` still holds when the
+ * delete runs. A reference check passed as `condition` is part of the same
+ * statement, so a bill attached since the caller looked keeps its document.
+ * False when there is no such document or the condition failed.
+ */
+export async function deleteDocumentWhere(
+  userId: string,
+  id: string,
+  condition?: SQL,
+): Promise<boolean> {
+  const [deleted] = await getDB()
     .delete(documents)
-    .where(and(eq(documents.userId, userId), eq(documents.id, id)))
-    .run();
-  await getStore().delete(blobKey(row.storageKey));
+    .where(and(eq(documents.userId, userId), eq(documents.id, id), condition))
+    .returning({ storageKey: documents.storageKey });
+  if (!deleted) return false;
+  await getStore().delete(blobKey(deleted.storageKey));
+  return true;
 }

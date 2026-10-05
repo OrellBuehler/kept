@@ -2,7 +2,7 @@ import { lookup as dnsLookup } from "node:dns/promises";
 import { isIP } from "node:net";
 import { ipv6Bytes } from "./ip";
 import { eq } from "drizzle-orm";
-import { getDB, users, type UserRole } from "$lib/server/db";
+import { first, getDB, users, type UserRole } from "$lib/server/db";
 
 export type Lookup = (
   host: string,
@@ -32,21 +32,18 @@ export function privateNetworkAllowed(
   return role === "admin";
 }
 
-/**
- * Same, looked up by user id; an unknown user counts as a member. Stays
- * synchronous (its callers outside the auth domain are still sync), so it
- * reads the role itself instead of going through the awaited auth lookup.
- */
-export function privateNetworkAllowedForUser(
+/** Same, looked up by user id; an unknown user counts as a member. */
+export async function privateNetworkAllowedForUser(
   userId: string,
   env: Env = process.env,
-): boolean {
-  const row = getDB()
-    .select({ role: users.role })
-    .from(users)
-    .where(eq(users.id, userId))
-    .limit(1)
-    .get();
+): Promise<boolean> {
+  const row = await first(
+    getDB()
+      .select({ role: users.role })
+      .from(users)
+      .where(eq(users.id, userId))
+      .limit(1),
+  );
   return privateNetworkAllowed(row?.role ?? "member", env);
 }
 

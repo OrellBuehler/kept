@@ -43,7 +43,7 @@ describe("dashboard page", () => {
       name: "Other",
       openingBalance: minor(99999),
     });
-    seedBill(other.id, { dueDate: addDays(today, -2) });
+    await seedBill(other.id, { dueDate: addDays(today, -2) });
 
     const data = await loadAs(u);
     expect(data.today).toBe(today);
@@ -125,10 +125,10 @@ describe("app layout", () => {
     const u = await createTestUser();
     const other = await createTestUser();
     const today = localToday();
-    seedBill(u.id, { dueDate: addDays(today, -1) });
-    seedBill(u.id, { dueDate: addDays(today, 3) });
-    seedBill(other.id, { dueDate: addDays(today, -4) });
-    seedBill(other.id, { dueDate: addDays(today, -5) });
+    await seedBill(u.id, { dueDate: addDays(today, -1) });
+    await seedBill(u.id, { dueDate: addDays(today, 3) });
+    await seedBill(other.id, { dueDate: addDays(today, -4) });
+    await seedBill(other.id, { dueDate: addDays(today, -5) });
     const data = (await loadLayout(createTestEvent({ user: u }) as never)) as {
       user: { id: string };
       overdueBills: number;

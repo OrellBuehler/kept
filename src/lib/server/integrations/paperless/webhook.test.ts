@@ -72,8 +72,8 @@ describe("handleWebhook", () => {
     webhookConfig.retryDelaysMs = [0, 0, 0];
     webhookConfig.sleep = async () => {};
     user = await createTestUser();
-    secret = seedConnection(user.id, fake).webhookSecret!;
-    token = getConnectionRow(user.id)!.webhookToken;
+    secret = (await seedConnection(user.id, fake)).webhookSecret!;
+    token = (await getConnectionRow(user.id))!.webhookToken;
   });
   afterEach(() => {
     Object.assign(webhookConfig, original);
@@ -94,7 +94,7 @@ describe("handleWebhook", () => {
     expect(await deliver({ secret: "wrong" })).toEqual({ status: 401 });
     expect(await deliver({ secret: null })).toEqual({ status: 401 });
     expect(await deliver({ secret: "" })).toEqual({ status: 401 });
-    setEnabled(user.id, false);
+    await setEnabled(user.id, false);
     expect(await deliver()).toEqual({ status: 404 });
     expect(fake.requests).toHaveLength(0);
   });
@@ -106,7 +106,7 @@ describe("handleWebhook", () => {
       fake.addDoc({ id: 5, original: pdf });
       await finished(await deliver());
       expect(fake.requests).toHaveLength(0);
-      expect(listBills(user.id)).toHaveLength(0);
+      expect(await listBills(user.id)).toHaveLength(0);
     } finally {
       vi.stubEnv("KEPT_ALLOW_PRIVATE_NETWORK", "true");
     }
@@ -130,7 +130,7 @@ describe("handleWebhook", () => {
     const outcome = await deliver();
     expect(outcome.status).toBe(202);
     await finished(outcome);
-    expect(listBills(user.id)).toHaveLength(1);
+    expect(await listBills(user.id)).toHaveLength(1);
   });
 
   it("treats duplicate deliveries as one job and stays idempotent afterwards", async () => {
@@ -138,11 +138,11 @@ describe("handleWebhook", () => {
     const [a, b] = await Promise.all([deliver(), deliver()]);
     await finished(a);
     await finished(b);
-    expect(listBills(user.id)).toHaveLength(1);
+    expect(await listBills(user.id)).toHaveLength(1);
     expect(fake.requestsTo("/download/")).toHaveLength(1);
 
     await finished(await deliver());
-    expect(listBills(user.id)).toHaveLength(1);
+    expect(await listBills(user.id)).toHaveLength(1);
     expect(fake.requestsTo("/download/")).toHaveLength(1);
   });
 
@@ -154,21 +154,21 @@ describe("handleWebhook", () => {
 
     await finished(await deliver());
 
-    expect(listBills(user.id)).toHaveLength(1);
+    expect(await listBills(user.id)).toHaveLength(1);
     expect(sleeps).toEqual([5_000, 15_000]);
   });
 
   it("gives up after the configured retries", async () => {
     fake.addDoc({ id: 5, original: pdf, hiddenRequests: 100 });
     await finished(await deliver());
-    expect(listBills(user.id)).toHaveLength(0);
+    expect(await listBills(user.id)).toHaveLength(0);
     expect(fake.requestsTo("/api/documents/5/", "GET")).toHaveLength(4);
   });
 
   it("does not retry documents that simply are not part of the bill source", async () => {
     fake.addDoc({ id: 5, original: pdf, tags: [42] });
     await finished(await deliver());
-    expect(listBills(user.id)).toHaveLength(0);
+    expect(await listBills(user.id)).toHaveLength(0);
     expect(fake.requestsTo("/api/documents/5/", "GET")).toHaveLength(1);
   });
 
@@ -176,7 +176,7 @@ describe("handleWebhook", () => {
     const error = vi.spyOn(console, "error").mockImplementation(() => {});
     fake.token = "rotated";
     await finished(await deliver());
-    expect(listBills(user.id)).toHaveLength(0);
+    expect(await listBills(user.id)).toHaveLength(0);
     expect(JSON.stringify(error.mock.calls)).not.toContain("test-token");
   });
 
@@ -211,8 +211,8 @@ describe("handleWebhook", () => {
 
   it("maps a webhook token to exactly one user", async () => {
     const other = await createTestUser();
-    const otherSecret = seedConnection(other.id, fake).webhookSecret!;
-    const otherToken = getConnectionRow(other.id)!.webhookToken;
+    const otherSecret = (await seedConnection(other.id, fake)).webhookSecret!;
+    const otherToken = (await getConnectionRow(other.id))!.webhookToken;
     fake.addDoc({ id: 5, original: pdf });
 
     expect(await deliver({ token, secret: otherSecret })).toEqual({
@@ -221,11 +221,11 @@ describe("handleWebhook", () => {
     expect(await deliver({ token: otherToken, secret })).toEqual({
       status: 401,
     });
-    expect(listBills(user.id)).toHaveLength(0);
-    expect(listBills(other.id)).toHaveLength(0);
+    expect(await listBills(user.id)).toHaveLength(0);
+    expect(await listBills(other.id)).toHaveLength(0);
 
     await finished(await deliver({ token, secret }));
-    expect(listBills(user.id)).toHaveLength(1);
-    expect(listBills(other.id)).toHaveLength(0);
+    expect(await listBills(user.id)).toHaveLength(1);
+    expect(await listBills(other.id)).toHaveLength(0);
   });
 });

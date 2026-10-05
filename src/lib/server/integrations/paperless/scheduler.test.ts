@@ -52,61 +52,65 @@ describe("scheduler", () => {
 
   it("catch-up syncs every enabled connection and skips disabled ones", async () => {
     const other = await createTestUser();
-    seedConnection(user.id, fake);
-    seedConnection(other.id, fake);
-    setEnabled(other.id, false);
+    await seedConnection(user.id, fake);
+    await seedConnection(other.id, fake);
+    await setEnabled(other.id, false);
     fake.addDoc({ id: 1, original: pdf });
 
     await runCatchUp();
 
-    expect(listBills(user.id)).toHaveLength(1);
-    expect(listBills(other.id)).toHaveLength(0);
+    expect(await listBills(user.id)).toHaveLength(1);
+    expect(await listBills(other.id)).toHaveLength(0);
   });
 
   it("skips a connection that is already syncing", async () => {
-    seedConnection(user.id, fake);
+    await seedConnection(user.id, fake);
     fake.addDoc({ id: 1, original: pdf });
     fake.delayMs = 150;
+    const connectionId = (await getConnectionRow(user.id))!.id;
     const running = syncConnection(user.id);
-    expect(isSyncing(getConnectionRow(user.id)!.id)).toBe(true);
+    // The sync registers itself once it has looked its connection up.
+    await vi.waitFor(() => expect(isSyncing(connectionId)).toBe(true));
     fake.requests = [];
 
     await runCatchUp();
     expect(fake.requests).toHaveLength(0);
 
     await running;
-    expect(isSyncing(getConnectionRow(user.id)!.id)).toBe(false);
+    expect(isSyncing(connectionId)).toBe(false);
   });
 
   it("a failing connection does not stop the others", async () => {
     const other = await createTestUser();
-    seedConnection(user.id, fake);
-    seedConnection(other.id, fake);
+    await seedConnection(user.id, fake);
+    await seedConnection(other.id, fake);
     vi.spyOn(console, "error").mockImplementation(() => {});
     fake.addDoc({ id: 1, original: pdf });
     // A stored address that cannot be used makes the first connection fail.
-    getDB()
+    await getDB()
       .update(paperlessConnections)
       .set({ baseUrl: "not a url" })
-      .where(eq(paperlessConnections.userId, user.id))
-      .run();
+      .where(eq(paperlessConnections.userId, user.id));
 
     await runCatchUp();
 
-    expect(listBills(other.id)).toHaveLength(1);
+    expect(await listBills(other.id)).toHaveLength(1);
   });
 
   it("runs on a timer and can be stopped", async () => {
-    seedConnection(user.id, fake);
+    await seedConnection(user.id, fake);
     fake.addDoc({ id: 1, original: pdf });
     const stop = startScheduler({
       intervalMs: 60_000,
       firstRunDelayMs: 10,
       jitterMs: 0,
     });
-    await vi.waitFor(() => expect(listBills(user.id)).toHaveLength(1), {
-      timeout: 15_000,
-    });
+    await vi.waitFor(
+      async () => expect(await listBills(user.id)).toHaveLength(1),
+      {
+        timeout: 15_000,
+      },
+    );
     stop();
 
     const requests = fake.requests.length;

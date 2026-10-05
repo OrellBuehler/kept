@@ -38,7 +38,7 @@ describe("uploadReport", () => {
     fake.token = "test-token";
     fake.newDocumentId = 900;
     user = await createTestUser();
-    seedConnection(user.id, fake, { source: null });
+    await seedConnection(user.id, fake, { source: null });
   });
 
   it("posts the file as multipart and reads the 2.x task shape (string document id)", async () => {
@@ -61,7 +61,7 @@ describe("uploadReport", () => {
     expect(fake.requestsTo("/tasks/")[0]!.query.get("task_id")).toBe(
       "b3f1c0de-0000-4000-8000-000000000001",
     );
-    expect(listUploads(user.id)[0]).toMatchObject({
+    expect((await listUploads(user.id))[0]).toMatchObject({
       status: "success",
       paperlessDocumentId: 900,
       reportKind: "balance-history",
@@ -96,7 +96,7 @@ describe("uploadReport", () => {
     fake.taskSteps = ["success"];
     const settled = await resolvePendingUploads(user.id);
     expect(settled).toBe(1);
-    expect(listUploads(user.id)[0]).toMatchObject({
+    expect((await listUploads(user.id))[0]).toMatchObject({
       status: "success",
       paperlessDocumentId: 900,
     });
@@ -112,7 +112,7 @@ describe("uploadReport", () => {
       alreadyUploaded: true,
     });
     expect(fake.uploads).toHaveLength(1);
-    expect(getDB().select().from(paperlessReportUploads).all()).toHaveLength(1);
+    expect(await getDB().select().from(paperlessReportUploads)).toHaveLength(1);
 
     await uploadReport(user.id, input("f"), fast);
     expect(fake.uploads).toHaveLength(2);
@@ -136,7 +136,7 @@ describe("uploadReport", () => {
       status: "failed",
       paperlessDocumentId: null,
     });
-    expect(listUploads(user.id)[0]!.error).toBe(
+    expect((await listUploads(user.id))[0]!.error).toBe(
       "Paperless could not process the file.",
     );
 
@@ -144,7 +144,7 @@ describe("uploadReport", () => {
     const retry = await uploadReport(user.id, input("i"), fast);
     expect(retry).toMatchObject({ status: "success", alreadyUploaded: false });
     expect(fake.uploads).toHaveLength(2);
-    expect(getDB().select().from(paperlessReportUploads).all()).toHaveLength(1);
+    expect(await getDB().select().from(paperlessReportUploads)).toHaveLength(1);
   });
 
   it("marks the upload failed when Paperless rejects the request, and can be retried", async () => {
@@ -153,7 +153,7 @@ describe("uploadReport", () => {
     await expect(uploadReport(user.id, input("j"), fast)).rejects.toMatchObject(
       { code: "forbidden" },
     );
-    expect(listUploads(user.id)[0]).toMatchObject({
+    expect((await listUploads(user.id))[0]).toMatchObject({
       status: "failed",
       error: "forbidden",
     });
@@ -168,16 +168,15 @@ describe("uploadReport", () => {
     const { getDB, paperlessReportUploads } = await import("$lib/server/db");
     const { getConnectionRow } = await import("./connection");
     const { createHash } = await import("node:crypto");
-    getDB()
+    await getDB()
       .insert(paperlessReportUploads)
       .values({
         userId: user.id,
-        connectionId: getConnectionRow(user.id)!.id,
+        connectionId: (await getConnectionRow(user.id))!.id,
         reportKind: "x",
         sha256: createHash("sha256").update(input("z").bytes).digest("hex"),
         status: "pending",
-      })
-      .run();
+      });
 
     const r = await uploadReport(user.id, input("z"), fast);
 
@@ -185,23 +184,50 @@ describe("uploadReport", () => {
     expect(fake.uploads).toHaveLength(0);
 
     // A stale claim (crashed upload) is retried.
-    getDB()
+    await getDB()
       .update(paperlessReportUploads)
-      .set({ updatedAt: new Date(Date.now() - 5 * 60_000) })
-      .run();
+      .set({ updatedAt: new Date(Date.now() - 5 * 60_000) });
     expect((await uploadReport(user.id, input("z"), fast)).status).toBe(
       "success",
     );
   });
 
+  it("two concurrent uploads of the same content send it once", async () => {
+    const [x, y] = await Promise.all([
+      uploadReport(user.id, input("race"), fast),
+      uploadReport(user.id, input("race"), fast),
+    ]);
+    expect(fake.uploads).toHaveLength(1);
+    expect([x.alreadyUploaded, y.alreadyUploaded].sort()).toEqual([
+      false,
+      true,
+    ]);
+    expect(await listUploads(user.id)).toHaveLength(1);
+  });
+
+  it("two concurrent retries of a failed upload send it once", async () => {
+    fake.taskSteps = ["failure"];
+    await uploadReport(user.id, input("retry"), fast);
+    expect(fake.uploads).toHaveLength(1);
+
+    fake.taskSteps = ["success"];
+    const [x, y] = await Promise.all([
+      uploadReport(user.id, input("retry"), fast),
+      uploadReport(user.id, input("retry"), fast),
+    ]);
+    expect(fake.uploads).toHaveLength(2);
+    expect([x.status, y.status].sort()).toEqual(["pending", "success"]);
+    expect(await listUploads(user.id)).toHaveLength(1);
+  });
+
   it("keeps uploads of different users apart", async () => {
     const other = await createTestUser();
-    seedConnection(other.id, fake, { source: null });
+    await seedConnection(other.id, fake, { source: null });
     await uploadReport(user.id, input("k"), fast);
     await uploadReport(other.id, input("k"), fast);
     expect(fake.uploads).toHaveLength(2);
-    expect(listUploads(other.id)).toHaveLength(1);
-    expect(listUploads(user.id)).toHaveLength(1);
+    expect(await listUploads(other.id)).toHaveLength(1);
+    expect(await listUploads(user.id)).toHaveLength(1);
   });
 
   it("interprets task payloads from both API versions", () => {

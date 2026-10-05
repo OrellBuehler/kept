@@ -23,7 +23,7 @@ import { ledgerFailure } from "$lib/server/ledger/http";
 import type { Actions, PageServerLoad } from "./$types";
 import { describeError } from "$lib/server/errors";
 
-export const load: PageServerLoad = ({ locals, url }) => {
+export const load: PageServerLoad = async ({ locals, url }) => {
   const user = requireUser(locals);
   const today = todayLocal();
   let autoMatchPending = 0;
@@ -32,7 +32,7 @@ export const load: PageServerLoad = ({ locals, url }) => {
   let matchingFailed = false;
   try {
     // Viewing the page never writes; matches are confirmed by "Match now" or on save paths.
-    const result = previewMatching(user.id);
+    const result = await previewMatching(user.id);
     autoMatchPending = result.autoPending;
     suggestions = result.suggestions;
     suggestionsTruncated = result.truncated;
@@ -41,7 +41,7 @@ export const load: PageServerLoad = ({ locals, url }) => {
     console.warn("matching preview failed", describeError(err));
     matchingFailed = true;
   }
-  const views = billViews(user.id, { today });
+  const views = await billViews(user.id, { today });
   const all = groupBills(views, { today });
   const query = parseBillListQuery(url.searchParams);
   return {
@@ -64,10 +64,10 @@ export const load: PageServerLoad = ({ locals, url }) => {
 const confirmFields = ["billId", "transactionId", "amount"] as const;
 
 export const actions: Actions = {
-  matchNow: ({ locals }) => {
+  matchNow: async ({ locals }) => {
     const user = requireUser(locals);
     try {
-      const result = runAutoMatching(user.id);
+      const result = await runAutoMatching(user.id);
       return {
         success: true as const,
         action: "matchNow" as const,
@@ -117,7 +117,11 @@ export const actions: Actions = {
       });
     }
     try {
-      dismissSuggestion(user.id, parsed.data.billId, parsed.data.transactionId);
+      await dismissSuggestion(
+        user.id,
+        parsed.data.billId,
+        parsed.data.transactionId,
+      );
       return { success: true as const, action: "dismissSuggestion" as const };
     } catch (err) {
       return ledgerFailure("dismissSuggestion", err, values);

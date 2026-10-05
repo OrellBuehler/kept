@@ -257,15 +257,15 @@ describe("/import/[pendingId] actions", () => {
   it("confirm auto-matches an open bill by its exact reference", async () => {
     const user = await createTestUser();
     const account = await seedAccount(user.id, { iban: IBAN_QR });
-    const bill = seedBill(user.id, {
+    const bill = await seedBill(user.id, {
       kind: "credit_note",
       amount: 1000 as never,
       reference: EXAMPLE_QRR,
       referenceType: "QRR",
     });
-    expect(billView(user.id, bill.id, { today: "2026-10-01" }).status).toBe(
-      "credit_due",
-    );
+    expect(
+      (await billView(user.id, bill.id, { today: "2026-10-01" })).status,
+    ).toBe("credit_due");
     const id = await uploadFixture(
       user.id,
       account.id,
@@ -273,10 +273,10 @@ describe("/import/[pendingId] actions", () => {
     );
     const r = await act("confirm", user, id);
     expect(r).toMatchObject({ type: "redirect", status: 303 });
-    expect(listBillAllocations(user.id, bill.id)).toHaveLength(1);
-    expect(billView(user.id, bill.id, { today: "2026-10-01" }).status).toBe(
-      "paid",
-    );
+    expect(await listBillAllocations(user.id, bill.id)).toHaveLength(1);
+    expect(
+      (await billView(user.id, bill.id, { today: "2026-10-01" })).status,
+    ).toBe("paid");
   });
 
   it("a failing auto-match never fails the import", async () => {

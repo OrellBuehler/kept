@@ -7,11 +7,14 @@ import {
   billAllocations,
   bills,
   documents,
+  first,
   getDB,
+  isUniqueViolation,
+  type DB,
 } from "$lib/server/db";
 import { emitBillChanged } from "$lib/server/events";
 import { LedgerError, notFound } from "$lib/server/ledger/errors";
-import { deleteDocument } from "./documents";
+import { deleteDocumentWhere } from "./documents";
 import type { MatchBill } from "./matching";
 import type { BillInput } from "./schemas";
 
@@ -116,33 +119,51 @@ export function toMatchBill(bill: BillView): MatchBill {
   };
 }
 
-export function getBill(userId: string, id: string): BillView {
-  const row = getDB()
+function ownedBillQuery(tx: Pick<DB, "select">, userId: string, id: string) {
+  return tx
     .select()
     .from(bills)
-    .where(and(eq(bills.userId, userId), eq(bills.id, id)))
-    .get();
+    .where(and(eq(bills.userId, userId), eq(bills.id, id)));
+}
+
+export async function getBill(userId: string, id: string): Promise<BillView> {
+  const row = await first(ownedBillQuery(getDB(), userId, id).limit(1));
+  if (!row) throw notFound("Bill");
+  return toView(row);
+}
+
+/** Sync twin of `getBill`, for the body of a transaction. */
+export function getBillInTx(
+  tx: Pick<DB, "select">,
+  userId: string,
+  id: string,
+): BillView {
+  const row = ownedBillQuery(tx, userId, id).limit(1).get();
   if (!row) throw notFound("Bill");
   return toView(row);
 }
 
 /** All of the user's bills, newest first. */
-export function listBills(userId: string): BillView[] {
-  return getDB()
+export async function listBills(userId: string): Promise<BillView[]> {
+  const rows = await getDB()
     .select()
     .from(bills)
     .where(eq(bills.userId, userId))
-    .orderBy(desc(bills.createdAt), asc(bills.id))
-    .all()
-    .map(toView);
+    .orderBy(desc(bills.createdAt), asc(bills.id));
+  return rows.map(toView);
 }
 
-function assertOwnedAccount(userId: string, accountId: string | null) {
+function assertOwnedAccountInTx(
+  tx: Pick<DB, "select">,
+  userId: string,
+  accountId: string | null,
+) {
   if (accountId === null) return;
-  const found = getDB()
+  const found = tx
     .select({ id: accounts.id })
     .from(accounts)
     .where(and(eq(accounts.userId, userId), eq(accounts.id, accountId)))
+    .limit(1)
     .get();
   if (!found) {
     throw new LedgerError(
@@ -153,17 +174,27 @@ function assertOwnedAccount(userId: string, accountId: string | null) {
   }
 }
 
-function assertOwnedDocument(userId: string, documentId: string | null) {
+function assertOwnedDocumentInTx(
+  tx: Pick<DB, "select">,
+  userId: string,
+  documentId: string | null,
+) {
   if (documentId === null) return;
-  const found = getDB()
+  const found = tx
     .select({ id: documents.id })
     .from(documents)
     .where(and(eq(documents.userId, userId), eq(documents.id, documentId)))
+    .limit(1)
     .get();
   if (!found) throw notFound("Document");
 }
 
-export function createBill(
+/**
+ * Ownership checks and the insert share one transaction. A duplicate external
+ * reference is caught by the unique (user, source, ref) index rather than by a
+ * read beforehand, so two concurrent imports cannot both pass.
+ */
+export async function createBill(
   userId: string,
   input: BillInput,
   options: {
@@ -171,47 +202,46 @@ export function createBill(
     extraction?: BillExtractionMeta | null;
     external?: BillExternal;
   } = {},
-): BillView {
-  assertOwnedAccount(userId, input.expectedAccountId);
-  assertOwnedDocument(userId, options.documentId ?? null);
+): Promise<BillView> {
   const ext = options.external;
-  if (ext) {
-    const dup = getDB()
-      .select({ id: bills.id })
-      .from(bills)
-      .where(
-        and(
-          eq(bills.userId, userId),
-          eq(bills.externalSource, ext.externalSource),
-          eq(bills.externalRef, ext.externalRef),
-        ),
-      )
-      .get();
-    if (dup) {
+  let view: BillView;
+  try {
+    view = getDB().transaction((tx) => {
+      assertOwnedAccountInTx(tx, userId, input.expectedAccountId);
+      assertOwnedDocumentInTx(tx, userId, options.documentId ?? null);
+      const row = tx
+        .insert(bills)
+        .values({
+          ...input,
+          userId,
+          documentId: options.documentId ?? null,
+          externalSource: ext?.externalSource ?? null,
+          externalRef: ext?.externalRef ?? null,
+          externalUrl: ext?.externalUrl ?? null,
+          extraction: options.extraction
+            ? JSON.stringify(options.extraction)
+            : null,
+        })
+        .returning()
+        .get();
+      return toView(row);
+    });
+  } catch (err) {
+    if (ext && isUniqueViolation(err)) {
       throw new LedgerError("conflict", "This bill was already imported.");
     }
+    throw err;
   }
-  const row = getDB()
-    .insert(bills)
-    .values({
-      ...input,
-      userId,
-      documentId: options.documentId ?? null,
-      externalSource: ext?.externalSource ?? null,
-      externalRef: ext?.externalRef ?? null,
-      externalUrl: ext?.externalUrl ?? null,
-      extraction: options.extraction
-        ? JSON.stringify(options.extraction)
-        : null,
-    })
-    .returning({ id: bills.id })
-    .get();
-  emitBillChanged(userId, row.id);
-  return getBill(userId, row.id);
+  emitBillChanged(userId, view.id);
+  return view;
 }
 
-function allocationCount(userId: string, billId: string): number {
-  return getDB()
+function allocationCountInTx(
+  tx: Pick<DB, "select">,
+  userId: string,
+  billId: string,
+): number {
+  return tx
     .select({ n: count() })
     .from(billAllocations)
     .where(
@@ -226,84 +256,87 @@ function allocationCount(userId: string, billId: string): number {
 /**
  * Updates the editable fields. Kind and currency are fixed once payments are
  * allocated, because allocations are signed and checked in the bill's direction.
+ * The allocation check and the update share one transaction.
  */
-export function updateBill(
+export async function updateBill(
   userId: string,
   id: string,
   input: BillInput,
-): BillView {
-  const current = getBill(userId, id);
-  assertOwnedAccount(userId, input.expectedAccountId);
-  if (
-    (input.kind !== current.kind || input.currency !== current.currency) &&
-    allocationCount(userId, id) > 0
-  ) {
-    throw new LedgerError(
-      "conflict",
-      "Remove the allocated payments before changing the type or currency.",
-      input.kind !== current.kind ? "kind" : "currency",
-    );
-  }
-  getDB()
-    .update(bills)
-    .set(input)
-    .where(and(eq(bills.userId, userId), eq(bills.id, id)))
-    .run();
+): Promise<BillView> {
+  const view = getDB().transaction((tx) => {
+    const current = getBillInTx(tx, userId, id);
+    assertOwnedAccountInTx(tx, userId, input.expectedAccountId);
+    if (
+      (input.kind !== current.kind || input.currency !== current.currency) &&
+      allocationCountInTx(tx, userId, id) > 0
+    ) {
+      throw new LedgerError(
+        "conflict",
+        "Remove the allocated payments before changing the type or currency.",
+        input.kind !== current.kind ? "kind" : "currency",
+      );
+    }
+    const row = tx
+      .update(bills)
+      .set(input)
+      .where(and(eq(bills.userId, userId), eq(bills.id, id)))
+      .returning()
+      .get();
+    if (!row) throw notFound("Bill");
+    return toView(row);
+  });
   emitBillChanged(userId, id);
-  return getBill(userId, id);
+  return view;
 }
 
-function documentReferenced(userId: string, documentId: string): boolean {
-  return (
-    getDB()
-      .select({ id: bills.id })
-      .from(bills)
-      .where(and(eq(bills.userId, userId), eq(bills.documentId, documentId)))
-      .get() !== undefined
-  );
-}
-
-/** Deletes an uploaded document that no bill references any more. */
+/**
+ * Deletes an uploaded document that no bill references any more. The reference
+ * check is part of the delete statement, so a bill attached in the meantime
+ * keeps its document.
+ */
 export async function deleteDocumentIfUnused(
   userId: string,
   documentId: string | null,
 ): Promise<boolean> {
-  if (documentId === null || documentReferenced(userId, documentId)) {
-    return false;
-  }
-  const row = getDB()
-    .select({ source: documents.source })
-    .from(documents)
-    .where(and(eq(documents.userId, userId), eq(documents.id, documentId)))
-    .get();
-  if (row?.source !== "upload") return false;
-  await deleteDocument(userId, documentId);
-  return true;
+  if (documentId === null) return false;
+  return deleteDocumentWhere(
+    userId,
+    documentId,
+    and(
+      eq(documents.source, "upload"),
+      notExists(
+        getDB()
+          .select({ one: sql`1` })
+          .from(bills)
+          .where(eq(bills.documentId, documents.id)),
+      ),
+    ),
+  );
 }
 
 /** Deletes the bill, its allocations (cascade) and its uploaded document when nothing else uses it. */
 export async function deleteBill(userId: string, id: string): Promise<void> {
-  const current = getBill(userId, id);
-  getDB()
+  const [deleted] = await getDB()
     .delete(bills)
     .where(and(eq(bills.userId, userId), eq(bills.id, id)))
-    .run();
-  await deleteDocumentIfUnused(userId, current.documentId);
+    .returning({ documentId: bills.documentId });
+  if (!deleted) throw notFound("Bill");
+  await deleteDocumentIfUnused(userId, deleted.documentId);
 }
 
-export function setBillCancelled(
+export async function setBillCancelled(
   userId: string,
   id: string,
   cancelled: boolean,
-): BillView {
-  getBill(userId, id);
-  getDB()
+): Promise<BillView> {
+  const [row] = await getDB()
     .update(bills)
     .set({ cancelled })
     .where(and(eq(bills.userId, userId), eq(bills.id, id)))
-    .run();
+    .returning();
+  if (!row) throw notFound("Bill");
   emitBillChanged(userId, id);
-  return getBill(userId, id);
+  return toView(row);
 }
 
 export const cancelBill = (userId: string, id: string) =>
@@ -317,30 +350,35 @@ export async function attachDocument(
   billId: string,
   documentId: string,
 ): Promise<BillView> {
-  const current = getBill(userId, billId);
-  assertOwnedDocument(userId, documentId);
-  getDB()
-    .update(bills)
-    .set({ documentId })
-    .where(and(eq(bills.userId, userId), eq(bills.id, billId)))
-    .run();
-  if (current.documentId !== null && current.documentId !== documentId) {
-    await deleteDocumentIfUnused(userId, current.documentId);
+  const { view, previous } = getDB().transaction((tx) => {
+    const current = getBillInTx(tx, userId, billId);
+    assertOwnedDocumentInTx(tx, userId, documentId);
+    const row = tx
+      .update(bills)
+      .set({ documentId })
+      .where(and(eq(bills.userId, userId), eq(bills.id, billId)))
+      .returning()
+      .get();
+    if (!row) throw notFound("Bill");
+    return { view: toView(row), previous: current.documentId };
+  });
+  if (previous !== null && previous !== documentId) {
+    await deleteDocumentIfUnused(userId, previous);
   }
-  return getBill(userId, billId);
+  return view;
 }
 
-export function setBillExtraction(
+export async function setBillExtraction(
   userId: string,
   billId: string,
   extraction: BillExtractionMeta,
-): void {
-  getBill(userId, billId);
-  getDB()
+): Promise<void> {
+  const updated = await getDB()
     .update(bills)
     .set({ extraction: JSON.stringify(extraction) })
     .where(and(eq(bills.userId, userId), eq(bills.id, billId)))
-    .run();
+    .returning({ id: bills.id });
+  if (updated.length === 0) throw notFound("Bill");
 }
 
 export const DOCUMENT_SWEEP_AGE_MS = 24 * 60 * 60 * 1000;
@@ -354,7 +392,7 @@ export async function sweepUnreferencedDocuments(
   now: number = Date.now(),
 ): Promise<number> {
   const cutoff = new Date(now - DOCUMENT_SWEEP_AGE_MS);
-  const stale = getDB()
+  const stale = await getDB()
     .select({ id: documents.id })
     .from(documents)
     .where(
@@ -369,10 +407,9 @@ export async function sweepUnreferencedDocuments(
             .where(eq(bills.documentId, documents.id)),
         ),
       ),
-    )
-    .all();
-  // The reference check and row delete of deleteDocumentIfUnused run before its first
-  // await, so a bill attached since the query above keeps its document.
+    );
+  // deleteDocumentIfUnused re-checks the reference inside its delete, so a bill
+  // attached since the query above keeps its document.
   let removed = 0;
   for (const d of stale) {
     if (await deleteDocumentIfUnused(userId, d.id)) removed++;
