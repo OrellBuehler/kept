@@ -803,7 +803,7 @@ export async function enableFill(
 
 function mirrorCountQuery(conn: Reader, userId: string, accountId: string) {
   return conn
-    .select({ n: sql<number>`count(*)` })
+    .select({ n: sql<number>`count(*)`.mapWith(Number) })
     .from(transactions)
     .where(
       and(

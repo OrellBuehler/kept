@@ -255,7 +255,11 @@ export async function createPortfolio(
         ((
           await first(
             tx
-              .select({ m: sql<number | null>`max(${portfolios.sortOrder})` })
+              .select({
+                m: sql<number | null>`max(${portfolios.sortOrder})`.mapWith(
+                  Number,
+                ),
+              })
               .from(portfolios)
               .where(
                 and(

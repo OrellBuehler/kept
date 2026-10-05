@@ -1,13 +1,5 @@
-import { sql } from "drizzle-orm";
-import {
-  type AnySQLiteColumn,
-  blob,
-  index,
-  integer,
-  sqliteTable,
-  text,
-  uniqueIndex,
-} from "drizzle-orm/sqlite-core";
+import type { AnyPgColumn } from "drizzle-orm/pg-core";
+import type { Minor } from "$lib/money";
 import {
   ACCOUNT_TYPES,
   IMPORT_FORMATS,
@@ -37,10 +29,26 @@ import { AMOUNT_SIGNS, CATEGORY_KINDS } from "$lib/category-types";
 import { DEDUCTION_TYPES } from "$lib/tax-deductions";
 import { CHANNEL_KINDS } from "$lib/notification-types";
 import { CADENCES, SERIES_STATUSES } from "$lib/recurring-types";
-import type { Minor } from "$lib/money";
-import type { Fixed8 } from "$lib/quantity";
 import { IBAN_DISPLAY, LOCALES } from "$lib/preferences";
-import { nextSeq } from "./seq";
+import { nextSeq } from "../seq";
+import {
+  bool,
+  bytes,
+  fixed,
+  foreignKey,
+  index,
+  instant,
+  int,
+  json,
+  minor,
+  table,
+  text,
+  timestamps,
+  uniqueIndex,
+} from "./columns";
+import { assertPinMatches, dialect } from "./dialect";
+
+assertPinMatches(dialect);
 
 export {
   ACCOUNT_TYPES,
@@ -80,27 +88,17 @@ export {
   DOCUMENT_SOURCES,
 };
 
-const timestamps = {
-  createdAt: integer("created_at", { mode: "timestamp_ms" })
-    .notNull()
-    .default(sql`(unixepoch('subsec') * 1000)`),
-  updatedAt: integer("updated_at", { mode: "timestamp_ms" })
-    .notNull()
-    .default(sql`(unixepoch('subsec') * 1000)`)
-    .$onUpdate(() => new Date()),
-};
-
 /**
  * Insertion order; ties between rows with equal sort keys break on it, then on `id`.
  * The value comes from `nextSeq` in drizzle only: the column's database default is 0
  * (migration 0029), so a raw SQL insert would sort before every existing row.
  */
-const seq = () => integer("seq").notNull().$defaultFn(nextSeq);
+const seq = () => int("seq").notNull().$defaultFn(nextSeq);
 
 export const USER_ROLES = ["admin", "member"] as const;
 export type UserRole = (typeof USER_ROLES)[number];
 
-export const users = sqliteTable("users", {
+export const users = table("users", {
   id: text("id")
     .primaryKey()
     .$defaultFn(() => crypto.randomUUID()),
@@ -108,38 +106,38 @@ export const users = sqliteTable("users", {
   displayName: text("display_name"),
   passwordHash: text("password_hash").notNull(),
   role: text("role", { enum: USER_ROLES }).notNull().default("member"),
-  ...timestamps,
+  ...timestamps(),
 });
 
-export const sessions = sqliteTable(
+export const sessions = table(
   "sessions",
   {
     id: text("id").primaryKey(),
     userId: text("user_id")
       .notNull()
       .references(() => users.id, { onDelete: "cascade" }),
-    expiresAt: integer("expires_at", { mode: "timestamp_ms" }).notNull(),
+    expiresAt: instant("expires_at").notNull(),
     /** Last step-up authentication (password [+ code]); gates sensitive changes such as passkeys. */
-    reauthAt: integer("reauth_at", { mode: "timestamp_ms" }),
-    ...timestamps,
+    reauthAt: instant("reauth_at"),
+    ...timestamps(),
   },
   (t) => [index("sessions_user_id_idx").on(t.userId)],
 );
 
-export const totpCredentials = sqliteTable("totp_credentials", {
+export const totpCredentials = table("totp_credentials", {
   userId: text("user_id")
     .primaryKey()
     .references(() => users.id, { onDelete: "cascade" }),
   /** AES-GCM encrypted base32 secret (see crypto.ts). */
   secret: text("secret").notNull(),
   /** Null until the user confirmed a code; unconfirmed rows do not protect the login. */
-  confirmedAt: integer("confirmed_at", { mode: "timestamp_ms" }),
+  confirmedAt: instant("confirmed_at"),
   /** Highest accepted time step; codes at or below it are rejected (replay protection). */
-  lastStep: integer("last_step").notNull().default(0),
-  ...timestamps,
+  lastStep: int("last_step").notNull().default(0),
+  ...timestamps(),
 });
 
-export const recoveryCodes = sqliteTable(
+export const recoveryCodes = table(
   "recovery_codes",
   {
     id: text("id")
@@ -149,8 +147,8 @@ export const recoveryCodes = sqliteTable(
       .notNull()
       .references(() => users.id, { onDelete: "cascade" }),
     codeHash: text("code_hash").notNull(),
-    usedAt: integer("used_at", { mode: "timestamp_ms" }),
-    ...timestamps,
+    usedAt: instant("used_at"),
+    ...timestamps(),
   },
   (t) => [
     index("recovery_codes_user_id_idx").on(t.userId),
@@ -158,7 +156,7 @@ export const recoveryCodes = sqliteTable(
   ],
 );
 
-export const passkeys = sqliteTable(
+export const passkeys = table(
   "passkeys",
   {
     id: text("id")
@@ -171,13 +169,13 @@ export const passkeys = sqliteTable(
     credentialId: text("credential_id").notNull().unique(),
     /** base64url COSE public key. */
     publicKey: text("public_key").notNull(),
-    counter: integer("counter").notNull().default(0),
+    counter: int("counter").notNull().default(0),
     /** JSON array of AuthenticatorTransport values. */
     transports: text("transports"),
     deviceType: text("device_type").notNull(),
-    backedUp: integer("backed_up", { mode: "boolean" }).notNull(),
-    lastUsedAt: integer("last_used_at", { mode: "timestamp_ms" }),
-    ...timestamps,
+    backedUp: bool("backed_up").notNull(),
+    lastUsedAt: instant("last_used_at"),
+    ...timestamps(),
   },
   (t) => [index("passkeys_user_id_idx").on(t.userId)],
 );
@@ -195,7 +193,7 @@ export type AuthChallengeKind = (typeof AUTH_CHALLENGE_KINDS)[number];
  * second-factor login ("login", keyed by the hash of a cookie token) and
  * WebAuthn challenges. Never grants access on its own.
  */
-export const authChallenges = sqliteTable(
+export const authChallenges = table(
   "auth_challenges",
   {
     id: text("id").primaryKey(),
@@ -204,9 +202,9 @@ export const authChallenges = sqliteTable(
     }),
     kind: text("kind", { enum: AUTH_CHALLENGE_KINDS }).notNull(),
     challenge: text("challenge"),
-    attempts: integer("attempts").notNull().default(0),
-    expiresAt: integer("expires_at", { mode: "timestamp_ms" }).notNull(),
-    ...timestamps,
+    attempts: int("attempts").notNull().default(0),
+    expiresAt: instant("expires_at").notNull(),
+    ...timestamps(),
   },
   (t) => [index("auth_challenges_user_id_idx").on(t.userId)],
 );
@@ -223,7 +221,7 @@ export const AUTH_EVENT_TYPES = [
 export type AuthEventType = (typeof AUTH_EVENT_TYPES)[number];
 
 /** Audit trail of security-relevant changes. Never stores secrets, codes or credentials. */
-export const authEvents = sqliteTable(
+export const authEvents = table(
   "auth_events",
   {
     id: text("id")
@@ -232,7 +230,7 @@ export const authEvents = sqliteTable(
     userId: text("user_id").notNull(),
     actorId: text("actor_id").notNull(),
     type: text("type", { enum: AUTH_EVENT_TYPES }).notNull(),
-    ...timestamps,
+    ...timestamps(),
   },
   (t) => [index("auth_events_user_id_idx").on(t.userId)],
 );
@@ -252,7 +250,7 @@ export type AdminAction = (typeof ADMIN_ACTIONS)[number];
  * Audit trail of administrator actions. Ids and usernames only, no secrets;
  * not a foreign key so entries outlive deleted users.
  */
-export const adminAuditLog = sqliteTable(
+export const adminAuditLog = table(
   "admin_audit_log",
   {
     id: text("id")
@@ -265,7 +263,7 @@ export const adminAuditLog = sqliteTable(
     targetUsername: text("target_username"),
     /** Short non-sensitive context such as "role=admin". */
     details: text("details"),
-    ...timestamps,
+    ...timestamps(),
   },
   (t) => [index("admin_audit_log_created_at_idx").on(t.createdAt)],
 );
@@ -280,12 +278,7 @@ const userId = () =>
     .notNull()
     .references(() => users.id, { onDelete: "cascade" });
 
-const minor = (name: string) => integer(name).$type<Minor>();
-
-/** Integer scaled by 1e8 (see quantity.ts). */
-const fixed = (name: string) => integer(name).$type<Fixed8>();
-
-export const institutions = sqliteTable(
+export const institutions = table(
   "institutions",
   {
     id: id(),
@@ -293,10 +286,10 @@ export const institutions = sqliteTable(
     name: text("name").notNull(),
     bic: text("bic"),
     color: text("color"),
-    logo: blob("logo", { mode: "buffer" }),
+    logo: bytes("logo"),
     logoMime: text("logo_mime"),
     logoVersion: text("logo_version"),
-    ...timestamps,
+    ...timestamps(),
   },
   (t) => [
     uniqueIndex("institutions_user_name_uq").on(t.userId, t.name),
@@ -304,7 +297,7 @@ export const institutions = sqliteTable(
   ],
 );
 
-export const accounts = sqliteTable(
+export const accounts = table(
   "accounts",
   {
     id: id(),
@@ -320,12 +313,12 @@ export const accounts = sqliteTable(
       .notNull()
       .default(0 as Minor),
     openingDate: text("opening_date"),
-    archived: integer("archived", { mode: "boolean" }).notNull().default(false),
+    archived: bool("archived").notNull().default(false),
     /** When the account was archived; past net worth still counts it before this instant. */
-    archivedAt: integer("archived_at", { mode: "timestamp_ms" }),
-    sortOrder: integer("sort_order").notNull().default(0),
+    archivedAt: instant("archived_at"),
+    sortOrder: int("sort_order").notNull().default(0),
     /** The user's ownership share in basis points (10000 = 100%). Never applied to stored amounts. */
-    shareBps: integer("share_bps").notNull().default(10000),
+    shareBps: int("share_bps").notNull().default(10000),
     /** Free-text note on who the account is shared with. */
     sharedWith: text("shared_with"),
     /** Provider contract number of a pillar 3a account (free text). */
@@ -333,21 +326,17 @@ export const accounts = sqliteTable(
     /** IBAN to pay into when the account itself has none (a pillar 3a QR-IBAN); not unique, providers share it. */
     depositIban: text("deposit_iban"),
     /** Months of notice before the balance can be withdrawn; null means available now. */
-    noticeMonths: integer("notice_months"),
+    noticeMonths: int("notice_months"),
     /** Amount that can be withdrawn without notice per period, account currency. Needs noticeMonths. */
     freeWithdrawal: minor("free_withdrawal"),
     freeWithdrawalPeriod: text("free_withdrawal_period", {
       enum: WITHDRAWAL_PERIODS,
     }),
     /** Create the counter-transaction here when another account shows a transfer to this IBAN. */
-    fillFromTransfers: integer("fill_from_transfers", { mode: "boolean" })
-      .notNull()
-      .default(false),
+    fillFromTransfers: bool("fill_from_transfers").notNull().default(false),
     /** Trades reduce (buys) or increase (sells) the cash balance, for accounts without statements. */
-    tradesMoveCash: integer("trades_move_cash", { mode: "boolean" })
-      .notNull()
-      .default(false),
-    ...timestamps,
+    tradesMoveCash: bool("trades_move_cash").notNull().default(false),
+    ...timestamps(),
   },
   (t) => [
     uniqueIndex("accounts_user_iban_uq").on(t.userId, t.iban),
@@ -356,7 +345,7 @@ export const accounts = sqliteTable(
   ],
 );
 
-export const imports = sqliteTable(
+export const imports = table(
   "imports",
   {
     id: id(),
@@ -373,11 +362,11 @@ export const imports = sqliteTable(
     openingBalanceDate: text("opening_balance_date"),
     closingBalance: minor("closing_balance"),
     closingBalanceDate: text("closing_balance_date"),
-    newCount: integer("new_count").notNull().default(0),
-    duplicateCount: integer("duplicate_count").notNull().default(0),
+    newCount: int("new_count").notNull().default(0),
+    duplicateCount: int("duplicate_count").notNull().default(0),
     /** JSON array of strings. */
     warnings: text("warnings").notNull().default("[]"),
-    ...timestamps,
+    ...timestamps(),
   },
   (t) => [
     index("imports_user_id_idx").on(t.userId),
@@ -390,7 +379,7 @@ export const imports = sqliteTable(
  * the blob store at `pending-imports/<userId>/<id>`; rows past `expiresAt` are
  * purged together with their blob.
  */
-export const pendingImports = sqliteTable(
+export const pendingImports = table(
   "pending_imports",
   {
     /** 32 random url-safe characters; unguessable, never a uuid. */
@@ -401,10 +390,10 @@ export const pendingImports = sqliteTable(
       .references(() => accounts.id, { onDelete: "cascade" }),
     format: text("format", { enum: IMPORT_FORMATS }).notNull(),
     fileName: text("file_name").notNull(),
-    size: integer("size").notNull(),
+    size: int("size").notNull(),
     sha256: text("sha256").notNull(),
-    expiresAt: integer("expires_at", { mode: "timestamp_ms" }).notNull(),
-    ...timestamps,
+    expiresAt: instant("expires_at").notNull(),
+    ...timestamps(),
   },
   (t) => [
     index("pending_imports_user_id_idx").on(t.userId),
@@ -420,7 +409,7 @@ export const INBOX_STATUSES = [
 ] as const;
 export type InboxStatus = (typeof INBOX_STATUSES)[number];
 
-export const inboxFiles = sqliteTable(
+export const inboxFiles = table(
   "inbox_files",
   {
     id: id(),
@@ -436,11 +425,11 @@ export const inboxFiles = sqliteTable(
     importId: text("import_id").references(() => imports.id, {
       onDelete: "set null",
     }),
-    newCount: integer("new_count"),
-    duplicateCount: integer("duplicate_count"),
+    newCount: int("new_count"),
+    duplicateCount: int("duplicate_count"),
     /** File name inside the user's review/ folder while the file awaits review. */
     reviewFile: text("review_file"),
-    ...timestamps,
+    ...timestamps(),
   },
   (t) => [
     uniqueIndex("inbox_files_user_sha_uq").on(t.userId, t.sha256),
@@ -448,24 +437,21 @@ export const inboxFiles = sqliteTable(
   ],
 );
 
-export const categories = sqliteTable(
+export const categories = table(
   "categories",
   {
     id: id(),
     userId: userId(),
     /** One level only: a parent never has a parent of its own. */
-    parentId: text("parent_id").references(
-      (): AnySQLiteColumn => categories.id,
-      {
-        onDelete: "set null",
-      },
-    ),
+    parentId: text("parent_id").references((): AnyPgColumn => categories.id, {
+      onDelete: "set null",
+    }),
     name: text("name").notNull(),
     kind: text("kind", { enum: CATEGORY_KINDS }).notNull().default("expense"),
     /** `#rrggbb`. */
     color: text("color"),
     icon: text("icon"),
-    ...timestamps,
+    ...timestamps(),
   },
   (t) => [
     uniqueIndex("categories_user_name_uq").on(t.userId, t.name),
@@ -478,7 +464,7 @@ export const categories = sqliteTable(
  * Every set condition must match (AND); at least one is set. Rules run in
  * ascending `priority`, then creation order, and the first match wins.
  */
-export const categoryRules = sqliteTable(
+export const categoryRules = table(
   "category_rules",
   {
     id: id(),
@@ -486,13 +472,13 @@ export const categoryRules = sqliteTable(
     categoryId: text("category_id")
       .notNull()
       .references(() => categories.id, { onDelete: "cascade" }),
-    priority: integer("priority").notNull().default(100),
+    priority: int("priority").notNull().default(100),
     counterpartyContains: text("counterparty_contains"),
     descriptionContains: text("description_contains"),
     counterpartyIban: text("counterparty_iban"),
     amountSign: text("amount_sign", { enum: AMOUNT_SIGNS }),
     seq: seq(),
-    ...timestamps,
+    ...timestamps(),
   },
   (t) => [
     index("category_rules_user_id_idx").on(t.userId),
@@ -501,7 +487,7 @@ export const categoryRules = sqliteTable(
 );
 
 /** Monthly budget for a category in one currency; no conversion between currencies. */
-export const budgets = sqliteTable(
+export const budgets = table(
   "budgets",
   {
     id: id(),
@@ -512,7 +498,7 @@ export const budgets = sqliteTable(
     currency: text("currency").notNull(),
     /** Minor units, > 0. */
     amount: minor("amount").notNull(),
-    ...timestamps,
+    ...timestamps(),
   },
   (t) => [
     uniqueIndex("budgets_user_category_currency_uq").on(
@@ -526,7 +512,7 @@ export const budgets = sqliteTable(
 );
 
 /** Maps one of the user's categories to a code-defined deduction type; subcategories inherit it. */
-export const deductionMappings = sqliteTable(
+export const deductionMappings = table(
   "deduction_mappings",
   {
     id: id(),
@@ -535,7 +521,7 @@ export const deductionMappings = sqliteTable(
       .notNull()
       .references(() => categories.id, { onDelete: "cascade" }),
     deductionType: text("deduction_type", { enum: DEDUCTION_TYPES }).notNull(),
-    ...timestamps,
+    ...timestamps(),
   },
   (t) => [
     uniqueIndex("deduction_mappings_user_category_uq").on(
@@ -551,7 +537,7 @@ export const deductionMappings = sqliteTable(
  * transactions. Detection refreshes the statistics; the status and any edited
  * fields are the user's decision and survive re-detection.
  */
-export const recurringSeries = sqliteTable(
+export const recurringSeries = table(
   "recurring_series",
   {
     id: id(),
@@ -562,7 +548,7 @@ export const recurringSeries = sqliteTable(
       .notNull()
       .default("suggested"),
     /** Name, cadence or amount was edited by hand; detection no longer overwrites them. */
-    edited: integer("edited", { mode: "boolean" }).notNull().default(false),
+    edited: bool("edited").notNull().default(false),
     name: text("name").notNull(),
     counterpartyIban: text("counterparty_iban"),
     cadence: text("cadence", { enum: CADENCES }).notNull(),
@@ -573,8 +559,8 @@ export const recurringSeries = sqliteTable(
     lastDate: text("last_date").notNull(),
     lastAmount: minor("last_amount").notNull(),
     previousAmount: minor("previous_amount"),
-    occurrences: integer("occurrences").notNull(),
-    ...timestamps,
+    occurrences: int("occurrences").notNull(),
+    ...timestamps(),
   },
   (t) => [
     uniqueIndex("recurring_series_user_key_uq").on(t.userId, t.key),
@@ -582,7 +568,7 @@ export const recurringSeries = sqliteTable(
   ],
 );
 
-export const transactions = sqliteTable(
+export const transactions = table(
   "transactions",
   {
     id: id(),
@@ -598,7 +584,7 @@ export const transactions = sqliteTable(
     externalId: text("external_id").notNull(),
     /** Mirrors only: the transaction this row was created from; the mirror goes when it does. */
     mirrorOfId: text("mirror_of_id").references(
-      (): AnySQLiteColumn => transactions.id,
+      (): AnyPgColumn => transactions.id,
       { onDelete: "cascade" },
     ),
     bookingDate: text("booking_date").notNull(),
@@ -612,22 +598,20 @@ export const transactions = sqliteTable(
     description: text("description"),
     reference: text("reference"),
     referenceType: text("reference_type", { enum: REFERENCE_TYPES }),
-    reversal: integer("reversal", { mode: "boolean" }).notNull().default(false),
+    reversal: bool("reversal").notNull().default(false),
     note: text("note"),
     /** Set by a rule on import or by hand; a manual choice is never overwritten. */
     categoryId: text("category_id").references(() => categories.id, {
       onDelete: "set null",
     }),
     /** Counts as a payment to the tax office for this tax year. */
-    taxYear: integer("tax_year"),
+    taxYear: int("tax_year"),
     /** Tax year this transaction is deducted in, when not its booking year. Not a tax payment. */
-    deductionYear: integer("deduction_year"),
+    deductionYear: int("deduction_year"),
     /** Left out of the tax deductions summary. */
-    deductionExcluded: integer("deduction_excluded", { mode: "boolean" })
-      .notNull()
-      .default(false),
+    deductionExcluded: bool("deduction_excluded").notNull().default(false),
     seq: seq(),
-    ...timestamps,
+    ...timestamps(),
   },
   (t) => [
     uniqueIndex("transactions_account_external_uq").on(
@@ -650,7 +634,7 @@ export const transactions = sqliteTable(
  * received amount is unknown; `dismissed` remembers an unlink so the engine
  * never recreates that pair or mirror.
  */
-export const transfers = sqliteTable(
+export const transfers = table(
   "transfers",
   {
     id: id(),
@@ -671,7 +655,7 @@ export const transfers = sqliteTable(
     toAccountId: text("to_account_id")
       .notNull()
       .references(() => accounts.id, { onDelete: "cascade" }),
-    ...timestamps,
+    ...timestamps(),
   },
   (t) => [
     uniqueIndex("transfers_out_transaction_uq").on(t.outTransactionId),
@@ -686,7 +670,7 @@ export const transfers = sqliteTable(
  * Transactions the deduction-year update moved from `tax_year` to `deduction_year`, so the
  * move can be undone. Created by a data migration; a row goes when the user undoes or dismisses it.
  */
-export const deductionYearMigration = sqliteTable(
+export const deductionYearMigration = table(
   "deduction_year_migration",
   {
     id: id(),
@@ -694,8 +678,8 @@ export const deductionYearMigration = sqliteTable(
     transactionId: text("transaction_id")
       .notNull()
       .references(() => transactions.id, { onDelete: "cascade" }),
-    oldTaxYear: integer("old_tax_year").notNull(),
-    ...timestamps,
+    oldTaxYear: int("old_tax_year").notNull(),
+    ...timestamps(),
   },
   (t) => [
     uniqueIndex("deduction_year_migration_tx_uq").on(t.transactionId),
@@ -703,7 +687,7 @@ export const deductionYearMigration = sqliteTable(
   ],
 );
 
-export const balanceSnapshots = sqliteTable(
+export const balanceSnapshots = table(
   "balance_snapshots",
   {
     id: id(),
@@ -719,7 +703,7 @@ export const balanceSnapshots = sqliteTable(
     date: text("date").notNull(),
     amount: minor("amount").notNull(),
     note: text("note"),
-    ...timestamps,
+    ...timestamps(),
   },
   (t) => [
     uniqueIndex("balance_snapshots_account_date_source_uq").on(
@@ -732,7 +716,7 @@ export const balanceSnapshots = sqliteTable(
   ],
 );
 
-export const csvProfiles = sqliteTable(
+export const csvProfiles = table(
   "csv_profiles",
   {
     id: id(),
@@ -743,26 +727,26 @@ export const csvProfiles = sqliteTable(
     name: text("name").notNull(),
     /** JSON text, validated by the csv importer's parseMappingProfile. */
     profile: text("profile").notNull(),
-    ...timestamps,
+    ...timestamps(),
   },
   (t) => [
     uniqueIndex("csv_profiles_account_uq").on(t.accountId),
     index("csv_profiles_user_id_idx").on(t.userId),
   ],
 );
-export const documents = sqliteTable(
+export const documents = table(
   "documents",
   {
     id: id(),
     userId: userId(),
     fileName: text("file_name").notNull(),
     mimeType: text("mime_type").notNull(),
-    size: integer("size").notNull(),
+    size: int("size").notNull(),
     sha256: text("sha256").notNull(),
     /** Relative to the documents root; built from ids, never from user input. */
     storageKey: text("storage_key").notNull(),
     source: text("source", { enum: DOCUMENT_SOURCES }).notNull(),
-    ...timestamps,
+    ...timestamps(),
   },
   (t) => [
     uniqueIndex("documents_user_sha256_uq").on(t.userId, t.sha256),
@@ -770,7 +754,7 @@ export const documents = sqliteTable(
   ],
 );
 
-export const bills = sqliteTable(
+export const bills = table(
   "bills",
   {
     id: id(),
@@ -787,9 +771,7 @@ export const bills = sqliteTable(
     referenceType: text("reference_type", { enum: BILL_REFERENCE_TYPES }),
     message: text("message"),
     invoiceNumber: text("invoice_number"),
-    cancelled: integer("cancelled", { mode: "boolean" })
-      .notNull()
-      .default(false),
+    cancelled: bool("cancelled").notNull().default(false),
     documentId: text("document_id").references(() => documents.id, {
       onDelete: "set null",
     }),
@@ -799,14 +781,14 @@ export const bills = sqliteTable(
     ),
     notes: text("notes"),
     /** Payments allocated to this bill count as tax paid for this year. */
-    taxYear: integer("tax_year"),
+    taxYear: int("tax_year"),
     /** Set by an integration adapter; the core does not interpret these. */
     externalSource: text("external_source"),
     externalRef: text("external_ref"),
     externalUrl: text("external_url"),
     /** JSON text: `{ source, warnings }` of the last extraction. */
     extraction: text("extraction"),
-    ...timestamps,
+    ...timestamps(),
   },
   (t) => [
     index("bills_user_id_idx").on(t.userId),
@@ -822,25 +804,25 @@ export const bills = sqliteTable(
   ],
 );
 
-export const taxYears = sqliteTable(
+export const taxYears = table(
   "tax_years",
   {
     id: id(),
     userId: userId(),
-    year: integer("year").notNull(),
+    year: int("year").notNull(),
     /** Free text; no tax office is known to the code. */
     authority: text("authority"),
     currency: text("currency").notNull(),
     /** Minor units, >= 0; the total the assessment says is owed for the year. */
     assessedTotal: minor("assessed_total"),
     notes: text("notes"),
-    ...timestamps,
+    ...timestamps(),
   },
   (t) => [uniqueIndex("tax_years_user_year_uq").on(t.userId, t.year)],
 );
 
 /** A line from the tax office's account statement: what they counted as received. */
-export const taxCredits = sqliteTable(
+export const taxCredits = table(
   "tax_credits",
   {
     id: id(),
@@ -854,7 +836,7 @@ export const taxCredits = sqliteTable(
     reference: text("reference"),
     description: text("description"),
     seq: seq(),
-    ...timestamps,
+    ...timestamps(),
   },
   (t) => [
     index("tax_credits_user_id_idx").on(t.userId),
@@ -862,7 +844,7 @@ export const taxCredits = sqliteTable(
   ],
 );
 
-export const billAllocations = sqliteTable(
+export const billAllocations = table(
   "bill_allocations",
   {
     id: id(),
@@ -876,7 +858,7 @@ export const billAllocations = sqliteTable(
     /** Signed in the bill's direction: positive settles the bill. */
     amount: minor("amount").notNull(),
     origin: text("origin", { enum: ALLOCATION_ORIGINS }).notNull(),
-    ...timestamps,
+    ...timestamps(),
   },
   (t) => [
     uniqueIndex("bill_allocations_pair_uq").on(t.billId, t.transactionId),
@@ -885,7 +867,7 @@ export const billAllocations = sqliteTable(
   ],
 );
 
-export const matchDismissals = sqliteTable(
+export const matchDismissals = table(
   "match_dismissals",
   {
     id: id(),
@@ -896,7 +878,7 @@ export const matchDismissals = sqliteTable(
     transactionId: text("transaction_id")
       .notNull()
       .references(() => transactions.id, { onDelete: "cascade" }),
-    ...timestamps,
+    ...timestamps(),
   },
   (t) => [
     uniqueIndex("match_dismissals_pair_uq").on(t.billId, t.transactionId),
@@ -932,7 +914,7 @@ export const PAPERLESS_UPLOAD_STATUSES = [
   "failed",
 ] as const;
 
-export const paperlessConnections = sqliteTable(
+export const paperlessConnections = table(
   "paperless_connections",
   {
     id: id(),
@@ -946,28 +928,22 @@ export const paperlessConnections = sqliteTable(
     instanceKey: text("instance_key"),
     /** Encrypted with `encryptSecret`; never returned to the client. */
     tokenEncrypted: text("token_encrypted").notNull(),
-    apiVersion: integer("api_version"),
+    apiVersion: int("api_version"),
     serverVersion: text("server_version"),
-    billSource: text("bill_source", {
-      mode: "json",
-    }).$type<PaperlessBillSource>(),
-    fieldMapping: text("field_mapping", {
-      mode: "json",
-    }).$type<PaperlessFieldMapping>(),
+    billSource: json<PaperlessBillSource>("bill_source"),
+    fieldMapping: json<PaperlessFieldMapping>("field_mapping"),
     /** SHA-256 (hex) of the webhook secret; the secret itself is shown once. */
     webhookSecretHash: text("webhook_secret_hash").notNull(),
     /** Random, used in the webhook URL path to identify the connection. */
     webhookToken: text("webhook_token").notNull(),
-    allowInsecureTls: integer("allow_insecure_tls", { mode: "boolean" })
-      .notNull()
-      .default(false),
-    lastSyncAt: integer("last_sync_at", { mode: "timestamp_ms" }),
+    allowInsecureTls: bool("allow_insecure_tls").notNull().default(false),
+    lastSyncAt: instant("last_sync_at"),
     /** Highest Paperless `modified` handled, epoch ms. */
-    lastSyncModified: integer("last_sync_modified"),
+    lastSyncModified: int("last_sync_modified"),
     /** Short machine-readable reason, never document content. */
     lastError: text("last_error"),
-    enabled: integer("enabled", { mode: "boolean" }).notNull().default(true),
-    ...timestamps,
+    enabled: bool("enabled").notNull().default(true),
+    ...timestamps(),
   },
   (t) => [
     uniqueIndex("paperless_connections_user_uq").on(t.userId),
@@ -975,7 +951,7 @@ export const paperlessConnections = sqliteTable(
   ],
 );
 
-export const paperlessDocuments = sqliteTable(
+export const paperlessDocuments = table(
   "paperless_documents",
   {
     id: id(),
@@ -983,7 +959,7 @@ export const paperlessDocuments = sqliteTable(
     connectionId: text("connection_id")
       .notNull()
       .references(() => paperlessConnections.id, { onDelete: "cascade" }),
-    paperlessId: integer("paperless_id").notNull(),
+    paperlessId: int("paperless_id").notNull(),
     billId: text("bill_id").references(() => bills.id, {
       onDelete: "set null",
     }),
@@ -991,12 +967,12 @@ export const paperlessDocuments = sqliteTable(
       onDelete: "set null",
     }),
     /** Paperless `modified` at the last handling, epoch ms. */
-    modified: integer("modified").notNull(),
+    modified: int("modified").notNull(),
     status: text("status", { enum: PAPERLESS_DOCUMENT_STATUSES }).notNull(),
     error: text("error"),
     contentSha256: text("content_sha256"),
     lastPushedHash: text("last_pushed_hash"),
-    ...timestamps,
+    ...timestamps(),
   },
   (t) => [
     uniqueIndex("paperless_documents_conn_doc_uq").on(
@@ -1012,7 +988,7 @@ export const paperlessDocuments = sqliteTable(
  * A document Paperless could not serve (5xx, timeout) and that is retried. It holds the
  * sync watermark only while it is below the attempt cap; the row goes once it is handled.
  */
-export const paperlessPending = sqliteTable(
+export const paperlessPending = table(
   "paperless_pending",
   {
     id: id(),
@@ -1020,12 +996,10 @@ export const paperlessPending = sqliteTable(
     connectionId: text("connection_id")
       .notNull()
       .references(() => paperlessConnections.id, { onDelete: "cascade" }),
-    paperlessId: integer("paperless_id").notNull(),
-    attempts: integer("attempts").notNull().default(0),
-    firstFailedAt: integer("first_failed_at", {
-      mode: "timestamp_ms",
-    }).notNull(),
-    ...timestamps,
+    paperlessId: int("paperless_id").notNull(),
+    attempts: int("attempts").notNull().default(0),
+    firstFailedAt: instant("first_failed_at").notNull(),
+    ...timestamps(),
   },
   (t) => [
     uniqueIndex("paperless_pending_conn_doc_uq").on(
@@ -1037,14 +1011,14 @@ export const paperlessPending = sqliteTable(
 );
 
 /** Paperless documents whose bill the user deleted; outlives the connection and its links. */
-export const paperlessDismissed = sqliteTable(
+export const paperlessDismissed = table(
   "paperless_dismissed",
   {
     id: id(),
     userId: userId(),
     /** `externalRef(baseUrl, paperlessId)`, as stored on bills. */
     externalRef: text("external_ref").notNull(),
-    ...timestamps,
+    ...timestamps(),
   },
   (t) => [
     uniqueIndex("paperless_dismissed_user_ref_uq").on(t.userId, t.externalRef),
@@ -1055,37 +1029,41 @@ export const paperlessDismissed = sqliteTable(
  * The instance key a user's connection had at an address, kept after the connection is gone so
  * reconnecting to that address reuses it (bills and dismissed refs carry the key).
  */
-export const paperlessInstances = sqliteTable(
+export const paperlessInstances = table(
   "paperless_instances",
   {
     id: id(),
     userId: userId(),
     baseUrl: text("base_url").notNull(),
     instanceKey: text("instance_key").notNull(),
-    ...timestamps,
+    ...timestamps(),
   },
   (t) => [
     uniqueIndex("paperless_instances_user_url_uq").on(t.userId, t.baseUrl),
   ],
 );
 
-export const paperlessReportUploads = sqliteTable(
+export const paperlessReportUploads = table(
   "paperless_report_uploads",
   {
     id: id(),
     userId: userId(),
-    connectionId: text("connection_id")
-      .notNull()
-      .references(() => paperlessConnections.id, { onDelete: "cascade" }),
+    connectionId: text("connection_id").notNull(),
     reportKind: text("report_kind").notNull(),
     sha256: text("sha256").notNull(),
-    paperlessDocumentId: integer("paperless_document_id"),
+    paperlessDocumentId: int("paperless_document_id"),
     taskId: text("task_id"),
     status: text("status", { enum: PAPERLESS_UPLOAD_STATUSES }).notNull(),
     error: text("error"),
-    ...timestamps,
+    ...timestamps(),
   },
   (t) => [
+    // Named explicitly: the generated name is over PostgreSQL's 63-byte limit.
+    foreignKey({
+      name: "paperless_report_uploads_connection_id_fk",
+      columns: [t.connectionId],
+      foreignColumns: [paperlessConnections.id],
+    }).onDelete("cascade"),
     uniqueIndex("paperless_report_uploads_conn_sha_uq").on(
       t.connectionId,
       t.sha256,
@@ -1095,30 +1073,22 @@ export const paperlessReportUploads = sqliteTable(
 );
 
 /** Which notification triggers a user has switched on, with their parameters. */
-export const notificationSettings = sqliteTable("notification_settings", {
+export const notificationSettings = table("notification_settings", {
   id: id(),
   userId: userId().unique(),
-  billDueEnabled: integer("bill_due_enabled", { mode: "boolean" })
-    .notNull()
-    .default(false),
-  billDueDays: integer("bill_due_days").notNull().default(3),
-  billOverdueEnabled: integer("bill_overdue_enabled", { mode: "boolean" })
-    .notNull()
-    .default(false),
-  budgetEnabled: integer("budget_enabled", { mode: "boolean" })
-    .notNull()
-    .default(false),
+  billDueEnabled: bool("bill_due_enabled").notNull().default(false),
+  billDueDays: int("bill_due_days").notNull().default(3),
+  billOverdueEnabled: bool("bill_overdue_enabled").notNull().default(false),
+  budgetEnabled: bool("budget_enabled").notNull().default(false),
   /** Notify once spending reaches this share of a monthly budget. */
-  budgetPercent: integer("budget_percent").notNull().default(100),
-  staleImportEnabled: integer("stale_import_enabled", { mode: "boolean" })
-    .notNull()
-    .default(false),
-  staleImportDays: integer("stale_import_days").notNull().default(14),
-  ...timestamps,
+  budgetPercent: int("budget_percent").notNull().default(100),
+  staleImportEnabled: bool("stale_import_enabled").notNull().default(false),
+  staleImportDays: int("stale_import_days").notNull().default(14),
+  ...timestamps(),
 });
 
 /** One delivery channel per kind and user. */
-export const notificationChannels = sqliteTable(
+export const notificationChannels = table(
   "notification_channels",
   {
     id: id(),
@@ -1126,12 +1096,12 @@ export const notificationChannels = sqliteTable(
     kind: text("kind", { enum: CHANNEL_KINDS }).notNull(),
     /** JSON, encrypted with `encryptSecret`; never returned to the client. */
     configEncrypted: text("config_encrypted").notNull(),
-    enabled: integer("enabled", { mode: "boolean" }).notNull().default(true),
-    lastSuccessAt: integer("last_success_at", { mode: "timestamp_ms" }),
+    enabled: bool("enabled").notNull().default(true),
+    lastSuccessAt: instant("last_success_at"),
     /** Short reason, never message content. */
     lastError: text("last_error"),
-    lastErrorAt: integer("last_error_at", { mode: "timestamp_ms" }),
-    ...timestamps,
+    lastErrorAt: instant("last_error_at"),
+    ...timestamps(),
   },
   (t) => [
     uniqueIndex("notification_channels_user_kind_uq").on(t.userId, t.kind),
@@ -1139,14 +1109,14 @@ export const notificationChannels = sqliteTable(
 );
 
 /** Events already notified, so each one is sent once. */
-export const notificationsSent = sqliteTable(
+export const notificationsSent = table(
   "notifications_sent",
   {
     id: id(),
     userId: userId(),
     /** e.g. `bill-overdue:<billId>:<dueDate>`. */
     eventKey: text("event_key").notNull(),
-    ...timestamps,
+    ...timestamps(),
   },
   (t) => [
     uniqueIndex("notifications_sent_user_key_uq").on(t.userId, t.eventKey),
@@ -1154,7 +1124,7 @@ export const notificationsSent = sqliteTable(
 );
 
 /** One-off expected income or expense used by the cash-flow forecast. */
-export const plannedItems = sqliteTable(
+export const plannedItems = table(
   "planned_items",
   {
     id: id(),
@@ -1167,7 +1137,7 @@ export const plannedItems = sqliteTable(
     amount: minor("amount").notNull(),
     currency: text("currency").notNull(),
     label: text("label").notNull(),
-    ...timestamps,
+    ...timestamps(),
   },
   (t) => [
     index("planned_items_user_date_idx").on(t.userId, t.date),
@@ -1176,7 +1146,7 @@ export const plannedItems = sqliteTable(
 );
 
 /** Per-account forecast preferences: low-balance threshold and default payment account. */
-export const forecastAccountSettings = sqliteTable(
+export const forecastAccountSettings = table(
   "forecast_account_settings",
   {
     id: id(),
@@ -1187,10 +1157,8 @@ export const forecastAccountSettings = sqliteTable(
     /** Warn when the projected balance falls below this (minor units); null means 0. */
     threshold: minor("threshold"),
     /** Bills without a paying account are projected on this account (one per currency). */
-    isDefaultPayment: integer("is_default_payment", { mode: "boolean" })
-      .notNull()
-      .default(false),
-    ...timestamps,
+    isDefaultPayment: bool("is_default_payment").notNull().default(false),
+    ...timestamps(),
   },
   (t) => [
     uniqueIndex("forecast_account_settings_account_uq").on(t.accountId),
@@ -1198,26 +1166,26 @@ export const forecastAccountSettings = sqliteTable(
   ],
 );
 
-export const userPreferences = sqliteTable(
+export const userPreferences = table(
   "user_preferences",
   {
     id: id(),
     userId: userId(),
     ibanDisplay: text("iban_display", { enum: IBAN_DISPLAY }).notNull(),
-    blurAmounts: integer("blur_amounts", { mode: "boolean" }).notNull(),
+    blurAmounts: bool("blur_amounts").notNull(),
     locale: text("locale", { enum: LOCALES }).notNull(),
     defaultCurrency: text("default_currency").notNull(),
-    pageSize: integer("page_size").notNull(),
+    pageSize: int("page_size").notNull(),
     /** Count the cash part of investment accounts as liquid. */
-    investmentCashLiquid: integer("investment_cash_liquid", { mode: "boolean" })
+    investmentCashLiquid: bool("investment_cash_liquid")
       .notNull()
       .default(false),
-    ...timestamps,
+    ...timestamps(),
   },
   (t) => [uniqueIndex("user_preferences_user_id_uq").on(t.userId)],
 );
 
-export const securities = sqliteTable(
+export const securities = table(
   "securities",
   {
     id: id(),
@@ -1229,12 +1197,12 @@ export const securities = sqliteTable(
     symbol: text("symbol"),
     /** Currency the security is priced in. */
     currency: text("currency").notNull(),
-    ...timestamps,
+    ...timestamps(),
   },
   (t) => [index("securities_user_id_idx").on(t.userId)],
 );
 
-export const trades = sqliteTable(
+export const trades = table(
   "trades",
   {
     id: id(),
@@ -1257,11 +1225,11 @@ export const trades = sqliteTable(
     /** Account currency, positive: cash paid or received including fees. Drives the cost basis. */
     amount: minor("amount").notNull(),
     /** Split only: the exact integer ratio `splitNew : splitOld`; `quantity` is its Fixed8 approximation. */
-    splitNew: integer("split_new"),
-    splitOld: integer("split_old"),
+    splitNew: int("split_new"),
+    splitOld: int("split_old"),
     note: text("note"),
     seq: seq(),
-    ...timestamps,
+    ...timestamps(),
   },
   (t) => [
     index("trades_user_id_idx").on(t.userId),
@@ -1274,7 +1242,7 @@ export const trades = sqliteTable(
   ],
 );
 
-export const securityPrices = sqliteTable(
+export const securityPrices = table(
   "security_prices",
   {
     id: id(),
@@ -1286,7 +1254,7 @@ export const securityPrices = sqliteTable(
     /** Per unit, in the security's currency. */
     price: fixed("price").notNull(),
     source: text("source", { enum: PRICE_SOURCES }).notNull(),
-    ...timestamps,
+    ...timestamps(),
   },
   (t) => [
     uniqueIndex("security_prices_security_date_source_uq").on(
@@ -1298,7 +1266,7 @@ export const securityPrices = sqliteTable(
   ],
 );
 
-export const fxRates = sqliteTable(
+export const fxRates = table(
   "fx_rates",
   {
     id: id(),
@@ -1309,7 +1277,7 @@ export const fxRates = sqliteTable(
     /** Units of `quote` per one unit of `base`. */
     rate: fixed("rate").notNull(),
     source: text("source", { enum: PRICE_SOURCES }).notNull(),
-    ...timestamps,
+    ...timestamps(),
   },
   (t) => [
     uniqueIndex("fx_rates_user_pair_date_source_uq").on(
@@ -1323,20 +1291,20 @@ export const fxRates = sqliteTable(
   ],
 );
 
-export const marketDataSettings = sqliteTable(
+export const marketDataSettings = table(
   "market_data_settings",
   {
     id: id(),
     userId: userId(),
-    enabled: integer("enabled", { mode: "boolean" }).notNull().default(false),
-    lastRunAt: integer("last_run_at", { mode: "timestamp_ms" }),
+    enabled: bool("enabled").notNull().default(false),
+    lastRunAt: instant("last_run_at"),
     lastError: text("last_error"),
-    ...timestamps,
+    ...timestamps(),
   },
   (t) => [uniqueIndex("market_data_settings_user_id_uq").on(t.userId)],
 );
 
-export const portfolios = sqliteTable(
+export const portfolios = table(
   "portfolios",
   {
     id: id(),
@@ -1354,8 +1322,8 @@ export const portfolios = sqliteTable(
     openedOn: text("opened_on"),
     closedOn: text("closed_on"),
     closeReason: text("close_reason", { enum: PORTFOLIO_CLOSE_REASONS }),
-    sortOrder: integer("sort_order").notNull().default(0),
-    ...timestamps,
+    sortOrder: int("sort_order").notNull().default(0),
+    ...timestamps(),
   },
   (t) => [
     index("portfolios_user_id_idx").on(t.userId),
@@ -1367,7 +1335,7 @@ export const portfolios = sqliteTable(
   ],
 );
 
-export const portfolioValues = sqliteTable(
+export const portfolioValues = table(
   "portfolio_values",
   {
     id: id(),
@@ -1379,7 +1347,7 @@ export const portfolioValues = sqliteTable(
     /** Account currency; entered by hand. */
     amount: minor("amount").notNull(),
     note: text("note"),
-    ...timestamps,
+    ...timestamps(),
   },
   (t) => [
     uniqueIndex("portfolio_values_portfolio_date_uq").on(t.portfolioId, t.date),
@@ -1387,7 +1355,7 @@ export const portfolioValues = sqliteTable(
   ],
 );
 
-export const pillar3aContributions = sqliteTable(
+export const pillar3aContributions = table(
   "pillar_3a_contributions",
   {
     id: id(),
@@ -1411,7 +1379,7 @@ export const pillar3aContributions = sqliteTable(
       .notNull()
       .default("ordinary"),
     note: text("note"),
-    ...timestamps,
+    ...timestamps(),
   },
   (t) => [
     index("pillar_3a_contributions_user_id_idx").on(t.userId),
@@ -1420,37 +1388,41 @@ export const pillar3aContributions = sqliteTable(
   ],
 );
 
-export const pillar3aBuyInYears = sqliteTable(
+export const pillar3aBuyInYears = table(
   "pillar_3a_buy_in_years",
   {
     id: id(),
     userId: userId(),
-    contributionId: text("contribution_id")
-      .notNull()
-      .references(() => pillar3aContributions.id, { onDelete: "cascade" }),
+    contributionId: text("contribution_id").notNull(),
     /** The gap year this buy-in closes; each year can be closed only once. */
-    year: integer("year").notNull(),
-    ...timestamps,
+    year: int("year").notNull(),
+    ...timestamps(),
   },
   (t) => [
+    // Named explicitly: the generated name is over PostgreSQL's 63-byte limit.
+    foreignKey({
+      name: "pillar_3a_buy_in_years_contribution_id_fk",
+      columns: [t.contributionId],
+      foreignColumns: [pillar3aContributions.id],
+    }).onDelete("cascade"),
     uniqueIndex("pillar_3a_buy_in_years_user_year_uq").on(t.userId, t.year),
     index("pillar_3a_buy_in_years_user_id_idx").on(t.userId),
     index("pillar_3a_buy_in_years_contribution_id_idx").on(t.contributionId),
   ],
 );
 
-export const pillar3aYears = sqliteTable(
+export const pillar3aYears = table(
   "pillar_3a_years",
   {
     id: id(),
     userId: userId(),
-    year: integer("year").notNull(),
+    year: int("year").notNull(),
     deduction: text("deduction", { enum: PILLAR_3A_DEDUCTIONS })
       .notNull()
       .default("small"),
     /** Net earned income (CHF) for the large deduction. */
     earnedIncome: minor("earned_income"),
-    ...timestamps,
+    ...timestamps(),
   },
   (t) => [
     uniqueIndex("pillar_3a_years_user_year_uq").on(t.userId, t.year),

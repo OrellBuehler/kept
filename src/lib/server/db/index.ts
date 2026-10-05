@@ -359,4 +359,5 @@ export function isUniqueViolation(err: unknown): boolean {
   return false;
 }
 
-export * from "../schema";
+export { alias } from "./columns";
+export * from "./schema";

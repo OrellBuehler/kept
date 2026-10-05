@@ -17,7 +17,7 @@ import {
   withExclusiveClient,
   type DB,
 } from "./db";
-import { categoryRules, taxCredits, trades, transactions } from "./schema";
+import { categoryRules, taxCredits, trades, transactions } from "./db/schema";
 
 const SEQ_MIGRATION = "0029_strong_scourge";
 const real = join(process.cwd(), "drizzle");

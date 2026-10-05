@@ -9,11 +9,11 @@ import {
   or,
   sql,
 } from "drizzle-orm";
-import { alias } from "drizzle-orm/sqlite-core";
 import type { ImportFormat, ImportImpact } from "$lib/ledger-types";
 import type { Minor } from "$lib/money";
 import {
   accounts,
+  alias,
   balanceSnapshots,
   billAllocations,
   getDB,
@@ -157,7 +157,10 @@ export async function getImportImpacts(
       importId: transactions.importId,
       transactions: count(),
       categorized: count(transactions.categoryId),
-      notes: sql<number>`count(case when trim(coalesce(${transactions.note}, '')) <> '' then 1 end)`,
+      notes:
+        sql<number>`count(case when trim(coalesce(${transactions.note}, '')) <> '' then 1 end)`.mapWith(
+          Number,
+        ),
       taxYears: count(transactions.taxYear),
       deductionYears: count(transactions.deductionYear),
     })

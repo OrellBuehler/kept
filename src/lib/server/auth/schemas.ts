@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { USER_ROLES } from "$lib/server/schema";
+import { USER_ROLES } from "$lib/server/db/schema";
 
 export const PASSWORD_MIN = 10;
 export const PASSWORD_MAX = 256;

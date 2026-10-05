@@ -24,9 +24,20 @@ export const index = (isPg ? pg.index : sqlite.index) as typeof pg.index;
 export const uniqueIndex = (
   isPg ? pg.uniqueIndex : sqlite.uniqueIndex
 ) as typeof pg.uniqueIndex;
-export const foreignKey = (
-  isPg ? pg.foreignKey : sqlite.foreignKey
-) as typeof pg.foreignKey;
+export const alias = (isPg ? pg.alias : sqlite.alias) as typeof pg.alias;
+
+/**
+ * A table-level foreign key. The constraint `name` applies on PostgreSQL only,
+ * which limits identifiers to 63 bytes; on SQLite the name drizzle generates is
+ * part of the migration history, and changing it would rebuild the table.
+ */
+export const foreignKey = ((config: Parameters<typeof pg.foreignKey>[0]) =>
+  isPg
+    ? pg.foreignKey(config)
+    : sqlite.foreignKey({
+        columns: config.columns as never,
+        foreignColumns: config.foreignColumns as never,
+      })) as typeof pg.foreignKey;
 
 const pgInstant = (name: string) =>
   pg.timestamp(name, { precision: 3, withTimezone: true, mode: "date" });

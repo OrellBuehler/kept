@@ -14,7 +14,7 @@ import {
 import { mkdirSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { describeError } from "$lib/server/errors";
-import * as schema from "../schema";
+import * as schema from "./schema";
 import type { Backend, BackendTransaction, DB } from "./backend";
 import { Gate, GateToken } from "./gate";
 

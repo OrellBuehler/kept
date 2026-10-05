@@ -292,7 +292,11 @@ export async function createAccount(
         ((
           await first(
             tx
-              .select({ m: sql<number | null>`max(${accounts.sortOrder})` })
+              .select({
+                m: sql<number | null>`max(${accounts.sortOrder})`.mapWith(
+                  Number,
+                ),
+              })
               .from(accounts)
               .where(eq(accounts.userId, userId))
               .limit(1),

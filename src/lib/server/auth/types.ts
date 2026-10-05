@@ -1,4 +1,4 @@
-import type { UserRole } from "$lib/server/schema";
+import type { UserRole } from "$lib/server/db/schema";
 
 export interface SessionUser {
   id: string;
