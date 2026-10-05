@@ -3,6 +3,7 @@ import { warmDummyHash } from "$lib/server/auth/password";
 import { assertSecretKeyConfigured } from "$lib/server/crypto";
 import { registerBackups, stopBackups } from "$lib/server/backup";
 import { registerInbox, stopInbox } from "$lib/server/inbox";
+import { startDocumentSweep } from "$lib/server/bills/documents";
 import { startPendingSweep } from "$lib/server/imports";
 import { runMigrations } from "$lib/server/db";
 import { getStore, sweepStaleStorageTemp } from "$lib/server/storage";
@@ -45,6 +46,7 @@ export async function init() {
   warnIfAddressHeaderUnset();
   await runMigrations();
   startPendingSweep();
+  startDocumentSweep();
   sweepStaleStorageTemp().catch((err) =>
     console.error("storage temp cleanup failed: %s", describeError(err)),
   );
