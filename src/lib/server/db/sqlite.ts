@@ -1,0 +1,258 @@
+import { Database, type Statement } from "bun:sqlite";
+import { drizzle as drizzleBun } from "drizzle-orm/bun-sqlite";
+import { migrate } from "drizzle-orm/bun-sqlite/migrator";
+import {
+  createTableRelationsHelpers,
+  extractTablesRelationalConfig,
+} from "drizzle-orm";
+import { SQLiteAsyncDialect } from "drizzle-orm/sqlite-core";
+import {
+  SQLiteRemoteSession,
+  SqliteRemoteDatabase,
+  type RemoteCallback,
+} from "drizzle-orm/sqlite-proxy";
+import { mkdirSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { describeError } from "$lib/server/errors";
+import * as schema from "../schema";
+import type { Backend, BackendTransaction, DB } from "./backend";
+import { Gate, GateToken } from "./gate";
+
+export const DEFAULT_GATE_TIMEOUT_MS = 30_000;
+const STATEMENT_CACHE_SIZE = 512;
+
+export interface SqliteOptions {
+  /** How long a caller waits for the connection before failing. */
+  gateTimeoutMs?: number;
+}
+
+const tables = extractTablesRelationalConfig(
+  schema,
+  createTableRelationsHelpers,
+);
+const relational = {
+  fullSchema: schema,
+  schema: tables.tables,
+  tableNamesMap: tables.tableNamesMap,
+};
+const dialect = new SQLiteAsyncDialect();
+
+/**
+ * What `drizzle(callback, { schema })` builds, minus the per-call schema
+ * analysis: every transaction gets its own instance, so this runs per
+ * transaction and must stay cheap.
+ */
+function instance(callback: RemoteCallback): DB {
+  const session = new SQLiteRemoteSession(
+    callback,
+    dialect,
+    relational,
+    undefined,
+    {},
+  );
+  return new SqliteRemoteDatabase(
+    "async",
+    dialect,
+    session,
+    relational,
+  ) as unknown as DB;
+}
+
+type Row = unknown[];
+type Result = Awaited<ReturnType<RemoteCallback>>;
+
+/**
+ * sqlite-proxy on the existing `bun:sqlite` handle. The driver is async while
+ * `bun:sqlite` is not, so every statement runs to completion synchronously and
+ * the gate decides who may run one: a transaction owns the connection from
+ * BEGIN to COMMIT, and every other caller waits its turn in FIFO order.
+ */
+class SqliteBackend implements Backend {
+  readonly gate: Gate;
+  readonly root: DB;
+  #statements = new Map<string, Statement>();
+  #closed = false;
+
+  constructor(
+    readonly client: Database,
+    options: SqliteOptions,
+  ) {
+    this.gate = new Gate(options.gateTimeoutMs ?? DEFAULT_GATE_TIMEOUT_MS);
+    this.root = instance((sql, params, method) =>
+      this.#plainQuery(sql, params, method),
+    );
+  }
+
+  #statement(sql: string): Statement {
+    const cached = this.#statements.get(sql);
+    if (cached) {
+      // Re-insert so the Map's order is least-recently-used first.
+      this.#statements.delete(sql);
+      this.#statements.set(sql, cached);
+      return cached;
+    }
+    const stmt = this.client.prepare(sql);
+    this.#statements.set(sql, stmt);
+    if (this.#statements.size > STATEMENT_CACHE_SIZE) {
+      const [oldest] = this.#statements.keys();
+      this.#statements.get(oldest)?.finalize();
+      this.#statements.delete(oldest);
+    }
+    return stmt;
+  }
+
+  /**
+   * Row formats drizzle's sqlite-proxy expects: array rows for all/values,
+   * a single row (or undefined when there is none) for get, and `{ rows: [] }`
+   * for run.
+   */
+  #exec(
+    sql: string,
+    params: unknown[],
+    method: "run" | "all" | "values" | "get",
+  ): Result {
+    if (this.#closed) throw new Error("The database is closed");
+    const stmt = this.#statement(sql);
+    if (method === "run") {
+      stmt.run(...(params as never[]));
+      return { rows: [] };
+    }
+    const rows = stmt.values(...(params as never[])) as Row[];
+    return { rows: (method === "get" ? rows[0] : rows) as Result["rows"] };
+  }
+
+  async #plainQuery(
+    sql: string,
+    params: unknown[],
+    method: "run" | "all" | "values" | "get",
+  ): Promise<Result> {
+    // A free gate has no waiters, and the statement below runs to completion
+    // before anything else can start, so no ownership is needed.
+    if (this.gate.free) return this.#run(sql, params, method);
+    const token = new GateToken("query");
+    await this.gate.acquire(token);
+    try {
+      return this.#run(sql, params, method);
+    } finally {
+      this.gate.release(token);
+    }
+  }
+
+  #run(
+    sql: string,
+    params: unknown[],
+    method: "run" | "all" | "values" | "get",
+  ): Result {
+    if (this.client.inTransaction) {
+      throw new Error(
+        "A query outside any transaction found a transaction open on the connection",
+      );
+    }
+    return this.#exec(sql, params, method);
+  }
+
+  async beginTransaction(): Promise<BackendTransaction> {
+    const token = new GateToken("transaction", true);
+    await this.gate.acquire(token);
+    try {
+      if (this.client.inTransaction) {
+        throw new Error("A transaction is already open on the connection");
+      }
+      // IMMEDIATE takes the write lock up front, so a transaction that reads
+      // and then writes can never fail late with SQLITE_BUSY_SNAPSHOT.
+      this.client.exec("BEGIN IMMEDIATE");
+    } catch (err) {
+      this.gate.release(token);
+      throw err;
+    }
+    const owned = <T>(fn: () => T): T => {
+      if (!token.active) {
+        throw new Error("The transaction has already finished");
+      }
+      return fn();
+    };
+    const db = instance(async (sql, params, method) =>
+      owned(() => this.#exec(sql, params, method)),
+    );
+    const statement = async (text: string) => {
+      owned(() => this.client.exec(text));
+    };
+    return {
+      db,
+      commit: () => statement("COMMIT"),
+      rollback: async () => {
+        // An error such as SQLITE_FULL can already have rolled it back.
+        owned(() => {
+          if (this.client.inTransaction) this.client.exec("ROLLBACK");
+        });
+      },
+      savepoint: (name) => statement(`SAVEPOINT ${name}`),
+      releaseSavepoint: (name) => statement(`RELEASE SAVEPOINT ${name}`),
+      rollbackToSavepoint: (name) => statement(`ROLLBACK TO SAVEPOINT ${name}`),
+      release: () => {
+        if (this.client.inTransaction) {
+          console.error("transaction left open; rolling back");
+          try {
+            this.client.exec("ROLLBACK");
+          } catch (err) {
+            console.error("rollback failed: %s", describeError(err));
+          }
+        }
+        this.gate.release(token);
+      },
+    };
+  }
+
+  async withExclusiveClient<T>(
+    fn: (client: Database) => T | Promise<T>,
+  ): Promise<T> {
+    const token = new GateToken("exclusive client", true);
+    await this.gate.acquire(token);
+    try {
+      return await fn(this.client);
+    } finally {
+      this.gate.release(token);
+    }
+  }
+
+  resetGate(): void {
+    this.gate.reset();
+  }
+
+  async close(): Promise<void> {
+    await this.withExclusiveClient((client) => {
+      for (const stmt of this.#statements.values()) stmt.finalize();
+      this.#statements.clear();
+      this.#closed = true;
+      client.close();
+    });
+  }
+}
+
+export function openSqlite(
+  path: string,
+  options: SqliteOptions = {},
+): SqliteBackend {
+  const memory = path === ":memory:";
+  if (!memory) mkdirSync(dirname(path), { recursive: true });
+  const client = new Database(path, { create: true, strict: true });
+  if (!memory) client.exec("PRAGMA journal_mode = WAL;");
+  client.exec("PRAGMA foreign_keys = ON;");
+  client.exec("PRAGMA busy_timeout = 5000;");
+  return new SqliteBackend(client, options);
+}
+
+/**
+ * Migrations stay on the synchronous bun-sqlite migrator, over a throwaway
+ * drizzle instance on the same handle. Runs at startup, before any query.
+ */
+export function migrateSqlite(backend: SqliteBackend): void {
+  if (!backend.gate.free) {
+    throw new Error("Cannot migrate while the database is in use");
+  }
+  migrate(drizzleBun({ client: backend.client }), {
+    migrationsFolder: join(process.cwd(), "drizzle"),
+  });
+}
+
+export type { SqliteBackend };
