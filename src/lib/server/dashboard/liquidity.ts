@@ -213,14 +213,14 @@ export function computeLiquidity(
  * Per notice account: what was withdrawn (debits) in the current calendar
  * month or year, depending on its free-withdrawal period, up to `today`.
  */
-export function withdrawnThisPeriod(
+export async function withdrawnThisPeriod(
   userId: string,
   accounts: readonly Pick<
     LiquidityAccount,
     "id" | "noticeMonths" | "freeWithdrawalPeriod"
   >[],
   today: string,
-): Map<string, number> {
+): Promise<Map<string, number>> {
   const notice = accounts.filter(
     (a) => a.noticeMonths !== null && a.freeWithdrawalPeriod !== null,
   );
@@ -231,7 +231,7 @@ export function withdrawnThisPeriod(
   // Only debits count, and only within the current calendar month or year (not
   // a rolling window), matching how banks usually reset free withdrawals.
   const debit = sql`case when ${transactions.amount} < 0 then -${transactions.amount} else 0 end`;
-  const rows = getDB()
+  const rows = await getDB()
     .select({
       accountId: transactions.accountId,
       year: sql<number>`coalesce(sum(${debit}), 0)`,
@@ -249,8 +249,7 @@ export function withdrawnThisPeriod(
         lte(transactions.bookingDate, today),
       ),
     )
-    .groupBy(transactions.accountId)
-    .all();
+    .groupBy(transactions.accountId);
   const period = new Map(notice.map((a) => [a.id, a.freeWithdrawalPeriod]));
   for (const r of rows) {
     used.set(
@@ -266,12 +265,14 @@ export async function liquidity(
   userId: string,
   today: string,
   balances?: readonly AccountBalanceView[],
-  investmentCashLiquid: boolean = getPreferences(userId).investmentCashLiquid,
+  investmentCashLiquid?: boolean,
 ): Promise<CurrencyLiquidity[]> {
   const accounts = balances ?? (await accountBalances(userId, today));
   return computeLiquidity(accounts, {
     today,
-    investmentCashLiquid,
-    usedThisPeriod: withdrawnThisPeriod(userId, accounts, today),
+    investmentCashLiquid:
+      investmentCashLiquid ??
+      (await getPreferences(userId)).investmentCashLiquid,
+    usedThisPeriod: await withdrawnThisPeriod(userId, accounts, today),
   });
 }

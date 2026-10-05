@@ -1,7 +1,7 @@
 import { and, eq, inArray, ne } from "drizzle-orm";
 import { minor, type Minor } from "$lib/money";
 import type { Cadence, SeriesStatus } from "$lib/recurring-types";
-import { getDB, recurringSeries, transactions } from "$lib/server/db";
+import { type DB, getDB, recurringSeries, transactions } from "$lib/server/db";
 import { addDays } from "$lib/server/dashboard/dates";
 import { localToday } from "$lib/server/ledger/balances";
 import { LedgerError, notFound } from "$lib/server/ledger/errors";
@@ -89,18 +89,11 @@ function toView(row: Row, today: string): RecurringView {
   };
 }
 
-function getRow(userId: string, id: string): Row {
-  const row = getDB()
-    .select()
-    .from(recurringSeries)
-    .where(and(eq(recurringSeries.userId, userId), eq(recurringSeries.id, id)))
-    .get();
-  if (!row) throw notFound("Recurring payment");
-  return row;
-}
+type Tx = Pick<DB, "select" | "insert" | "update" | "delete">;
 
-function loadTransactions(userId: string): DetectInput[] {
-  return getDB()
+/** Sync: runs inside the transaction of syncRecurring. */
+function loadTransactionsInTx(tx: Tx, userId: string): DetectInput[] {
+  return tx
     .select({
       bookingDate: transactions.bookingDate,
       amount: transactions.amount,
@@ -118,16 +111,18 @@ function loadTransactions(userId: string): DetectInput[] {
 }
 
 /**
- * Re-runs detection over the user's transactions and stores the result. New
+ * Re-runs detection over the user's transactions and stores the result. The
+ * transactions, the stored series and the writes share one transaction, so two
+ * overlapping runs cannot both insert a series or overwrite newer statistics
+ * with older ones. New
  * series start as "suggested"; the status of known ones (confirmed or
  * dismissed) and any hand-edited name, cadence or amount are kept, only their
  * statistics (dates, last amount) are refreshed. Suggestions that no longer
  * hold are removed.
  */
-export function syncRecurring(userId: string): void {
-  const detected = detectSeries(loadTransactions(userId));
-  const db = getDB();
-  db.transaction((tx) => {
+export async function syncRecurring(userId: string): Promise<void> {
+  getDB().transaction((tx) => {
+    const detected = detectSeries(loadTransactionsInTx(tx, userId));
     const existing = new Map(
       tx
         .select()
@@ -197,15 +192,16 @@ export function syncRecurring(userId: string): void {
 }
 
 /** Stored series for the user, newest payment first. Does not run detection. */
-export function listRecurring(
+export async function listRecurring(
   userId: string,
   today: string = localToday(),
-): RecurringView[] {
-  return getDB()
-    .select()
-    .from(recurringSeries)
-    .where(eq(recurringSeries.userId, userId))
-    .all()
+): Promise<RecurringView[]> {
+  return (
+    await getDB()
+      .select()
+      .from(recurringSeries)
+      .where(eq(recurringSeries.userId, userId))
+  )
     .map((r) => toView(r, today))
     .sort(
       (a, b) =>
@@ -238,13 +234,13 @@ export function recurringTotals(series: RecurringView[]): RecurringTotals[] {
   return [...by.values()].sort((a, b) => a.currency.localeCompare(b.currency));
 }
 
-function setStatus(userId: string, id: string, status: SeriesStatus) {
-  getRow(userId, id);
-  getDB()
+async function setStatus(userId: string, id: string, status: SeriesStatus) {
+  const updated = await getDB()
     .update(recurringSeries)
     .set({ status })
     .where(and(eq(recurringSeries.userId, userId), eq(recurringSeries.id, id)))
-    .run();
+    .returning({ id: recurringSeries.id });
+  if (updated.length === 0) throw notFound("Recurring payment");
 }
 
 export const confirmSeries = (userId: string, id: string) =>
@@ -258,24 +254,36 @@ export const dismissSeries = (userId: string, id: string) =>
 export const restoreSeries = (userId: string, id: string) =>
   setStatus(userId, id, "suggested");
 
-export function editSeries(
+/** The series is read in the transaction that edits it, so the sign and currency used are current. */
+export async function editSeries(
   userId: string,
   id: string,
   input: SeriesEditInput,
-): void {
-  const row = getRow(userId, id);
-  const parsed = parseEditedAmount(input.amount, row.currency);
-  if (!parsed.ok) throw new LedgerError("invalid", parsed.message, "amount");
-  getDB()
-    .update(recurringSeries)
-    .set({
-      name: input.name,
-      cadence: input.cadence,
-      amount: minor(row.amount < 0 ? -parsed.value : parsed.value),
-      edited: true,
-    })
-    .where(and(eq(recurringSeries.userId, userId), eq(recurringSeries.id, id)))
-    .run();
+): Promise<void> {
+  getDB().transaction((tx) => {
+    const row = tx
+      .select()
+      .from(recurringSeries)
+      .where(
+        and(eq(recurringSeries.userId, userId), eq(recurringSeries.id, id)),
+      )
+      .limit(1)
+      .get();
+    if (!row) throw notFound("Recurring payment");
+    const parsed = parseEditedAmount(input.amount, row.currency);
+    if (!parsed.ok) throw new LedgerError("invalid", parsed.message, "amount");
+    tx.update(recurringSeries)
+      .set({
+        name: input.name,
+        cadence: input.cadence,
+        amount: minor(row.amount < 0 ? -parsed.value : parsed.value),
+        edited: true,
+      })
+      .where(
+        and(eq(recurringSeries.userId, userId), eq(recurringSeries.id, id)),
+      )
+      .run();
+  });
 }
 
 /**
@@ -291,17 +299,17 @@ export function editSeries(
  * - A series is projected until the user dismisses it, even when a payment
  *   is overdue.
  */
-export function projectRecurring(
+export async function projectRecurring(
   userId: string,
   from: string,
   to: string,
-): ProjectedOccurrence[] {
+): Promise<ProjectedOccurrence[]> {
   if (!isRealDate(from) || !isRealDate(to)) {
     throw new LedgerError("invalid", "Enter dates as YYYY-MM-DD.");
   }
   if (from > to) return [];
-  syncRecurring(userId);
-  const rows = getDB()
+  await syncRecurring(userId);
+  const rows = await getDB()
     .select()
     .from(recurringSeries)
     .where(
@@ -309,8 +317,7 @@ export function projectRecurring(
         eq(recurringSeries.userId, userId),
         eq(recurringSeries.status, "confirmed"),
       ),
-    )
-    .all();
+    );
   return rows
     .flatMap((r) =>
       expectedDates(r.lastDate, r.cadence, from, to).map((date) => ({

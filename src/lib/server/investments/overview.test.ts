@@ -32,14 +32,21 @@ describe("investmentsOverview", () => {
     const a = await seedAccount(user.id, { name: "A", currency: "CHF" });
     const b = await seedAccount(user.id, { name: "B", currency: "CHF" });
     const c = await seedAccount(user.id, { name: "C", currency: "EUR" });
-    const etf = seedSecurity(user.id, { name: "Example ETF", currency: "CHF" });
-    seedTrade(user.id, a.id, etf.id, {
+    const etf = await seedSecurity(user.id, {
+      name: "Example ETF",
+      currency: "CHF",
+    });
+    await seedTrade(user.id, a.id, etf.id, {
       qty: "10",
       price: "100",
       amount: 100000,
     });
-    seedTrade(user.id, b.id, etf.id, { qty: "5", price: "100", amount: 50000 });
-    upsertFxRates(user.id, [
+    await seedTrade(user.id, b.id, etf.id, {
+      qty: "5",
+      price: "100",
+      amount: 50000,
+    });
+    await upsertFxRates(user.id, [
       {
         base: "CHF",
         quote: "EUR",
@@ -47,8 +54,12 @@ describe("investmentsOverview", () => {
         rate: parseFixed("1.1"),
       },
     ]);
-    seedTrade(user.id, c.id, etf.id, { qty: "2", price: "100", amount: 22000 });
-    seedProviderPrice(user.id, etf.id, "2026-10-14", "120");
+    await seedTrade(user.id, c.id, etf.id, {
+      qty: "2",
+      price: "100",
+      amount: 22000,
+    });
+    await seedProviderPrice(user.id, etf.id, "2026-10-14", "120");
 
     const o = await investmentsOverview(user.id, TODAY);
     expect(o.securities).toHaveLength(1);
@@ -71,11 +82,11 @@ describe("investmentsOverview", () => {
     const user = await createTestUser();
     const other = await createTestUser();
     const a = await seedAccount(user.id);
-    const etf = seedSecurity(user.id);
-    seedTrade(user.id, a.id, etf.id, { amount: 100000 });
+    const etf = await seedSecurity(user.id);
+    await seedTrade(user.id, a.id, etf.id, { amount: 100000 });
     const oa = await seedAccount(other.id);
-    const oetf = seedSecurity(other.id);
-    seedTrade(other.id, oa.id, oetf.id, { amount: 5000 });
+    const oetf = await seedSecurity(other.id);
+    await seedTrade(other.id, oa.id, oetf.id, { amount: 5000 });
     expect((await investmentsOverview(user.id, TODAY)).securities).toHaveLength(
       1,
     );

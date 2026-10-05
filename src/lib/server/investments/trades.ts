@@ -3,7 +3,9 @@ import type { TradeSide } from "$lib/investment-types";
 import type { Minor } from "$lib/money";
 import type { Fixed8 } from "$lib/quantity";
 import {
+  type DB,
   accounts,
+  first,
   getDB,
   securities,
   securityPrices,
@@ -39,6 +41,8 @@ export interface TradeView {
   note: string | null;
 }
 
+type Tx = Pick<DB, "select" | "insert" | "update" | "delete">;
+
 const columns = {
   id: trades.id,
   accountId: trades.accountId,
@@ -56,28 +60,53 @@ const columns = {
   note: trades.note,
 };
 
-function assertAccount(userId: string, accountId: string) {
-  const found = getDB()
+function assertAccountInTx(tx: Tx, userId: string, accountId: string) {
+  const found = tx
     .select({ id: accounts.id })
     .from(accounts)
     .where(and(eq(accounts.userId, userId), eq(accounts.id, accountId)))
+    .limit(1)
     .get();
   if (!found) throw notFound("Account");
 }
 
-function assertSecurity(userId: string, securityId: string) {
-  const found = getDB()
+function assertSecurityInTx(tx: Tx, userId: string, securityId: string) {
+  const found = tx
     .select({ id: securities.id })
     .from(securities)
     .where(and(eq(securities.userId, userId), eq(securities.id, securityId)))
+    .limit(1)
     .get();
   if (!found) throw notFound("Security");
 }
 
+function getTradeInTx(tx: Tx, userId: string, id: string): TradeView {
+  const row = tx
+    .select(columns)
+    .from(trades)
+    .innerJoin(securities, eq(securities.id, trades.securityId))
+    .where(and(eq(trades.userId, userId), eq(trades.id, id)))
+    .limit(1)
+    .get();
+  if (!row) throw notFound("Trade");
+  return row;
+}
+
 /** Newest first. */
-export function listTrades(userId: string, accountId: string): TradeView[] {
-  assertAccount(userId, accountId);
-  return getDB()
+export async function listTrades(
+  userId: string,
+  accountId: string,
+): Promise<TradeView[]> {
+  const db = getDB();
+  const found = await first(
+    db
+      .select({ id: accounts.id })
+      .from(accounts)
+      .where(and(eq(accounts.userId, userId), eq(accounts.id, accountId)))
+      .limit(1),
+  );
+  if (!found) throw notFound("Account");
+  return await db
     .select(columns)
     .from(trades)
     .innerJoin(securities, eq(securities.id, trades.securityId))
@@ -87,17 +116,18 @@ export function listTrades(userId: string, accountId: string): TradeView[] {
       desc(trades.createdAt),
       desc(trades.seq),
       desc(trades.id),
-    )
-    .all();
+    );
 }
 
-export function getTrade(userId: string, id: string): TradeView {
-  const row = getDB()
-    .select(columns)
-    .from(trades)
-    .innerJoin(securities, eq(securities.id, trades.securityId))
-    .where(and(eq(trades.userId, userId), eq(trades.id, id)))
-    .get();
+export async function getTrade(userId: string, id: string): Promise<TradeView> {
+  const row = await first(
+    getDB()
+      .select(columns)
+      .from(trades)
+      .innerJoin(securities, eq(securities.id, trades.securityId))
+      .where(and(eq(trades.userId, userId), eq(trades.id, id)))
+      .limit(1),
+  );
   if (!row) throw notFound("Trade");
   return row;
 }
@@ -111,9 +141,13 @@ interface SequenceChange {
   add?: SequenceTrade;
 }
 
-/** Rejects a change after which the held quantity is negative on any date. */
-function assertSequence(userId: string, change: SequenceChange) {
-  const rows = getDB()
+/**
+ * Rejects a change after which the held quantity is negative on any date.
+ * Runs in the transaction that writes the change, so a concurrent trade cannot
+ * invalidate the check.
+ */
+function assertSequenceInTx(tx: Tx, userId: string, change: SequenceChange) {
+  const rows = tx
     .select({
       id: trades.id,
       date: trades.date,
@@ -169,9 +203,8 @@ function assertSequence(userId: string, change: SequenceChange) {
  * a security's splits leaves the stored ones in the wrong units. Dropping them makes the next
  * market data refresh backfill the whole range from the first trade.
  */
-function discardProviderPrices(userId: string, securityIds: string[]) {
-  getDB()
-    .delete(securityPrices)
+function discardProviderPrices(tx: Tx, userId: string, securityIds: string[]) {
+  tx.delete(securityPrices)
     .where(
       and(
         eq(securityPrices.userId, userId),
@@ -182,88 +215,86 @@ function discardProviderPrices(userId: string, securityIds: string[]) {
     .run();
 }
 
-export function createTrade(
+export async function createTrade(
   userId: string,
   accountId: string,
   input: TradeInput,
-): TradeView {
-  assertAccount(userId, accountId);
-  assertSecurity(userId, input.securityId);
-  assertSequence(userId, {
-    accountId,
-    securityId: input.securityId,
-    add: input,
-  });
-  const row = getDB().transaction(() => {
-    const inserted = getDB()
+): Promise<TradeView> {
+  const row = getDB().transaction((tx) => {
+    assertAccountInTx(tx, userId, accountId);
+    assertSecurityInTx(tx, userId, input.securityId);
+    assertSequenceInTx(tx, userId, {
+      accountId,
+      securityId: input.securityId,
+      add: input,
+    });
+    const inserted = tx
       .insert(trades)
       .values({ ...input, userId, accountId })
       .returning({ id: trades.id })
       .get();
     if (input.side === "split") {
-      discardProviderPrices(userId, [input.securityId]);
+      discardProviderPrices(tx, userId, [input.securityId]);
     }
     return inserted;
   });
-  return getTrade(userId, row.id);
+  return await getTrade(userId, row.id);
 }
 
-export function updateTrade(
+export async function updateTrade(
   userId: string,
   id: string,
   input: TradeInput,
-): TradeView {
-  const current = getTrade(userId, id);
-  assertSecurity(userId, input.securityId);
-  if (input.securityId === current.securityId) {
-    assertSequence(userId, {
-      accountId: current.accountId,
-      securityId: current.securityId,
-      excludeId: id,
-      add: input,
-    });
-  } else {
-    assertSequence(userId, {
-      accountId: current.accountId,
-      securityId: current.securityId,
-      excludeId: id,
-    });
-    assertSequence(userId, {
-      accountId: current.accountId,
-      securityId: input.securityId,
-      add: input,
-    });
-  }
-  getDB().transaction(() => {
-    getDB()
-      .update(trades)
+): Promise<TradeView> {
+  getDB().transaction((tx) => {
+    const current = getTradeInTx(tx, userId, id);
+    assertSecurityInTx(tx, userId, input.securityId);
+    if (input.securityId === current.securityId) {
+      assertSequenceInTx(tx, userId, {
+        accountId: current.accountId,
+        securityId: current.securityId,
+        excludeId: id,
+        add: input,
+      });
+    } else {
+      assertSequenceInTx(tx, userId, {
+        accountId: current.accountId,
+        securityId: current.securityId,
+        excludeId: id,
+      });
+      assertSequenceInTx(tx, userId, {
+        accountId: current.accountId,
+        securityId: input.securityId,
+        add: input,
+      });
+    }
+    tx.update(trades)
       .set({ splitNew: null, splitOld: null, ...input })
       .where(and(eq(trades.userId, userId), eq(trades.id, id)))
       .run();
     if (current.side === "split") {
-      discardProviderPrices(userId, [current.securityId]);
+      discardProviderPrices(tx, userId, [current.securityId]);
     }
     if (input.side === "split") {
-      discardProviderPrices(userId, [input.securityId]);
+      discardProviderPrices(tx, userId, [input.securityId]);
     }
   });
-  return getTrade(userId, id);
+  return await getTrade(userId, id);
 }
 
-export function deleteTrade(userId: string, id: string): void {
-  const current = getTrade(userId, id);
-  assertSequence(userId, {
-    accountId: current.accountId,
-    securityId: current.securityId,
-    excludeId: id,
-  });
-  getDB().transaction(() => {
-    getDB()
-      .delete(trades)
+export async function deleteTrade(userId: string, id: string): Promise<void> {
+  getDB().transaction((tx) => {
+    const current = getTradeInTx(tx, userId, id);
+    assertSequenceInTx(tx, userId, {
+      accountId: current.accountId,
+      securityId: current.securityId,
+      excludeId: id,
+    });
+    tx.delete(trades)
       .where(and(eq(trades.userId, userId), eq(trades.id, id)))
       .run();
     if (current.side === "split") {
-      discardProviderPrices(userId, [current.securityId]);
+      discardProviderPrices(tx, userId, [current.securityId]);
     }
   });
 }

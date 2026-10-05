@@ -210,11 +210,10 @@ describe("netWorthSeries", () => {
     const { archiveAccount } = await import("$lib/server/ledger");
     await archiveAccount(u.id, old.id);
     await archiveAccount(other.id, foreign.id);
-    getDB()
+    await getDB()
       .update(accounts)
       .set({ archivedAt: new Date("2026-08-20T10:00:00") })
-      .where(eq(accounts.id, old.id))
-      .run();
+      .where(eq(accounts.id, old.id));
     const series = (
       await netWorthSeries(u.id, {
         from: "2026-07-31",
@@ -237,20 +236,20 @@ describe("netWorthSeries", () => {
       await import("$lib/server/ledger");
     const before = Date.now();
     await archiveAccount(u.id, a.id);
-    const row = () =>
-      getDB().select().from(accounts).where(eq(accounts.id, a.id)).get()!;
-    expect(row().archivedAt!.getTime()).toBeGreaterThanOrEqual(before);
+    const row = async () =>
+      (await getDB().select().from(accounts).where(eq(accounts.id, a.id)))[0]!;
+    expect((await row()).archivedAt!.getTime()).toBeGreaterThanOrEqual(before);
     await unarchiveAccount(u.id, a.id);
-    expect(row().archivedAt).toBeNull();
+    expect((await row()).archivedAt).toBeNull();
   });
 
   it("returns an empty list without accounts and finds the earliest date", async () => {
     const u = await createTestUser();
     expect(await netWorthSeries(u.id, { today: TODAY })).toEqual([]);
-    expect(earliestDataDate(u.id)).toBeNull();
+    expect(await earliestDataDate(u.id)).toBeNull();
     const a = await seedAccount(u.id, { openingDate: "2025-05-01" });
     await seedImportedTransaction(u.id, a.id, { bookingDate: "2025-03-15" });
-    expect(earliestDataDate(u.id)).toBe("2025-03-15");
+    expect(await earliestDataDate(u.id)).toBe("2025-03-15");
   });
 
   it("starts the range at an archived account that holds the earliest data", async () => {
@@ -261,7 +260,7 @@ describe("netWorthSeries", () => {
     await seedImportedTransaction(u.id, old.id, { bookingDate: "2025-07-10" });
     const { archiveAccount } = await import("$lib/server/ledger");
     await archiveAccount(u.id, old.id);
-    expect(earliestDataDate(u.id)).toBe("2025-06-01");
+    expect(await earliestDataDate(u.id)).toBe("2025-06-01");
   });
 
   it("finds the earliest date when every account is archived", async () => {
@@ -270,7 +269,7 @@ describe("netWorthSeries", () => {
     await seedImportedTransaction(u.id, a.id, { bookingDate: "2025-04-10" });
     const { archiveAccount } = await import("$lib/server/ledger");
     await archiveAccount(u.id, a.id);
-    expect(earliestDataDate(u.id)).toBe("2025-04-10");
+    expect(await earliestDataDate(u.id)).toBe("2025-04-10");
   });
 
   it("ignores an archived account without an archive timestamp", async () => {
@@ -278,19 +277,18 @@ describe("netWorthSeries", () => {
     const a = await seedAccount(u.id, { openingDate: "2025-06-01" });
     const { archiveAccount } = await import("$lib/server/ledger");
     await archiveAccount(u.id, a.id);
-    getDB()
+    await getDB()
       .update(accounts)
       .set({ archivedAt: null })
-      .where(eq(accounts.id, a.id))
-      .run();
-    expect(earliestDataDate(u.id)).toBeNull();
+      .where(eq(accounts.id, a.id));
+    expect(await earliestDataDate(u.id)).toBeNull();
   });
 
   it("does not see another user's earliest data", async () => {
     const u = await createTestUser();
     const other = await createTestUser();
     await seedAccount(other.id, { openingDate: "2020-01-01" });
-    expect(earliestDataDate(u.id)).toBeNull();
+    expect(await earliestDataDate(u.id)).toBeNull();
   });
 });
 
@@ -616,7 +614,7 @@ describe("billsSummary and unmatchedTransactions", () => {
       referenceType: "QRR",
     });
     expect((await billsSummary(u.id, TODAY)).unmatchedSuggestions).toBe(1);
-    expect(unmatchedTransactions(u.id, { today: TODAY }).count).toBe(1);
+    expect((await unmatchedTransactions(u.id, { today: TODAY })).count).toBe(1);
     // nothing was allocated by reading the summary
     expect((await billsSummary(u.id, TODAY)).unmatchedSuggestions).toBe(1);
   });
@@ -651,13 +649,13 @@ describe("billsSummary and unmatchedTransactions", () => {
       amount: m(-500),
       ...ref,
     });
-    expect(unmatchedTransactions(u.id, { today: TODAY })).toEqual({
+    expect(await unmatchedTransactions(u.id, { today: TODAY })).toEqual({
       days: 60,
       count: 2,
     });
-    expect(unmatchedTransactions(u.id, { days: 10, today: TODAY }).count).toBe(
-      1,
-    );
+    expect(
+      (await unmatchedTransactions(u.id, { days: 10, today: TODAY })).count,
+    ).toBe(1);
   });
 });
 

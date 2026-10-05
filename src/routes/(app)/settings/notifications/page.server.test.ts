@@ -66,7 +66,7 @@ describe("settings/notifications", () => {
 
   it("saves trigger settings and validates ranges", async () => {
     expect((await act("saveSettings", user, triggers)).type).toBe("return");
-    expect(getSettings(user.id)).toMatchObject({
+    expect(await getSettings(user.id)).toMatchObject({
       billDueEnabled: true,
       billDueDays: 5,
       billOverdueEnabled: true,
@@ -100,7 +100,7 @@ describe("settings/notifications", () => {
       });
     expect((await save()).type).toBe("return");
     expect((await save({ token: "", topic: "kept2" })).type).toBe("return");
-    expect(getChannelConfig(user.id, "ntfy")).toEqual({
+    expect(await getChannelConfig(user.id, "ntfy")).toEqual({
       serverUrl: "https://ntfy.example.org",
       topic: "kept2",
       token: "tk_secret",
@@ -115,7 +115,7 @@ describe("settings/notifications", () => {
       to: "me@example.org",
     });
     expect(res.type).toBe("fail");
-    expect(listChannels(user.id)).toEqual([]);
+    expect(await listChannels(user.id)).toEqual([]);
   });
 
   it("sends a test message, toggles and deletes", async () => {
@@ -133,9 +133,9 @@ describe("settings/notifications", () => {
     expect(fetchMock).toHaveBeenCalledTimes(1);
 
     await act("toggleChannel", user, { kind: "webhook", enabled: "false" });
-    expect(listChannels(user.id)[0].enabled).toBe(false);
+    expect((await listChannels(user.id))[0].enabled).toBe(false);
     await act("deleteChannel", user, { kind: "webhook" });
-    expect(listChannels(user.id)).toEqual([]);
+    expect(await listChannels(user.id)).toEqual([]);
   });
 
   describe("private network targets", () => {
@@ -148,7 +148,7 @@ describe("settings/notifications", () => {
       vi.stubEnv("KEPT_ALLOW_PRIVATE_NETWORK", "");
       const res = await act("saveChannel", user, privateHook);
       expect(res.type).toBe("fail");
-      expect(listChannels(user.id)).toEqual([]);
+      expect(await listChannels(user.id)).toEqual([]);
       const meta = await act("saveChannel", user, {
         kind: "ntfy",
         serverUrl: "http://169.254.169.254",
@@ -162,7 +162,7 @@ describe("settings/notifications", () => {
       const admin = await createTestUser({ role: "admin" });
       const res = await act("saveChannel", admin, privateHook);
       expect(res.type).toBe("return");
-      expect(listChannels(admin.id)).toHaveLength(1);
+      expect(await listChannels(admin.id)).toHaveLength(1);
     });
 
     it("are accepted for members with KEPT_ALLOW_PRIVATE_NETWORK=true", async () => {
@@ -200,7 +200,7 @@ describe("settings/notifications", () => {
       url: "https://hooks.example.org/k",
     });
     await act("deleteChannel", user, { kind: "webhook" });
-    expect(listChannels(other.id)).toHaveLength(1);
+    expect(await listChannels(other.id)).toHaveLength(1);
   });
 
   describe("after KEPT_SECRET_KEY changed", () => {
@@ -240,7 +240,9 @@ describe("settings/notifications", () => {
       });
       expect(res.type).toBe("fail");
       expect(JSON.stringify(res)).toContain("Enter it again");
-      expect(listChannels(user.id)[0]).toMatchObject({ needsReentry: true });
+      expect((await listChannels(user.id))[0]).toMatchObject({
+        needsReentry: true,
+      });
     });
 
     it("re-saving with a new token stores it", async () => {
@@ -252,7 +254,7 @@ describe("settings/notifications", () => {
         token: "tk_new",
       });
       expect(res.type).toBe("return");
-      expect(listChannels(user.id)[0]).toMatchObject({
+      expect((await listChannels(user.id))[0]).toMatchObject({
         needsReentry: false,
         fields: { topic: "kept2" },
         hasSecret: true,
@@ -268,7 +270,7 @@ describe("settings/notifications", () => {
         removeSecret: "on",
       });
       expect(res.type).toBe("return");
-      expect(listChannels(user.id)[0]).toMatchObject({
+      expect((await listChannels(user.id))[0]).toMatchObject({
         needsReentry: false,
         fields: { topic: "kept2" },
         hasSecret: false,
@@ -316,7 +318,7 @@ describe("settings/notifications", () => {
       expect((await act("deleteChannel", user, { kind: "ntfy" })).type).toBe(
         "return",
       );
-      expect(listChannels(user.id)).toEqual([]);
+      expect(await listChannels(user.id)).toEqual([]);
     });
   });
 });

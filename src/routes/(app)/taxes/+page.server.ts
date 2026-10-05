@@ -19,7 +19,7 @@ export const load: PageServerLoad = async ({ locals }) => {
     defaultYear: Number(today.slice(0, 4)) - 1,
     defaultCurrency:
       (await listAccounts(user.id, today)).find((a) => !a.archived)?.currency ??
-      getPreferences(user.id).defaultCurrency,
+      (await getPreferences(user.id)).defaultCurrency,
   };
 };
 

@@ -9,11 +9,11 @@ import {
   type TradeInput,
 } from "$lib/server/investments";
 
-export function seedSecurity(
+export async function seedSecurity(
   userId: string,
   over: Partial<SecurityInput> = {},
 ) {
-  return createSecurity(userId, {
+  return await createSecurity(userId, {
     name: "Example World ETF",
     kind: "etf",
     isin: null,
@@ -24,7 +24,7 @@ export function seedSecurity(
 }
 
 /** Quantity, price and amount are decimal strings, e.g. qty "10", price "100", amount "1005". */
-export function seedTrade(
+export async function seedTrade(
   userId: string,
   accountId: string,
   securityId: string,
@@ -40,7 +40,7 @@ export function seedTrade(
     split?: { new: number; old: number };
   },
 ) {
-  return createTrade(userId, accountId, {
+  return await createTrade(userId, accountId, {
     securityId,
     date: over.date ?? "2024-01-15",
     side: over.side ?? "buy",
@@ -56,22 +56,25 @@ export function seedTrade(
   });
 }
 
-export function seedManualPrice(
+export async function seedManualPrice(
   userId: string,
   securityId: string,
   date: string,
   price: string,
 ) {
-  return setManualPrice(userId, securityId, { date, price: parseFixed(price) });
+  return await setManualPrice(userId, securityId, {
+    date,
+    price: parseFixed(price),
+  });
 }
 
-export function seedProviderPrice(
+export async function seedProviderPrice(
   userId: string,
   securityId: string,
   date: string,
   price: string,
 ) {
-  upsertProviderPrices(userId, securityId, [
+  await upsertProviderPrices(userId, securityId, [
     { date, price: parseFixed(price) },
   ]);
 }

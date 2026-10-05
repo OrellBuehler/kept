@@ -433,6 +433,24 @@ function pruneOrphanAnnotations(tx: Tx, userId: string) {
   }
 }
 
+/**
+ * The annotation of a detected payment is unique per transaction. Two
+ * annotations of the same payment can both find no existing row and both
+ * insert; the loser hits the unique index.
+ */
+function isAnnotationConflict(err: unknown): boolean {
+  for (let e: unknown = err; e instanceof Error; e = e.cause) {
+    if (
+      /UNIQUE constraint failed: pillar_3a_contributions\.transaction_id/.test(
+        e.message,
+      )
+    ) {
+      return true;
+    }
+  }
+  return false;
+}
+
 function isBuyInYearConflict(err: unknown): boolean {
   for (let e: unknown = err; e instanceof Error; e = e.cause) {
     if (/UNIQUE constraint failed: pillar_3a_buy_in_years/.test(e.message)) {
@@ -527,6 +545,12 @@ async function save(
       }
     });
   } catch (err) {
+    if (isAnnotationConflict(err)) {
+      throw new LedgerError(
+        "conflict",
+        "This payment was just saved from another request. Reload and try again.",
+      );
+    }
     if (isBuyInYearConflict(err)) {
       throw new LedgerError(
         "conflict",

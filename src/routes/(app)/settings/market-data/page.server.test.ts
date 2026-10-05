@@ -48,19 +48,19 @@ describe("settings/market-data", () => {
       type: "return",
       value: { success: true, enabled: true },
     });
-    expect(getMarketDataSettings(u.id).enabled).toBe(true);
+    expect((await getMarketDataSettings(u.id)).enabled).toBe(true);
     expect(await act("save", u, {})).toMatchObject({
       type: "return",
       value: { success: true, enabled: false },
     });
-    expect(getMarketDataSettings(u.id).enabled).toBe(false);
+    expect((await getMarketDataSettings(u.id)).enabled).toBe(false);
   });
 
   it("settings are per user", async () => {
     const a = await createTestUser();
     const b = await createTestUser();
     await act("save", a, { enabled: "on" });
-    expect(getMarketDataSettings(b.id).enabled).toBe(false);
+    expect((await getMarketDataSettings(b.id)).enabled).toBe(false);
   });
 
   it("refuses to refresh while market data is off", async () => {
@@ -76,10 +76,13 @@ describe("settings/market-data", () => {
   it("refreshes and returns the summary", async () => {
     const u = await createTestUser();
     const acc = await seedAccount(u.id, { type: "investment" });
-    const sec = seedSecurity(u.id, { symbol: "AAA.SW" });
-    seedTrade(u.id, acc.id, sec.id, { date: "2024-01-15", amount: 100000 });
-    seedProviderPrice(u.id, sec.id, "2024-01-20", "100");
-    setMarketDataEnabled(u.id, true);
+    const sec = await seedSecurity(u.id, { symbol: "AAA.SW" });
+    await seedTrade(u.id, acc.id, sec.id, {
+      date: "2024-01-15",
+      amount: 100000,
+    });
+    await seedProviderPrice(u.id, sec.id, "2024-01-20", "100");
+    await setMarketDataEnabled(u.id, true);
     setQuoteProvider(provider);
     const r = await act("refresh", u);
     expect(r).toMatchObject({
@@ -90,6 +93,6 @@ describe("settings/market-data", () => {
         result: { securities: 1, errors: [] },
       },
     });
-    expect(getMarketDataSettings(u.id).lastRunAt).not.toBeNull();
+    expect((await getMarketDataSettings(u.id)).lastRunAt).not.toBeNull();
   });
 });

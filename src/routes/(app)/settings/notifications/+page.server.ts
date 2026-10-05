@@ -14,7 +14,6 @@ import {
 } from "$lib/server/notifications/schemas";
 import {
   deleteChannel,
-  getReadableChannelConfig,
   getSettings,
   listChannels,
   saveChannel,
@@ -24,12 +23,12 @@ import {
 } from "$lib/server/notifications/store";
 import type { Actions, PageServerLoad } from "./$types";
 
-export const load: PageServerLoad = ({ locals }) => {
+export const load: PageServerLoad = async ({ locals }) => {
   const user = requireUser(locals);
   const smtpConfigured = getSmtpConfig() !== null;
-  const channels = listChannels(user.id);
+  const channels = await listChannels(user.id);
   return {
-    settings: getSettings(user.id),
+    settings: await getSettings(user.id),
     channels,
     kinds: CHANNEL_KINDS.filter((k) => k !== "email" || smtpConfigured),
   };
@@ -56,7 +55,7 @@ export const actions: Actions = {
     if (!parsed.ok) {
       return fail(400, { action: "saveSettings", errors: parsed.errors });
     }
-    saveSettings(user.id, parsed.data);
+    await saveSettings(user.id, parsed.data);
     return { success: true as const, action: "saveSettings" as const };
   },
 
@@ -70,36 +69,9 @@ export const actions: Actions = {
     if (!parsed.ok) {
       return fail(400, { action: "channel", kind, errors: parsed.errors });
     }
-    // A blank secret keeps the stored one. If the stored one cannot be read
-    // there is nothing to keep: it must be entered again or removed explicitly.
-    const data = parsed.data as ChannelConfig & {
-      token?: string;
-      secret?: string;
-    };
+    const data = parsed.data as ChannelConfig;
     const secretField =
       kind === "ntfy" ? "token" : kind === "webhook" ? "secret" : null;
-    if (secretField && data[secretField] === undefined) {
-      const previous = getReadableChannelConfig(user.id, kind) as {
-        token?: string;
-        secret?: string;
-      } | null;
-      if (previous?.[secretField]) {
-        data[secretField] = previous[secretField];
-      } else if (
-        listChannels(user.id).find((c) => c.kind === kind)?.needsReentry &&
-        form.get("removeSecret") !== "on"
-      ) {
-        return fail(400, {
-          action: "channel",
-          kind,
-          errors: {
-            [secretField]: [
-              'The saved secret can no longer be read. Enter it again, or tick "Remove the saved secret".',
-            ],
-          },
-        });
-      }
-    }
     const target =
       "serverUrl" in data ? data.serverUrl : "url" in data ? data.url : null;
     if (target) {
@@ -117,7 +89,23 @@ export const actions: Actions = {
         });
       }
     }
-    saveChannel(user.id, kind, data);
+    // A blank secret keeps the stored one. If the stored one cannot be read
+    // there is nothing to keep: it must be entered again or removed explicitly.
+    const saved = await saveChannel(user.id, kind, data, {
+      keepSecret: secretField ?? undefined,
+      dropUnreadableSecret: form.get("removeSecret") === "on",
+    });
+    if (!saved.ok) {
+      return fail(400, {
+        action: "channel",
+        kind,
+        errors: {
+          [secretField ?? "form"]: [
+            'The saved secret can no longer be read. Enter it again, or tick "Remove the saved secret".',
+          ],
+        },
+      });
+    }
     return { success: true as const, action: "channel" as const, kind };
   },
 
@@ -126,7 +114,7 @@ export const actions: Actions = {
     const form = await request.formData();
     const kind = kindOf(form);
     if (!kind) return unknownChannel();
-    setChannelEnabled(user.id, kind, form.get("enabled") === "true");
+    await setChannelEnabled(user.id, kind, form.get("enabled") === "true");
     return { success: true as const, action: "channel" as const, kind };
   },
 
@@ -134,7 +122,7 @@ export const actions: Actions = {
     const user = requireUser(locals);
     const kind = kindOf(await request.formData());
     if (!kind) return unknownChannel();
-    deleteChannel(user.id, kind);
+    await deleteChannel(user.id, kind);
     return { success: true as const, action: "channel" as const, kind };
   },
 

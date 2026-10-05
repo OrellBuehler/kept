@@ -1,7 +1,14 @@
 import { and, count, desc, eq, sql } from "drizzle-orm";
 import type { PriceSource } from "$lib/investment-types";
 import type { Fixed8 } from "$lib/quantity";
-import { fxRates, getDB, securities, securityPrices } from "$lib/server/db";
+import {
+  type DB,
+  first,
+  fxRates,
+  getDB,
+  securities,
+  securityPrices,
+} from "$lib/server/db";
 import { LedgerError, notFound } from "$lib/server/ledger/errors";
 import type { PriceInput } from "./schemas";
 
@@ -36,40 +43,58 @@ const columns = {
 /** Rows per insert statement, well below SQLite's bound-parameter limit. */
 const CHUNK = 500;
 
-function assertSecurity(userId: string, securityId: string) {
-  const found = getDB()
+type Tx = Pick<DB, "select" | "insert" | "update" | "delete">;
+
+function assertSecurityInTx(tx: Tx, userId: string, securityId: string) {
+  const found = tx
     .select({ id: securities.id })
     .from(securities)
     .where(and(eq(securities.userId, userId), eq(securities.id, securityId)))
+    .limit(1)
     .get();
+  if (!found) throw notFound("Security");
+}
+
+async function assertSecurity(userId: string, securityId: string) {
+  const found = await first(
+    getDB()
+      .select({ id: securities.id })
+      .from(securities)
+      .where(and(eq(securities.userId, userId), eq(securities.id, securityId)))
+      .limit(1),
+  );
   if (!found) throw notFound("Security");
 }
 
 /** Rows `listPrices` returns unless asked for more. */
 export const PRICE_LIST_LIMIT = 365;
 
-export function countPrices(userId: string, securityId: string): number {
-  assertSecurity(userId, securityId);
-  return getDB()
-    .select({ n: count() })
-    .from(securityPrices)
-    .where(
-      and(
-        eq(securityPrices.userId, userId),
-        eq(securityPrices.securityId, securityId),
-      ),
-    )
-    .get()!.n;
+export async function countPrices(
+  userId: string,
+  securityId: string,
+): Promise<number> {
+  await assertSecurity(userId, securityId);
+  return (
+    await getDB()
+      .select({ n: count() })
+      .from(securityPrices)
+      .where(
+        and(
+          eq(securityPrices.userId, userId),
+          eq(securityPrices.securityId, securityId),
+        ),
+      )
+  )[0]!.n;
 }
 
 /** Newest first, at most `limit` rows; a manual and a fetched price may share a date. */
-export function listPrices(
+export async function listPrices(
   userId: string,
   securityId: string,
   limit: number = PRICE_LIST_LIMIT,
-): PriceView[] {
-  assertSecurity(userId, securityId);
-  return getDB()
+): Promise<PriceView[]> {
+  await assertSecurity(userId, securityId);
+  return await getDB()
     .select(columns)
     .from(securityPrices)
     .where(
@@ -79,65 +104,68 @@ export function listPrices(
       ),
     )
     .orderBy(desc(securityPrices.date), desc(securityPrices.source))
-    .limit(limit)
-    .all();
+    .limit(limit);
 }
 
-function getPrice(userId: string, id: string): PriceView {
-  const row = getDB()
-    .select(columns)
-    .from(securityPrices)
-    .where(and(eq(securityPrices.userId, userId), eq(securityPrices.id, id)))
-    .get();
+async function getPrice(userId: string, id: string): Promise<PriceView> {
+  const row = await first(
+    getDB()
+      .select(columns)
+      .from(securityPrices)
+      .where(and(eq(securityPrices.userId, userId), eq(securityPrices.id, id)))
+      .limit(1),
+  );
   if (!row) throw notFound("Price");
   return row;
 }
 
 /** Sets or replaces the manual price of a date; it wins over a fetched one. */
-export function setManualPrice(
+export async function setManualPrice(
   userId: string,
   securityId: string,
   input: PriceInput,
-): PriceView {
-  assertSecurity(userId, securityId);
-  const row = getDB()
-    .insert(securityPrices)
-    .values({ userId, securityId, ...input, source: "manual" })
-    .onConflictDoUpdate({
-      target: [
-        securityPrices.securityId,
-        securityPrices.date,
-        securityPrices.source,
-      ],
-      set: { price: input.price, updatedAt: new Date() },
-    })
-    .returning({ id: securityPrices.id })
-    .get();
-  return getPrice(userId, row.id);
+): Promise<PriceView> {
+  const row = getDB().transaction((tx) => {
+    assertSecurityInTx(tx, userId, securityId);
+    return tx
+      .insert(securityPrices)
+      .values({ userId, securityId, ...input, source: "manual" })
+      .onConflictDoUpdate({
+        target: [
+          securityPrices.securityId,
+          securityPrices.date,
+          securityPrices.source,
+        ],
+        set: { price: input.price, updatedAt: new Date() },
+      })
+      .returning({ id: securityPrices.id })
+      .get();
+  });
+  return await getPrice(userId, row.id);
 }
 
 /** Manual prices only; fetched ones are managed by the market data refresh. */
-export function deletePrice(userId: string, id: string): void {
-  const current = getPrice(userId, id);
+export async function deletePrice(userId: string, id: string): Promise<void> {
+  const current = await getPrice(userId, id);
   if (current.source !== "manual") {
     throw new LedgerError("conflict", "Fetched prices cannot be deleted.");
   }
-  getDB()
+  const deleted = await getDB()
     .delete(securityPrices)
     .where(and(eq(securityPrices.userId, userId), eq(securityPrices.id, id)))
-    .run();
+    .returning({ id: securityPrices.id });
+  if (deleted.length === 0) throw notFound("Price");
 }
 
 /** Rows with a price of zero or less are provider noise and are skipped. */
-export function upsertProviderPrices(
+export async function upsertProviderPrices(
   userId: string,
   securityId: string,
   allRows: readonly PriceRow[],
-): number {
-  assertSecurity(userId, securityId);
+): Promise<number> {
   const rows = allRows.filter((r) => r.price > 0);
-  const db = getDB();
-  db.transaction((tx) => {
+  getDB().transaction((tx) => {
+    assertSecurityInTx(tx, userId, securityId);
     for (let i = 0; i < rows.length; i += CHUNK) {
       tx.insert(securityPrices)
         .values(
@@ -166,12 +194,11 @@ export function upsertProviderPrices(
   return rows.length;
 }
 
-export function upsertFxRates(
+export async function upsertFxRates(
   userId: string,
   rows: readonly FxRateRow[],
-): number {
-  const db = getDB();
-  db.transaction((tx) => {
+): Promise<number> {
+  getDB().transaction((tx) => {
     for (let i = 0; i < rows.length; i += CHUNK) {
       tx.insert(fxRates)
         .values(

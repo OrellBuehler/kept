@@ -1,3 +1,4 @@
+import { eq } from "drizzle-orm";
 import { describe, expect, it } from "vitest";
 import { minor } from "$lib/money";
 import { allocate } from "$lib/server/bills/allocations";
@@ -6,7 +7,7 @@ import { createTestUser } from "$lib/testing/auth";
 import { seedBill } from "$lib/testing/bills";
 import { useTestDB } from "$lib/testing/db";
 import { seedAccount, seedImportedTransaction } from "$lib/testing/ledger";
-import { first, getDB, taxYears } from "$lib/server/db";
+import { first, getDB, taxYears, transactions } from "$lib/server/db";
 import {
   addTaxCredit,
   deleteTaxCredit,
@@ -18,6 +19,10 @@ import {
   setTransactionTaxYear,
   upsertTaxYear,
 } from "./tax";
+import {
+  setTransactionDeductionExcluded,
+  setTransactionDeductionYear,
+} from "./deductions";
 import { taxCreditInputSchema, taxYearInputSchema } from "./schemas";
 
 const setup = async () => {
@@ -69,6 +74,48 @@ async function fails(fn: () => unknown): Promise<LedgerError> {
 
 describe("tax reconciliation", () => {
   useTestDB();
+
+  it("changes tax and deduction marks only on the caller's own transactions", async () => {
+    const { user, account } = await setup();
+    const tx = await pay(user.id, account.id, 5000, "2025-03-10");
+    const other = await createTestUser();
+    const setters = [
+      (userId: string, id: string) => setTransactionTaxYear(userId, id, 2025),
+      (userId: string, id: string) =>
+        setTransactionDeductionYear(userId, id, 2025),
+      (userId: string, id: string) =>
+        setTransactionDeductionExcluded(userId, id, true),
+    ];
+    for (const set of setters) {
+      expect((await fails(() => set(other.id, tx.id))).code).toBe("not_found");
+      expect((await fails(() => set(user.id, "missing"))).code).toBe(
+        "not_found",
+      );
+    }
+    const row = (
+      await getDB()
+        .select()
+        .from(transactions)
+        .where(eq(transactions.id, tx.id))
+    )[0]!;
+    expect(row).toMatchObject({
+      taxYear: null,
+      deductionYear: null,
+      deductionExcluded: false,
+    });
+    for (const set of setters) await set(user.id, tx.id);
+    const after = (
+      await getDB()
+        .select()
+        .from(transactions)
+        .where(eq(transactions.id, tx.id))
+    )[0]!;
+    expect(after).toMatchObject({
+      taxYear: 2025,
+      deductionYear: 2025,
+      deductionExcluded: true,
+    });
+  });
 
   it("reconciles partial payments and reports the amount still due", async () => {
     const { user, account } = await setup();

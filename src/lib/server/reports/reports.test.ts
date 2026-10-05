@@ -281,19 +281,19 @@ describe("loaders and buildReport", () => {
       openingBalance: m(500000),
       openingDate: "2026-01-01",
     });
-    const etf = seedSecurity(u.id, { name: "Example World ETF" });
-    seedTrade(u.id, a.id, etf.id, {
+    const etf = await seedSecurity(u.id, { name: "Example World ETF" });
+    await seedTrade(u.id, a.id, etf.id, {
       date: "2026-09-10",
       side: "buy",
       amount: 100000,
     });
-    seedTrade(u.id, a.id, etf.id, {
+    await seedTrade(u.id, a.id, etf.id, {
       date: "2026-09-20",
       side: "sell",
       qty: "2",
       amount: 30000,
     });
-    seedTrade(u.id, a.id, etf.id, {
+    await seedTrade(u.id, a.id, etf.id, {
       date: "2026-10-02",
       side: "buy",
       amount: 5000,
@@ -332,10 +332,10 @@ describe("loaders and buildReport", () => {
       type: "investment",
       tradesMoveCash: true,
     });
-    const etf = seedSecurity(u.id);
-    const theirEtf = seedSecurity(other.id);
-    seedTrade(u.id, a.id, etf.id, { date: "2026-09-10", amount: 100000 });
-    seedTrade(other.id, theirs.id, theirEtf.id, {
+    const etf = await seedSecurity(u.id);
+    const theirEtf = await seedSecurity(other.id);
+    await seedTrade(u.id, a.id, etf.id, { date: "2026-09-10", amount: 100000 });
+    await seedTrade(other.id, theirs.id, theirEtf.id, {
       date: "2026-09-10",
       amount: 100000,
     });

@@ -10,7 +10,7 @@ import {
   transactions,
 } from "$lib/server/db";
 import { notFound } from "$lib/server/ledger/errors";
-import { assertNotMirror } from "$lib/server/transfers/guard";
+import { updateUnlessMirror } from "$lib/server/transfers/guard";
 import {
   computeBalance,
   dayDistance,
@@ -257,15 +257,12 @@ export async function setTransactionTaxYear(
   transactionId: string,
   year: number | null,
 ): Promise<void> {
-  await assertNotMirror(userId, transactionId, "tagged as a tax payment");
-  const updated = await getDB()
-    .update(transactions)
-    .set({ taxYear: year })
-    .where(
-      and(eq(transactions.userId, userId), eq(transactions.id, transactionId)),
-    )
-    .returning({ id: transactions.id });
-  if (updated.length === 0) throw notFound("Transaction");
+  await updateUnlessMirror(
+    userId,
+    transactionId,
+    { taxYear: year },
+    "tagged as a tax payment",
+  );
 }
 
 function toCredit(row: typeof taxCredits.$inferSelect): CreditLine {

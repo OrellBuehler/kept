@@ -1,3 +1,4 @@
+import { eq } from "drizzle-orm";
 import { afterEach, describe, expect, it } from "vitest";
 import { parseFixed } from "$lib/quantity";
 import { LedgerError } from "$lib/server/ledger";
@@ -21,7 +22,7 @@ import {
   upsertFxRates,
   type QuoteProvider,
 } from "./index";
-import { fxRates, getDB } from "$lib/server/db";
+import { fxRates, getDB, marketDataSettings } from "$lib/server/db";
 
 useTestDB();
 afterEach(() => setQuoteProvider(null));
@@ -62,15 +63,15 @@ function fakeProvider(
 async function setup(opts: { symbol?: string | null; currency?: string } = {}) {
   const user = await createTestUser();
   const account = await seedAccount(user.id);
-  const security = seedSecurity(user.id, {
+  const security = await seedSecurity(user.id, {
     symbol: opts.symbol === undefined ? "AAA.SW" : opts.symbol,
     currency: opts.currency ?? "CHF",
   });
-  seedTrade(user.id, account.id, security.id, {
+  await seedTrade(user.id, account.id, security.id, {
     date: "2024-01-10",
     amount: 1000,
   });
-  setMarketDataEnabled(user.id, true);
+  await setMarketDataEnabled(user.id, true);
   return { user, account, security };
 }
 
@@ -78,18 +79,34 @@ describe("market data settings", () => {
   it("defaults to disabled and stores the opt-in per user", async () => {
     const a = await createTestUser();
     const b = await createTestUser();
-    expect(getMarketDataSettings(a.id)).toEqual({
+    expect(await getMarketDataSettings(a.id)).toEqual({
       enabled: false,
       lastRunAt: null,
       lastError: null,
     });
-    setMarketDataEnabled(a.id, true);
-    setMarketDataEnabled(a.id, true);
-    expect(getMarketDataSettings(a.id).enabled).toBe(true);
-    expect(getMarketDataSettings(b.id).enabled).toBe(false);
-    expect(listMarketDataUserIds()).toEqual([a.id]);
-    setMarketDataEnabled(a.id, false);
-    expect(listMarketDataUserIds()).toEqual([]);
+    await setMarketDataEnabled(a.id, true);
+    await setMarketDataEnabled(a.id, true);
+    expect((await getMarketDataSettings(a.id)).enabled).toBe(true);
+    expect((await getMarketDataSettings(b.id)).enabled).toBe(false);
+    expect(await listMarketDataUserIds()).toEqual([a.id]);
+    await setMarketDataEnabled(a.id, false);
+    expect(await listMarketDataUserIds()).toEqual([]);
+  });
+});
+
+describe("market data settings (concurrent writes)", () => {
+  it("keeps one row when the first writes overlap", async () => {
+    const a = await createTestUser();
+    await Promise.all([
+      setMarketDataEnabled(a.id, true),
+      setMarketDataEnabled(a.id, false),
+      setMarketDataEnabled(a.id, true),
+    ]);
+    const rows = await getDB()
+      .select()
+      .from(marketDataSettings)
+      .where(eq(marketDataSettings.userId, a.id));
+    expect(rows).toHaveLength(1);
   });
 });
 
@@ -109,12 +126,12 @@ describe("refreshPrices", () => {
     await expect(refreshPrices(user.id, "2024-02-01")).rejects.toMatchObject({
       code: "conflict",
     });
-    setMarketDataEnabled(user.id, true);
+    await setMarketDataEnabled(user.id, true);
     setQuoteProvider(null);
     await expect(refreshPrices(user.id, "2024-02-01")).rejects.toBeInstanceOf(
       LedgerError,
     );
-    expect(getMarketDataSettings(user.id).lastRunAt).toBeNull();
+    expect((await getMarketDataSettings(user.id)).lastRunAt).toBeNull();
   });
 
   it("fetches from the first trade to today and records the run", async () => {
@@ -126,11 +143,10 @@ describe("refreshPrices", () => {
     expect(calls.history).toEqual([["AAA.SW", "2024-01-10", "2024-02-01"]]);
     expect(calls.fx).toEqual([]);
     expect(result).toMatchObject({ securities: 1, prices: 2, errors: [] });
-    expect(listPrices(user.id, security.id).map((p) => p.date)).toEqual([
-      "2024-02-01",
-      "2024-01-10",
-    ]);
-    expect(getMarketDataSettings(user.id)).toEqual({
+    expect((await listPrices(user.id, security.id)).map((p) => p.date)).toEqual(
+      ["2024-02-01", "2024-01-10"],
+    );
+    expect(await getMarketDataSettings(user.id)).toEqual({
       enabled: true,
       lastRunAt: now.getTime(),
       lastError: null,
@@ -139,8 +155,8 @@ describe("refreshPrices", () => {
 
   it("continues from the last fetched day, inclusive", async () => {
     const { user, security } = await setup();
-    seedProviderPrice(user.id, security.id, "2024-01-10", "99");
-    seedProviderPrice(user.id, security.id, "2024-01-25", "100");
+    await seedProviderPrice(user.id, security.id, "2024-01-10", "99");
+    await seedProviderPrice(user.id, security.id, "2024-01-25", "100");
     const { provider, calls } = fakeProvider();
     setQuoteProvider(provider);
     await refreshPrices(user.id, "2024-02-01");
@@ -149,9 +165,9 @@ describe("refreshPrices", () => {
 
   it("refetches the whole range after a split is recorded", async () => {
     const { user, account, security } = await setup();
-    seedProviderPrice(user.id, security.id, "2024-01-10", "99");
-    seedProviderPrice(user.id, security.id, "2024-01-25", "100");
-    seedTrade(user.id, account.id, security.id, {
+    await seedProviderPrice(user.id, security.id, "2024-01-10", "99");
+    await seedProviderPrice(user.id, security.id, "2024-01-25", "100");
+    await seedTrade(user.id, account.id, security.id, {
       date: "2024-01-20",
       side: "split",
       price: "0",
@@ -164,7 +180,7 @@ describe("refreshPrices", () => {
     expect(calls.history).toEqual([["AAA.SW", "2024-01-10", "2024-02-01"]]);
     // the old, unadjusted quotes are gone; the refetched ones replaced them
     expect(
-      listPrices(user.id, security.id).map((p) => [p.date, p.price]),
+      (await listPrices(user.id, security.id)).map((p) => [p.date, p.price]),
     ).toEqual([
       ["2024-02-01", parseFixed("101")],
       ["2024-01-10", parseFixed("100")],
@@ -173,7 +189,7 @@ describe("refreshPrices", () => {
 
   it("refetches from the first trade when the history starts much later", async () => {
     const { user, security } = await setup();
-    seedProviderPrice(user.id, security.id, "2024-01-25", "100");
+    await seedProviderPrice(user.id, security.id, "2024-01-25", "100");
     const { provider, calls } = fakeProvider();
     setQuoteProvider(provider);
     await refreshPrices(user.id, "2024-02-01");
@@ -183,7 +199,7 @@ describe("refreshPrices", () => {
   it("starts at the earliest trade across accounts", async () => {
     const { user, security } = await setup();
     const second = await seedAccount(user.id, { name: "Second" });
-    seedTrade(user.id, second.id, security.id, {
+    await seedTrade(user.id, second.id, security.id, {
       date: "2023-12-01",
       amount: 1000,
     });
@@ -210,19 +226,22 @@ describe("refreshPrices", () => {
     setQuoteProvider(provider);
     const result = await refreshPrices(user.id, "2024-02-01");
     expect(result.prices).toBe(1);
-    expect(listPrices(user.id, security.id).map((p) => p.date)).toEqual([
-      "2024-01-12",
-    ]);
+    expect((await listPrices(user.id, security.id)).map((p) => p.date)).toEqual(
+      ["2024-01-12"],
+    );
   });
 
   it("skips securities without a symbol or trades and trades dated after today", async () => {
     const { user, account } = await setup({ symbol: null });
-    const future = seedSecurity(user.id, { name: "Later", symbol: "LATE.SW" });
-    seedTrade(user.id, account.id, future.id, {
+    const future = await seedSecurity(user.id, {
+      name: "Later",
+      symbol: "LATE.SW",
+    });
+    await seedTrade(user.id, account.id, future.id, {
       date: "2030-01-01",
       amount: 1,
     });
-    seedSecurity(user.id, { name: "Unused", symbol: "NONE.SW" });
+    await seedSecurity(user.id, { name: "Unused", symbol: "NONE.SW" });
     const { provider, calls } = fakeProvider();
     setQuoteProvider(provider);
     const result = await refreshPrices(user.id, "2024-02-01");
@@ -237,14 +256,14 @@ describe("refreshPrices", () => {
     const result = await refreshPrices(user.id, "2024-02-01");
     expect(calls.fx).toEqual([["USD", "CHF", "2024-01-10", "2024-02-01"]]);
     expect(result).toMatchObject({ fxPairs: 1, fxRates: 1 });
-    expect(getDB().select().from(fxRates).all()).toMatchObject([
+    expect(await getDB().select().from(fxRates)).toMatchObject([
       { base: "USD", quote: "CHF", date: "2024-02-01", source: "provider" },
     ]);
   });
 
   it("fetches FX for a manual-price security too, and continues from the last rate", async () => {
     const { user } = await setup({ symbol: null, currency: "USD" });
-    upsertFxRates(user.id, [
+    await upsertFxRates(user.id, [
       {
         base: "USD",
         quote: "CHF",
@@ -275,8 +294,11 @@ describe("refreshPrices", () => {
 
   it("records provider failures, keeps going and stores the last error", async () => {
     const { user, account } = await setup();
-    const second = seedSecurity(user.id, { name: "Second", symbol: "BBB.SW" });
-    seedTrade(user.id, account.id, second.id, {
+    const second = await seedSecurity(user.id, {
+      name: "Second",
+      symbol: "BBB.SW",
+    });
+    await seedTrade(user.id, account.id, second.id, {
       date: "2024-01-10",
       amount: 1,
     });
@@ -294,10 +316,10 @@ describe("refreshPrices", () => {
     expect(result.securities).toBe(1);
     expect(result.prices).toBe(1);
     expect(result.errors).toEqual(["AAA.SW: HTTP 503"]);
-    expect(getMarketDataSettings(user.id)).toMatchObject({
+    expect(await getMarketDataSettings(user.id)).toMatchObject({
       lastError: "AAA.SW: HTTP 503",
     });
-    expect(getMarketDataSettings(user.id).lastRunAt).not.toBeNull();
+    expect((await getMarketDataSettings(user.id)).lastRunAt).not.toBeNull();
   });
 
   it("never stores the message of an unexpected error", async () => {
@@ -316,7 +338,7 @@ describe("refreshPrices", () => {
       }).provider,
     );
     const result = await refreshPrices(user.id, "2024-02-01");
-    const stored = getMarketDataSettings(user.id).lastError ?? "";
+    const stored = (await getMarketDataSettings(user.id)).lastError ?? "";
     expect(result.errors.length).toBeGreaterThan(0);
     for (const text of [stored, ...result.errors]) {
       expect(text).not.toContain("secret");
@@ -335,10 +357,12 @@ describe("refreshPrices", () => {
       }).provider,
     );
     await refreshPrices(user.id, "2024-02-01");
-    expect(getMarketDataSettings(user.id).lastError).toBe("AAA.SW: boom");
+    expect((await getMarketDataSettings(user.id)).lastError).toBe(
+      "AAA.SW: boom",
+    );
     setQuoteProvider(fakeProvider().provider);
     await refreshPrices(user.id, "2024-02-01");
-    expect(getMarketDataSettings(user.id).lastError).toBeNull();
+    expect((await getMarketDataSettings(user.id)).lastError).toBeNull();
   });
 
   it("rejects prices quoted in another currency than the security's", async () => {
@@ -346,7 +370,7 @@ describe("refreshPrices", () => {
     setQuoteProvider(fakeProvider({}, "USD").provider);
     const result = await refreshPrices(user.id, "2024-02-01");
     expect(result.errors).toEqual(["AAA.SW: quoted in USD, expected CHF"]);
-    expect(listPrices(user.id, security.id)).toEqual([]);
+    expect(await listPrices(user.id, security.id)).toEqual([]);
   });
 
   it("rejects invalid dates and ignores points outside the range", async () => {
@@ -377,9 +401,9 @@ describe("refreshPrices", () => {
       }).provider,
     );
     await refreshPrices(user.id, "2024-02-01");
-    expect(listPrices(user.id, security.id).map((p) => p.date)).toEqual([
-      "2024-01-20",
-    ]);
+    expect((await listPrices(user.id, security.id)).map((p) => p.date)).toEqual(
+      ["2024-01-20"],
+    );
   });
 
   it("ignores non-positive FX rates", async () => {
@@ -401,14 +425,14 @@ describe("refreshPrices", () => {
     const { user } = await setup();
     const other = await createTestUser();
     const otherAccount = await seedAccount(other.id);
-    const otherSecurity = seedSecurity(other.id, { symbol: "OTH.SW" });
-    seedTrade(other.id, otherAccount.id, otherSecurity.id, { amount: 1 });
-    setMarketDataEnabled(other.id, true);
+    const otherSecurity = await seedSecurity(other.id, { symbol: "OTH.SW" });
+    await seedTrade(other.id, otherAccount.id, otherSecurity.id, { amount: 1 });
+    await setMarketDataEnabled(other.id, true);
     const { provider, calls } = fakeProvider();
     setQuoteProvider(provider);
     await refreshPrices(user.id, "2024-02-01");
     expect(calls.history.map((c) => c[0])).toEqual(["AAA.SW"]);
-    expect(listPrices(other.id, otherSecurity.id)).toEqual([]);
-    expect(getMarketDataSettings(other.id).lastRunAt).toBeNull();
+    expect(await listPrices(other.id, otherSecurity.id)).toEqual([]);
+    expect((await getMarketDataSettings(other.id)).lastRunAt).toBeNull();
   });
 });

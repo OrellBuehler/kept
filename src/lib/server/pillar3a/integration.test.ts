@@ -129,14 +129,14 @@ describe("balances with portfolios", () => {
       name: "Inv",
       openingBalance: minor(500),
     });
-    const sec = seedSecurity(user.id);
-    seedTrade(user.id, acc.id, sec.id, {
+    const sec = await seedSecurity(user.id);
+    await seedTrade(user.id, acc.id, sec.id, {
       date: "2026-01-10",
       qty: "10",
       price: "100",
       amount: 1000,
     });
-    seedManualPrice(user.id, sec.id, "2026-10-01", "120");
+    await seedManualPrice(user.id, sec.id, "2026-10-01", "120");
     // portfolios only exist on 3a accounts, so the combined case is a 3a account that also has trades
     const mixed = await seedPillar3aAccount(user.id, {
       name: "Mixed",
@@ -147,7 +147,7 @@ describe("balances with portfolios", () => {
     await setValues(user.id, mixed.id, "2026-02-01", [
       { portfolioId: p.id, amount: minor(7000) },
     ]);
-    seedTrade(user.id, mixed.id, sec.id, {
+    await seedTrade(user.id, mixed.id, sec.id, {
       date: "2026-03-10",
       qty: "5",
       price: "100",
@@ -215,9 +215,9 @@ describe("net worth with portfolios", () => {
     await setValues(user.id, acc.id, "2025-03-01", [
       { portfolioId: a.id, amount: minor(10_000) },
     ]);
-    expect(earliestDataDate(user.id)).toBe("2025-03-01");
+    expect(await earliestDataDate(user.id)).toBe("2025-03-01");
     await archiveAccount(user.id, acc.id);
-    expect(earliestDataDate(user.id)).toBe("2025-03-01");
+    expect(await earliestDataDate(user.id)).toBe("2025-03-01");
     const points = (await netWorthSeries(user.id, { today: TODAY }))[0]!.points;
     expect(points.at(-1)!.amount).toBe(0);
   });

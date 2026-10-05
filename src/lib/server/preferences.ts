@@ -4,14 +4,22 @@ import {
   preferencesSchema,
   type Preferences,
 } from "$lib/preferences";
-import { getDB, userPreferences } from "$lib/server/db";
+import { first, getDB, userPreferences } from "$lib/server/db";
 
-export function getPreferences(userId: string): Preferences {
-  const row = getDB()
-    .select()
-    .from(userPreferences)
-    .where(eq(userPreferences.userId, userId))
-    .get();
+type PreferencesRow = typeof userPreferences.$inferSelect;
+
+export async function getPreferences(userId: string): Promise<Preferences> {
+  const row = await first(
+    getDB()
+      .select()
+      .from(userPreferences)
+      .where(eq(userPreferences.userId, userId))
+      .limit(1),
+  );
+  return toPreferences(row);
+}
+
+function toPreferences(row: PreferencesRow | undefined): Preferences {
   if (!row) return { ...DEFAULT_PREFERENCES };
   // Stored values can go stale (e.g. a removed locale); fall back per field.
   const shape = preferencesSchema.shape;
@@ -37,18 +45,26 @@ export function getPreferences(userId: string): Preferences {
   };
 }
 
-export function updatePreferences(
+/** Read, merge and write in one transaction, so concurrent patches of different fields both survive. */
+export async function updatePreferences(
   userId: string,
   patch: Partial<Preferences>,
-): Preferences {
-  const next = { ...getPreferences(userId), ...patch };
-  getDB()
-    .insert(userPreferences)
-    .values({ userId, ...next })
-    .onConflictDoUpdate({
-      target: userPreferences.userId,
-      set: { ...next, updatedAt: new Date() },
-    })
-    .run();
-  return next;
+): Promise<Preferences> {
+  return getDB().transaction((tx) => {
+    const row = tx
+      .select()
+      .from(userPreferences)
+      .where(eq(userPreferences.userId, userId))
+      .limit(1)
+      .get();
+    const next = { ...toPreferences(row), ...patch };
+    tx.insert(userPreferences)
+      .values({ userId, ...next })
+      .onConflictDoUpdate({
+        target: userPreferences.userId,
+        set: { ...next, updatedAt: new Date() },
+      })
+      .run();
+    return next;
+  });
 }

@@ -24,20 +24,20 @@ describe("notification delivery with KEPT_ALLOW_PRIVATE_NETWORK cleared", () => 
   it("deliver never reaches a member's stored private target", async () => {
     vi.spyOn(console, "error").mockImplementation(() => {});
     const member = await createTestUser();
-    saveChannel(member.id, "webhook", hook);
+    await saveChannel(member.id, "webhook", hook);
     const fetchFn = okFetch();
 
     expect(
       await deliver(member.id, message, { fetch: fetchFn, smtp: null }),
     ).toBe(0);
     expect(fetchFn).not.toHaveBeenCalled();
-    expect(listChannels(member.id)[0]!.lastError).toBeTruthy();
+    expect((await listChannels(member.id))[0]!.lastError).toBeTruthy();
   });
 
   it("sendTest is refused the same way", async () => {
     vi.spyOn(console, "error").mockImplementation(() => {});
     const member = await createTestUser();
-    saveChannel(member.id, "webhook", hook);
+    await saveChannel(member.id, "webhook", hook);
     const fetchFn = okFetch();
 
     const res = await sendTest(member.id, "webhook", {
@@ -51,18 +51,17 @@ describe("notification delivery with KEPT_ALLOW_PRIVATE_NETWORK cleared", () => 
   it("an administrator is allowed, and blocked after losing the role", async () => {
     vi.spyOn(console, "error").mockImplementation(() => {});
     const admin = await createTestUser({ role: "admin" });
-    saveChannel(admin.id, "webhook", hook);
+    await saveChannel(admin.id, "webhook", hook);
     const fetchFn = okFetch();
     expect(
       await deliver(admin.id, message, { fetch: fetchFn, smtp: null }),
     ).toBe(1);
     expect(fetchFn).toHaveBeenCalledTimes(1);
 
-    getDB()
+    await getDB()
       .update(users)
       .set({ role: "member" })
-      .where(eq(users.id, admin.id))
-      .run();
+      .where(eq(users.id, admin.id));
     expect(
       await deliver(admin.id, message, { fetch: fetchFn, smtp: null }),
     ).toBe(0);
@@ -73,8 +72,8 @@ describe("notification delivery with KEPT_ALLOW_PRIVATE_NETWORK cleared", () => 
     vi.spyOn(console, "error").mockImplementation(() => {});
     const admin = await createTestUser({ role: "admin" });
     const member = await createTestUser();
-    saveChannel(admin.id, "webhook", hook);
-    saveChannel(member.id, "webhook", hook);
+    await saveChannel(admin.id, "webhook", hook);
+    await saveChannel(member.id, "webhook", hook);
     const fetchFn = okFetch();
     expect(
       await deliver(member.id, message, { fetch: fetchFn, smtp: null }),

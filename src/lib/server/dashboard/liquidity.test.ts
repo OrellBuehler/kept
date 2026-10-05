@@ -339,7 +339,7 @@ describe("liquidity (database)", () => {
         amount: m(amount),
       });
     }
-    const used = withdrawnThisPeriod(
+    const used = await withdrawnThisPeriod(
       u.id,
       [
         { id: yearly.id, ...pick(yearly) },
@@ -381,14 +381,14 @@ describe("liquidity (database)", () => {
       type: "investment",
       openingBalance: m(400),
     });
-    const sec = seedSecurity(u.id);
-    seedTrade(u.id, inv.id, sec.id, {
+    const sec = await seedSecurity(u.id);
+    await seedTrade(u.id, inv.id, sec.id, {
       date: "2026-01-10",
       qty: "10",
       price: "100",
       amount: 100000,
     });
-    seedProviderPrice(u.id, sec.id, "2026-10-14", "120");
+    await seedProviderPrice(u.id, sec.id, "2026-10-14", "120");
     await seedAccount(u.id, {
       name: "Old age",
       type: "pension",
@@ -412,7 +412,7 @@ describe("liquidity (database)", () => {
       ["pension", 900],
     ]);
 
-    updatePreferences(u.id, { investmentCashLiquid: true });
+    await updatePreferences(u.id, { investmentCashLiquid: true });
     const d = await dashboard(u.id, TODAY);
     expect(d.liquidity[0]!.now.balance).toBe(2000 - 300 + 20000 + 400);
     expect(d.liquidity[0]!.excluded.map((e) => e.reason)).toEqual(["pension"]);

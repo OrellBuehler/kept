@@ -9,7 +9,7 @@ import {
   transactions,
 } from "$lib/server/db";
 import { LedgerError, notFound } from "$lib/server/ledger/errors";
-import { assertNotMirror } from "$lib/server/transfers/guard";
+import { updateUnlessMirror } from "$lib/server/transfers/guard";
 import { PILLAR_3A_CURRENCY } from "$lib/pillar-3a";
 import {
   detectedContributions,
@@ -174,15 +174,12 @@ export async function setTransactionDeductionExcluded(
   transactionId: string,
   excluded: boolean,
 ): Promise<void> {
-  await assertNotMirror(userId, transactionId, "left out of the deductions");
-  const updated = await getDB()
-    .update(transactions)
-    .set({ deductionExcluded: excluded })
-    .where(
-      and(eq(transactions.userId, userId), eq(transactions.id, transactionId)),
-    )
-    .returning({ id: transactions.id });
-  if (updated.length === 0) throw notFound("Transaction");
+  await updateUnlessMirror(
+    userId,
+    transactionId,
+    { deductionExcluded: excluded },
+    "left out of the deductions",
+  );
 }
 
 /**
@@ -358,13 +355,10 @@ export async function setTransactionDeductionYear(
   transactionId: string,
   year: number | null,
 ): Promise<void> {
-  await assertNotMirror(userId, transactionId, "deducted in another year");
-  const updated = await getDB()
-    .update(transactions)
-    .set({ deductionYear: year })
-    .where(
-      and(eq(transactions.userId, userId), eq(transactions.id, transactionId)),
-    )
-    .returning({ id: transactions.id });
-  if (updated.length === 0) throw notFound("Transaction");
+  await updateUnlessMirror(
+    userId,
+    transactionId,
+    { deductionYear: year },
+    "deducted in another year",
+  );
 }

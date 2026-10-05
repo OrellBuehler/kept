@@ -42,7 +42,7 @@ export async function loadAccountStatement(
     lte(transactions.bookingDate, to),
   );
   const db = getDB();
-  const rows: StatementTransaction[] = db
+  const rows: StatementTransaction[] = await db
     .select({
       bookingDate: transactions.bookingDate,
       counterpartyName: transactions.counterpartyName,
@@ -56,11 +56,10 @@ export async function loadAccountStatement(
       asc(transactions.seq),
       asc(transactions.id),
     )
-    .limit(MAX_STATEMENT_TRANSACTIONS + 1)
-    .all();
+    .limit(MAX_STATEMENT_TRANSACTIONS + 1);
   if (account.tradesMoveCash) {
     // Buys and sells move the cash balance, so they are lines of the statement too.
-    const moves = db
+    const moves = await db
       .select({
         date: trades.date,
         side: trades.side,
@@ -79,8 +78,7 @@ export async function loadAccountStatement(
         ),
       )
       .orderBy(asc(trades.date), asc(trades.seq), asc(trades.id))
-      .limit(MAX_STATEMENT_TRANSACTIONS + 1)
-      .all();
+      .limit(MAX_STATEMENT_TRANSACTIONS + 1);
     rows.push(
       ...moves.map((t): StatementTransaction => ({
         bookingDate: t.date,

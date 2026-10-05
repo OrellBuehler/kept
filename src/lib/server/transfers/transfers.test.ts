@@ -1826,8 +1826,8 @@ describe("consumers", () => {
     }
     await linkTransfers(user.id, {});
     expect(await rowsOf(b.id)).toHaveLength(3);
-    syncRecurring(user.id);
-    const series = listRecurring(user.id, "2026-04-01");
+    await syncRecurring(user.id);
+    const series = await listRecurring(user.id, "2026-04-01");
     expect(series).toHaveLength(1);
     expect(series[0]!.lastAmount).toBe(-5000);
   });
@@ -1863,9 +1863,9 @@ describe("consumers", () => {
     await expect(
       allocate(user.id, bill.id, mirror.id, m(10000), "user"),
     ).rejects.toThrow(/mirrored transfer/);
-    expect(unmatchedTransactions(user.id, { today: "2026-03-20" }).count).toBe(
-      0,
-    );
+    expect(
+      (await unmatchedTransactions(user.id, { today: "2026-03-20" })).count,
+    ).toBe(0);
   });
 
   it("keep mirrors out of tax suggestions, tagging and deductions", async () => {

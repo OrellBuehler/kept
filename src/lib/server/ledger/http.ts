@@ -23,18 +23,6 @@ export function ledgerFailure(
 }
 
 /** For loads: a missing or foreign id is a 404. */
-export function orNotFound<T>(fn: () => T): T {
-  try {
-    return fn();
-  } catch (err) {
-    if (err instanceof LedgerError && err.code === "not_found") {
-      error(404, err.message);
-    }
-    throw err;
-  }
-}
-
-/** `orNotFound` for async work. */
 export async function orNotFoundAsync<T>(fn: () => Promise<T>): Promise<T> {
   try {
     return await fn();

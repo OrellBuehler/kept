@@ -76,10 +76,14 @@ describe("investments page", () => {
   it("load returns securities, positions and the price history of one security", async () => {
     const u = await createTestUser();
     const acc = await seedAccount(u.id, { type: "investment" });
-    const sec = seedSecurity(u.id);
-    seedTrade(u.id, acc.id, sec.id, { qty: "2", price: "50", amount: 10000 });
-    seedManualPrice(u.id, sec.id, "2024-02-01", "60");
-    seedProviderPrice(u.id, sec.id, "2024-02-01", "59");
+    const sec = await seedSecurity(u.id);
+    await seedTrade(u.id, acc.id, sec.id, {
+      qty: "2",
+      price: "50",
+      amount: 10000,
+    });
+    await seedManualPrice(u.id, sec.id, "2024-02-01", "60");
+    await seedProviderPrice(u.id, sec.id, "2024-02-01", "59");
 
     const v = await loaded(u, `?prices=${sec.id}`);
     expect(v.securities.map((s: { id: string }) => s.id)).toEqual([sec.id]);
@@ -92,8 +96,8 @@ describe("investments page", () => {
 
   it("limits the price history and can show all of it", async () => {
     const u = await createTestUser();
-    const sec = seedSecurity(u.id);
-    upsertProviderPrices(
+    const sec = await seedSecurity(u.id);
+    await upsertProviderPrices(
       u.id,
       sec.id,
       Array.from({ length: 400 }, (_, i) => ({
@@ -118,7 +122,7 @@ describe("investments page", () => {
 
   it("reports whether a lookup is possible", async () => {
     const u = await createTestUser();
-    setMarketDataEnabled(u.id, true);
+    await setMarketDataEnabled(u.id, true);
     expect((await loaded(u)).marketData).toEqual({
       enabled: true,
       canLookup: false,
@@ -133,7 +137,7 @@ describe("investments page", () => {
       type: "return",
       value: { success: true, action: "createSecurity" },
     });
-    const [sec] = listSecurities(u.id);
+    const [sec] = await listSecurities(u.id);
     expect(sec).toMatchObject({ symbol: "SWDA.SW", currency: "CHF" });
 
     expect(
@@ -143,12 +147,12 @@ describe("investments page", () => {
         name: "Renamed",
       }),
     ).toMatchObject({ type: "return", value: { success: true } });
-    expect(getSecurity(u.id, sec!.id).name).toBe("Renamed");
+    expect((await getSecurity(u.id, sec!.id)).name).toBe("Renamed");
 
     expect(
       await run("deleteSecurity", u, { securityId: sec!.id }),
     ).toMatchObject({ type: "return", value: { success: true } });
-    expect(listSecurities(u.id)).toEqual([]);
+    expect(await listSecurities(u.id)).toEqual([]);
   });
 
   it("validates securities and echoes the values", async () => {
@@ -167,14 +171,14 @@ describe("investments page", () => {
         values: { name: "", isin: "nope" },
       },
     });
-    expect(listSecurities(u.id)).toEqual([]);
+    expect(await listSecurities(u.id)).toEqual([]);
   });
 
   it("refuses to delete a security that has trades", async () => {
     const u = await createTestUser();
     const acc = await seedAccount(u.id);
-    const sec = seedSecurity(u.id);
-    seedTrade(u.id, acc.id, sec.id, { amount: 100000 });
+    const sec = await seedSecurity(u.id);
+    await seedTrade(u.id, acc.id, sec.id, { amount: 100000 });
     expect(
       await run("deleteSecurity", u, { securityId: sec.id }),
     ).toMatchObject({
@@ -182,13 +186,13 @@ describe("investments page", () => {
       status: 400,
       data: { errors: { form: [expect.any(String)] } },
     });
-    expect(listSecurities(u.id)).toHaveLength(1);
+    expect(await listSecurities(u.id)).toHaveLength(1);
   });
 
   it("sets a manual price and deletes it, but not a fetched one", async () => {
     const u = await createTestUser();
-    const sec = seedSecurity(u.id);
-    seedProviderPrice(u.id, sec.id, "2024-02-02", "59");
+    const sec = await seedSecurity(u.id);
+    await seedProviderPrice(u.id, sec.id, "2024-02-02", "59");
     expect(
       await run("setPrice", u, {
         securityId: sec.id,
@@ -196,7 +200,7 @@ describe("investments page", () => {
         price: "60.5",
       }),
     ).toMatchObject({ type: "return", value: { success: true } });
-    const prices = listPrices(u.id, sec.id);
+    const prices = await listPrices(u.id, sec.id);
     const manual = prices.find((p) => p.source === "manual")!;
     const fetched = prices.find((p) => p.source === "provider")!;
     expect(manual.price).toBe(6_050_000_000);
@@ -209,12 +213,12 @@ describe("investments page", () => {
       type: "return",
       value: { success: true },
     });
-    expect(listPrices(u.id, sec.id)).toHaveLength(1);
+    expect(await listPrices(u.id, sec.id)).toHaveLength(1);
   });
 
   it("validates prices", async () => {
     const u = await createTestUser();
-    const sec = seedSecurity(u.id);
+    const sec = await seedSecurity(u.id);
     expect(
       await run("setPrice", u, {
         securityId: sec.id,
@@ -228,13 +232,13 @@ describe("investments page", () => {
         errors: { date: [expect.any(String)], price: [expect.any(String)] },
       },
     });
-    expect(listPrices(u.id, sec.id)).toEqual([]);
+    expect(await listPrices(u.id, sec.id)).toEqual([]);
   });
 
   describe("lookup", () => {
     it("returns matches from the provider once market data is on", async () => {
       const u = await createTestUser();
-      setMarketDataEnabled(u.id, true);
+      await setMarketDataEnabled(u.id, true);
       const queries: string[] = [];
       setQuoteProvider(
         fakeProvider(async (q) => {
@@ -283,7 +287,7 @@ describe("investments page", () => {
 
     it("shows a provider error's message when the search fails", async () => {
       const u = await createTestUser();
-      setMarketDataEnabled(u.id, true);
+      await setMarketDataEnabled(u.id, true);
       setQuoteProvider(
         fakeProvider(async () => {
           throw new QuoteProviderError("The provider is busy.");
@@ -298,7 +302,7 @@ describe("investments page", () => {
 
     it("hides the message of an unexpected error", async () => {
       const u = await createTestUser();
-      setMarketDataEnabled(u.id, true);
+      await setMarketDataEnabled(u.id, true);
       setQuoteProvider(
         fakeProvider(async () => {
           throw new Error("SQLITE: secret internals");
@@ -318,8 +322,8 @@ describe("investments page", () => {
     async function setup() {
       const a = await createTestUser();
       const b = await createTestUser();
-      const sec = seedSecurity(a.id);
-      const price = seedManualPrice(a.id, sec.id, "2024-02-01", "60");
+      const sec = await seedSecurity(a.id);
+      const price = await seedManualPrice(a.id, sec.id, "2024-02-01", "60");
       return { a, b, sec, price };
     }
 
@@ -346,8 +350,8 @@ describe("investments page", () => {
           status: 404,
         });
       }
-      expect(getSecurity(a.id, sec.id).name).toBe("Example World ETF");
-      expect(listPrices(a.id, sec.id)).toHaveLength(1);
+      expect((await getSecurity(a.id, sec.id)).name).toBe("Example World ETF");
+      expect(await listPrices(a.id, sec.id)).toHaveLength(1);
     });
   });
 });

@@ -9,6 +9,6 @@ export const load: LayoutServerLoad = async ({ locals }) => {
   return {
     user,
     overdueBills: await overdueBillCount(user.id, localToday()),
-    preferences: getPreferences(user.id),
+    preferences: await getPreferences(user.id),
   };
 };

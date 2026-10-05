@@ -130,12 +130,12 @@ export interface UnmatchedHint {
  * non-archived accounts that carry a QRR/SCOR reference but are not allocated
  * to any bill: likely bills that were never recorded.
  */
-export function unmatchedTransactions(
+export async function unmatchedTransactions(
   userId: string,
   { days = 60, today }: { days?: number; today: string },
-): UnmatchedHint {
+): Promise<UnmatchedHint> {
   const db = getDB();
-  const rows = db
+  const rows = await db
     .select({ id: transactions.id })
     .from(transactions)
     .innerJoin(accounts, eq(accounts.id, transactions.accountId))
@@ -160,7 +160,6 @@ export function unmatchedTransactions(
             ),
         ),
       ),
-    )
-    .all();
+    );
   return { days, count: rows.length };
 }

@@ -38,8 +38,8 @@ export const load: PageServerLoad = async ({ locals, url }) => {
     days,
     horizons: HORIZONS,
     forecast: await forecast(user.id, today, days),
-    planned: listPlannedItems(user.id),
-    settings: listAccountSettings(user.id),
+    planned: await listPlannedItems(user.id),
+    settings: await listAccountSettings(user.id),
   };
 };
 

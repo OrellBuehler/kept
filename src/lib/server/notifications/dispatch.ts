@@ -22,7 +22,7 @@ async function buildChannel(
 ): Promise<Channel> {
   let config;
   try {
-    config = getChannelConfig(userId, kind);
+    config = await getChannelConfig(userId, kind);
   } catch (err) {
     if (!(err instanceof SecretUnreadableError)) throw err;
     throw new ChannelError(
@@ -67,7 +67,7 @@ export async function sendVia(
 ): Promise<SendResult> {
   try {
     await (await buildChannel(userId, kind, deps)).send(message);
-    recordChannelResult(userId, kind, null);
+    await recordChannelResult(userId, kind, null);
     return { ok: true };
   } catch (err) {
     const error =
@@ -75,7 +75,7 @@ export async function sendVia(
         ? err
         : new ChannelError("unknown", "Sending failed unexpectedly.");
     console.error("notification delivery failed", kind, error.code);
-    recordChannelResult(userId, kind, error.reason);
+    await recordChannelResult(userId, kind, error.reason);
     return { ok: false, reason: error.reason };
   }
 }
@@ -87,7 +87,7 @@ export async function deliver(
   deps: DispatchDeps,
 ): Promise<number> {
   let delivered = 0;
-  for (const channel of listChannels(userId)) {
+  for (const channel of await listChannels(userId)) {
     if (!channel.enabled) continue;
     if (channel.needsReentry) {
       console.warn(

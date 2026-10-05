@@ -34,7 +34,7 @@ describe("settings/preferences", () => {
       actions.save(createTestEvent({ user: a, form: valid }) as never),
     );
     expect(r).toEqual({ type: "return", value: { success: true } });
-    expect(getPreferences(a.id)).toEqual({
+    expect(await getPreferences(a.id)).toEqual({
       ibanDisplay: "masked",
       blurAmounts: true,
       locale: "de-CH",
@@ -42,7 +42,7 @@ describe("settings/preferences", () => {
       pageSize: 100,
       investmentCashLiquid: true,
     });
-    expect(getPreferences(b.id)).toEqual(DEFAULT_PREFERENCES);
+    expect(await getPreferences(b.id)).toEqual(DEFAULT_PREFERENCES);
   });
 
   it("an unchecked blur switch saves as off", async () => {
@@ -55,7 +55,7 @@ describe("settings/preferences", () => {
     await outcome(() =>
       actions.save(createTestEvent({ user: a, form: withoutBlur }) as never),
     );
-    expect(getPreferences(a.id).blurAmounts).toBe(false);
+    expect((await getPreferences(a.id)).blurAmounts).toBe(false);
   });
 
   it("an unchecked investment cash switch saves as off and setBlur keeps it", async () => {
@@ -63,19 +63,19 @@ describe("settings/preferences", () => {
     await outcome(() =>
       actions.save(createTestEvent({ user: a, form: valid }) as never),
     );
-    expect(getPreferences(a.id).investmentCashLiquid).toBe(true);
+    expect((await getPreferences(a.id)).investmentCashLiquid).toBe(true);
     await outcome(() =>
       actions.setBlur(
         createTestEvent({ user: a, form: { blurAmounts: "false" } }) as never,
       ),
     );
-    expect(getPreferences(a.id).investmentCashLiquid).toBe(true);
+    expect((await getPreferences(a.id)).investmentCashLiquid).toBe(true);
     const without: Record<string, string> = { ...valid };
     delete without.investmentCashLiquid;
     await outcome(() =>
       actions.save(createTestEvent({ user: a, form: without }) as never),
     );
-    expect(getPreferences(a.id).investmentCashLiquid).toBe(false);
+    expect((await getPreferences(a.id)).investmentCashLiquid).toBe(false);
   });
 
   it("rejects invalid values and stores nothing", async () => {
@@ -89,7 +89,7 @@ describe("settings/preferences", () => {
       ),
     );
     expect(r).toMatchObject({ type: "fail", status: 400 });
-    expect(getPreferences(a.id)).toEqual(DEFAULT_PREFERENCES);
+    expect(await getPreferences(a.id)).toEqual(DEFAULT_PREFERENCES);
   });
 
   it("setBlur only changes the blur preference", async () => {
@@ -103,7 +103,7 @@ describe("settings/preferences", () => {
       ),
     );
     expect(r).toEqual({ type: "return", value: { success: true } });
-    expect(getPreferences(a.id)).toMatchObject({
+    expect(await getPreferences(a.id)).toMatchObject({
       blurAmounts: false,
       locale: "de-CH",
       pageSize: 100,
@@ -123,6 +123,6 @@ describe("settings/preferences", () => {
       );
       expect(r).toMatchObject({ type: "fail", status: 400 });
     }
-    expect(getPreferences(a.id)).toEqual(DEFAULT_PREFERENCES);
+    expect(await getPreferences(a.id)).toEqual(DEFAULT_PREFERENCES);
   });
 });

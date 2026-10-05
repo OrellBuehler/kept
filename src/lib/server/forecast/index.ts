@@ -34,12 +34,12 @@ const billSource: ItemSource = async (userId, from) =>
   billsToItems(await loadBills(userId, from), from);
 
 const plannedSource: ItemSource = async (userId) =>
-  plannedToItems(listPlannedItems(userId));
+  plannedToItems(await listPlannedItems(userId));
 
 /**
  * Every source of projected items. To add another one (e.g. detected
  * recurring payments), append a function with the `ItemSource` signature:
- *   (userId, from, to) => projectRecurring(userId, from, to)
+ *   (userId, from, to) => await projectRecurring(userId, from, to)
  */
 export const itemSources: readonly ItemSource[] = [billSource, plannedSource];
 
@@ -53,7 +53,7 @@ async function forecastAccounts(
   today: string,
 ): Promise<ForecastAccount[]> {
   const settings = new Map(
-    listAccountSettings(userId).map((s) => [s.accountId, s]),
+    (await listAccountSettings(userId)).map((s) => [s.accountId, s]),
   );
   return (await accountBalances(userId, today)).map((a) => ({
     id: a.id,
