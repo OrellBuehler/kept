@@ -5,7 +5,15 @@ import globals from "globals";
 import ts from "typescript-eslint";
 import svelteConfig from "./svelte.config.js";
 
+import noPgOnlyApi from "./eslint-rules/no-pg-only-api.js";
 import noQueryTerminals from "./eslint-rules/no-query-terminals.js";
+
+const kept = {
+  rules: {
+    "no-query-terminals": noQueryTerminals,
+    "no-pg-only-api": noPgOnlyApi,
+  },
+};
 
 export default ts.config(
   {
@@ -15,6 +23,7 @@ export default ts.config(
       "build/",
       "coverage/",
       "drizzle/",
+      "eslint-rules/fixtures/",
       "src/lib/components/ui/",
     ],
   },
@@ -80,7 +89,27 @@ export default ts.config(
     // Builders are awaited, never run through their sync-style terminals; see
     // the rule for how a builder is recognised (by type, so Map.get is fine).
     files: ["src/**/*.ts"],
-    plugins: { kept: { rules: { "no-query-terminals": noQueryTerminals } } },
+    plugins: { kept },
     rules: { "kept/no-query-terminals": "error" },
+  },
+  {
+    // The schema and the queries are typed as pg-core but run on SQLite too, so
+    // the postgres-only api surface is banned (see the rule for the list).
+    files: ["src/**/*.ts"],
+    plugins: { kept },
+    rules: { "kept/no-pg-only-api": "error" },
+  },
+  {
+    // db/ is dialect code by nature: it may cast in raw SQL and import the
+    // drivers and the dialect-specific core packages.
+    files: ["src/lib/server/db/**/*.ts"],
+    rules: { "kept/no-pg-only-api": ["error", { dialectCode: true }] },
+  },
+  {
+    // Tests may run the migrator and open raw handles; their SQL must still be
+    // portable, because the suite also runs against PostgreSQL.
+    files: ["src/**/*.test.ts"],
+    ignores: ["src/lib/server/db/**"],
+    rules: { "kept/no-pg-only-api": ["error", { driverImports: true }] },
   },
 );

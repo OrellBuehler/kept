@@ -18,7 +18,11 @@ export default defineConfig({
     },
   },
   test: {
-    include: ["src/**/*.test.ts", "scripts/**/*.test.ts"],
+    include: [
+      "src/**/*.test.ts",
+      "scripts/**/*.test.ts",
+      "eslint-rules/**/*.test.ts",
+    ],
     environment: "node",
     testTimeout: 30000,
     // Fake servers in tests listen on loopback; tests of the default policy unset this.
