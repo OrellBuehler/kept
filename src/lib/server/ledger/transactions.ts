@@ -1,9 +1,10 @@
 import { ledgerLock } from "$lib/server/ledger/lock";
-import { and, count, desc, eq, gte, lte, or } from "drizzle-orm";
+import { and, count, desc, eq, gte, lte, or, sql } from "drizzle-orm";
 import type { RowSource } from "$lib/ledger-types";
 import type { Minor } from "$lib/money";
 import {
   accounts,
+  billAllocations,
   first,
   getDB,
   likeContains,
@@ -257,6 +258,52 @@ export async function getTransactionRowInTx(
   return toRow(row);
 }
 
+/**
+ * Takes the row's write lock without changing it. Bill allocations (which run
+ * under the bills lock) and edits of a manual payment (ledger lock) both start
+ * here, so on PostgreSQL they queue on the row and each then reads the other's
+ * committed result; a transaction may only take one advisory key. SQLite
+ * writers already run one at a time.
+ */
+export async function lockTransactionRowInTx(
+  tx: Pick<DB, "update">,
+  userId: string,
+  id: string,
+): Promise<void> {
+  await tx
+    .update(transactions)
+    .set({ updatedAt: sql`${transactions.updatedAt}` })
+    .where(and(eq(transactions.userId, userId), eq(transactions.id, id)));
+}
+
+/** A payment cannot shrink below, or change direction under, what bills have claimed of it. */
+async function assertCoversAllocationsInTx(
+  tx: Pick<DB, "select">,
+  userId: string,
+  previous: Row,
+  amount: Minor,
+): Promise<void> {
+  const rows = await tx
+    .select({ amount: billAllocations.amount })
+    .from(billAllocations)
+    .where(
+      and(
+        eq(billAllocations.userId, userId),
+        eq(billAllocations.transactionId, previous.id),
+      ),
+    );
+  if (rows.length === 0) return;
+  const allocated = rows.reduce((sum, r) => sum + Math.abs(r.amount), 0);
+  const flips = Math.sign(amount) !== Math.sign(previous.amount);
+  if (flips || allocated > Math.abs(amount)) {
+    throw new LedgerError(
+      "conflict",
+      "This payment is allocated to bills. Remove or reduce the allocations before changing its amount.",
+      "amount",
+    );
+  }
+}
+
 export async function createManualTransaction(
   userId: string,
   accountId: string,
@@ -329,8 +376,10 @@ export async function updateTransaction(
     }
     await transaction(
       async (tx) => {
+        await lockTransactionRowInTx(tx, userId, id);
         // Read again inside the transaction: the previous IBAN decides which links survive.
         const previous = await getTransactionRowInTx(tx, userId, id);
+        await assertCoversAllocationsInTx(tx, userId, previous, input.amount);
         assertNotBeforeOpening(
           await ownedAccountInTx(tx, userId, previous.accountId),
           input.bookingDate,

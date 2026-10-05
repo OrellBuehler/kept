@@ -15,7 +15,10 @@ import {
 import { emitBillChanged } from "$lib/server/events";
 import { LedgerError } from "$lib/server/ledger/errors";
 import { parseMoneyInput } from "$lib/server/ledger/schemas";
-import { getTransactionRowInTx } from "$lib/server/ledger/transactions";
+import {
+  getTransactionRowInTx,
+  lockTransactionRowInTx,
+} from "$lib/server/ledger/transactions";
 import {
   billsLock,
   getBill,
@@ -72,7 +75,21 @@ export function loadAllocations(userId: string): Promise<Allocation[]> {
 }
 
 type AllocationTransaction = Awaited<ReturnType<typeof getTransactionRowInTx>>;
-export type AllocationTx = Pick<DB, "select" | "insert" | "delete">;
+export type AllocationTx = Pick<DB, "select" | "insert" | "delete" | "update">;
+
+/**
+ * The transaction row to allocate against, read after taking its row lock: a
+ * manual payment's edit (under the ledger lock) checks the allocations after
+ * taking the same lock, so the two cannot both pass on stale reads.
+ */
+async function lockedTransactionRowInTx(
+  tx: AllocationTx,
+  userId: string,
+  transactionId: string,
+): Promise<AllocationTransaction> {
+  await lockTransactionRowInTx(tx, userId, transactionId);
+  return await getTransactionRowInTx(tx, userId, transactionId);
+}
 
 /**
  * Reads the bill and the transaction, validates against the existing
@@ -90,7 +107,7 @@ async function allocateAtomically(
   const created = await transaction(async (tx) => {
     const bill = await getBillInTx(tx, userId, billId);
     const amount = amountFor(bill);
-    const row = await getTransactionRowInTx(tx, userId, transactionId);
+    const row = await lockedTransactionRowInTx(tx, userId, transactionId);
     const allocated = await allocateRow(tx, userId, bill, row, amount, origin);
     afterCommit(() => emitBillChanged(userId, billId));
     return allocated;
@@ -135,7 +152,7 @@ export async function allocateInTx(
   origin: AllocationOrigin,
 ): Promise<{ id: string }> {
   const bill = await getBillInTx(tx, userId, billId);
-  const row = await getTransactionRowInTx(tx, userId, transactionId);
+  const row = await lockedTransactionRowInTx(tx, userId, transactionId);
   return await allocateRow(tx, userId, bill, row, amount, origin);
 }
 
