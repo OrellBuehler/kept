@@ -12,6 +12,7 @@ import {
 } from "$lib/server/db";
 import { LedgerError, notFound } from "$lib/server/ledger/errors";
 import type { PriceInput } from "./schemas";
+import { securityLock } from "./securities";
 
 export interface PriceView {
   id: string;
@@ -127,23 +128,27 @@ export async function setManualPrice(
   securityId: string,
   input: PriceInput,
 ): Promise<PriceView> {
-  const row = await transaction(async (tx) => {
-    await assertSecurityInTx(tx, userId, securityId);
-    return (await first(
-      tx
-        .insert(securityPrices)
-        .values({ userId, securityId, ...input, source: "manual" })
-        .onConflictDoUpdate({
-          target: [
-            securityPrices.securityId,
-            securityPrices.date,
-            securityPrices.source,
-          ],
-          set: { price: input.price, updatedAt: new Date() },
-        })
-        .returning({ id: securityPrices.id }),
-    ))!;
-  });
+  const row = await transaction(
+    async (tx) => {
+      await assertSecurityInTx(tx, userId, securityId);
+      return (await first(
+        tx
+          .insert(securityPrices)
+          .values({ userId, securityId, ...input, source: "manual" })
+          .onConflictDoUpdate({
+            target: [
+              securityPrices.securityId,
+              securityPrices.date,
+              securityPrices.source,
+            ],
+            set: { price: input.price, updatedAt: new Date() },
+          })
+          .returning({ id: securityPrices.id }),
+      ))!;
+    },
+    // Changing the security's currency checks for manual prices under this lock.
+    { lock: securityLock(userId) },
+  );
   return await getPrice(userId, row.id);
 }
 

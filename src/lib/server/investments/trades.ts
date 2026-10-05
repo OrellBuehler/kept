@@ -14,6 +14,7 @@ import {
 } from "$lib/server/db";
 import { LedgerError, notFound } from "$lib/server/ledger/errors";
 import type { TradeInput } from "./schemas";
+import { securityLock } from "./securities";
 import {
   firstEmptySplit,
   firstOversell,
@@ -256,7 +257,7 @@ export async function createTrade(
       }
       return inserted;
     },
-    { lock: `trades:${userId}` },
+    { lock: securityLock(userId) },
   );
   return await getTrade(userId, row.id);
 }
@@ -300,7 +301,7 @@ export async function updateTrade(
         await discardProviderPrices(tx, userId, [input.securityId]);
       }
     },
-    { lock: `trades:${userId}` },
+    { lock: securityLock(userId) },
   );
   return await getTrade(userId, id);
 }
@@ -321,6 +322,6 @@ export async function deleteTrade(userId: string, id: string): Promise<void> {
         await discardProviderPrices(tx, userId, [current.securityId]);
       }
     },
-    { lock: `trades:${userId}` },
+    { lock: securityLock(userId) },
   );
 }

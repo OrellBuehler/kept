@@ -69,8 +69,16 @@ export async function createSecurity(
 }
 
 /**
- * The checks and the writes share one transaction, so a trade or a manual
- * price added in between cannot slip past the currency guard.
+ * What trades and manual prices rely on about a security (its currency, that
+ * it exists) is checked in their own transactions, so changing or deleting the
+ * security takes the same lock as adding a trade or a price. Under PostgreSQL
+ * a transaction does not see a concurrent one's uncommitted rows.
+ */
+export const securityLock = (userId: string) => `trades:${userId}`;
+
+/**
+ * The checks and the writes share one transaction (and the security lock), so a
+ * trade or a manual price added in between cannot slip past the currency guard.
  */
 async function updateSecurityInTx(
   tx: Tx,
@@ -146,7 +154,9 @@ export async function updateSecurity(
   id: string,
   input: SecurityInput,
 ): Promise<SecurityView> {
-  await transaction(async (tx) => updateSecurityInTx(tx, userId, id, input));
+  await transaction(async (tx) => updateSecurityInTx(tx, userId, id, input), {
+    lock: securityLock(userId),
+  });
   return await getSecurity(userId, id);
 }
 
@@ -155,30 +165,33 @@ export async function deleteSecurity(
   userId: string,
   id: string,
 ): Promise<void> {
-  await transaction(async (tx) => {
-    const found = await first(
-      tx
-        .select({ id: securities.id })
-        .from(securities)
-        .where(and(eq(securities.userId, userId), eq(securities.id, id)))
-        .limit(1),
-    );
-    if (!found) throw notFound("Security");
-    const used = await first(
-      tx
-        .select({ id: trades.id })
-        .from(trades)
-        .where(and(eq(trades.userId, userId), eq(trades.securityId, id)))
-        .limit(1),
-    );
-    if (used) {
-      throw new LedgerError(
-        "conflict",
-        "The security cannot be deleted while it has trades.",
+  await transaction(
+    async (tx) => {
+      const found = await first(
+        tx
+          .select({ id: securities.id })
+          .from(securities)
+          .where(and(eq(securities.userId, userId), eq(securities.id, id)))
+          .limit(1),
       );
-    }
-    await tx
-      .delete(securities)
-      .where(and(eq(securities.userId, userId), eq(securities.id, id)));
-  });
+      if (!found) throw notFound("Security");
+      const used = await first(
+        tx
+          .select({ id: trades.id })
+          .from(trades)
+          .where(and(eq(trades.userId, userId), eq(trades.securityId, id)))
+          .limit(1),
+      );
+      if (used) {
+        throw new LedgerError(
+          "conflict",
+          "The security cannot be deleted while it has trades.",
+        );
+      }
+      await tx
+        .delete(securities)
+        .where(and(eq(securities.userId, userId), eq(securities.id, id)));
+    },
+    { lock: securityLock(userId) },
+  );
 }
