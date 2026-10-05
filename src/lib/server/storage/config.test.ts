@@ -14,6 +14,21 @@ describe("readStorageConfig", () => {
     });
   });
 
+  it("requires KEPT_STORAGE_DIR with PostgreSQL, where there is no data directory", () => {
+    const url = "postgres://u:secret@db.example.invalid/kept";
+    expect(() => readStorageConfig({ DATABASE_URL: url })).toThrow(
+      /KEPT_STORAGE_DIR: required with PostgreSQL/,
+    );
+    try {
+      readStorageConfig({ DATABASE_URL: url });
+    } catch (e) {
+      expect(String(e)).not.toContain("secret");
+    }
+    expect(
+      readStorageConfig({ DATABASE_URL: url, KEPT_STORAGE_DIR: "/srv/files" }),
+    ).toEqual({ kind: "fs", dir: "/srv/files" });
+  });
+
   it("uses an empty DATABASE_PATH as given, like the database does", () => {
     expect(readStorageConfig({ DATABASE_PATH: "" })).toEqual({
       kind: "fs",

@@ -1,6 +1,12 @@
 import { and, eq, inArray, or, sql } from "drizzle-orm";
 import type { TransferMethod } from "$lib/ledger-types";
-import { accounts, getDB, transactions, transfers } from "$lib/server/db";
+import {
+  accounts,
+  getDB,
+  imports,
+  transactions,
+  transfers,
+} from "$lib/server/db";
 
 /** The transfer a transaction belongs to; dismissed transfers are not shown. */
 export interface TransferRef {
@@ -132,7 +138,10 @@ export async function mirrorRefs(
         and(
           eq(transactions.userId, userId),
           inArray(transactions.id, ids),
-          sql`exists (select 1 from imports where imports.account_id = ${transactions.accountId} and coalesce(min(imports.statement_from, imports.opening_balance_date), imports.statement_from, imports.opening_balance_date) <= ${transactions.bookingDate} and coalesce(max(imports.statement_to, imports.closing_balance_date), imports.statement_to, imports.closing_balance_date) >= ${transactions.bookingDate})`,
+          // The earliest of the statement start and the opening balance date is
+          // <= the booking date when either one is, and likewise for the end:
+          // no scalar min()/max(), which only SQLite has.
+          sql`exists (select 1 from ${imports} where ${imports.accountId} = ${transactions.accountId} and (${imports.statementFrom} <= ${transactions.bookingDate} or ${imports.openingBalanceDate} <= ${transactions.bookingDate}) and (${imports.statementTo} >= ${transactions.bookingDate} or ${imports.closingBalanceDate} >= ${transactions.bookingDate}))`,
         ),
       )) {
       insideImportedPeriod.add(r.id);

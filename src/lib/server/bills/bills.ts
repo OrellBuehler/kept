@@ -121,6 +121,16 @@ export function toMatchBill(bill: BillView): MatchBill {
   };
 }
 
+/**
+ * The one lock every transaction takes that changes what an allocation check
+ * reads (a bill's amount, kind, currency or cancellation, or the allocations
+ * themselves). One key per user; never take a different lock in the same
+ * transaction.
+ */
+export const billsLock = (userId: string) => ({
+  lock: `bills:${userId}`,
+});
+
 function ownedBillQuery(tx: Pick<DB, "select">, userId: string, id: string) {
   return tx
     .select()
@@ -306,7 +316,7 @@ export async function updateBill(
     );
     if (!row) throw notFound("Bill");
     return toView(row);
-  });
+  }, billsLock(userId));
   afterCommit(() => emitBillChanged(userId, id));
   return view;
 }
@@ -351,13 +361,18 @@ export async function setBillCancelled(
   id: string,
   cancelled: boolean,
 ): Promise<BillView> {
-  const [row] = await getDB()
-    .update(bills)
-    .set({ cancelled })
-    .where(and(eq(bills.userId, userId), eq(bills.id, id)))
-    .returning();
-  if (!row) throw notFound("Bill");
-  afterCommit(() => emitBillChanged(userId, id));
+  // Cancelling decides whether an allocation may be added, so it takes the
+  // same lock as the allocation check.
+  const row = await transaction(async (tx) => {
+    const [updated] = await tx
+      .update(bills)
+      .set({ cancelled })
+      .where(and(eq(bills.userId, userId), eq(bills.id, id)))
+      .returning();
+    if (!updated) throw notFound("Bill");
+    afterCommit(() => emitBillChanged(userId, id));
+    return updated;
+  }, billsLock(userId));
   return toView(row);
 }
 

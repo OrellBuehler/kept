@@ -1,4 +1,4 @@
-import { and, eq } from "drizzle-orm";
+import { and, asc, eq } from "drizzle-orm";
 import type { ChannelKind } from "$lib/notification-types";
 import {
   SecretUnreadableError,
@@ -282,11 +282,15 @@ function toView(row: ChannelRow): ChannelView {
 
 export async function listChannels(userId: string): Promise<ChannelView[]> {
   return (
-    await getDB()
-      .select()
-      .from(notificationChannels)
-      .where(eq(notificationChannels.userId, userId))
-  ).map(toView);
+    (
+      await getDB()
+        .select()
+        .from(notificationChannels)
+        .where(eq(notificationChannels.userId, userId))
+        // One channel per kind, so this is a total order.
+        .orderBy(asc(notificationChannels.kind))
+    ).map(toView)
+  );
 }
 
 export async function listEnabledChannelKinds(

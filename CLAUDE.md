@@ -88,8 +88,15 @@ src/lib/testing/fixtures/        synthetic sample files for importer tests
   Query builders are never run with `.all()/.get()/.run()/.values()/.execute()` (lint, by receiver type).
 - **Queries must run on SQLite and PostgreSQL.** Columns come from `db/columns.ts` only; PostgreSQL-only
   drizzle APIs and `::` casts in raw SQL are banned by lint outside `db/`. Aggregates and raw
-  `sql<number>` go through `.mapWith(Number)` (PostgreSQL returns int8 and numeric as strings).
-  Migrations: `bun run db:generate` writes `drizzle/sqlite/`; PostgreSQL uses `drizzle.pg.config.ts`.
+  `sql<number>` go through `.mapWith(Number)` (PostgreSQL returns int8 and numeric as strings), and a
+  timestamp is read as a Date column (`max(col)`), never as a raw `sql<number>`. Text search uses
+  `likeContains()`, not `like`; SQLite-only functions (`strftime`, `ifnull`, `group_concat`, scalar
+  `min/max`, `char`, `rowid`) are banned by lint. A cross-row invariant (check, then write across rows)
+  takes `transaction(fn, { lock })`: a no-op on SQLite, an advisory lock on PostgreSQL. Every list a
+  user sees has a total `ORDER BY`. Migrations: `bun run db:generate` writes both `drizzle/sqlite/` and
+  `drizzle/postgres/` (never edit either by hand except for data fix-ups); `DATABASE_URL=postgres://…`
+  selects PostgreSQL (see `db/config.ts`), and `bun run test:pg` runs the PostgreSQL tests when
+  `KEPT_TEST_DATABASE_URL` is set.
 - **No swallowed errors.** No empty `catch`, no `catch { return null }` without logging and a
   user-visible outcome.
 - Never log transaction descriptions, counterparties, IBANs or amounts.

@@ -21,9 +21,9 @@ import {
  */
 export function useTestDB(): { readonly db: DB } {
   let current: DB | null = null;
-  beforeEach(() => {
+  beforeEach(async () => {
     current = openDatabase(":memory:");
-    migrateDatabase(current);
+    await migrateDatabase(current);
     setDB(current);
   });
   afterEach(async () => {

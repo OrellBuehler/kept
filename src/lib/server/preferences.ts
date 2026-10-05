@@ -50,22 +50,27 @@ export async function updatePreferences(
   userId: string,
   patch: Partial<Preferences>,
 ): Promise<Preferences> {
-  return await transaction(async (tx) => {
-    const row = await first(
-      tx
-        .select()
-        .from(userPreferences)
-        .where(eq(userPreferences.userId, userId))
-        .limit(1),
-    );
-    const next = { ...toPreferences(row), ...patch };
-    await tx
-      .insert(userPreferences)
-      .values({ userId, ...next })
-      .onConflictDoUpdate({
-        target: userPreferences.userId,
-        set: { ...next, updatedAt: new Date() },
-      });
-    return next;
-  });
+  return await transaction(
+    async (tx) => {
+      const row = await first(
+        tx
+          .select()
+          .from(userPreferences)
+          .where(eq(userPreferences.userId, userId))
+          .limit(1),
+      );
+      const next = { ...toPreferences(row), ...patch };
+      await tx
+        .insert(userPreferences)
+        .values({ userId, ...next })
+        .onConflictDoUpdate({
+          target: userPreferences.userId,
+          set: { ...next, updatedAt: new Date() },
+        });
+      return next;
+      // Under PostgreSQL two transactions can read the same old row; the lock
+      // makes the second one merge into the first one's result.
+    },
+    { lock: `preferences:${userId}` },
+  );
 }

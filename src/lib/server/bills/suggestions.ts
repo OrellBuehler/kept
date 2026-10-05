@@ -21,6 +21,7 @@ import {
   toMatchTransaction,
 } from "./allocations";
 import {
+  billsLock,
   getBill,
   getBillInTx,
   listBills,
@@ -357,7 +358,7 @@ export async function writeAutoMatches(
       }
     }
     return billIds;
-  });
+  }, billsLock(userId));
 }
 
 export interface AutoMatchResult {

@@ -1,5 +1,6 @@
 import { dirname, resolve } from "node:path";
 import { z } from "zod";
+import { resolveDialect } from "$lib/server/db/dialect";
 
 const s3KeyPrefix = z
   .string()
@@ -129,6 +130,12 @@ export function readStorageConfig(
   const parsedDir = base.KEPT_STORAGE_DIR;
   if (parsedDir) {
     return { kind: "fs", dir: resolve(parsedDir) };
+  }
+  // With PostgreSQL there is no data directory to default to.
+  if (resolveDialect(env) === "pg") {
+    throw invalid(
+      "KEPT_STORAGE_DIR: required with PostgreSQL unless KEPT_STORAGE is s3",
+    );
   }
   const dbPath = env.DATABASE_PATH ?? "./data/kept.db";
   if (dbPath === ":memory:") {

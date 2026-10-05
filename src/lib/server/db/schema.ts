@@ -624,6 +624,17 @@ export const transactions = table(
     index("transactions_import_id_idx").on(t.importId),
     index("transactions_category_id_idx").on(t.categoryId),
     index("transactions_mirror_of_id_idx").on(t.mirrorOfId),
+    // The ledger lists newest-first by (booking_date, seq). SQLite's
+    // migrations are frozen, so this one exists on PostgreSQL only.
+    ...(dialect === "pg"
+      ? [
+          index("transactions_user_booking_seq_idx").on(
+            t.userId,
+            t.bookingDate,
+            t.seq,
+          ),
+        ]
+      : []),
   ],
 );
 

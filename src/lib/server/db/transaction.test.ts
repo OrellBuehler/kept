@@ -17,9 +17,9 @@ import { GateTimeoutError } from "./gate";
 
 let root: DB;
 
-beforeEach(() => {
+beforeEach(async () => {
   root = openDatabase(":memory:", { gateTimeoutMs: 400 });
-  migrateDatabase(root);
+  await migrateDatabase(root);
   setDB(root);
 });
 

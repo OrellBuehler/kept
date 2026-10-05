@@ -160,13 +160,32 @@ export async function deletePrice(userId: string, id: string): Promise<void> {
   if (deleted.length === 0) throw notFound("Price");
 }
 
+/**
+ * One row per conflict key, the last one winning. One INSERT ... ON CONFLICT
+ * statement may not touch the same row twice on PostgreSQL (SQLite applies
+ * them in order), so duplicates are resolved here.
+ */
+function lastPerKey<T>(rows: readonly T[], keyOf: (row: T) => string): T[] {
+  const byKey = new Map<string, T>();
+  for (const row of rows) {
+    // Delete first so the Map keeps the order of the last occurrences.
+    const key = keyOf(row);
+    byKey.delete(key);
+    byKey.set(key, row);
+  }
+  return [...byKey.values()];
+}
+
 /** Rows with a price of zero or less are provider noise and are skipped. */
 export async function upsertProviderPrices(
   userId: string,
   securityId: string,
   allRows: readonly PriceRow[],
 ): Promise<number> {
-  const rows = allRows.filter((r) => r.price > 0);
+  const rows = lastPerKey(
+    allRows.filter((r) => r.price > 0),
+    (r) => r.date,
+  );
   await transaction(async (tx) => {
     await assertSecurityInTx(tx, userId, securityId);
     for (let i = 0; i < rows.length; i += CHUNK) {
@@ -199,8 +218,9 @@ export async function upsertProviderPrices(
 
 export async function upsertFxRates(
   userId: string,
-  rows: readonly FxRateRow[],
+  allRows: readonly FxRateRow[],
 ): Promise<number> {
+  const rows = lastPerKey(allRows, (r) => `${r.base}|${r.quote}|${r.date}`);
   await transaction(async (tx) => {
     for (let i = 0; i < rows.length; i += CHUNK) {
       await tx

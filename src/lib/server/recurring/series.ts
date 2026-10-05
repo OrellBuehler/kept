@@ -1,4 +1,4 @@
-import { and, eq, inArray, ne, sql } from "drizzle-orm";
+import { and, eq, inArray, max, ne, sql } from "drizzle-orm";
 import { minor, type Minor } from "$lib/money";
 import type { Cadence, SeriesStatus } from "$lib/recurring-types";
 import {
@@ -125,16 +125,14 @@ async function sourceFingerprint(tx: DB, userId: string): Promise<string> {
   const [row] = await tx
     .select({
       n: sql<number>`count(*)`.mapWith(Number),
-      updated: sql<number>`coalesce(max(${transactions.updatedAt}), 0)`.mapWith(
-        Number,
-      ),
+      updated: max(transactions.updatedAt),
       seq: sql<number>`coalesce(max(${transactions.seq}), 0)`.mapWith(Number),
     })
     .from(transactions)
     .where(
       and(eq(transactions.userId, userId), ne(transactions.source, "mirror")),
     );
-  return `${row?.n}:${row?.updated}:${row?.seq}`;
+  return `${row?.n}:${row?.updated?.getTime() ?? 0}:${row?.seq}`;
 }
 
 /**
@@ -157,22 +155,27 @@ export async function syncRecurring(userId: string): Promise<void> {
   for (let attempt = 1; ; attempt++) {
     const fingerprint = await sourceFingerprint(getDB(), userId);
     const detected = detectSeries(await loadTransactions(userId));
-    const applied = await transaction(async (tx) => {
-      if ((await sourceFingerprint(tx, userId)) === fingerprint) {
-        await applyDetected(tx, userId, detected);
+    const applied = await transaction(
+      async (tx) => {
+        if ((await sourceFingerprint(tx, userId)) === fingerprint) {
+          await applyDetected(tx, userId, detected);
+          return true;
+        }
+        if (attempt < MAX_SYNC_ATTEMPTS) return false;
+        // Writers kept changing the rows. The transaction now holds the
+        // database, so what it reads is what it applies; detection is the only
+        // work done under the lock, and it needs no further queries.
+        await applyDetected(
+          tx,
+          userId,
+          detectSeries(await loadTransactions(userId)),
+        );
         return true;
-      }
-      if (attempt < MAX_SYNC_ATTEMPTS) return false;
-      // Writers kept changing the rows. The transaction now holds the
-      // database, so what it reads is what it applies; detection is the only
-      // work done under the lock, and it needs no further queries.
-      await applyDetected(
-        tx,
-        userId,
-        detectSeries(await loadTransactions(userId)),
-      );
-      return true;
-    });
+        // Two overlapping syncs of one user must not both insert the same series;
+        // under PostgreSQL only this lock keeps them apart.
+      },
+      { lock: `recurring:${userId}` },
+    );
     if (applied) return;
   }
 }

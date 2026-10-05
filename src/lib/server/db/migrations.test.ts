@@ -266,16 +266,16 @@ describe("drizzle/sqlite", () => {
     const tables = await tableCount();
     expect(before).toHaveLength(SHIPPED.length);
 
-    migrateDatabase(db);
+    await migrateDatabase(db);
 
     expect(await applied()).toEqual(before);
     expect(await tableCount()).toBe(tables);
   });
 
   it("is a no-op the second time the new folder runs", async () => {
-    migrateDatabase(db);
+    await migrateDatabase(db);
     const before = await applied();
-    migrateDatabase(db);
+    await migrateDatabase(db);
     expect(await applied()).toEqual(before);
   });
 
@@ -285,7 +285,7 @@ describe("drizzle/sqlite", () => {
     const before = await applied();
     expect(before).toHaveLength(partial);
 
-    migrateDatabase(db);
+    await migrateDatabase(db);
 
     const after = await applied();
     expect(after.slice(0, partial)).toEqual(before);
@@ -297,7 +297,7 @@ describe("drizzle/sqlite", () => {
     const fromOld = await applied();
     const fresh = openDatabase(":memory:");
     try {
-      migrateDatabase(fresh);
+      await migrateDatabase(fresh);
       const rows = await withExclusiveClient(
         (client) =>
           client

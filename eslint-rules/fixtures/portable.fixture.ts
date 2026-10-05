@@ -1,5 +1,5 @@
 // Nothing in this file may be reported by kept/no-pg-only-api.
-import { and, eq, like, sql } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 import type {
   AnyPgColumn,
   PgDatabase,
@@ -40,12 +40,33 @@ export async function portable(table: PgTable) {
   await db
     .selectDistinct()
     .from(t)
-    .where(and(eq(t.id, "a"), like(t.id, "a%")));
+    .where(
+      and(eq(t.id, "a"), sql`lower(${t.id}) like lower(${"a%"}) escape '\\'`),
+    );
+  await db
+    .select({ m: sql<number>`coalesce(max(${t.id}), 0)`, r: sql.raw("1") })
+    .from(t);
   await db
     .select({ n: sql<number>`count(*)`.mapWith(Number) })
     .from(t)
     .where(sql`lower(${t.id}) like lower(${"a%"}) escape '\\'`);
   await db.select({ id: sql`cast(${t.id} as text)` }).from(t);
+  await db
+    .select({ id: t.id })
+    .from(t)
+    .where(sql`lower(coalesce(${t.id}, '')) like lower(${"a%"}) escape '\\'`);
+  await db
+    .select({ id: t.id })
+    .from(t)
+    .where(sql`lower(${t.id}) not like lower(${"a%"}) escape '\\'`);
+  await db
+    .select({ id: t.id })
+    .from(t)
+    .where(
+      sql`lower(${t.id}) like lower(${"a%"}) and lower(${t.id}) like lower(${"%b"})`,
+    );
+  await db.select({ id: sql`1 -- a plain like, ::int and strftime` }).from(t);
+  await db.select({ id: sql`1 /* ${t.id} ilike glob rowid */ + 1` }).from(t);
   const tag = Symbol.for("x");
   const list = z.string().array();
   const many = z.array(z.string());

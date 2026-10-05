@@ -1,10 +1,11 @@
-import { and, count, desc, eq, gte, lte, or, sql } from "drizzle-orm";
+import { and, count, desc, eq, gte, lte, or } from "drizzle-orm";
 import type { RowSource } from "$lib/ledger-types";
 import type { Minor } from "$lib/money";
 import {
   accounts,
   first,
   getDB,
+  likeContains,
   transactions,
   type DB,
   transaction,
@@ -88,13 +89,20 @@ const columns = {
   categoryId: transactions.categoryId,
   taxYear: transactions.taxYear,
   deductionYear: transactions.deductionYear,
-  createdAt: sql<number>`${transactions.createdAt}`,
+  createdAt: transactions.createdAt,
   mirrorOfId: transactions.mirrorOfId,
 };
 
 type Row = Omit<TransactionView, "mirrorOf" | "transfer"> & {
   mirrorOfId: string | null;
 };
+
+/** What `columns` selects: the creation time is a Date on every database. */
+type SelectedRow = Omit<Row, "createdAt"> & { createdAt: Date };
+
+function toRow({ createdAt, ...rest }: SelectedRow): Row {
+  return { ...rest, createdAt: createdAt.getTime() };
+}
 
 async function decorate(
   userId: string,
@@ -157,11 +165,7 @@ function assertNotBeforeOpening(
   }
 }
 
-function escapeLike(value: string): string {
-  return value.replace(/[\\%_]/g, (c) => `\\${c}`);
-}
-
-/** Newest first. Text search is case-insensitive (ASCII) over description, counterparty and note. */
+/** Newest first. Text search is case-insensitive (ASCII only on SQLite, Unicode on PostgreSQL) over description, counterparty and note. */
 export async function listTransactions(
   userId: string,
   accountId: string,
@@ -172,7 +176,6 @@ export async function listTransactions(
   const pageSize = Math.max(1, Math.floor(opts.pageSize ?? 50));
   const requested = Math.max(1, Math.floor(opts.page ?? 1));
 
-  const pattern = f.q ? `%${escapeLike(f.q)}%` : null;
   const where = and(
     eq(transactions.userId, userId),
     eq(transactions.accountId, accountId),
@@ -184,11 +187,11 @@ export async function listTransactions(
     f.maxAmount !== undefined
       ? lte(transactions.amount, f.maxAmount)
       : undefined,
-    pattern
+    f.q
       ? or(
-          sql`${transactions.description} like ${pattern} escape '\\'`,
-          sql`${transactions.counterpartyName} like ${pattern} escape '\\'`,
-          sql`${transactions.note} like ${pattern} escape '\\'`,
+          likeContains(transactions.description, f.q),
+          likeContains(transactions.counterpartyName, f.q),
+          likeContains(transactions.note, f.q),
         )
       : undefined,
   );
@@ -201,17 +204,19 @@ export async function listTransactions(
   const page = Math.min(requested, pageCount);
   const items = await decorate(
     userId,
-    await db
-      .select(columns)
-      .from(transactions)
-      .where(where)
-      .orderBy(
-        desc(transactions.bookingDate),
-        desc(transactions.seq),
-        desc(transactions.id),
-      )
-      .limit(pageSize)
-      .offset((page - 1) * pageSize),
+    (
+      await db
+        .select(columns)
+        .from(transactions)
+        .where(where)
+        .orderBy(
+          desc(transactions.bookingDate),
+          desc(transactions.seq),
+          desc(transactions.id),
+        )
+        .limit(pageSize)
+        .offset((page - 1) * pageSize)
+    ).map(toRow),
   );
   return { items, total, page, pageSize, pageCount };
 }
@@ -234,7 +239,7 @@ export async function getTransaction(
 ): Promise<TransactionView> {
   const row = await first(ownedTransactionQuery(getDB(), userId, id));
   if (!row) throw notFound("Transaction");
-  return (await decorate(userId, [row]))[0]!;
+  return (await decorate(userId, [toRow(row)]))[0]!;
 }
 
 /**
@@ -248,7 +253,7 @@ export async function getTransactionRowInTx(
 ): Promise<Row> {
   const row = await first(ownedTransactionQuery(tx, userId, id));
   if (!row) throw notFound("Transaction");
-  return row;
+  return toRow(row);
 }
 
 export async function createManualTransaction(

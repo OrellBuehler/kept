@@ -2,7 +2,7 @@ import { asc, eq } from "drizzle-orm";
 import { describe, expect, it } from "vitest";
 import { createTestUser } from "$lib/testing/auth";
 import { useTestDB } from "$lib/testing/db";
-import { first, isUniqueViolation, users } from "./index";
+import { first, isUniqueViolation, isUniqueViolationOn, users } from "./index";
 
 describe("first", () => {
   const ctx = useTestDB();
@@ -93,5 +93,48 @@ describe("isUniqueViolation", () => {
     expect(isUniqueViolation(new Error("plain"))).toBe(false);
     expect(isUniqueViolation(null)).toBe(false);
     expect(isUniqueViolation("SQLITE_CONSTRAINT_UNIQUE")).toBe(false);
+  });
+});
+
+describe("isUniqueViolationOn", () => {
+  const ctx = useTestDB();
+  const username = {
+    constraint: "users_username_unique",
+    table: "users",
+    columns: ["username"],
+  };
+
+  it("matches a real violation of that constraint only", async () => {
+    await createTestUser({ username: "dup" });
+    let caught: unknown;
+    try {
+      await ctx.db.insert(users).values({ username: "dup", passwordHash: "x" });
+    } catch (err) {
+      caught = err;
+    }
+    expect(isUniqueViolationOn(caught, username)).toBe(true);
+    expect(
+      isUniqueViolationOn(caught, { ...username, columns: ["other"] }),
+    ).toBe(false);
+  });
+
+  it("reads SQLite's message and PostgreSQL's constraint name", () => {
+    const sqlite = new Error("UNIQUE constraint failed: users.username");
+    expect(
+      isUniqueViolationOn(new Error("w", { cause: sqlite }), username),
+    ).toBe(true);
+    const pg = Object.assign(new Error("duplicate"), {
+      errno: "23505",
+      constraint: "users_username_unique",
+    });
+    expect(isUniqueViolationOn(pg, username)).toBe(true);
+    expect(
+      isUniqueViolationOn(
+        Object.assign(pg, { constraint: "users_pkey" }),
+        username,
+      ),
+    ).toBe(false);
+    expect(isUniqueViolationOn(new Error("nope"), username)).toBe(false);
+    expect(isUniqueViolationOn(undefined, username)).toBe(false);
   });
 });
