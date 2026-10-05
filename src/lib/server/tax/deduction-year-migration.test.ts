@@ -19,7 +19,7 @@ import { addTaxCredit, upsertTaxYear } from "./tax";
 import { taxCreditInputSchema, taxYearInputSchema } from "./schemas";
 import { first, withExclusiveClient } from "$lib/server/db";
 
-const dir = join(process.cwd(), "drizzle");
+const dir = join(process.cwd(), "drizzle", "sqlite");
 const file = readdirSync(dir).find((f) =>
   f.startsWith("0021_reclassify_deduction_years"),
 )!;

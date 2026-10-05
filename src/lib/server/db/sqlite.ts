@@ -304,7 +304,7 @@ export function migrateSqlite(backend: SqliteBackend): void {
     throw new Error("Cannot migrate while the database is in use");
   }
   migrate(drizzleBun({ client: backend.client }), {
-    migrationsFolder: join(process.cwd(), "drizzle"),
+    migrationsFolder: join(process.cwd(), "drizzle", "sqlite"),
   });
 }
 
