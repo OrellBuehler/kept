@@ -10,34 +10,24 @@ permissions: {}
 
 env:
   REGISTRY: ghcr.io
+  PG_IMAGE: postgres:18@sha256:5a5a84b19854a9ffaa54082c166ff4ec27473a361e496e5ea167f298f2da9722
 
 jobs:
   # A release tag can point at a commit whose checks were skipped or red, so the
-  # published image is gated on the same checks as a pull request.
-  test:
-    name: Test gate
+  # published image is gated on the full quality workflow (SQLite and PostgreSQL
+  # suites, S3 contract tests, schema drift check, build), not just a subset.
+  quality:
+    name: Quality gate
     if: github.event_name != 'pull_request'
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
     permissions:
       contents: read
-
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-
-      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
-        with:
-          bun-version-file: .bun-version
-
-      - run: bun install --frozen-lockfile
-
-      - name: Typecheck, lint, test
-        run: bun run lint && bun run check && bun run test
+    uses: ./.github/workflows/quality.yml
+    secrets: inherit
 
   image:
     name: Build image
-    needs: [test]
-    if: ${{ !cancelled() && (needs.test.result == 'success' || needs.test.result == 'skipped') }}
+    needs: [quality]
+    if: ${{ !cancelled() && (needs.quality.result == 'success' || needs.quality.result == 'skipped') }}
     runs-on: ubuntu-latest
     timeout-minutes: 20
     permissions:
@@ -92,6 +82,35 @@ jobs:
             sleep 1
           done
           docker logs kept-smoke
+          exit 1
+
+      # The same image against PostgreSQL: start-up runs the migrations, and /setup
+      # reads the user table, so a broken PostgreSQL path in the built bundle fails here.
+      - name: Smoke test (PostgreSQL)
+        run: |
+          image=$(echo "${{ steps.meta.outputs.tags }}" | head -n1)
+          password="$(openssl rand -hex 16)"
+          echo "::add-mask::$password"
+          docker network create kept-smoke-net
+          docker run -d --name kept-smoke-pg --network kept-smoke-net \
+            -e POSTGRES_USER=kept -e POSTGRES_PASSWORD="$password" -e POSTGRES_DB=kept \
+            "$PG_IMAGE"
+          for i in $(seq 1 60); do
+            if docker exec kept-smoke-pg pg_isready -U kept -d kept -h 127.0.0.1 >/dev/null 2>&1; then break; fi
+            sleep 1
+          done
+          docker run -d --name kept-smoke-app --network kept-smoke-net -p 3001:3000 \
+            -e KEPT_SECRET_KEY="$(openssl rand -base64 32)" \
+            -e DATABASE_URL="postgres://kept:$password@kept-smoke-pg:5432/kept" "$image"
+          for i in $(seq 1 30); do
+            if curl -fsS http://127.0.0.1:3001/api/health \
+              && curl -fsS -o /dev/null http://127.0.0.1:3001/setup; then
+              echo; echo "healthy on PostgreSQL after ${i}s"; exit 0
+            fi
+            sleep 1
+          done
+          docker logs kept-smoke-app
+          docker logs kept-smoke-pg | tail -n 30
           exit 1
 
   # Only this job can write packages, and it never runs for pull requests.

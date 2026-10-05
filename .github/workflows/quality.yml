@@ -5,12 +5,14 @@ on:
   push:
     branches: [main]
   workflow_dispatch:
+  # The release gate in docker.yml runs this same workflow.
+  workflow_call:
 
 permissions:
   contents: read
 
 concurrency:
-  group: quality-${{ github.ref }}
+  group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
@@ -78,6 +80,10 @@ jobs:
       S3_IMAGE: chrislusf/seaweedfs:4.48@sha256:4e61d15fd35994cb1e43e1e553dff106794841fd9a99ade2fc8c8bfce4d7872d
       KEPT_TEST_S3_ENDPOINT: http://127.0.0.1:8333
       KEPT_TEST_S3_BUCKET: kept-test
+      # Virtual-hosted style: the server answers `kept-test.localhost` (see /etc/hosts below).
+      KEPT_TEST_S3_VIRTUAL_ENDPOINT: http://localhost:8333
+      # Makes s3.test.ts throw instead of skipping when a variable above is missing.
+      KEPT_TEST_S3_REQUIRED: "true"
 
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
@@ -111,7 +117,7 @@ jobs:
           docker run -d --name s3 -p 127.0.0.1:8333:8333 \
             -e AWS_ACCESS_KEY_ID="$KEPT_TEST_S3_ACCESS_KEY_ID" \
             -e AWS_SECRET_ACCESS_KEY="$KEPT_TEST_S3_SECRET_ACCESS_KEY" \
-            "$S3_IMAGE" server -s3 -dir=/data
+            "$S3_IMAGE" server -s3 -dir=/data -s3.domainName=localhost
           for _ in $(seq 1 60); do
             if curl -s -o /dev/null "$KEPT_TEST_S3_ENDPOINT"; then exit 0; fi
             sleep 1
@@ -119,6 +125,9 @@ jobs:
           docker logs s3
           echo "S3 server did not become ready" >&2
           exit 1
+
+      - name: Resolve the virtual-hosted bucket name
+        run: echo "127.0.0.1 $KEPT_TEST_S3_BUCKET.localhost" | sudo tee -a /etc/hosts
 
       - name: Create bucket
         env:
@@ -147,14 +156,23 @@ jobs:
         run: docker logs s3 | tail -n 50
 
   postgres:
-    name: PostgreSQL test suite
+    name: PostgreSQL ${{ matrix.pg }} test suite
     runs-on: ubuntu-latest
     timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # The oldest supported major and the one the examples use.
+          - pg: "17"
+            image: postgres:17@sha256:d74eeac9a635390a49bc21bd49fccd973de707e2a53a76ac49b552b8712ec46f
+          - pg: "18"
+            image: postgres:18@sha256:5a5a84b19854a9ffaa54082c166ff4ec27473a361e496e5ea167f298f2da9722
     env:
       # The same suite as `quality`, against a throwaway server. Run with `docker run`
       # rather than a service container so the server can be started with fsync off,
       # which a service cannot pass.
-      PG_IMAGE: postgres:18@sha256:5a5a84b19854a9ffaa54082c166ff4ec27473a361e496e5ea167f298f2da9722
+      PG_IMAGE: ${{ matrix.image }}
 
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7

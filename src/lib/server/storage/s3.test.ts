@@ -23,14 +23,27 @@ const live =
       }
     : null;
 
-function liveConfig(prefix: string): S3StorageConfig {
+// The service endpoint without the bucket, for a server that answers `{bucket}.host`.
+const virtualEndpoint = env.KEPT_TEST_S3_VIRTUAL_ENDPOINT || null;
+
+// The S3 CI job sets this, so a mistyped variable name fails instead of skipping everything.
+if (env.KEPT_TEST_S3_REQUIRED === "true" && (!live || !virtualEndpoint)) {
+  throw new Error(
+    "KEPT_TEST_S3_REQUIRED is set, but KEPT_TEST_S3_ENDPOINT, _BUCKET, _ACCESS_KEY_ID, _SECRET_ACCESS_KEY or _VIRTUAL_ENDPOINT is missing",
+  );
+}
+
+function liveConfig(prefix: string, virtualHosted = false): S3StorageConfig {
   if (!live) throw new Error("KEPT_TEST_S3_* is not set");
   return {
     kind: "s3",
     ...live,
+    endpoint: virtualHosted
+      ? (virtualEndpoint ?? live.endpoint)
+      : live.endpoint,
     region: env.KEPT_TEST_S3_REGION || "us-east-1",
     prefix,
-    virtualHostedStyle: false,
+    virtualHostedStyle: virtualHosted,
   };
 }
 
@@ -49,8 +62,49 @@ if (live) {
     return { store, cleanup: () => wipe(store) };
   });
 
+  if (virtualEndpoint) {
+    blobStoreContract("s3 (virtual-hosted style)", async () => {
+      const store = new S3BlobStore(
+        liveConfig(`kept-test/${runId}/${randomUUID()}`, true),
+      );
+      return { store, cleanup: () => wipe(store) };
+    });
+  }
+
   describe("S3BlobStore against a live service", () => {
     const prefix = `kept-test/${runId}/live`;
+
+    // Above Bun's 5 MiB threshold the upload is multipart; the upload limit is 20 MiB.
+    it.each([
+      ["path-style", false],
+      ...(virtualEndpoint ? [["virtual-hosted style", true]] : []),
+    ] as [string, boolean][])(
+      "round-trips a 12 MiB object (%s)",
+      async (_name, virtualHosted) => {
+        const store = new S3BlobStore(
+          liveConfig(`${prefix}/large`, virtualHosted),
+        );
+        try {
+          const data = new Uint8Array(12 * 1024 * 1024);
+          for (let i = 0; i < data.length; i++) {
+            data[i] = (i * 31 + (i >> 8)) & 255;
+          }
+          await store.put("big.bin", data, "application/octet-stream");
+          const back = await store.get("big.bin");
+          if (!back) throw new Error("the object is missing");
+          expect(back.byteLength).toBe(data.byteLength);
+          expect(Buffer.compare(back, data)).toBe(0);
+          const listed = [];
+          for await (const i of store.list("")) listed.push(i);
+          expect(listed.map((i) => [i.key, i.size])).toEqual([
+            ["big.bin", data.byteLength],
+          ]);
+        } finally {
+          await wipe(store);
+        }
+      },
+      60_000,
+    );
 
     it("keeps stores with different prefixes apart", async () => {
       const a = new S3BlobStore(liveConfig(`${prefix}/a`));
