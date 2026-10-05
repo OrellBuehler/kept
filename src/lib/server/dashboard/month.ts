@@ -65,6 +65,7 @@ export async function monthSummary(
       currency: transactions.currency,
       reference: transactions.reference,
       counterpartyIban: transactions.counterpartyIban,
+      source: transactions.source,
     })
     .from(transactions)
     .where(

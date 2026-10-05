@@ -1,4 +1,4 @@
-import { and, asc, eq, inArray, sql } from "drizzle-orm";
+import { and, asc, eq, inArray, lte, sql } from "drizzle-orm";
 import { isQrIban } from "$lib/iban";
 import type { Minor } from "$lib/money";
 import type { PortfolioCloseReason } from "$lib/pillar-3a-types";
@@ -14,7 +14,9 @@ import {
   type DB,
   transaction,
 } from "$lib/server/db";
+import { localToday } from "$lib/server/ledger/balances";
 import { LedgerError, notFound } from "$lib/server/ledger/errors";
+import { ledgerLock } from "$lib/server/ledger/lock";
 import type { PortfolioCloseInput, PortfolioInput } from "./schemas";
 
 export interface PortfolioView {
@@ -29,7 +31,7 @@ export interface PortfolioView {
   closedOn: string | null;
   closeReason: PortfolioCloseReason | null;
   sortOrder: number;
-  /** Newest manually entered value, whether the portfolio is open or not. */
+  /** Newest manually entered value dated on or before today, whether the portfolio is open or not. */
   latestValue: Minor | null;
   latestValueDate: string | null;
 }
@@ -92,6 +94,7 @@ async function withLatest(
     .where(
       and(
         eq(portfolioValues.userId, userId),
+        lte(portfolioValues.date, localToday()),
         inArray(
           portfolioValues.portfolioId,
           rows.map((r) => r.id),
@@ -242,41 +245,44 @@ export async function createPortfolio(
 ): Promise<PortfolioView> {
   let id: string;
   try {
-    id = await transaction(async (tx) => {
-      const account = await assertPillar3aAccount(tx, userId, accountId);
-      await assertReference(
-        tx,
-        userId,
-        account.depositIban,
-        input.depositReference,
-      );
-      const sortOrder =
-        input.sortOrder ??
-        ((
-          await first(
-            tx
-              .select({
-                m: sql<number | null>`max(${portfolios.sortOrder})`.mapWith(
-                  Number,
-                ),
-              })
-              .from(portfolios)
-              .where(
-                and(
-                  eq(portfolios.userId, userId),
-                  eq(portfolios.accountId, accountId),
-                ),
-              )
-              .limit(1),
-          )
-        )?.m ?? -1) + 1;
-      return (await first(
-        tx
-          .insert(portfolios)
-          .values({ ...input, sortOrder, userId, accountId })
-          .returning({ id: portfolios.id }),
-      ))!.id;
-    });
+    id = await transaction(
+      async (tx) => {
+        const account = await assertPillar3aAccount(tx, userId, accountId);
+        await assertReference(
+          tx,
+          userId,
+          account.depositIban,
+          input.depositReference,
+        );
+        const sortOrder =
+          input.sortOrder ??
+          ((
+            await first(
+              tx
+                .select({
+                  m: sql<number | null>`max(${portfolios.sortOrder})`.mapWith(
+                    Number,
+                  ),
+                })
+                .from(portfolios)
+                .where(
+                  and(
+                    eq(portfolios.userId, userId),
+                    eq(portfolios.accountId, accountId),
+                  ),
+                )
+                .limit(1),
+            )
+          )?.m ?? -1) + 1;
+        return (await first(
+          tx
+            .insert(portfolios)
+            .values({ ...input, sortOrder, userId, accountId })
+            .returning({ id: portfolios.id }),
+        ))!.id;
+      },
+      { lock: ledgerLock(userId) },
+    );
   } catch (err) {
     mapReferenceViolation(err, input.depositReference);
   }
@@ -289,38 +295,41 @@ export async function updatePortfolio(
   input: PortfolioInput,
 ): Promise<PortfolioView> {
   try {
-    await transaction(async (tx) => {
-      const current = await first(
-        tx
-          .select({
-            accountId: portfolios.accountId,
-            closedOn: portfolios.closedOn,
-            sortOrder: portfolios.sortOrder,
-          })
-          .from(portfolios)
-          .where(and(eq(portfolios.userId, userId), eq(portfolios.id, id)))
-          .limit(1),
-      );
-      if (!current) throw notFound("Portfolio");
-      const account = await assertPillar3aAccount(
-        tx,
-        userId,
-        current.accountId,
-      );
-      await assertReference(
-        tx,
-        userId,
-        account.depositIban,
-        input.depositReference,
-        id,
-      );
-      assertDates(input.openedOn, current.closedOn);
-      const { sortOrder, ...rest } = input;
-      await tx
-        .update(portfolios)
-        .set({ ...rest, sortOrder: sortOrder ?? current.sortOrder })
-        .where(and(eq(portfolios.userId, userId), eq(portfolios.id, id)));
-    });
+    await transaction(
+      async (tx) => {
+        const current = await first(
+          tx
+            .select({
+              accountId: portfolios.accountId,
+              closedOn: portfolios.closedOn,
+              sortOrder: portfolios.sortOrder,
+            })
+            .from(portfolios)
+            .where(and(eq(portfolios.userId, userId), eq(portfolios.id, id)))
+            .limit(1),
+        );
+        if (!current) throw notFound("Portfolio");
+        const account = await assertPillar3aAccount(
+          tx,
+          userId,
+          current.accountId,
+        );
+        await assertReference(
+          tx,
+          userId,
+          account.depositIban,
+          input.depositReference,
+          id,
+        );
+        assertDates(input.openedOn, current.closedOn);
+        const { sortOrder, ...rest } = input;
+        await tx
+          .update(portfolios)
+          .set({ ...rest, sortOrder: sortOrder ?? current.sortOrder })
+          .where(and(eq(portfolios.userId, userId), eq(portfolios.id, id)));
+      },
+      { lock: ledgerLock(userId) },
+    );
   } catch (err) {
     mapReferenceViolation(err, input.depositReference);
   }
@@ -333,21 +342,24 @@ export async function closePortfolio(
   id: string,
   input: PortfolioCloseInput,
 ): Promise<PortfolioView> {
-  await transaction(async (tx) => {
-    const current = await first(
-      tx
-        .select({ openedOn: portfolios.openedOn })
-        .from(portfolios)
-        .where(and(eq(portfolios.userId, userId), eq(portfolios.id, id)))
-        .limit(1),
-    );
-    if (!current) throw notFound("Portfolio");
-    assertDates(current.openedOn, input.closedOn);
-    await tx
-      .update(portfolios)
-      .set({ closedOn: input.closedOn, closeReason: input.closeReason })
-      .where(and(eq(portfolios.userId, userId), eq(portfolios.id, id)));
-  });
+  await transaction(
+    async (tx) => {
+      const current = await first(
+        tx
+          .select({ openedOn: portfolios.openedOn })
+          .from(portfolios)
+          .where(and(eq(portfolios.userId, userId), eq(portfolios.id, id)))
+          .limit(1),
+      );
+      if (!current) throw notFound("Portfolio");
+      assertDates(current.openedOn, input.closedOn);
+      await tx
+        .update(portfolios)
+        .set({ closedOn: input.closedOn, closeReason: input.closeReason })
+        .where(and(eq(portfolios.userId, userId), eq(portfolios.id, id)));
+    },
+    { lock: ledgerLock(userId) },
+  );
   return await getPortfolio(userId, id);
 }
 
@@ -355,11 +367,23 @@ export async function reopenPortfolio(
   userId: string,
   id: string,
 ): Promise<PortfolioView> {
-  await getPortfolio(userId, id);
-  await getDB()
-    .update(portfolios)
-    .set({ closedOn: null, closeReason: null })
-    .where(and(eq(portfolios.userId, userId), eq(portfolios.id, id)));
+  await transaction(
+    async (tx) => {
+      const found = await first(
+        tx
+          .select({ id: portfolios.id })
+          .from(portfolios)
+          .where(and(eq(portfolios.userId, userId), eq(portfolios.id, id)))
+          .limit(1),
+      );
+      if (!found) throw notFound("Portfolio");
+      await tx
+        .update(portfolios)
+        .set({ closedOn: null, closeReason: null })
+        .where(and(eq(portfolios.userId, userId), eq(portfolios.id, id)));
+    },
+    { lock: ledgerLock(userId) },
+  );
   return await getPortfolio(userId, id);
 }
 
@@ -368,38 +392,41 @@ export async function deletePortfolio(
   userId: string,
   id: string,
 ): Promise<void> {
-  await transaction(async (tx) => {
-    const found = await first(
-      tx
-        .select({ id: portfolios.id })
-        .from(portfolios)
-        .where(and(eq(portfolios.userId, userId), eq(portfolios.id, id)))
-        .limit(1),
-    );
-    if (!found) throw notFound("Portfolio");
-    const used =
-      (await first(
+  await transaction(
+    async (tx) => {
+      const found = await first(
         tx
-          .select({ id: portfolioValues.id })
-          .from(portfolioValues)
-          .where(eq(portfolioValues.portfolioId, id))
+          .select({ id: portfolios.id })
+          .from(portfolios)
+          .where(and(eq(portfolios.userId, userId), eq(portfolios.id, id)))
           .limit(1),
-      )) ??
-      (await first(
-        tx
-          .select({ id: pillar3aContributions.id })
-          .from(pillar3aContributions)
-          .where(eq(pillar3aContributions.portfolioId, id))
-          .limit(1),
-      ));
-    if (used) {
-      throw new LedgerError(
-        "conflict",
-        "This portfolio has values or contributions. Close it instead of deleting it.",
       );
-    }
-    await tx
-      .delete(portfolios)
-      .where(and(eq(portfolios.userId, userId), eq(portfolios.id, id)));
-  });
+      if (!found) throw notFound("Portfolio");
+      const used =
+        (await first(
+          tx
+            .select({ id: portfolioValues.id })
+            .from(portfolioValues)
+            .where(eq(portfolioValues.portfolioId, id))
+            .limit(1),
+        )) ??
+        (await first(
+          tx
+            .select({ id: pillar3aContributions.id })
+            .from(pillar3aContributions)
+            .where(eq(pillar3aContributions.portfolioId, id))
+            .limit(1),
+        ));
+      if (used) {
+        throw new LedgerError(
+          "conflict",
+          "This portfolio has values or contributions. Close it instead of deleting it.",
+        );
+      }
+      await tx
+        .delete(portfolios)
+        .where(and(eq(portfolios.userId, userId), eq(portfolios.id, id)));
+    },
+    { lock: ledgerLock(userId) },
+  );
 }

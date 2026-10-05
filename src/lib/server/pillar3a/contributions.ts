@@ -1,15 +1,5 @@
-import {
-  and,
-  desc,
-  eq,
-  inArray,
-  isNotNull,
-  isNull,
-  lt,
-  ne,
-  sql,
-} from "drizzle-orm";
-import { minor, type Minor } from "$lib/money";
+import { and, desc, eq, gt, isNotNull, isNull, lt, ne, sql } from "drizzle-orm";
+import { formatAmount, minor, type Minor } from "$lib/money";
 import {
   gapsFor,
   lateDecemberWarning,
@@ -37,19 +27,15 @@ import {
 } from "$lib/server/db";
 import { localToday } from "$lib/server/ledger/balances";
 import { LedgerError, notFound } from "$lib/server/ledger/errors";
+import { ledgerLock } from "$lib/server/ledger/lock";
 import type {
   ContributionDetailsInput,
   ManualContributionInput,
 } from "./schemas";
 import { matchReferenceSql } from "./reference-match";
-import {
-  listYearSettings,
-  listYearSettingsInTx,
-  type YearSettingView,
-} from "./years";
+import { listYearSettingsInTx, type YearSettingView } from "./years";
 
 type Reader = Pick<DB, "select">;
-type Tx = Pick<DB, "select" | "insert" | "update" | "delete">;
 
 export interface DetectedContribution {
   transactionId: string;
@@ -91,6 +77,24 @@ export interface ContributionView {
   lateDecemberWarning: string | null;
 }
 
+/**
+ * An annotation whose payment is no longer detected: its reference changed, the
+ * transaction became a mirror, a refund cancelled it, or the amount or currency
+ * changed. It is not a contribution, but the gap years of a buy-in stay closed
+ * until the user deletes it. (Deleting the transaction removes the annotation
+ * with it, which cannot be told apart afterwards.)
+ */
+export interface OrphanAnnotation {
+  id: string;
+  transactionId: string;
+  portfolioId: string;
+  portfolioName: string;
+  date: string;
+  kind: Pillar3aContributionKind;
+  gapYears: number[];
+  note: string | null;
+}
+
 export type ContributionTarget = { id: string } | { transactionId: string };
 
 export interface ContributionSaved {
@@ -102,6 +106,12 @@ export interface ContributionSaved {
 /** Whitespace-free, upper-case SQL form of `transactions.reference` (see `matchReference`). */
 const normalizedReference = matchReferenceSql(transactions.reference);
 
+/**
+ * Dismissed transfers are deliberately not consulted here: "this is not a
+ * transfer" decides income and expense totals (`loadTransferExclusion`), while
+ * a payment carrying a portfolio's deposit reference stays a contribution:
+ * the money did go to the pension account.
+ */
 function detectedQuery(conn: Reader, userId: string) {
   return conn
     .select({
@@ -132,6 +142,54 @@ function detectedQuery(conn: Reader, userId: string) {
     .orderBy(desc(transactions.bookingDate), desc(transactions.id));
 }
 
+interface Credit {
+  accountId: string;
+  portfolioId: string;
+  bookingDate: string;
+  amount: Minor;
+}
+
+/**
+ * Incoming CHF credits carrying a portfolio's deposit reference on an account
+ * other than the portfolio's own: a refund or reversal of a payment. The 3a
+ * account itself is skipped, since a deposit shows up there with the same
+ * reference when its statements are imported.
+ */
+function creditsQuery(conn: Reader, userId: string) {
+  return conn
+    .select({
+      accountId: transactions.accountId,
+      portfolioId: portfolios.id,
+      bookingDate: transactions.bookingDate,
+      amount: transactions.amount,
+    })
+    .from(transactions)
+    .innerJoin(
+      portfolios,
+      and(
+        eq(portfolios.userId, userId),
+        sql`${portfolios.depositReference} = ${normalizedReference}`,
+        ne(portfolios.accountId, transactions.accountId),
+      ),
+    )
+    .where(
+      and(
+        eq(transactions.userId, userId),
+        ne(transactions.source, "mirror"),
+        isNotNull(transactions.reference),
+        gt(transactions.amount, minor(0)),
+        eq(transactions.currency, PILLAR_3A_CURRENCY),
+      ),
+    )
+    .orderBy(transactions.bookingDate, transactions.id);
+}
+
+/**
+ * Detected payments with their refunds taken off. A credit reduces the newest
+ * payment of the same portfolio from the same account that is not newer than
+ * the credit, then older ones; a fully refunded payment drops out, a credit
+ * beyond what was paid is ignored.
+ */
 function toDetected(
   rows: readonly {
     transactionId: string;
@@ -140,19 +198,46 @@ function toDetected(
     bookingDate: string;
     amount: Minor;
   }[],
+  credits: readonly Credit[],
 ): DetectedContribution[] {
-  return rows.map((r) => ({ ...r, amount: minor(-r.amount) }));
+  const paid = rows.map((r) => ({ ...r, amount: minor(-r.amount) }));
+  for (const credit of credits) {
+    let left: number = credit.amount;
+    const candidates = paid
+      .filter(
+        (p) =>
+          p.portfolioId === credit.portfolioId &&
+          p.accountId === credit.accountId &&
+          p.bookingDate <= credit.bookingDate,
+      )
+      .sort(
+        (a, b) =>
+          (a.bookingDate < b.bookingDate
+            ? 1
+            : a.bookingDate > b.bookingDate
+              ? -1
+              : 0) || (a.transactionId < b.transactionId ? 1 : -1),
+      );
+    for (const p of candidates) {
+      if (left <= 0) break;
+      const take = Math.min(left, p.amount);
+      p.amount = minor(p.amount - take);
+      left -= take;
+    }
+  }
+  return paid.filter((p) => p.amount > 0);
 }
 
 /**
  * Outgoing CHF payments on any of the user's accounts whose reference equals
- * the deposit reference of one of the user's portfolios (open or closed).
- * One query joining transactions to portfolios; newest first.
+ * the deposit reference of one of the user's portfolios (open or closed),
+ * net of refunds that carry the same reference back to the paying account.
+ * Newest first.
  */
 export async function detectedContributions(
   userId: string,
 ): Promise<DetectedContribution[]> {
-  return toDetected(await detectedQuery(getDB(), userId));
+  return await detectedContributionsInTx(getDB(), userId);
 }
 
 /** `detectedContributions` on a transaction you already hold. */
@@ -160,7 +245,10 @@ async function detectedContributionsInTx(
   tx: Reader,
   userId: string,
 ): Promise<DetectedContribution[]> {
-  return toDetected(await detectedQuery(tx, userId));
+  return toDetected(
+    await detectedQuery(tx, userId),
+    await creditsQuery(tx, userId),
+  );
 }
 
 function loadAllQueries(conn: Reader, userId: string) {
@@ -187,18 +275,41 @@ function loadAllQueries(conn: Reader, userId: string) {
   };
 }
 
+interface Loaded {
+  views: ContributionView[];
+  orphans: OrphanAnnotation[];
+}
+
 function assembleAll(
   portfolioList: readonly { id: string; name: string; accountId: string }[],
   rows: readonly (typeof pillar3aContributions.$inferSelect)[],
   gaps: readonly { contributionId: string; year: number }[],
   detected: readonly DetectedContribution[],
-): ContributionView[] {
+): Loaded {
   const portfolioRows = new Map(portfolioList.map((p) => [p.id, p]));
   const gapYearsOf = new Map<string, number[]>();
   for (const g of gaps) {
     const list = gapYearsOf.get(g.contributionId) ?? [];
     list.push(g.year);
     gapYearsOf.set(g.contributionId, list);
+  }
+  const live = new Set(detected.map((d) => d.transactionId));
+  const orphans: OrphanAnnotation[] = [];
+  for (const r of rows) {
+    if (r.transactionId === null || live.has(r.transactionId)) continue;
+    orphans.push({
+      id: r.id,
+      transactionId: r.transactionId,
+      portfolioId: r.portfolioId,
+      portfolioName: portfolioRows.get(r.portfolioId)?.name ?? "",
+      date: r.date,
+      kind: r.kind,
+      gapYears:
+        r.kind === "buy_in"
+          ? (gapYearsOf.get(r.id) ?? []).sort((a, b) => a - b)
+          : [],
+      note: r.note,
+    });
   }
   const annotations = new Map(
     rows
@@ -265,26 +376,18 @@ function assembleAll(
       lateDecemberWarning: null,
     });
   }
-  return views.sort((a, b) =>
+  views.sort((a, b) =>
     a.date < b.date ? 1 : a.date > b.date ? -1 : a.key < b.key ? -1 : 1,
   );
+  return { views, orphans };
 }
 
-async function loadAll(userId: string): Promise<ContributionView[]> {
-  const q = loadAllQueries(getDB(), userId);
-  return assembleAll(
-    await q.portfolios,
-    await q.rows,
-    await q.gaps,
-    await detectedContributions(userId),
-  );
+async function loadAll(userId: string): Promise<Loaded> {
+  return await loadAllInTx(getDB(), userId);
 }
 
 /** `loadAll` on a transaction you already hold. */
-async function loadAllInTx(
-  tx: Reader,
-  userId: string,
-): Promise<ContributionView[]> {
+async function loadAllInTx(tx: Reader, userId: string): Promise<Loaded> {
   const q = loadAllQueries(tx, userId);
   return assembleAll(
     await q.portfolios,
@@ -292,6 +395,13 @@ async function loadAllInTx(
     await q.gaps,
     await detectedContributionsInTx(tx, userId),
   );
+}
+
+/** Annotations whose payment is no longer detected; see `OrphanAnnotation`. */
+export async function listOrphanAnnotations(
+  userId: string,
+): Promise<OrphanAnnotation[]> {
+  return (await loadAll(userId)).orphans;
 }
 
 /**
@@ -302,16 +412,20 @@ export async function listContributions(
   userId: string,
   opts: { year?: number } = {},
 ): Promise<ContributionView[]> {
-  const all = await loadAll(userId);
+  const all = (await loadAll(userId)).views;
   return opts.year === undefined
     ? all
     : all.filter((c) => c.year === opts.year);
 }
 
-/** Facts the pure rules need: every effective contribution, minus the one named by `exceptKey`. */
+/**
+ * Facts the pure rules need: every effective contribution, minus the one
+ * named by `exceptKey`. Orphaned buy-ins keep their gap years closed.
+ */
 export function contributionFacts(
   views: readonly ContributionView[],
   exceptKey: string | null = null,
+  orphans: readonly OrphanAnnotation[] = [],
 ): { contributions: ContributionFact[]; buyInYears: BuyInYearFact[] } {
   const contributions: ContributionFact[] = [];
   const buyInYears: BuyInYearFact[] = [];
@@ -321,6 +435,10 @@ export function contributionFacts(
     if (c.kind === "buy_in" && c.id !== null) {
       for (const year of c.gapYears) buyInYears.push({ year, buyInId: c.id });
     }
+  }
+  for (const o of orphans) {
+    if (o.kind !== "buy_in") continue;
+    for (const year of o.gapYears) buyInYears.push({ year, buyInId: o.id });
   }
   return { contributions, buyInYears };
 }
@@ -347,13 +465,16 @@ async function ageBenefitDrawnInTx(
   return (await first(ageBenefitQuery(tx, userId))) !== undefined;
 }
 
+interface BuyInFacts {
+  views: readonly ContributionView[];
+  orphans: readonly OrphanAnnotation[];
+  settings: readonly YearSettingView[];
+  ageBenefitDrawn: boolean;
+}
+
 /** The pure buy-in rules over facts the caller loaded. */
 function evaluateBuyIn(
-  facts: {
-    views: readonly ContributionView[];
-    settings: readonly YearSettingView[];
-    ageBenefitDrawn: boolean;
-  },
+  facts: BuyInFacts,
   input: {
     key: string | null;
     contributionId: string | null;
@@ -364,22 +485,97 @@ function evaluateBuyIn(
   today: string,
 ): BuyInCheck {
   const { settings } = facts;
-  const contribution = contributionFacts(facts.views, input.key);
+  const contribution = contributionFacts(facts.views, input.key, facts.orphans);
   const gaps = gapsFor({ ...contribution, settings, today });
   const year = taxYearOf(input.date);
-  const ordinaryPaid = contribution.contributions
-    .filter((c) => c.year === year && c.kind === "ordinary")
-    .reduce((sum, c) => sum + c.amount, 0);
+  const sumOf = (kind: Pillar3aContributionKind) =>
+    contribution.contributions
+      .filter((c) => c.year === year && c.kind === kind)
+      .reduce((sum, c) => sum + c.amount, 0);
   return validateBuyIn({
     year,
     amount: input.amount,
     gapYears: input.gapYears,
     gaps,
     ageBenefitDrawn: facts.ageBenefitDrawn,
-    ordinaryPaid: minor(ordinaryPaid),
+    ordinaryPaid: minor(sumOf("ordinary")),
     ordinaryLimit: yearLimit(year, settingFor(year, settings)).limit,
+    otherBuyInsInYear: minor(sumOf("buy_in")),
     contributionId: input.contributionId,
+    today,
   });
+}
+
+interface BuyInProblem {
+  codes: string[];
+  errors: string[];
+  date: string;
+  amount: Minor;
+}
+
+/** The errors of every saved buy-in under the rules as they stand now, by contribution key. */
+function buyInErrors(
+  facts: BuyInFacts,
+  today: string,
+): Map<string, BuyInProblem> {
+  const out = new Map<string, BuyInProblem>();
+  for (const v of facts.views) {
+    if (v.kind !== "buy_in") continue;
+    const { errors, codes } = evaluateBuyIn(
+      facts,
+      {
+        key: v.key,
+        contributionId: v.id,
+        date: v.date,
+        amount: v.amount,
+        gapYears: v.gapYears,
+      },
+      today,
+    );
+    if (errors.length > 0) {
+      out.set(v.key, { errors, codes, date: v.date, amount: v.amount });
+    }
+  }
+  return out;
+}
+
+async function loadFacts(tx: Reader, userId: string): Promise<BuyInFacts> {
+  const { views, orphans } = await loadAllInTx(tx, userId);
+  return {
+    views,
+    orphans,
+    settings: await listYearSettingsInTx(tx, userId),
+    ageBenefitDrawn: await ageBenefitDrawnInTx(tx, userId),
+  };
+}
+
+/**
+ * A change may not break a buy-in that was fine before: adding or raising an
+ * ordinary contribution in a closed gap year, or removing the ordinary
+ * contribution that satisfied the full-payment precondition, would silently
+ * invalidate it. Buy-ins that were already invalid do not block unrelated
+ * changes. `exceptKey` is the contribution just saved, validated on its own.
+ */
+function assertNoNewBuyInErrors(
+  before: ReadonlyMap<string, BuyInProblem>,
+  after: ReadonlyMap<string, BuyInProblem>,
+  exceptKey: string | null,
+  what: string,
+) {
+  const broken: string[] = [];
+  for (const [key, problem] of after) {
+    if (key === exceptKey) continue;
+    const had = new Set(before.get(key)?.codes ?? []);
+    const fresh = problem.errors.filter((_, i) => !had.has(problem.codes[i]!));
+    if (fresh.length > 0) {
+      broken.push(
+        `The buy-in of ${problem.date} (${formatAmount(problem.amount, PILLAR_3A_CURRENCY)}) would become invalid: ${fresh.join(" ")}`,
+      );
+    }
+  }
+  if (broken.length > 0) {
+    throw new LedgerError("invalid", `${what} ${broken.join(" ")}`);
+  }
 }
 
 /**
@@ -396,14 +592,12 @@ export async function checkBuyIn(
   },
   today: string = localToday(),
 ): Promise<BuyInCheck> {
-  const views = await loadAll(userId);
-  const own = input.key ? views.find((v) => v.key === input.key) : undefined;
+  const facts = await loadFacts(getDB(), userId);
+  const own = input.key
+    ? facts.views.find((v) => v.key === input.key)
+    : undefined;
   return evaluateBuyIn(
-    {
-      views,
-      settings: await listYearSettings(userId),
-      ageBenefitDrawn: await ageBenefitDrawn(userId),
-    },
+    facts,
     {
       key: input.key ?? null,
       contributionId: own?.id ?? null,
@@ -413,34 +607,6 @@ export async function checkBuyIn(
     },
     today,
   );
-}
-
-/** Annotation rows whose payment no longer matches a portfolio reference are dead weight; drop them. */
-async function pruneOrphanAnnotations(tx: Tx, userId: string) {
-  const live = new Set(
-    (await detectedContributionsInTx(tx, userId)).map((d) => d.transactionId),
-  );
-  const orphans = (
-    await tx
-      .select({
-        id: pillar3aContributions.id,
-        transactionId: pillar3aContributions.transactionId,
-      })
-      .from(pillar3aContributions)
-      .where(
-        and(
-          eq(pillar3aContributions.userId, userId),
-          isNotNull(pillar3aContributions.transactionId),
-        ),
-      )
-  )
-    .filter((r) => !live.has(r.transactionId!))
-    .map((r) => r.id);
-  if (orphans.length > 0) {
-    await tx
-      .delete(pillar3aContributions)
-      .where(inArray(pillar3aContributions.id, orphans));
-  }
 }
 
 /**
@@ -479,71 +645,80 @@ async function save(
   let savedId = "";
   let warnings: string[] = [];
   try {
-    await transaction(async (tx) => {
-      await pruneOrphanAnnotations(tx, userId);
-      const key = spec.transactionId
-        ? `tx:${spec.transactionId}`
-        : spec.existingId
-          ? `c:${spec.existingId}`
-          : null;
-      const gapYears =
-        spec.kind === "buy_in" ? [...new Set(spec.gapYears)] : [];
-      if (spec.kind === "buy_in") {
-        const check = evaluateBuyIn(
-          {
-            views: await loadAllInTx(tx, userId),
-            settings: await listYearSettingsInTx(tx, userId),
-            ageBenefitDrawn: await ageBenefitDrawnInTx(tx, userId),
-          },
-          {
-            key,
-            contributionId: spec.existingId,
-            date: spec.date,
-            amount: spec.amount,
-            gapYears,
-          },
-          today,
-        );
-        if (check.errors.length > 0) {
-          throw new LedgerError("invalid", check.errors.join(" "), "gapYears");
-        }
-        warnings = check.warnings;
-      }
-      const values = {
-        portfolioId: spec.portfolioId,
-        date: spec.date,
-        amount: spec.amount,
-        kind: spec.kind,
-        note: spec.note,
-      };
-      if (spec.existingId) {
-        await tx
-          .update(pillar3aContributions)
-          .set(values)
-          .where(
-            and(
-              eq(pillar3aContributions.userId, userId),
-              eq(pillar3aContributions.id, spec.existingId),
-            ),
+    await transaction(
+      async (tx) => {
+        const factsBefore = await loadFacts(tx, userId);
+        const key = spec.transactionId
+          ? `tx:${spec.transactionId}`
+          : spec.existingId
+            ? `c:${spec.existingId}`
+            : null;
+        const gapYears =
+          spec.kind === "buy_in" ? [...new Set(spec.gapYears)] : [];
+        if (spec.kind === "buy_in") {
+          const check = evaluateBuyIn(
+            factsBefore,
+            {
+              key,
+              contributionId: spec.existingId,
+              date: spec.date,
+              amount: spec.amount,
+              gapYears,
+            },
+            today,
           );
-        savedId = spec.existingId;
-      } else {
-        savedId = (await first(
-          tx
-            .insert(pillar3aContributions)
-            .values({ ...values, userId, transactionId: spec.transactionId })
-            .returning({ id: pillar3aContributions.id }),
-        ))!.id;
-      }
-      await tx
-        .delete(pillar3aBuyInYears)
-        .where(eq(pillar3aBuyInYears.contributionId, savedId));
-      for (const year of gapYears) {
+          if (check.errors.length > 0) {
+            throw new LedgerError(
+              "invalid",
+              check.errors.join(" "),
+              "gapYears",
+            );
+          }
+          warnings = check.warnings;
+        }
+        const values = {
+          portfolioId: spec.portfolioId,
+          date: spec.date,
+          amount: spec.amount,
+          kind: spec.kind,
+          note: spec.note,
+        };
+        if (spec.existingId) {
+          await tx
+            .update(pillar3aContributions)
+            .set(values)
+            .where(
+              and(
+                eq(pillar3aContributions.userId, userId),
+                eq(pillar3aContributions.id, spec.existingId),
+              ),
+            );
+          savedId = spec.existingId;
+        } else {
+          savedId = (await first(
+            tx
+              .insert(pillar3aContributions)
+              .values({ ...values, userId, transactionId: spec.transactionId })
+              .returning({ id: pillar3aContributions.id }),
+          ))!.id;
+        }
         await tx
-          .insert(pillar3aBuyInYears)
-          .values({ userId, contributionId: savedId, year });
-      }
-    });
+          .delete(pillar3aBuyInYears)
+          .where(eq(pillar3aBuyInYears.contributionId, savedId));
+        for (const year of gapYears) {
+          await tx
+            .insert(pillar3aBuyInYears)
+            .values({ userId, contributionId: savedId, year });
+        }
+        assertNoNewBuyInErrors(
+          buyInErrors(factsBefore, today),
+          buyInErrors(await loadFacts(tx, userId), today),
+          spec.transactionId ? `tx:${spec.transactionId}` : `c:${savedId}`,
+          "This change is not possible.",
+        );
+      },
+      { lock: ledgerLock(userId) },
+    );
   } catch (err) {
     if (isUniqueViolationOn(err, annotationUnique)) {
       throw new LedgerError(
@@ -560,7 +735,9 @@ async function save(
     }
     throw err;
   }
-  const contribution = (await loadAll(userId)).find((c) => c.id === savedId);
+  const contribution = (await loadAll(userId)).views.find(
+    (c) => c.id === savedId,
+  );
   if (!contribution) throw notFound("Contribution");
   return { contribution, warnings };
 }
@@ -679,23 +856,38 @@ export async function updateDetectedContribution(
 }
 
 /**
- * Deletes a manual contribution, or an annotation (which resets the payment to
- * a plain ordinary contribution). Gap years of a buy-in are released.
+ * Deletes a manual contribution, an annotation (which resets the payment to a
+ * plain ordinary contribution) or an orphaned annotation. Gap years of a
+ * buy-in are released. Refused when it would invalidate another buy-in, e.g.
+ * by deleting the ordinary contribution that a buy-in year relies on.
  */
 export async function deleteContribution(
   userId: string,
   target: ContributionTarget,
+  today: string = localToday(),
 ): Promise<void> {
-  const deleted = await getDB()
-    .delete(pillar3aContributions)
-    .where(
-      and(
-        eq(pillar3aContributions.userId, userId),
-        "id" in target
-          ? eq(pillar3aContributions.id, target.id)
-          : eq(pillar3aContributions.transactionId, target.transactionId),
-      ),
-    )
-    .returning({ id: pillar3aContributions.id });
-  if (deleted.length === 0) throw notFound("Contribution");
+  await transaction(
+    async (tx) => {
+      const factsBefore = await loadFacts(tx, userId);
+      const deleted = await tx
+        .delete(pillar3aContributions)
+        .where(
+          and(
+            eq(pillar3aContributions.userId, userId),
+            "id" in target
+              ? eq(pillar3aContributions.id, target.id)
+              : eq(pillar3aContributions.transactionId, target.transactionId),
+          ),
+        )
+        .returning({ id: pillar3aContributions.id });
+      if (deleted.length === 0) throw notFound("Contribution");
+      assertNoNewBuyInErrors(
+        buyInErrors(factsBefore, today),
+        buyInErrors(await loadFacts(tx, userId), today),
+        null,
+        "This cannot be deleted.",
+      );
+    },
+    { lock: ledgerLock(userId) },
+  );
 }

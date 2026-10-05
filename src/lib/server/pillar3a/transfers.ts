@@ -25,13 +25,23 @@ export async function portfolioDepositReferences(
   );
 }
 
-/** An outgoing CHF payment that carries a portfolio's deposit reference is a 3a contribution. */
+/**
+ * An outgoing CHF payment that carries a portfolio's deposit reference is a 3a
+ * contribution. A mirror copies its source's reference and is never the paying
+ * side, exactly as in `detectedContributions`; pass `source` to honour that.
+ */
 export function isContributionPayment(
   references: ReadonlySet<string>,
-  tx: { amount: number; currency: string; reference: string | null },
+  tx: {
+    amount: number;
+    currency: string;
+    reference: string | null;
+    source?: string;
+  },
 ): boolean {
   return (
     references.size > 0 &&
+    tx.source !== "mirror" &&
     tx.amount < 0 &&
     tx.currency === PILLAR_3A_CURRENCY &&
     tx.reference !== null &&
