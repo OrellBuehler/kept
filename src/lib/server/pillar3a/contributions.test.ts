@@ -179,6 +179,22 @@ describe("detectedContributions", () => {
       expect((await listContributions(user.id))[0]!.amount).toBe(70_000);
     });
 
+    it("breaks same-day ties on the newest id, deterministically", async () => {
+      const { user, current } = await setup();
+      const one = await pay(user.id, current.id, REF_A, 100_000, "2026-03-01");
+      const two = await pay(user.id, current.id, REF_A, 100_000, "2026-03-01");
+      await credit(user.id, current.id, 40_000, "2026-03-01");
+      const amounts = new Map(
+        (await detectedContributions(user.id)).map((d) => [
+          d.transactionId,
+          d.amount,
+        ]),
+      );
+      const [older, newer] = one.id < two.id ? [one, two] : [two, one];
+      expect(amounts.get(newer.id)).toBe(60_000);
+      expect(amounts.get(older.id)).toBe(100_000);
+    });
+
     it("drops a fully refunded payment and ignores credits beyond what was paid", async () => {
       const { user, current } = await setup();
       await pay(user.id, current.id, REF_A, 100_000, "2026-03-01");
@@ -934,6 +950,106 @@ describe("buy-ins", () => {
           first.contribution.id!,
           buyIn(2025, 700_000),
           TODAY,
+        ),
+      ),
+    ).toBeUndefined();
+  });
+
+  it("excludes the edited buy-in from the cap when it is saved unchanged", async () => {
+    const { user, a } = await setup();
+    const input = manual(a.id, {
+      date: "2027-01-10",
+      kind: "buy_in",
+      gapYears: [2025],
+      amount: minor(725_800),
+    });
+    const saved = await addManualContribution(user.id, input, TODAY);
+    const again = await updateManualContribution(
+      user.id,
+      saved.contribution.id!,
+      { ...input, note: "edited" },
+      TODAY,
+    );
+    expect(again.contribution.note).toBe("edited");
+  });
+
+  it("names the buy-in that blocks a delete, and allows other deletes", async () => {
+    const { user, a } = await setup();
+    const ordinary = await addManualContribution(
+      user.id,
+      manual(a.id, { date: "2026-02-01", amount: minor(725_800) }),
+      TODAY,
+    );
+    const other = await addManualContribution(
+      user.id,
+      manual(a.id, { date: "2027-01-05", amount: minor(100) }),
+      TODAY,
+    );
+    await addManualContribution(
+      user.id,
+      manual(a.id, {
+        date: "2026-10-01",
+        kind: "buy_in",
+        gapYears: [2025],
+        amount: minor(300_000),
+      }),
+      TODAY,
+    );
+    const err = await deleteContribution(
+      user.id,
+      { id: ordinary.contribution.id! },
+      TODAY,
+    ).catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(Error);
+    expect((err as Error).message).toMatch(/buy-in of 2026-10-01/);
+    expect(await listContributions(user.id)).toHaveLength(3);
+    await deleteContribution(user.id, { id: other.contribution.id! }, TODAY);
+    expect(await listContributions(user.id)).toHaveLength(2);
+  });
+
+  it("switches from warning to error on the first day after the buy-in year", async () => {
+    const { user, a } = await setup();
+    const input = manual(a.id, {
+      date: "2026-12-31",
+      kind: "buy_in",
+      gapYears: [2025],
+      amount: minor(100_000),
+    });
+    const lastDay = await checkBuyIn(
+      user.id,
+      { date: input.date, amount: input.amount, gapYears: [2025] },
+      "2026-12-31",
+    );
+    expect(lastDay.errors).toEqual([]);
+    expect(lastDay.warnings).toHaveLength(1);
+    const nextDay = await checkBuyIn(
+      user.id,
+      { date: input.date, amount: input.amount, gapYears: [2025] },
+      "2027-01-01",
+    );
+    expect(nextDay.errors).toHaveLength(1);
+  });
+
+  it("compares errors by code: a changed message does not block unrelated saves", async () => {
+    const { user, a } = await setup();
+    await addManualContribution(
+      user.id,
+      manual(a.id, {
+        date: "2027-01-10",
+        kind: "buy_in",
+        gapYears: [2025],
+        amount: minor(100_000),
+      }),
+      "2027-03-01",
+    );
+    // in 2028 it is invalid (ordinary short); adding a 2027 ordinary changes
+    // the amounts in nothing but must not be refused
+    expect(
+      await errorCode(() =>
+        addManualContribution(
+          user.id,
+          manual(a.id, { date: "2027-02-01", amount: minor(100_000) }),
+          "2028-02-01",
         ),
       ),
     ).toBeUndefined();

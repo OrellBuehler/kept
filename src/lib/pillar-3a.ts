@@ -194,6 +194,8 @@ export function gapsFor(input: {
 
 export interface BuyInCheck {
   errors: string[];
+  /** One stable code per error (same order), free of amounts: use it to compare checks over time. */
+  codes: string[];
   warnings: string[];
 }
 
@@ -220,53 +222,69 @@ export function validateBuyIn(input: {
   contributionId?: string | null;
 }): BuyInCheck {
   const errors: string[] = [];
+  const codes: string[] = [];
+  const fail = (code: string, message: string) => {
+    codes.push(code);
+    errors.push(message);
+  };
   const warnings: string[] = [];
   const { year } = input;
 
   if (input.ageBenefitDrawn) {
-    errors.push("A buy-in is not possible once an age benefit has been drawn.");
+    fail("age", "A buy-in is not possible once an age benefit has been drawn.");
   }
-  if (input.amount <= 0) errors.push("The buy-in amount must be positive.");
+  if (input.amount <= 0) fail("amount", "The buy-in amount must be positive.");
   if (input.gapYears.length === 0) {
-    errors.push("Choose the gap years this buy-in closes.");
+    fail("noYears", "Choose the gap years this buy-in closes.");
   }
   const unique = new Set(input.gapYears);
   if (unique.size !== input.gapYears.length) {
-    errors.push("Each gap year can only be chosen once.");
+    fail("duplicate", "Each gap year can only be chosen once.");
   }
 
   let gapSum = 0;
   for (const gapYear of unique) {
     if (gapYear < FIRST_BUY_IN_GAP_YEAR) {
-      errors.push(
+      fail(
+        `before:${gapYear}`,
         `${gapYear} cannot be bought in: only gaps from ${FIRST_BUY_IN_GAP_YEAR} on qualify.`,
       );
       continue;
     }
     if (gapYear >= year) {
-      errors.push(`${gapYear} is not before the buy-in year ${year}.`);
+      fail(
+        `notBefore:${gapYear}`,
+        `${gapYear} is not before the buy-in year ${year}.`,
+      );
       continue;
     }
     if (gapYear < year - MAX_BUY_IN_YEARS_BACK) {
-      errors.push(
+      fail(
+        `tooOld:${gapYear}`,
         `${gapYear} is more than ${MAX_BUY_IN_YEARS_BACK} years before the buy-in year.`,
       );
       continue;
     }
     const gap = input.gaps.find((g) => g.year === gapYear);
     if (!gap) {
-      errors.push(`${gapYear} is not available for a buy-in.`);
+      fail(
+        `unavailable:${gapYear}`,
+        `${gapYear} is not available for a buy-in.`,
+      );
       continue;
     }
     if (
       gap.closedBy !== null &&
       gap.closedBy !== (input.contributionId ?? null)
     ) {
-      errors.push(`${gapYear} has already been closed by a buy-in.`);
+      fail(
+        `closed:${gapYear}`,
+        `${gapYear} has already been closed by a buy-in.`,
+      );
       continue;
     }
     if (gap.gap <= 0) {
-      errors.push(`${gapYear} has no gap to close.`);
+      fail(`noGap:${gapYear}`, `${gapYear} has no gap to close.`);
       continue;
     }
     gapSum += gap.gap;
@@ -275,19 +293,22 @@ export function validateBuyIn(input: {
   const small = limitFor(year).small;
   const others = input.otherBuyInsInYear ?? 0;
   if (input.amount + others > small) {
-    errors.push(
+    fail(
+      "cap",
       `All buy-ins made in ${year} together can be at most the small deduction of ${year} (${formatAmount(small, "CHF")}); ${formatAmount(minor(others), "CHF")} is already used.`,
     );
   }
   if (errors.length === 0 && input.amount > gapSum) {
-    errors.push(
+    fail(
+      "exceedsGaps",
       `The buy-in exceeds the chosen gaps (${formatAmount(minor(gapSum), "CHF")}).`,
     );
   }
 
   if (input.ordinaryPaid < input.ordinaryLimit) {
     if (year < Number(input.today.slice(0, 4))) {
-      errors.push(
+      fail(
+        "ordinaryShort",
         `The ordinary contribution of ${year} was not paid in full; it is required for a buy-in made in ${year}.`,
       );
     } else {
@@ -296,7 +317,7 @@ export function validateBuyIn(input: {
       );
     }
   }
-  return { errors, warnings };
+  return { errors, codes, warnings };
 }
 
 /** A payment booked after 20 December may only be credited in January. */

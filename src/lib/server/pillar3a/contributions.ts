@@ -1,5 +1,5 @@
 import { and, desc, eq, gt, isNotNull, isNull, lt, ne, sql } from "drizzle-orm";
-import { minor, type Minor } from "$lib/money";
+import { formatAmount, minor, type Minor } from "$lib/money";
 import {
   gapsFor,
   lateDecemberWarning,
@@ -106,6 +106,12 @@ export interface ContributionSaved {
 /** Whitespace-free, upper-case SQL form of `transactions.reference` (see `matchReference`). */
 const normalizedReference = matchReferenceSql(transactions.reference);
 
+/**
+ * Dismissed transfers are deliberately not consulted here: "this is not a
+ * transfer" decides income and expense totals (`loadTransferExclusion`), while
+ * a payment carrying a portfolio's deposit reference stays a contribution:
+ * the money did go to the pension account.
+ */
 function detectedQuery(conn: Reader, userId: string) {
   return conn
     .select({
@@ -204,7 +210,14 @@ function toDetected(
           p.accountId === credit.accountId &&
           p.bookingDate <= credit.bookingDate,
       )
-      .sort((a, b) => (a.bookingDate < b.bookingDate ? 1 : -1));
+      .sort(
+        (a, b) =>
+          (a.bookingDate < b.bookingDate
+            ? 1
+            : a.bookingDate > b.bookingDate
+              ? -1
+              : 0) || (a.transactionId < b.transactionId ? 1 : -1),
+      );
     for (const p of candidates) {
       if (left <= 0) break;
       const take = Math.min(left, p.amount);
@@ -493,12 +506,22 @@ function evaluateBuyIn(
   });
 }
 
+interface BuyInProblem {
+  codes: string[];
+  errors: string[];
+  date: string;
+  amount: Minor;
+}
+
 /** The errors of every saved buy-in under the rules as they stand now, by contribution key. */
-function buyInErrors(facts: BuyInFacts, today: string): Map<string, string[]> {
-  const out = new Map<string, string[]>();
+function buyInErrors(
+  facts: BuyInFacts,
+  today: string,
+): Map<string, BuyInProblem> {
+  const out = new Map<string, BuyInProblem>();
   for (const v of facts.views) {
     if (v.kind !== "buy_in") continue;
-    const { errors } = evaluateBuyIn(
+    const { errors, codes } = evaluateBuyIn(
       facts,
       {
         key: v.key,
@@ -509,7 +532,9 @@ function buyInErrors(facts: BuyInFacts, today: string): Map<string, string[]> {
       },
       today,
     );
-    if (errors.length > 0) out.set(v.key, errors);
+    if (errors.length > 0) {
+      out.set(v.key, { errors, codes, date: v.date, amount: v.amount });
+    }
   }
   return out;
 }
@@ -532,21 +557,24 @@ async function loadFacts(tx: Reader, userId: string): Promise<BuyInFacts> {
  * changes. `exceptKey` is the contribution just saved, validated on its own.
  */
 function assertNoNewBuyInErrors(
-  before: ReadonlyMap<string, string[]>,
-  after: ReadonlyMap<string, string[]>,
+  before: ReadonlyMap<string, BuyInProblem>,
+  after: ReadonlyMap<string, BuyInProblem>,
   exceptKey: string | null,
+  what: string,
 ) {
   const broken: string[] = [];
-  for (const [key, errors] of after) {
+  for (const [key, problem] of after) {
     if (key === exceptKey) continue;
-    const had = new Set(before.get(key) ?? []);
-    broken.push(...errors.filter((e) => !had.has(e)));
+    const had = new Set(before.get(key)?.codes ?? []);
+    const fresh = problem.errors.filter((_, i) => !had.has(problem.codes[i]!));
+    if (fresh.length > 0) {
+      broken.push(
+        `The buy-in of ${problem.date} (${formatAmount(problem.amount, PILLAR_3A_CURRENCY)}) would become invalid: ${fresh.join(" ")}`,
+      );
+    }
   }
   if (broken.length > 0) {
-    throw new LedgerError(
-      "invalid",
-      `This change would invalidate a buy-in. ${[...new Set(broken)].join(" ")}`,
-    );
+    throw new LedgerError("invalid", `${what} ${broken.join(" ")}`);
   }
 }
 
@@ -686,6 +714,7 @@ async function save(
           buyInErrors(factsBefore, today),
           buyInErrors(await loadFacts(tx, userId), today),
           spec.transactionId ? `tx:${spec.transactionId}` : `c:${savedId}`,
+          "This change is not possible.",
         );
       },
       { lock: ledgerLock(userId) },
@@ -856,6 +885,7 @@ export async function deleteContribution(
         buyInErrors(factsBefore, today),
         buyInErrors(await loadFacts(tx, userId), today),
         null,
+        "This cannot be deleted.",
       );
     },
     { lock: ledgerLock(userId) },

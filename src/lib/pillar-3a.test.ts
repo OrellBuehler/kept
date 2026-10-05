@@ -184,7 +184,11 @@ describe("validateBuyIn", () => {
   };
 
   it("accepts a valid buy-in without warnings", () => {
-    expect(validateBuyIn(base)).toEqual({ errors: [], warnings: [] });
+    expect(validateBuyIn(base)).toEqual({
+      errors: [],
+      codes: [],
+      warnings: [],
+    });
   });
 
   it("rejects a gap year before 2025", () => {
