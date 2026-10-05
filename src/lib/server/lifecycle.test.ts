@@ -23,6 +23,7 @@ import {
   onShutdown,
   resetShutdownForTests,
   shutdown,
+  trackRequest,
 } from "./lifecycle";
 
 beforeEach(() => {
@@ -93,5 +94,41 @@ describe("installShutdownHandler", () => {
     (process as NodeJS.EventEmitter).emit("sveltekit:shutdown", "SIGTERM");
     await shutdown();
     expect(calls.filter((c) => c === "close")).toHaveLength(1);
+  });
+});
+
+describe("request tracking", () => {
+  it("waits for a request that is mid-handler before closing the database", async () => {
+    let finish!: () => void;
+    const request = trackRequest(
+      () => new Promise<void>((resolve) => (finish = resolve)),
+    );
+    const done = shutdown(5000);
+    await new Promise((resolve) => setTimeout(resolve, 30));
+    expect(calls).not.toContain("close");
+    finish();
+    await request;
+    await done;
+    expect(calls.slice(-3)).toEqual(["drain", "locks", "close"]);
+  });
+
+  it("closes anyway once the bound passes", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const stuck = new Promise<void>(() => {});
+    void trackRequest(() => stuck);
+    await shutdown(20);
+    expect(warn).toHaveBeenCalled();
+    expect(calls).toContain("close");
+  });
+
+  it("returns the handler's result and counts a failing handler as finished", async () => {
+    expect(await trackRequest(async () => 7)).toBe(7);
+    await expect(
+      trackRequest(async () => {
+        throw new Error("x");
+      }),
+    ).rejects.toThrow("x");
+    await shutdown(5000);
+    expect(calls).toContain("close");
   });
 });

@@ -31,7 +31,11 @@ import {
   warnIfAddressHeaderUnset,
   warnIfProxied,
 } from "$lib/server/auth/login";
-import { installShutdownHandler, onShutdown } from "$lib/server/lifecycle";
+import {
+  installShutdownHandler,
+  onShutdown,
+  trackRequest,
+} from "$lib/server/lifecycle";
 import { withSecurityHeaders } from "$lib/server/security-headers";
 import { countUsers } from "$lib/server/auth/users";
 
@@ -115,5 +119,7 @@ async function handleRequest({
   );
 }
 
-export const handle: Handle = async (input) =>
-  withSecurityHeaders(await handleRequest(input), input.event.url);
+export const handle: Handle = (input) =>
+  trackRequest(async () =>
+    withSecurityHeaders(await handleRequest(input), input.event.url),
+  );

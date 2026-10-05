@@ -52,6 +52,9 @@ export async function runExclusive(
   }
   let ran = false;
   await lockPool().begin(async (sql) => {
+    // A server-side idle-in-transaction timeout would end the transaction, and
+    // so drop the lock, while `fn` works on other connections.
+    await sql.unsafe("set local idle_in_transaction_session_timeout = 0");
     const rows = (await sql.unsafe(
       "select pg_try_advisory_xact_lock(hashtextextended($1, 0)) as locked",
       [`${JOB_LOCK_PREFIX}${name}`],

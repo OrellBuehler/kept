@@ -142,9 +142,13 @@ instance at a time; the others skip it. Some state is per process, though:
   (a shared volume); a folder that only one instance can see is scanned only while that instance holds the lock.
 - Daily backups copy the SQLite file and are not available with PostgreSQL; back the database up with
   `pg_dump` or a managed snapshot.
-- On `SIGTERM` or `SIGINT` an instance stops its schedulers, waits up to ten seconds for work that is
-  already running, closes its database connections and exits, so rolling deploys leave no lock behind (the
-  server also releases a lock when a connection drops).
+- On `SIGTERM` or `SIGINT` an instance stops its schedulers, then waits up to ten seconds (in total) for
+  requests that are still being handled and for background work that is already running, closes its
+  database connections and exits, so rolling deploys leave no lock behind (the server also releases a lock
+  when a connection drops). Responses still streaming to a client are not waited for.
+- Each running job holds one extra server connection for the length of its run to keep its lock. Behind
+  PgBouncer in transaction mode that is one pinned server connection per running job (at most four per
+  instance), and the connection is exempt from `idle_in_transaction_session_timeout`.
 
 **S3.** See [S3 storage](#s3-storage) for the variables, the bucket and the permissions it needs. It works with
 either database. [`examples/docker-compose.postgres-s3.yml`](examples/docker-compose.postgres-s3.yml) runs
