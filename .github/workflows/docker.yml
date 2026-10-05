@@ -102,6 +102,7 @@ jobs:
           done
           docker run -d --name kept-smoke-app --network kept-smoke-net -p 3001:3000 \
             -e KEPT_SECRET_KEY="$(openssl rand -base64 32)" \
+            -e KEPT_STORAGE_DIR=/data/storage \
             -e DATABASE_URL="postgres://kept:$password@kept-smoke-pg:5432/kept" "$image"
           for i in $(seq 1 30); do
             if curl -fsS http://127.0.0.1:3001/api/health \
