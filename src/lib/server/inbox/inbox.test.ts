@@ -11,7 +11,8 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { runAutoMatching } from "$lib/server/bills/suggestions";
 import { eq } from "drizzle-orm";
 import { getDB, inboxFiles, transactions } from "$lib/server/db";
 import { saveCsvProfile } from "$lib/server/imports";
@@ -34,6 +35,11 @@ import {
   startInboxReview,
   type InboxConfig,
 } from "./inbox";
+
+vi.mock("$lib/server/bills/suggestions", async (orig) => {
+  const actual = await orig<typeof import("$lib/server/bills/suggestions")>();
+  return { ...actual, runAutoMatching: vi.fn(actual.runAutoMatching) };
+});
 
 useTestDB();
 const blobs = useTestStore();
@@ -125,6 +131,29 @@ describe("scanInbox", () => {
     for await (const b of blobs.store.list("pending-imports/"))
       left.push(b.key);
     expect(left).toEqual([]);
+  });
+
+  it("runs bill auto-matching after an imported file, and a matching failure does not fail the import", async () => {
+    const { user, account } = await setup();
+    vi.mocked(runAutoMatching).mockClear();
+    vi.mocked(runAutoMatching).mockImplementationOnce(() => {
+      throw new Error("boom");
+    });
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+    drop("alice", "stmt.xml", fixture("camt053/overlap-a.xml"));
+    const summary = await scan();
+    expect(summary).toMatchObject({ imported: 1, failed: 0 });
+    expect(await count(account.id)).toBe(5);
+    expect(runAutoMatching).toHaveBeenCalledTimes(1);
+    expect(runAutoMatching).toHaveBeenCalledWith(user.id);
+  });
+
+  it("does not run bill auto-matching when nothing was imported", async () => {
+    await setup();
+    vi.mocked(runAutoMatching).mockClear();
+    drop("alice", "notes.txt", new TextEncoder().encode("hello"));
+    await scan();
+    expect(runAutoMatching).not.toHaveBeenCalled();
   });
 
   it("mirrors transfers from an inbox import onto an account filled from transfers", async () => {

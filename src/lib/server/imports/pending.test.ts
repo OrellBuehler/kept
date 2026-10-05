@@ -6,6 +6,7 @@ import { seedAccount } from "$lib/testing/ledger";
 import { useTestStore } from "$lib/testing/store";
 import { accounts, getDB, pendingImports, users } from "$lib/server/db";
 import { fixture } from "$lib/testing/fixtures";
+import { drainDetached } from "$lib/server/detached";
 
 import { LedgerError } from "$lib/server/ledger/errors";
 import {
@@ -16,6 +17,7 @@ import {
   MAX_UPLOAD_BYTES,
   pendingBlobKey,
   PENDING_TTL_MS,
+  PURGE_BATCH_SIZE,
   purgeExpired,
   readPending,
   startPendingSweep,
@@ -145,6 +147,38 @@ describe("pending uploads", () => {
     expect(await blobKeys()).toEqual([]);
   });
 
+  it("rethrows the insert error when removing the blob fails too", async () => {
+    const { user } = await setup();
+    ctx.store.delete = () => Promise.reject(new Error("offline"));
+    const log = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      const err = await store(user.id, "no-such-account").catch(
+        (e: unknown) => e,
+      );
+      expect(err).toBeInstanceOf(Error);
+      expect((err as Error).message).not.toContain("offline");
+      expect(log).toHaveBeenCalled();
+      expect(JSON.stringify(log.mock.calls)).not.toContain("offline");
+    } finally {
+      log.mockRestore();
+    }
+  });
+
+  it("treats a failing blob delete on cancel as success", async () => {
+    const { user, account } = await setup();
+    const meta = await store(user.id, account.id);
+    ctx.store.delete = () => Promise.reject(new Error("offline"));
+    const log = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      await expect(deletePending(user.id, meta.id)).resolves.toBeUndefined();
+      expect(log).toHaveBeenCalled();
+      expect(JSON.stringify(log.mock.calls)).not.toContain("offline");
+    } finally {
+      log.mockRestore();
+    }
+    await expect(getPendingMeta(user.id, meta.id)).rejects.toThrow(/not found/);
+  });
+
   it("treats malformed ids as not found without touching the store", async () => {
     const { user } = await setup();
     for (const id of ["../x", "..%2Fx", "a/b", "short", "", "a".repeat(33)]) {
@@ -242,7 +276,43 @@ describe("purgeExpired", () => {
     const old = await store(user.id, account.id);
     await expire(old.id, Date.now() - 1000);
     const next = await store(user.id, account.id);
+    await drainDetached();
     expect(await blobKeys()).toEqual([pendingBlobKey(user.id, next.id)]);
+  });
+
+  it("an upload does not wait for slow housekeeping", async () => {
+    const { user, account } = await setup();
+    const old = await store(user.id, account.id);
+    await expire(old.id, Date.now() - 1000);
+    const realDelete = ctx.store.delete.bind(ctx.store);
+    let release: () => void = () => {};
+    const gate = new Promise<void>((resolve) => (release = resolve));
+    ctx.store.delete = async (key) => {
+      await gate;
+      return realDelete(key);
+    };
+    try {
+      const next = await store(user.id, account.id);
+      expect(next.id).toBeTruthy();
+    } finally {
+      release();
+      await drainDetached();
+    }
+    expect(await getDB().select().from(pendingImports)).toHaveLength(1);
+  });
+
+  it("purges at most one batch per run", async () => {
+    const { user, account } = await setup();
+    const ids: string[] = [];
+    for (let i = 0; i < PURGE_BATCH_SIZE + 2; i++) {
+      ids.push((await store(user.id, account.id)).id);
+    }
+    await drainDetached();
+    for (const id of ids) await expire(id, Date.now() - 1000);
+    await purgeExpired();
+    expect(await getDB().select().from(pendingImports)).toHaveLength(2);
+    await purgeExpired();
+    expect(await getDB().select().from(pendingImports)).toEqual([]);
   });
 
   it("keeps the row when its blob cannot be deleted, so the next purge retries", async () => {
