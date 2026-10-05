@@ -1403,6 +1403,43 @@ describe("keeping links valid", () => {
       expect(await listNeedsAmount(user.id)).toHaveLength(1);
     });
 
+    it("swaps the sides of a same-currency mirrored transfer when the source flips sign", async () => {
+      const user = await createTestUser();
+      const a = await seedAccount(user.id, {
+        name: "Main",
+        iban: EXAMPLE_IBAN,
+      });
+      const b = await seedAccount(user.id, {
+        name: "Savings",
+        type: "savings",
+        iban: EXAMPLE_IBAN_OTHER,
+        fillFromTransfers: true,
+      });
+      const out = await manualDebit(user.id, a.id);
+      const mirror = (await rowsOf(b.id))[0]!;
+      await getDB()
+        .update(transactions)
+        .set({ note: "kept" })
+        .where(eq(transactions.id, mirror.id));
+      await updateTransaction(user.id, out.id, edit(out, { amount: m(10000) }));
+      const [t] = await allTransfers();
+      expect(t).toMatchObject({
+        status: "linked",
+        method: "mirrored",
+        outTransactionId: mirror.id,
+        inTransactionId: out.id,
+        fromAccountId: b.id,
+        toAccountId: a.id,
+      });
+      expect(await rowsOf(b.id)).toEqual([
+        expect.objectContaining({
+          id: mirror.id,
+          amount: -10000,
+          note: "kept",
+        }),
+      ]);
+    });
+
     it("keeps the link of a taken-over mirror through revalidateLinks and a resync", async () => {
       const { user, a, eur, out } = await fxManual();
       const real = await createManualTransaction(
