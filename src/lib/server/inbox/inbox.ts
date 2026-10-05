@@ -1,4 +1,3 @@
-import { detach } from "$lib/server/detached";
 import { createHash } from "node:crypto";
 import {
   existsSync,
@@ -41,7 +40,8 @@ import { autoMatchQuietly } from "$lib/server/bills/auto-match";
 import { describeError } from "$lib/server/errors";
 
 export const DEFAULT_INTERVAL_SECONDS = 60;
-export const DEFAULT_SETTLE_MS = 10_000;
+/** A file modified less than this long ago is assumed to be still written. */
+const DEFAULT_SETTLE_MS = 10_000;
 
 const RESERVED = new Set(["processed", "failed", "review"]);
 const EXTENSIONS = new Set([".xml", ".csv", ".txt", ".xlsx"]);
@@ -101,8 +101,6 @@ export function userInboxDir(
 
 export interface ScanOptions {
   now?: number;
-  /** A file modified less than this long ago is assumed to be still written. */
-  settleMs?: number;
 }
 
 export interface ScanSummary {
@@ -257,7 +255,6 @@ interface ScanContext {
   userDir: string;
   accounts: AccountView[];
   now: number;
-  settleMs: number;
 }
 
 /** Removes the pending upload; confirmImport has already removed it on success. */
@@ -347,7 +344,7 @@ async function importCandidate(
 
 async function processFile(ctx: ScanContext, c: Candidate): Promise<Outcome> {
   const before = statSync(c.path);
-  if (ctx.now - before.mtimeMs < ctx.settleMs || before.size === 0) {
+  if (ctx.now - before.mtimeMs < DEFAULT_SETTLE_MS || before.size === 0) {
     return "skipped";
   }
   if (before.size > MAX_UPLOAD_BYTES) {
@@ -478,7 +475,6 @@ export async function scanInbox(
   options: ScanOptions = {},
 ): Promise<ScanSummary> {
   const now = options.now ?? Date.now();
-  const settleMs = options.settleMs ?? DEFAULT_SETTLE_MS;
   const summary: ScanSummary = {
     at: now,
     imported: 0,
@@ -501,7 +497,6 @@ export async function scanInbox(
         userDir,
         accounts: (await listAccounts(user.id)).filter((a) => !a.archived),
         now,
-        settleMs,
       };
       for (const c of listCandidates(userDir, ctx.accounts)) {
         try {
@@ -625,39 +620,5 @@ export async function getInboxView(
     folder: config ? userInboxDir(config, username) : null,
     lastScan,
     entries: config ? await listInboxEntries(userId) : [],
-  };
-}
-
-/** Scans on start (after a short delay) and then every `intervalSeconds`. Returns a stop function. */
-export function startInboxScheduler(
-  config: InboxConfig,
-  options: { intervalMs?: number; firstRunDelayMs?: number } & ScanOptions = {},
-): () => void {
-  let running = false;
-  const tick = async () => {
-    if (running) return;
-    running = true;
-    try {
-      setLastScan(await scanInbox(config, options));
-    } catch (err) {
-      console.error("inbox scan failed: %s", describeError(err));
-    } finally {
-      running = false;
-    }
-  };
-  // tick() handles its own errors, so nothing is left to await or catch here.
-  const firstRun = setTimeout(
-    () => detach(tick()),
-    options.firstRunDelayMs ?? 5_000,
-  );
-  const timer = setInterval(
-    () => detach(tick()),
-    options.intervalMs ?? config.intervalSeconds * 1000,
-  );
-  firstRun.unref?.();
-  timer.unref?.();
-  return () => {
-    clearTimeout(firstRun);
-    clearInterval(timer);
   };
 }
