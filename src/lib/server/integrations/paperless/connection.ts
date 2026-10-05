@@ -425,7 +425,8 @@ async function saveConnectionInTx(
       rowInstanceKey(existing),
     );
     // Back at an address the user had before: its documents keep the key their bills were saved under.
-    key = (await rememberedKey(tx, userId, baseUrl)) ?? key;
+    // A "different server" reset always starts over with a fresh key instead.
+    if (!reset) key = (await rememberedKey(tx, userId, baseUrl)) ?? key;
   }
   if (reset) {
     // Another server has other document ids: old links and watermark are meaningless.

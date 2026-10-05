@@ -177,6 +177,37 @@ describe("settings/notifications", () => {
     expect((await getChannelConfig(user.id, "ntfy"))?.token).toBeUndefined();
   });
 
+  it("removeSecret deletes a readable secret at the same address", async () => {
+    await act("saveChannel", user, {
+      kind: "ntfy",
+      serverUrl: "https://ntfy.example.org",
+      topic: "kept",
+      token: "tk_secret",
+    });
+    await act("saveChannel", user, {
+      kind: "webhook",
+      url: "https://hooks.example.org/k",
+      secret: "sig",
+    });
+    const ntfyRes = await act("saveChannel", user, {
+      kind: "ntfy",
+      serverUrl: "https://ntfy.example.org",
+      topic: "kept",
+      removeSecret: "on",
+    });
+    const hookRes = await act("saveChannel", user, {
+      kind: "webhook",
+      url: "https://hooks.example.org/k",
+      removeSecret: "on",
+    });
+    expect(ntfyRes.type).toBe("return");
+    expect(hookRes.type).toBe("return");
+    expect((await getChannelConfig(user.id, "ntfy"))?.token).toBeUndefined();
+    expect(
+      (await getChannelConfig(user.id, "webhook"))?.secret,
+    ).toBeUndefined();
+  });
+
   it("refuses the email channel when SMTP is not configured", async () => {
     const res = await act("saveChannel", user, {
       kind: "email",

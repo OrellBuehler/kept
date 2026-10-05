@@ -142,8 +142,8 @@ export interface SaveChannelOptions {
    * stored value is kept.
    */
   keepSecret?: "token" | "secret";
-  /** Allow the save although the stored secret cannot be read and none was given (it is dropped). */
-  dropUnreadableSecret?: boolean;
+  /** Remove the stored secret instead of keeping it (also allows a save when it cannot be read). */
+  dropSecret?: boolean;
   /**
    * The config field holding the address the secret is sent to. The stored secret is only
    * kept while that address keeps its origin (scheme, host, port); otherwise it must be re-entered.
@@ -217,13 +217,15 @@ export async function saveChannel(
             previous[urlField],
             (next as unknown as Record<string, unknown>)[urlField],
           );
-        if (movedOrigin && !options.dropUnreadableSecret) {
+        if (movedOrigin && !options.dropSecret) {
           return { ok: false, reason: "secret_origin_changed" } as const;
         }
-        if (previous?.[field] && !movedOrigin) {
-          next[field] = previous[field];
-        } else if (unreadable && !options.dropUnreadableSecret) {
-          return { ok: false, reason: "secret_unreadable" } as const;
+        // Explicitly removed: the stored secret is never copied.
+        if (!options.dropSecret) {
+          if (previous?.[field]) next[field] = previous[field];
+          else if (unreadable) {
+            return { ok: false, reason: "secret_unreadable" } as const;
+          }
         }
       }
       const configEncrypted = encryptSecret(JSON.stringify(next));

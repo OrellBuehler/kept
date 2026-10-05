@@ -1,6 +1,6 @@
 import http from "node:http";
 import https from "node:https";
-import { Readable } from "node:stream";
+import type { IncomingMessage } from "node:http";
 import {
   resolvePublicAddresses,
   type Lookup,
@@ -29,13 +29,14 @@ const NO_BODY_STATUSES = new Set([101, 204, 205, 304]);
 export async function pinnedFetch(
   url: string,
   init: PinnedFetchInit = {},
-  options: { lookup?: Lookup } = {},
+  options: { lookup?: Lookup; requester?: typeof requestPinned } = {},
 ): Promise<Response> {
   const target = new URL(url);
   if (target.protocol !== "http:" && target.protocol !== "https:") {
     throw new TypeError("Only http and https URLs are supported.");
   }
-  return requestPinned(url, init, await resolvePublicAddresses(url, options));
+  const addresses = await resolvePublicAddresses(url, options);
+  return (options.requester ?? requestPinned)(url, init, addresses);
 }
 
 /** Sends the request to the given addresses only, whatever the URL's host name resolves to. */
@@ -48,6 +49,8 @@ export async function requestPinned(
   // Normalises every BodyInit (strings, FormData with its boundary, ...) into bytes and headers.
   const method = (init.method ?? "GET").toUpperCase();
   const headerBag = new Headers(init.headers);
+  // No transparent decompression here, so never ask for a compressed body.
+  headerBag.set("accept-encoding", "identity");
   let payload: Buffer | undefined;
   if (init.body != null) {
     const encoded = new Response(init.body);
@@ -63,6 +66,10 @@ export async function requestPinned(
   headerBag.forEach((value, key) => {
     headers[key] = value;
   });
+
+  // A timeout or abort destroys the request or response; report the signal's reason (e.g. TimeoutError).
+  const mapError = (err: unknown) =>
+    init.signal?.aborted ? init.signal.reason : err;
 
   return new Promise<Response>((resolve, reject) => {
     const secure = target.protocol === "https:";
@@ -91,21 +98,45 @@ export async function requestPinned(
         const empty = NO_BODY_STATUSES.has(status) || method === "HEAD";
         if (empty) res.resume();
         resolve(
-          new Response(
-            empty
-              ? null
-              : (Readable.toWeb(res) as unknown as ReadableStream<Uint8Array>),
-            {
-              status,
-              statusText: res.statusMessage ?? "",
-              headers: responseHeaders,
-            },
-          ),
+          new Response(empty ? null : toWebStream(res, mapError), {
+            status,
+            statusText: res.statusMessage ?? "",
+            headers: responseHeaders,
+          }),
         );
       },
     );
-    req.on("error", reject);
+    req.on("error", (err) => reject(mapError(err)));
     req.end(payload);
+  });
+}
+
+/** Pull-based web stream over a response: a slow reader applies backpressure and errors can be mapped. */
+function toWebStream(
+  res: IncomingMessage,
+  mapError: (err: unknown) => unknown,
+): ReadableStream<Uint8Array> {
+  return new ReadableStream<Uint8Array>({
+    start(controller) {
+      res.on("data", (chunk: Buffer) => {
+        controller.enqueue(new Uint8Array(chunk));
+        if ((controller.desiredSize ?? 0) <= 0) res.pause();
+      });
+      res.on("end", () => controller.close());
+      res.on("error", (err) => controller.error(mapError(err)));
+      res.on("close", () => {
+        if (!res.complete) {
+          controller.error(mapError(new Error("The connection was closed.")));
+        }
+      });
+      res.pause();
+    },
+    pull() {
+      res.resume();
+    },
+    cancel() {
+      res.destroy();
+    },
   });
 }
 

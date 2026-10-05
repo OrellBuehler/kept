@@ -30,6 +30,11 @@ export const load: PageServerLoad = async ({ locals }) => {
   return {
     settings: await getSettings(user.id),
     channels,
+    emailBlocked: !smtpConfigured
+      ? ("smtp" as const)
+      : user.role !== "admin"
+        ? ("admin" as const)
+        : null,
     kinds: CHANNEL_KINDS.filter(
       (k) => k !== "email" || (smtpConfigured && user.role === "admin"),
     ),
@@ -103,7 +108,7 @@ export const actions: Actions = {
     // there is nothing to keep: it must be entered again or removed explicitly.
     const saved = await saveChannel(user.id, kind, data, {
       keepSecret: secretField ?? undefined,
-      dropUnreadableSecret: form.get("removeSecret") === "on",
+      dropSecret: form.get("removeSecret") === "on",
       secretSentTo: kind === "ntfy" ? "serverUrl" : undefined,
     });
     if (!saved.ok && saved.reason === "secret_origin_changed") {

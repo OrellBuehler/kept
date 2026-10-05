@@ -108,6 +108,14 @@ export async function deliver(
       );
       continue;
     }
+    if (channel.kind === "email" && !(await mayUseEmail(userId))) {
+      console.warn(
+        "notification channel skipped",
+        channel.kind,
+        "email_not_allowed",
+      );
+      continue;
+    }
     const result = await sendVia(userId, channel.kind, message, deps);
     if (result.ok) delivered += 1;
   }

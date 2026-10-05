@@ -882,11 +882,7 @@ describe("syncConnection", () => {
     const elsewhere = (await getConnectionRow(user.id))!;
     expect(elsewhere.instanceKey).not.toBe(original.instanceKey);
 
-    await saveConnection(user.id, {
-      ...input,
-      baseUrl: original.baseUrl,
-      differentInstance: true,
-    });
+    await saveConnection(user.id, { ...input, baseUrl: original.baseUrl });
     expect((await getConnectionRow(user.id))!.instanceKey).toBe(
       original.instanceKey,
     );
@@ -895,6 +891,26 @@ describe("syncConnection", () => {
     expect((await getConnectionRow(user.id))!.instanceKey).toBe(
       elsewhere.instanceKey,
     );
+  });
+
+  it("a different-server reset to a remembered address still gets a fresh key", async () => {
+    const original = (await getConnectionRow(user.id))!;
+    const input = {
+      token: null,
+      allowInsecureTls: false,
+      allowPrivateNetwork: true,
+    };
+    await saveConnection(user.id, {
+      ...input,
+      baseUrl: `${fake.origin}/other`,
+    });
+    await saveConnection(user.id, {
+      ...input,
+      baseUrl: original.baseUrl,
+      differentInstance: true,
+    });
+    const after = (await getConnectionRow(user.id))!;
+    expect(after.instanceKey).not.toBe(original.instanceKey);
   });
 
   it("a reset at the same address still gets a fresh key", async () => {

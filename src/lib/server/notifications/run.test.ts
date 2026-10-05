@@ -6,7 +6,7 @@ import { createTestUser } from "$lib/testing/auth";
 import { seedBill } from "$lib/testing/bills";
 import { useTestDB } from "$lib/testing/db";
 import { seedAccount } from "$lib/testing/ledger";
-import { sendTest } from "./dispatch";
+import { deliver, sendTest } from "./dispatch";
 import { runNotifications } from "./run";
 import {
   getChannelConfig,
@@ -210,6 +210,25 @@ describe("email channel", () => {
     const refused = await sendTest(member.id, "email", { smtp, sendMail });
     expect(refused).toMatchObject({ ok: false });
     expect(sendMail).toHaveBeenCalledTimes(1);
+  });
+
+  it("deliver skips a member's email channel with one warning and no error", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const error = vi.spyOn(console, "error").mockImplementation(() => {});
+    const member = await createTestUser();
+    await saveChannel(member.id, "email", { to: "someone@example.org" });
+    const sendMail = vi.fn(async () => undefined);
+
+    const delivered = await deliver(
+      member.id,
+      { title: "t", body: "b" },
+      { smtp, sendMail },
+    );
+
+    expect(delivered).toBe(0);
+    expect(sendMail).not.toHaveBeenCalled();
+    expect(warn).toHaveBeenCalledTimes(1);
+    expect(error).not.toHaveBeenCalled();
   });
 });
 
