@@ -1,6 +1,6 @@
 import { sveltekit } from "@sveltejs/kit/vite";
 import tailwindcss from "@tailwindcss/vite";
-import { defineConfig } from "vitest/config";
+import { configDefaults, defineConfig } from "vitest/config";
 
 export default defineConfig({
   plugins: [tailwindcss(), sveltekit()],
@@ -23,6 +23,9 @@ export default defineConfig({
       "scripts/**/*.test.ts",
       "eslint-rules/**/*.test.ts",
     ],
+    // PostgreSQL integration tests need a server and a PostgreSQL-dialect
+    // process; `bun run test:pg` runs them (vitest.pg.config.ts).
+    exclude: [...configDefaults.exclude, "**/*.pg.test.ts"],
     environment: "node",
     testTimeout: 30000,
     // Fake servers in tests listen on loopback; tests of the default policy unset this.
