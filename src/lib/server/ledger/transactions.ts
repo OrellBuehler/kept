@@ -1,5 +1,5 @@
 import { ledgerLock } from "$lib/server/ledger/lock";
-import { and, count, desc, eq, gte, lte, or, sql } from "drizzle-orm";
+import { and, count, desc, eq, gte, inArray, lte, or, sql } from "drizzle-orm";
 import type { RowSource } from "$lib/ledger-types";
 import type { Minor } from "$lib/money";
 import {
@@ -276,6 +276,29 @@ export async function lockTransactionRowInTx(
     .where(and(eq(transactions.userId, userId), eq(transactions.id, id)));
 }
 
+/**
+ * `lockTransactionRowInTx` for many rows in one statement, ids sorted, so a
+ * caller that must touch several rows never takes row locks incrementally.
+ */
+export async function lockTransactionRowsInTx(
+  tx: Pick<DB, "update">,
+  userId: string,
+  ids: Iterable<string>,
+): Promise<void> {
+  const sorted = [...new Set(ids)].sort();
+  for (let i = 0; i < sorted.length; i += 500) {
+    await tx
+      .update(transactions)
+      .set({ updatedAt: sql`${transactions.updatedAt}` })
+      .where(
+        and(
+          eq(transactions.userId, userId),
+          inArray(transactions.id, sorted.slice(i, i + 500)),
+        ),
+      );
+  }
+}
+
 /** A payment cannot shrink below, or change direction under, what bills have claimed of it. */
 async function assertCoversAllocationsInTx(
   tx: Pick<DB, "select">,
@@ -379,7 +402,10 @@ export async function updateTransaction(
         await lockTransactionRowInTx(tx, userId, id);
         // Read again inside the transaction: the previous IBAN decides which links survive.
         const previous = await getTransactionRowInTx(tx, userId, id);
-        await assertCoversAllocationsInTx(tx, userId, previous, input.amount);
+        // Only a changed amount can break an allocation; legacy over-allocated rows stay editable otherwise.
+        if (input.amount !== previous.amount) {
+          await assertCoversAllocationsInTx(tx, userId, previous, input.amount);
+        }
         assertNotBeforeOpening(
           await ownedAccountInTx(tx, userId, previous.accountId),
           input.bookingDate,

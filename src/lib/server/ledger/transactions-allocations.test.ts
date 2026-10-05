@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { eq } from "drizzle-orm";
 import { minor } from "$lib/money";
 import { createTestUser } from "$lib/testing/auth";
 import { seedBill } from "$lib/testing/bills";
@@ -6,6 +7,7 @@ import { useTestDB } from "$lib/testing/db";
 import { seedAccount } from "$lib/testing/ledger";
 import { allocate, listBillAllocations } from "$lib/server/bills/allocations";
 import { billView } from "$lib/server/bills/status";
+import { billAllocations, getDB } from "$lib/server/db";
 import { LedgerError } from "./errors";
 import {
   createManualTransaction,
@@ -74,6 +76,20 @@ describe("editing a manual payment that is allocated to a bill", () => {
     await updateTransaction(user.id, payment.id, input(-15000));
     const edited = await updateTransaction(user.id, payment.id, input(-10000));
     expect(edited.amount).toBe(-10000);
+  });
+
+  it("still lets an already over-allocated payment change other fields", async () => {
+    const { user, payment } = await setup();
+    await getDB()
+      .update(billAllocations)
+      .set({ amount: minor(12000) })
+      .where(eq(billAllocations.transactionId, payment.id));
+    const edited = await updateTransaction(user.id, payment.id, {
+      ...input(-10000),
+      description: "changed",
+    });
+    expect(edited.description).toBe("changed");
+    await rejects(updateTransaction(user.id, payment.id, input(-11000)));
   });
 
   it("counts the sum of all allocations of the payment", async () => {

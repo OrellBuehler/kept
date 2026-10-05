@@ -14,6 +14,7 @@ import {
 } from "$lib/server/db";
 import { emitBillChanged } from "$lib/server/events";
 import { LedgerError, notFound } from "$lib/server/ledger/errors";
+import { lockTransactionRowsInTx } from "$lib/server/ledger/transactions";
 import {
   allocateInTx,
   type AllocationTx,
@@ -317,6 +318,13 @@ export async function writeAutoMatches(
   planned: ReadonlyArray<{ billId: string; transactionId: string }>,
 ): Promise<string[]> {
   return await transaction(async (tx) => {
+    // All row locks in one statement, before any read: taking them one by one
+    // in suggestion order could invert against other multi-row writers.
+    await lockTransactionRowsInTx(
+      tx,
+      userId,
+      planned.map((s) => s.transactionId),
+    );
     const fresh = await freshAutoPlanInTx(tx, userId);
     const billIds: string[] = [];
     for (const s of planned) {
