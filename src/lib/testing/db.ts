@@ -8,6 +8,7 @@ import {
   setDB,
   type DB,
 } from "$lib/server/db";
+import { drainDetached } from "$lib/server/detached";
 import { readDatabaseConfig } from "$lib/server/db/config";
 import { dialect } from "$lib/server/db/dialect";
 import { fileDatabase, onFileDone } from "./pg";
@@ -35,6 +36,9 @@ export function useTestDB(): { readonly db: DB } {
     setDB(current);
   });
   afterEach(async () => {
+    // Listeners, scheduler ticks and webhook jobs a test left running must not
+    // outlive its database (or write into the next test's).
+    await drainDetached();
     const opened = current;
     current = null;
     if (dialect === "sqlite") {

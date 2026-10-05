@@ -28,6 +28,7 @@ import { seedAccount, seedImportedTransaction } from "$lib/testing/ledger";
 import {
   enableFill,
   linkManually,
+  linkNeedsAmountTo,
   linkTransfers,
   resolveNeedsAmount,
   unlink,
@@ -72,7 +73,7 @@ describe("transfers", () => {
     expect(mirrors[0]!.n).toBe(12);
   });
 
-  describe("take the user's transfers lock", () => {
+  describe("take the user's ledger lock", () => {
     async function setup() {
       const user = await createTestUser();
       const main = await seedAccount(user.id, {
@@ -84,7 +85,7 @@ describe("transfers", () => {
         type: "savings",
         iban: EXAMPLE_IBAN_OTHER,
       });
-      const key = `transfers:${user.id}`;
+      const key = `ledger:${user.id}`;
       return { user, main, savings, key };
     }
 
@@ -174,6 +175,11 @@ describe("transfers", () => {
       // Not a transfer that needs an amount: the lock is taken before that is checked.
       await expectHeldBy(key, async () => {
         await resolveNeedsAmount(user.id, transferId, minor(1)).catch(
+          () => undefined,
+        );
+      });
+      await expectHeldBy(key, async () => {
+        await linkNeedsAmountTo(user.id, transferId, into.id).catch(
           () => undefined,
         );
       });

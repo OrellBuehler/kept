@@ -1,3 +1,4 @@
+import { ledgerLock } from "$lib/server/ledger/lock";
 import { and, eq, sql } from "drizzle-orm";
 import {
   accounts,
@@ -10,7 +11,7 @@ import {
 import type { CsvMappingProfile } from "$lib/server/importers/mapping";
 import { categorize, loadRules } from "$lib/server/categories/rules";
 import { LedgerError, notFound } from "$lib/server/ledger/errors";
-import { linkAfterWrite, transfersLock } from "$lib/server/transfers/link";
+import { linkAfterWrite } from "$lib/server/transfers/link";
 import { takeOverMirror } from "$lib/server/transfers/replace";
 import {
   deletePendingBlob,
@@ -71,7 +72,8 @@ export async function confirmImport(
       if (!(await deletePendingRowInTx(tx, userId, pendingId))) {
         throw notFound("Upload");
       }
-      // Checked in the transaction, so an archive racing the import cannot slip past.
+      // Read under the ledger lock, which archiving and deleting the account
+      // also take, so neither can commit between this check and the rows below.
       const account = await first(
         tx
           .select({ archived: accounts.archived })
@@ -210,7 +212,7 @@ export async function confirmImport(
         transfers: { ...linked, replaced },
       };
     },
-    { lock: transfersLock(userId) },
+    { lock: ledgerLock(userId) },
   );
 
   try {

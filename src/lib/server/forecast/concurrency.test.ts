@@ -1,6 +1,6 @@
 /**
  * Saving account settings unsets the other default payment accounts of the
- * currency, so overlapping saves of one user take turns on a lock.
+ * currency, so overlapping saves of one user take turns on the ledger lock, which also guards the account's currency.
  */
 import { describe, it } from "vitest";
 import { createTestUser } from "$lib/testing/auth";
@@ -12,10 +12,10 @@ import { saveAccountSettings } from "./settings";
 useTestDB();
 
 describe("forecast", () => {
-  it("saving account settings takes the user's forecast lock", async () => {
+  it("saving account settings takes the user's ledger lock", async () => {
     const user = await createTestUser();
     const account = await seedAccount(user.id);
-    await expectHeldBy(`forecast:${user.id}`, () =>
+    await expectHeldBy(`ledger:${user.id}`, () =>
       saveAccountSettings(user.id, {
         accountId: account.id,
         defaultPayment: "on",

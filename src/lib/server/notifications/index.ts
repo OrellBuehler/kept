@@ -1,3 +1,4 @@
+import { detach } from "$lib/server/detached";
 import { runNotifications } from "./run";
 import { readSmtpConfig, type SmtpConfig } from "./smtp";
 
@@ -31,11 +32,11 @@ export function registerNotifications(
     }
   };
   const first = setTimeout(
-    () => void tick(),
+    () => detach(tick()),
     options.firstRunDelayMs ?? FIRST_RUN_DELAY_MS,
   );
   const timer = setInterval(
-    () => void tick(),
+    () => detach(tick()),
     options.intervalMs ?? CHECK_INTERVAL_MS,
   );
   first.unref?.();

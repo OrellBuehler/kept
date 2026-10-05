@@ -1,3 +1,4 @@
+import { drainDetached } from "$lib/server/detached";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { listBills } from "$lib/server/bills/bills";
 import { getConnectionRow } from "$lib/server/integrations/paperless/connection";
@@ -91,7 +92,8 @@ describe("POST /api/public/paperless/[token]", () => {
       .poll(async () => (await listBills(user.id)).length, { timeout: 20_000 })
       .toBe(1);
     expect((await call({})).status).toBe(202);
-    await new Promise((r) => setTimeout(r, 300));
+    // The second delivery's job has finished before the count is checked.
+    await drainDetached();
     expect(await listBills(user.id)).toHaveLength(1);
   });
 

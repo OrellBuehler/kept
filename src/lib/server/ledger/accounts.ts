@@ -1,3 +1,4 @@
+import { ledgerLock } from "$lib/server/ledger/lock";
 import { and, asc, eq, inArray, max, ne, sql } from "drizzle-orm";
 import type { AccountType, WithdrawalPeriod } from "$lib/ledger-types";
 import { shareOf, type Minor } from "$lib/money";
@@ -21,7 +22,6 @@ import {
   linkTransfersInTx,
   removeMirrors,
   revalidateLinks,
-  transfersLock,
   type Tx,
 } from "$lib/server/transfers";
 import { currentValues, type CurrentValue } from "./balances";
@@ -324,7 +324,7 @@ export async function createAccount(
         }
         return created.id;
       },
-      { lock: transfersLock(userId) },
+      { lock: ledgerLock(userId) },
     );
   } catch (err) {
     mapIbanViolation(err, input.iban);
@@ -500,7 +500,7 @@ export async function updateAccount(
 ): Promise<AccountView> {
   try {
     await transaction(async (tx) => updateAccountInTx(tx, userId, id, input), {
-      lock: transfersLock(userId),
+      lock: ledgerLock(userId),
     });
   } catch (err) {
     mapIbanViolation(err, input.iban);
@@ -514,10 +514,17 @@ export async function setAccountArchived(
   archived: boolean,
 ): Promise<AccountView> {
   await getAccount(userId, id);
-  await getDB()
-    .update(accounts)
-    .set({ archived, archivedAt: archived ? new Date() : null })
-    .where(and(eq(accounts.userId, userId), eq(accounts.id, id)));
+  // Under the ledger lock so an import (which refuses an archived account) and
+  // the archive are ordered.
+  await transaction(
+    async (tx) => {
+      await tx
+        .update(accounts)
+        .set({ archived, archivedAt: archived ? new Date() : null })
+        .where(and(eq(accounts.userId, userId), eq(accounts.id, id)));
+    },
+    { lock: ledgerLock(userId) },
+  );
   return await getAccount(userId, id);
 }
 
@@ -529,7 +536,14 @@ export const unarchiveAccount = async (userId: string, id: string) =>
 /** Hard delete; transactions, imports, snapshots and the CSV profile cascade. */
 export async function deleteAccount(userId: string, id: string): Promise<void> {
   await getAccount(userId, id);
-  await getDB()
-    .delete(accounts)
-    .where(and(eq(accounts.userId, userId), eq(accounts.id, id)));
+  // Under the ledger lock: everything that writes rows for the account holds it
+  // while it checks the account, so none can be mid-write when the account goes.
+  await transaction(
+    async (tx) => {
+      await tx
+        .delete(accounts)
+        .where(and(eq(accounts.userId, userId), eq(accounts.id, id)));
+    },
+    { lock: ledgerLock(userId) },
+  );
 }

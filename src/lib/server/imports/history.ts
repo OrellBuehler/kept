@@ -1,3 +1,4 @@
+import { ledgerLock } from "$lib/server/ledger/lock";
 import {
   and,
   count,
@@ -26,7 +27,7 @@ import {
 } from "$lib/server/db";
 import { getAccount } from "$lib/server/ledger/accounts";
 import { notFound } from "$lib/server/ledger/errors";
-import { linkTransfersInTx, transfersLock } from "$lib/server/transfers/link";
+import { linkTransfersInTx } from "$lib/server/transfers/link";
 
 export interface ImportView {
   id: string;
@@ -304,14 +305,18 @@ export async function undoImport(
               .limit(1),
           );
           if (heir && heir.amount !== null) {
-            await tx.insert(balanceSnapshots).values({
-              userId,
-              accountId: found.accountId,
-              importId: heir.id,
-              source: "import",
-              date: found.closingDate,
-              amount: heir.amount,
-            });
+            // A snapshot another writer just made is the state we want.
+            await tx
+              .insert(balanceSnapshots)
+              .values({
+                userId,
+                accountId: found.accountId,
+                importId: heir.id,
+                source: "import",
+                date: found.closingDate,
+                amount: heir.amount,
+              })
+              .onConflictDoNothing();
           }
         }
       }
@@ -319,6 +324,6 @@ export async function undoImport(
       await linkTransfersInTx(tx, userId, { targetAccountId: found.accountId });
       return { accountId: found.accountId, removedTransactions: found.n };
     },
-    { lock: transfersLock(userId) },
+    { lock: ledgerLock(userId) },
   );
 }

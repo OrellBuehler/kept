@@ -868,10 +868,18 @@ describe("check-then-write", () => {
     const { u } = await setup();
     const names: Array<string | null> = [];
     clearEventListeners();
+    // Detached listeners read after the emitting call returned: the update waits
+    // until the first one has read, or it could commit before that read.
+    let firstRead!: () => void;
+    const afterFirstRead = new Promise<void>(
+      (resolve) => (firstRead = resolve),
+    );
     onBillChanged(async (userId, billId) => {
       names.push((await getBill(userId, billId)).creditorName);
+      firstRead();
     });
     const bill = await createBill(u.id, billInput({ creditorName: "First" }));
+    await afterFirstRead;
     await updateBill(u.id, bill.id, billInput({ creditorName: "Second" }));
     await vi.waitFor(() => expect(names).toEqual(["First", "Second"]));
     clearEventListeners();

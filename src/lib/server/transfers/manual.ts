@@ -1,3 +1,4 @@
+import { ledgerLock } from "$lib/server/ledger/lock";
 import {
   and,
   asc,
@@ -26,7 +27,6 @@ import {
   linkTransfersInTx,
   loadPlanAccounts,
   loadPlanAccountsInTx,
-  transfersLock,
   type LinkResult,
   type Tx,
 } from "./link";
@@ -163,7 +163,7 @@ export async function unlink(
           .where(inArray(transactions.id, [...mirrors]));
       }
     },
-    { lock: transfersLock(userId) },
+    { lock: ledgerLock(userId) },
   );
 }
 
@@ -180,7 +180,7 @@ export async function linkManually(
 ): Promise<string> {
   return await transaction(
     async (tx) => linkManuallyInTx(tx, userId, outId, inId),
-    { lock: transfersLock(userId) },
+    { lock: ledgerLock(userId) },
   );
 }
 
@@ -550,7 +550,7 @@ export async function resolveNeedsAmount(
         })
         .where(eq(transfers.id, row.id));
     },
-    { lock: transfersLock(userId) },
+    { lock: ledgerLock(userId) },
   );
 }
 
@@ -583,7 +583,7 @@ export async function linkNeedsAmountTo(
         ? linkManuallyInTx(tx, userId, sourceId, peer.id)
         : linkManuallyInTx(tx, userId, peer.id, sourceId);
     },
-    { lock: transfersLock(userId) },
+    { lock: ledgerLock(userId) },
   );
 }
 
@@ -811,7 +811,7 @@ export async function enableFill(
         .where(and(eq(accounts.userId, userId), eq(accounts.id, accountId)));
       return linkTransfersInTx(tx, userId, { targetAccountId: accountId });
     },
-    { lock: transfersLock(userId) },
+    { lock: ledgerLock(userId) },
   );
 }
 

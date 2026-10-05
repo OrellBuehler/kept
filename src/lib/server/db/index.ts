@@ -1,6 +1,7 @@
 import { AsyncLocalStorage } from "node:async_hooks";
 import type { Database } from "bun:sqlite";
 import { describeError } from "$lib/server/errors";
+import { changedMeanwhile } from "$lib/server/ledger/errors";
 import type { Backend, BackendTransaction, DB } from "./backend";
 import { readDatabaseConfig, type PostgresDatabaseConfig } from "./config";
 import { dialect } from "./dialect";
@@ -38,6 +39,21 @@ interface Tx0 {
   readonly btx: BackendTransaction;
   state: TxState;
   savepoints: number;
+  /** The one lock key this transaction (or a savepoint in it) took. */
+  lockKey?: string;
+}
+
+/**
+ * Two keys in one transaction can deadlock against a transaction taking them
+ * the other way round, and make "one invariant, one lock" untrue. Tests fail
+ * on it; production still takes the lock.
+ */
+async function takeLock(tx: Tx0, key: string): Promise<void> {
+  if (process.env.VITEST && tx.lockKey !== undefined && tx.lockKey !== key) {
+    throw new Error("A transaction must not take two different lock keys");
+  }
+  tx.lockKey ??= key;
+  await tx.btx.lock(key);
 }
 
 /**
@@ -253,7 +269,7 @@ export async function transaction<T>(
   const frame = newFrame(tx, null);
   let outcome: { ok: true; value: T } | { ok: false; error: unknown };
   try {
-    if (options.lock !== undefined) await btx.lock(options.lock);
+    if (options.lock !== undefined) await takeLock(tx, options.lock);
     const value = await als.run(frame, () => fn(btx.db));
     tx.state = "finished";
     await btx.commit();
@@ -272,7 +288,18 @@ export async function transaction<T>(
     }
   }
   btx.release();
-  if (!outcome.ok) throw outcome.error;
+  if (!outcome.ok) {
+    // PostgreSQL checks foreign keys against committed rows: a parent deleted by
+    // a concurrent transaction fails the insert here. Report it as a conflict.
+    if (isForeignKeyViolation(outcome.error)) {
+      console.error(
+        "foreign key violation reported as a conflict: %s",
+        describeError(outcome.error),
+      );
+      throw changedMeanwhile();
+    }
+    throw outcome.error;
+  }
   await runHooks(frame.hooks);
   return outcome.value;
 }
@@ -311,7 +338,7 @@ async function runSavepoint<T>(
   try {
     // Held until the outer transaction ends, which is what a lock taken by a
     // nested call must do.
-    if (lock !== undefined) await tx.btx.lock(lock);
+    if (lock !== undefined) await takeLock(tx, lock);
     const value = await als.run(frame, () => fn(tx.btx.db));
     frame.status = "released";
     await tx.btx.releaseSavepoint(name);
@@ -370,6 +397,29 @@ export async function first<T>(
   query: PromiseLike<T[]>,
 ): Promise<T | undefined> {
   return (await query)[0];
+}
+
+/**
+ * True for a foreign-key violation (SQLSTATE 23503, in `errno` for Bun's
+ * driver or in `code` for others) anywhere in the cause chain. SQLite is
+ * single-writer, so only PostgreSQL can lose such a race.
+ */
+export function isForeignKeyViolation(err: unknown): boolean {
+  let cursor: unknown = err;
+  for (
+    let depth = 0;
+    depth < 5 && typeof cursor === "object" && cursor;
+    depth++
+  ) {
+    const { code, errno, cause } = cursor as {
+      code?: unknown;
+      errno?: unknown;
+      cause?: unknown;
+    };
+    if (code === "23503" || errno === "23503") return true;
+    cursor = cause;
+  }
+  return false;
 }
 
 const UNIQUE_CODES = new Set([

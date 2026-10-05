@@ -1,3 +1,4 @@
+import { detach } from "$lib/server/detached";
 import { z } from "zod";
 import { getConnectionByWebhookToken, secretMatches } from "./connection";
 import { errorCode } from "./client";
@@ -106,6 +107,7 @@ export async function handleWebhook(input: {
       })
       .finally(() => pending.delete(key));
     pending.set(key, job);
+    detach(job);
   }
   return { status: 202, done: job };
 }

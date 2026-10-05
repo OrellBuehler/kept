@@ -1,3 +1,4 @@
+import { ledgerLock } from "$lib/server/ledger/lock";
 import { and, count, desc, eq, sql } from "drizzle-orm";
 import type { PriceSource } from "$lib/investment-types";
 import type { Fixed8 } from "$lib/quantity";
@@ -12,7 +13,6 @@ import {
 } from "$lib/server/db";
 import { LedgerError, notFound } from "$lib/server/ledger/errors";
 import type { PriceInput } from "./schemas";
-import { securityLock } from "./securities";
 
 export interface PriceView {
   id: string;
@@ -147,7 +147,7 @@ export async function setManualPrice(
       ))!;
     },
     // Changing the security's currency checks for manual prices under this lock.
-    { lock: securityLock(userId) },
+    { lock: ledgerLock(userId) },
   );
   return await getPrice(userId, row.id);
 }
@@ -191,33 +191,37 @@ export async function upsertProviderPrices(
     allRows.filter((r) => r.price > 0),
     (r) => r.date,
   );
-  await transaction(async (tx) => {
-    await assertSecurityInTx(tx, userId, securityId);
-    for (let i = 0; i < rows.length; i += CHUNK) {
-      await tx
-        .insert(securityPrices)
-        .values(
-          rows.slice(i, i + CHUNK).map((r) => ({
-            userId,
-            securityId,
-            date: r.date,
-            price: r.price,
-            source: "provider" as const,
-          })),
-        )
-        .onConflictDoUpdate({
-          target: [
-            securityPrices.securityId,
-            securityPrices.date,
-            securityPrices.source,
-          ],
-          set: {
-            price: sql`excluded.price`,
-            updatedAt: new Date(),
-          },
-        });
-    }
-  });
+  // The security must still exist when the rows go in: deleting it takes the same lock.
+  await transaction(
+    async (tx) => {
+      await assertSecurityInTx(tx, userId, securityId);
+      for (let i = 0; i < rows.length; i += CHUNK) {
+        await tx
+          .insert(securityPrices)
+          .values(
+            rows.slice(i, i + CHUNK).map((r) => ({
+              userId,
+              securityId,
+              date: r.date,
+              price: r.price,
+              source: "provider" as const,
+            })),
+          )
+          .onConflictDoUpdate({
+            target: [
+              securityPrices.securityId,
+              securityPrices.date,
+              securityPrices.source,
+            ],
+            set: {
+              price: sql`excluded.price`,
+              updatedAt: new Date(),
+            },
+          });
+      }
+    },
+    { lock: ledgerLock(userId) },
+  );
   return rows.length;
 }
 

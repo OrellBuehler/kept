@@ -39,9 +39,6 @@ export interface FakeUpload {
 export type TaskStep =
   "pending" | "success" | "failure" | "duplicate" | "missing";
 
-const sleep = (ms: number) =>
-  new Promise<void>((resolve) => setTimeout(resolve, ms));
-
 export class FakePaperless {
   token = "test-token";
   serverVersion = "2.20.3";
@@ -61,7 +58,11 @@ export class FakePaperless {
   pageSize: number | null = null;
   wrongHostNext = false;
   redirectAll = false;
-  delayMs = 0;
+  /**
+   * While set, every request waits (after it is recorded) until the promise
+   * settles: the test releases it, so nothing depends on wall-clock time.
+   */
+  gate: Promise<void> | null = null;
   bulkStatus = 200;
   taskShape: "v9" | "v10" = "v9";
   /** Each task poll consumes one step; the last step repeats. */
@@ -176,7 +177,7 @@ export class FakePaperless {
       headers: req.headers,
       json,
     });
-    if (this.delayMs) await sleep(this.delayMs);
+    if (this.gate) await this.gate;
     if (this.redirectAll) {
       return new Response(null, {
         status: 301,

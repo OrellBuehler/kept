@@ -1,3 +1,4 @@
+import { ledgerLock } from "$lib/server/ledger/lock";
 import { and, eq, inArray, ne } from "drizzle-orm";
 import { minor, type Minor } from "$lib/money";
 import {
@@ -36,8 +37,9 @@ export async function saveAccountSettings(
 ): Promise<void> {
   const defaultPayment =
     input.defaultPayment === "on" || input.defaultPayment === "true";
-  // The account is read in the same transaction as the writes, so its
-  // currency cannot change or the account vanish between the check and them.
+  // The account is read in the same transaction as the writes, under the
+  // ledger lock that every currency change and account removal also takes, so
+  // its currency cannot change or the account vanish between the check and them.
   await transaction(
     async (tx) => {
       const account = await first(
@@ -97,7 +99,8 @@ export async function saveAccountSettings(
         }
       }
     },
-    // At most one default payment account per currency: each save unsets the others.
-    { lock: `forecast:${userId}` },
+    // At most one default payment account per currency: each save unsets the
+    // others, and a currency change must not slip another account into the group.
+    { lock: ledgerLock(userId) },
   );
 }

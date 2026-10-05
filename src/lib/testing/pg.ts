@@ -13,6 +13,9 @@ export const TEST_DB_PREFIX = "kept_test_";
 /** Database named in DATABASE_URL until a file provisions its own, so stray use fails loudly. */
 export const UNPROVISIONED_DB = "kept_unprovisioned";
 
+/** Held for the whole run: a second run against the same server must not sweep this one's databases. */
+const RUN_LOCK = 7_265_002;
+
 /** Serialises CREATE DATABASE: PostgreSQL refuses to copy a template that is being copied. */
 const CREATE_LOCK = 7_265_001;
 
@@ -67,23 +70,62 @@ function sqlState(error: unknown): string | undefined {
 }
 
 /**
- * Drops the template and every database an earlier, crashed run left behind.
- * Concurrent runs against one server would trample each other here: give each
- * run its own server (the CI service, a throwaway container).
+ * Claims the server for this run with a session advisory lock on a connection
+ * that stays open until the returned function is called. A second run against
+ * the same server fails here, before it can drop the first run's databases.
  */
-export async function sweepDatabases(): Promise<void> {
-  await withAdmin(async (admin) => {
+export async function claimServer(): Promise<() => Promise<void>> {
+  const holder = new Bun.SQL({
+    url: adminUrl(),
+    adapter: "postgres",
+    max: 1,
+    // The lock lives as long as this session: it must never be recycled.
+    idleTimeout: 0,
+    maxLifetime: 0,
+    connection: { application_name: "kept-test-run" },
+  });
+  try {
+    const rows = (await holder.unsafe("select pg_try_advisory_lock($1) as ok", [
+      RUN_LOCK,
+    ])) as { ok: boolean }[];
+    if (!rows[0]?.ok) {
+      throw new Error(
+        "Another test run is using this PostgreSQL server (its run lock is held). Concurrent runs would drop each other's databases: give each run its own server, or wait for the other to finish.",
+      );
+    }
+  } catch (error) {
+    await holder.close({ timeout: 0 });
+    throw error;
+  }
+  return async () => {
+    await holder.close({ timeout: 0 });
+  };
+}
+
+/**
+ * Drops the template and every database an earlier, crashed run left behind.
+ * The caller holds the run lock (`claimServer`), so no other run is using them.
+ * `starts_with` matches the prefix literally; LIKE would read its `_` as a
+ * wildcard and drop an unrelated `kept_testing`.
+ */
+export async function sweepableDatabases(): Promise<string[]> {
+  return await withAdmin(async (admin) => {
     const rows = (await admin.unsafe(
-      "select datname from pg_database where datname = $1 or datname like $2",
-      [TEMPLATE_DB, `${TEST_DB_PREFIX}%`],
+      "select datname from pg_database where datname = $1 or starts_with(datname, $2)",
+      [TEMPLATE_DB, TEST_DB_PREFIX],
     )) as { datname: string }[];
-    for (const { datname } of rows) {
+    return rows.map((r) => r.datname);
+  });
+}
+
+export async function sweepDatabases(): Promise<void> {
+  const names = await sweepableDatabases();
+  await withAdmin(async (admin) => {
+    for (const name of names) {
       await admin.unsafe(
-        `alter database ${ident(datname)} with is_template false`,
+        `alter database ${ident(name)} with is_template false`,
       );
-      await admin.unsafe(
-        `drop database if exists ${ident(datname)} with (force)`,
-      );
+      await admin.unsafe(`drop database if exists ${ident(name)} with (force)`);
     }
   });
 }

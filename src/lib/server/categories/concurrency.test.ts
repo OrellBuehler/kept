@@ -9,7 +9,7 @@ import { categories, getDB } from "$lib/server/db";
 import { createTestUser } from "$lib/testing/auth";
 import { useTestDB } from "$lib/testing/db";
 import { expectHeldBy } from "$lib/testing/locks";
-import { createCategory, updateCategory } from "./categories";
+import { createCategory, deleteCategory, updateCategory } from "./categories";
 
 useTestDB();
 const category = (name: string, parentId: string | null = null) => ({
@@ -21,7 +21,7 @@ const category = (name: string, parentId: string | null = null) => ({
 });
 
 describe("categories", () => {
-  it("create and update take the user's category lock", async () => {
+  it("create, update and delete take the user's category lock", async () => {
     const user = await createTestUser();
     const key = `categories:${user.id}`;
     await expectHeldBy(key, () => createCategory(user.id, category("Food")));
@@ -29,6 +29,7 @@ describe("categories", () => {
     await expectHeldBy(key, () =>
       updateCategory(user.id, food.id, category("Dining")),
     );
+    await expectHeldBy(key, () => deleteCategory(user.id, food.id));
   });
 
   it("never nests more than one level when two moves overlap", async () => {

@@ -6,9 +6,12 @@ const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
 /**
  * Asserts that `operation` takes the transaction lock `key`: while another
  * transaction holds it, the operation must not finish; once released it does.
- * On PostgreSQL the lock is an advisory lock; on SQLite the held transaction
- * blocks every other one, so the check passes there for the same reason the
- * lock is a no-op on that engine.
+ *
+ * Only meaningful on PostgreSQL (the `pg` project, run in CI). There the lock
+ * is an advisory lock and a missing or misspelled key lets the operation
+ * finish and fail the test. On SQLite the lock itself is a no-op and the held
+ * transaction blocks every other one, so the check passes whatever key the
+ * operation takes; a green SQLite run proves nothing about the lock.
  *
  * The wait is a negative check: a missing lock lets the operation finish within
  * milliseconds and fail the test, while a stalled machine can only make it pass.

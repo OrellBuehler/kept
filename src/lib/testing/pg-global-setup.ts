@@ -1,5 +1,8 @@
+import { rmSync } from "node:fs";
 import { join } from "node:path";
+import type { TestProject } from "vitest/node";
 import {
+  claimServer,
   createTemplate,
   sealTemplate,
   sweepDatabases,
@@ -13,7 +16,22 @@ import {
  * files copy it instead of migrating again; the returned teardown removes
  * everything the run created.
  */
-export default async function setup(): Promise<() => Promise<void>> {
+export default async function setup(
+  project: TestProject,
+): Promise<() => Promise<void>> {
+  const releaseServer = await claimServer();
+  try {
+    return await prepare(project, releaseServer);
+  } catch (error) {
+    await releaseServer();
+    throw error;
+  }
+}
+
+async function prepare(
+  project: TestProject,
+  releaseServer: () => Promise<void>,
+): Promise<() => Promise<void>> {
   await sweepDatabases();
   await createTemplate();
 
@@ -32,7 +50,14 @@ export default async function setup(): Promise<() => Promise<void>> {
   }
   await sealTemplate();
 
+  const storageDir = project.config.env.KEPT_STORAGE_DIR;
   return async () => {
-    await sweepDatabases();
+    try {
+      await sweepDatabases();
+    } finally {
+      // Files the tests stored (bill documents, ...) live in a per-run directory.
+      if (storageDir) rmSync(storageDir, { recursive: true, force: true });
+      await releaseServer();
+    }
   };
 }

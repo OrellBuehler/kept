@@ -9,7 +9,8 @@ import { billInput, seedBill } from "$lib/testing/bills";
 import { useTestDB } from "$lib/testing/db";
 import { expectHeldBy } from "$lib/testing/locks";
 import { seedAccount, seedImportedTransaction } from "$lib/testing/ledger";
-import { updateBill } from "./bills";
+import { allocate } from "./allocations";
+import { deleteBill, setBillCancelled, updateBill } from "./bills";
 import { writeAutoMatches } from "./suggestions";
 
 useTestDB();
@@ -31,5 +32,20 @@ describe("bills", () => {
         { billId: bill.id, transactionId: payment.id },
       ]),
     );
+  });
+
+  it("allocate, cancelling and deleting a bill take the user's bills lock", async () => {
+    const user = await createTestUser();
+    const account = await seedAccount(user.id, { name: "Main" });
+    const bill = await seedBill(user.id);
+    const key = `bills:${user.id}`;
+    const payment = await seedImportedTransaction(user.id, account.id, {
+      amount: minor(-10000),
+    });
+    await expectHeldBy(key, () =>
+      allocate(user.id, bill.id, payment.id, minor(10000), "user"),
+    );
+    await expectHeldBy(key, () => setBillCancelled(user.id, bill.id, true));
+    await expectHeldBy(key, () => deleteBill(user.id, bill.id));
   });
 });

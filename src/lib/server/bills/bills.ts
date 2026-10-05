@@ -348,10 +348,16 @@ export async function deleteDocumentIfUnused(
 
 /** Deletes the bill, its allocations (cascade) and its uploaded document when nothing else uses it. */
 export async function deleteBill(userId: string, id: string): Promise<void> {
-  const [deleted] = await getDB()
-    .delete(bills)
-    .where(and(eq(bills.userId, userId), eq(bills.id, id)))
-    .returning({ documentId: bills.documentId });
+  // Allocation checks read the bill and cascade away with it: the delete takes
+  // the same lock as them, so an allocation cannot be mid-insert against it.
+  const [deleted] = await transaction(
+    async (tx) =>
+      await tx
+        .delete(bills)
+        .where(and(eq(bills.userId, userId), eq(bills.id, id)))
+        .returning({ documentId: bills.documentId }),
+    billsLock(userId),
+  );
   if (!deleted) throw notFound("Bill");
   await deleteDocumentIfUnused(userId, deleted.documentId);
 }

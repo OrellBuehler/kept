@@ -1,3 +1,4 @@
+import { ledgerLock } from "$lib/server/ledger/lock";
 import { and, count, desc, eq, gte, lte, or } from "drizzle-orm";
 import type { RowSource } from "$lib/ledger-types";
 import type { Minor } from "$lib/money";
@@ -16,7 +17,7 @@ import {
   type MirrorRef,
   type TransferRef,
 } from "$lib/server/transfers/view";
-import { linkAfterWrite, transfersLock } from "$lib/server/transfers/link";
+import { linkAfterWrite } from "$lib/server/transfers/link";
 import { unlink } from "$lib/server/transfers/manual";
 import {
   findReplacementsInTx,
@@ -307,7 +308,7 @@ export async function createManualTransaction(
       );
       return created.id;
     },
-    { lock: transfersLock(userId) },
+    { lock: ledgerLock(userId) },
   );
   return await getTransaction(userId, id);
 }
@@ -338,7 +339,7 @@ export async function updateTransaction(
         // A mirror follows its source's amount, dates and text.
         await resyncSource(tx, userId, id, previous.counterpartyIban);
       },
-      { lock: transfersLock(userId) },
+      { lock: ledgerLock(userId) },
     );
   }
   return await getTransaction(userId, id);
@@ -355,9 +356,7 @@ export async function deleteTransaction(
     if (current.transfer) {
       await unlink(userId, current.transfer.id);
     } else {
-      await getDB()
-        .delete(transactions)
-        .where(and(eq(transactions.userId, userId), eq(transactions.id, id)));
+      await removeRow(userId, id);
     }
     return;
   }
@@ -367,7 +366,17 @@ export async function deleteTransaction(
       "Imported transactions cannot be deleted. Delete the import instead.",
     );
   }
-  await getDB()
-    .delete(transactions)
-    .where(and(eq(transactions.userId, userId), eq(transactions.id, id)));
+  await removeRow(userId, id);
+}
+
+/** Under the ledger lock: linking plans from rows it must still find, and a link needs both of its rows. */
+async function removeRow(userId: string, id: string): Promise<void> {
+  await transaction(
+    async (tx) => {
+      await tx
+        .delete(transactions)
+        .where(and(eq(transactions.userId, userId), eq(transactions.id, id)));
+    },
+    { lock: ledgerLock(userId) },
+  );
 }

@@ -292,9 +292,15 @@ export async function deleteCategory(
   id: string,
 ): Promise<void> {
   await getCategory(userId, id);
-  await getDB()
-    .delete(categories)
-    .where(and(eq(categories.userId, userId), eq(categories.id, id)));
+  // Under the tree lock: a category being moved under this one must not race the delete.
+  await transaction(
+    async (tx) => {
+      await tx
+        .delete(categories)
+        .where(and(eq(categories.userId, userId), eq(categories.id, id)));
+    },
+    { lock: categoryTreeLock(userId) },
+  );
 }
 
 /** Sets or clears a transaction's category. A manual choice is never overwritten by rules. */

@@ -17,3 +17,7 @@ export class LedgerError extends Error {
 
 export const notFound = (what: string) =>
   new LedgerError("not_found", `${what} not found.`);
+
+/** A row this change relied on was removed by a concurrent change (foreign key violation). */
+export const changedMeanwhile = () =>
+  new LedgerError("conflict", "That changed meanwhile, try again.");

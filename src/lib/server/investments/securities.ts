@@ -1,3 +1,4 @@
+import { ledgerLock } from "$lib/server/ledger/lock";
 import { and, asc, eq } from "drizzle-orm";
 import type { SecurityKind } from "$lib/investment-types";
 import {
@@ -69,15 +70,7 @@ export async function createSecurity(
 }
 
 /**
- * What trades and manual prices rely on about a security (its currency, that
- * it exists) is checked in their own transactions, so changing or deleting the
- * security takes the same lock as adding a trade or a price. Under PostgreSQL
- * a transaction does not see a concurrent one's uncommitted rows.
- */
-export const securityLock = (userId: string) => `trades:${userId}`;
-
-/**
- * The checks and the writes share one transaction (and the security lock), so a
+ * The checks and the writes share one transaction (and the ledger lock), so a
  * trade or a manual price added in between cannot slip past the currency guard.
  */
 async function updateSecurityInTx(
@@ -155,7 +148,7 @@ export async function updateSecurity(
   input: SecurityInput,
 ): Promise<SecurityView> {
   await transaction(async (tx) => updateSecurityInTx(tx, userId, id, input), {
-    lock: securityLock(userId),
+    lock: ledgerLock(userId),
   });
   return await getSecurity(userId, id);
 }
@@ -192,6 +185,6 @@ export async function deleteSecurity(
         .delete(securities)
         .where(and(eq(securities.userId, userId), eq(securities.id, id)));
     },
-    { lock: securityLock(userId) },
+    { lock: ledgerLock(userId) },
   );
 }

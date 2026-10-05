@@ -1,3 +1,4 @@
+import { ledgerLock } from "$lib/server/ledger/lock";
 import { and, eq, gte, inArray, lte, ne, or, sql } from "drizzle-orm";
 import { normalizeIban } from "$lib/iban";
 import { minor } from "$lib/money";
@@ -26,14 +27,6 @@ export type Tx = Pick<DB, "select" | "insert" | "update" | "delete">;
 type Reader = Pick<DB, "select">;
 
 const CHUNK = 500;
-
-/**
- * Linking plans from what is booked and then inserts transfers and mirrors, so
- * two runs of one user's linking (two imports, an import and a manual entry)
- * would plan the same link and the second insert would hit the unique index.
- * Every transaction that links, links manually or unlinks takes this lock.
- */
-export const transfersLock = (userId: string) => `transfers:${userId}`;
 
 function planAccountQueries(conn: Reader, userId: string) {
   return {
@@ -355,7 +348,7 @@ export async function linkTransfers(
   scope: LinkScope = {},
 ): Promise<LinkResult> {
   return await transaction(async (tx) => linkTransfersInTx(tx, userId, scope), {
-    lock: transfersLock(userId),
+    lock: ledgerLock(userId),
   });
 }
 

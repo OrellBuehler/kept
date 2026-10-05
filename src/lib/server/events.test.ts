@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { drainDetached } from "$lib/server/detached";
 import { createTestUser } from "$lib/testing/auth";
 import { seedBill, billInput } from "$lib/testing/bills";
 import { useTestDB } from "$lib/testing/db";
@@ -33,7 +34,7 @@ describe("event bus", () => {
     });
     onBillChanged((_u, b) => void seen.push(b));
     expect(() => emitBillChanged("u", "b")).not.toThrow();
-    await new Promise((r) => setTimeout(r, 0));
+    await drainDetached();
     expect(seen).toEqual(["b"]);
     expect(errors).toHaveBeenCalledTimes(2);
     // Only codes are logged, never messages.
