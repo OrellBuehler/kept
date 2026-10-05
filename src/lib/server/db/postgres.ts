@@ -3,23 +3,33 @@ import {
   createTableRelationsHelpers,
   extractTablesRelationalConfig,
 } from "drizzle-orm";
-import { BunSQLDatabase, BunSQLSession } from "drizzle-orm/bun-sql";
+import {
+  BunSQLDatabase,
+  BunSQLSession,
+  BunSQLTransaction,
+} from "drizzle-orm/bun-sql";
 import { migrate } from "drizzle-orm/bun-sql/migrator";
 import { PgDialect } from "drizzle-orm/pg-core";
 import { join } from "node:path";
 import { describeError, safeErrorInfo } from "$lib/server/errors";
 import { LedgerError } from "$lib/server/ledger/errors";
 import * as schema from "./schema";
-import type { Backend, BackendTransaction, DB } from "./backend";
-import {
-  DEFAULT_PG_TRANSACTION_TIMEOUT_MS,
-  type PostgresDatabaseConfig,
-} from "./config";
+import type {
+  Backend,
+  BackendTransaction,
+  DB,
+  TransactionMode,
+} from "./backend";
+import type { PostgresDatabaseConfig } from "./config";
 
 /** Schema holding drizzle's migration history, kept apart from the application tables. */
 export const MIGRATIONS_SCHEMA = "drizzle";
-/** Key of the session advisory lock that serialises migration runs. */
+/** Key of the transaction advisory lock that serialises migration runs. */
 export const MIGRATION_LOCK_KEY = "kept:migrate";
+/** How long a starting instance waits for another one's migrations to finish. */
+export const MIGRATION_LOCK_TIMEOUT_MS = 300_000;
+/** Longest wait for a pooled connection when the statement timeout is disabled. */
+export const DEFAULT_POOL_ACQUIRE_TIMEOUT_MS = 30_000;
 
 const tables = extractTablesRelationalConfig(
   schema,
@@ -123,7 +133,10 @@ class PostgresBackend implements Backend {
     this.root = instance(client);
   }
 
-  async beginTransaction(onAbort?: () => void): Promise<BackendTransaction> {
+  async beginTransaction(
+    onAbort?: () => void,
+    mode: TransactionMode = "write",
+  ): Promise<BackendTransaction> {
     if (this.#closed) throw new Error("The database is closed");
     // The stack shows where the transaction was started; it holds code
     // locations only, never query text or values.
@@ -140,8 +153,15 @@ class PostgresBackend implements Backend {
     // throws) ROLLBACK, and hands the connection back to the pool. The
     // callback here only waits for the facade to say which, so the facade can
     // drive the transaction step by step.
+    // The isolation level is set explicitly: a role or database default of
+    // REPEATABLE READ would break the lock-then-check reasoning, which relies
+    // on each statement seeing what the previous lock holder committed.
+    const options =
+      mode === "snapshot"
+        ? "isolation level repeatable read read only"
+        : "isolation level read committed read write";
     const ended: Promise<Ended> = this.client
-      .begin(async (sql) => {
+      .begin(options, async (sql) => {
         handOver(sql);
         if (!(await finishing)) throw new RollbackSignal();
       })
@@ -155,7 +175,7 @@ class PostgresBackend implements Backend {
         result.ok ? new Error("The transaction never started") : result.error,
       );
     });
-    const sql = await started;
+    const sql = await this.#acquired(started, finish);
 
     let active = true;
     let settled = false;
@@ -189,27 +209,28 @@ class PostgresBackend implements Backend {
     // keeps counting the pool slot as in use until the callback settles. A
     // body that never settles would leak the slot for good, so the client
     // gives up shortly after the server would have.
-    const limit =
+    // A transaction timeout of 0 disables the limit on both sides.
+    const limit = this.config.transactionTimeoutMs + WATCHDOG_SLACK_MS;
+    const watchdog =
       this.config.transactionTimeoutMs > 0
-        ? this.config.transactionTimeoutMs + WATCHDOG_SLACK_MS
-        : DEFAULT_PG_TRANSACTION_TIMEOUT_MS;
-    const watchdog = setTimeout(() => {
-      if (settled) return;
-      timedOut = true;
-      console.error(
-        "transaction still open after %dms; abandoning it and freeing its connection. Started at:\n%s",
-        limit,
-        startedAt || "(no stack captured)",
-      );
-      onAbort?.();
-      end(false).catch((error: unknown) =>
-        console.error(
-          "rollback after timeout failed: %s",
-          describeError(error),
-        ),
-      );
-    }, limit);
-    watchdog.unref();
+        ? setTimeout(() => {
+            if (settled) return;
+            timedOut = true;
+            console.error(
+              "transaction still open after %dms; abandoning it and freeing its connection. Started at:\n%s",
+              limit,
+              startedAt || "(no stack captured)",
+            );
+            onAbort?.();
+            end(false).catch((error: unknown) =>
+              console.error(
+                "rollback after timeout failed: %s",
+                describeError(error),
+              ),
+            );
+          }, limit)
+        : undefined;
+    watchdog?.unref();
     return {
       db: instance(guarded),
       commit: () => end(true),
@@ -242,6 +263,46 @@ class PostgresBackend implements Backend {
         );
       },
     };
+  }
+
+  /**
+   * Waits for the transaction's connection, but not forever: when every pooled
+   * connection is held (for example by many writes queued on one lock), a
+   * caller would otherwise wait unboundedly and starve everything behind it.
+   * Bun's pool has no acquire timeout, so a caller that gives up marks its
+   * queued BEGIN as abandoned; the driver then rolls it back as soon as the
+   * connection comes round.
+   */
+  async #acquired(
+    started: Promise<Bun.TransactionSQL>,
+    finish: (commit: boolean) => void,
+  ): Promise<Bun.TransactionSQL> {
+    const limit =
+      this.config.statementTimeoutMs > 0
+        ? this.config.statementTimeoutMs
+        : DEFAULT_POOL_ACQUIRE_TIMEOUT_MS;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const timeout = new Promise<never>((_, reject) => {
+      timer = setTimeout(() => {
+        finish(false);
+        console.error(
+          "waiting for a database connection timed out after %dms (pool of %d)",
+          limit,
+          this.config.poolMax,
+        );
+        reject(
+          new LedgerError(
+            "conflict",
+            "The database is busy. Try again in a moment.",
+          ),
+        );
+      }, limit);
+    });
+    try {
+      return await Promise.race([started, timeout]);
+    } finally {
+      clearTimeout(timer);
+    }
   }
 
   migrate(): Promise<void> {
@@ -339,22 +400,44 @@ export function assertTransactionTimeoutSupported(
 }
 
 /**
- * Applies the pending migrations. Rolling deploys can overlap, so a session
- * advisory lock on a reserved connection makes concurrent runners take turns
- * (without it the second one fails on the history table's unique key). The
- * lock is released explicitly: a connection that goes back to the pool keeps a
- * session lock. Runs on its own small client, which has no statement or
- * transaction timeout, since a migration may legitimately take long.
+ * The session the migrator runs on: drizzle's own, except that its inner
+ * `transaction()` joins the one that is already open instead of starting
+ * another (a transaction cannot begin inside the lock's transaction).
+ */
+function joinedSession(sql: Queryable): BunSQLSession<Bun.SQL, never, never> {
+  const session = new BunSQLSession(
+    sql as Bun.SQL,
+    dialect,
+    relational as never,
+    {},
+  );
+  session.transaction = (fn) =>
+    fn(new BunSQLTransaction(dialect, session, relational as never));
+  return session as never;
+}
+
+/**
+ * Applies the pending migrations in one transaction that first takes a
+ * transaction-scoped advisory lock. Rolling deploys can overlap, so concurrent
+ * runners take turns (without it the second one fails on the history table's
+ * unique key). The lock belongs to the transaction, never to a session: it is
+ * released by COMMIT or ROLLBACK on the very connection that took it, so it
+ * cannot outlive the run, not even behind a transaction-mode pooler where a
+ * later statement may reach a different backend. A runner waits at most
+ * `lockTimeoutMs` for the lock. Runs on its own small client, which has no
+ * statement or transaction timeout, since a migration may legitimately take
+ * long.
  */
 export async function migratePostgres(
   backend: PostgresBackend,
   migrationsFolder = join(process.cwd(), "drizzle", "postgres"),
+  lockTimeoutMs = MIGRATION_LOCK_TIMEOUT_MS,
 ): Promise<void> {
   const { config } = backend;
   const client = new Bun.SQL({
     url: config.url,
     adapter: "postgres",
-    max: 2,
+    max: 1,
     prepare: config.prepare,
     connection: connectionParams(
       { ...config, statementTimeoutMs: 0, transactionTimeoutMs: 0 },
@@ -362,45 +445,47 @@ export async function migratePostgres(
     ),
   });
   try {
-    const lockConnection = await client.reserve();
-    try {
-      const [version] = (await lockConnection.unsafe(
-        "select current_setting('server_version_num') as v",
-      )) as { v: string }[];
-      assertTransactionTimeoutSupported(Number(version!.v), config);
-      await lockConnection.unsafe(
-        "select pg_advisory_lock(hashtextextended($1, 0))",
-        [MIGRATION_LOCK_KEY],
-      );
-      try {
+    await client.begin(
+      "isolation level read committed read write",
+      async (sql) => {
+        const [version] = (await sql.unsafe(
+          "select current_setting('server_version_num') as v",
+        )) as { v: string }[];
+        assertTransactionTimeoutSupported(Number(version!.v), config);
+        await acquireMigrationLock(sql, lockTimeoutMs);
         await migrate(
-          new BunSQLDatabase(
-            dialect,
-            new BunSQLSession(client, dialect, relational as never, {}),
-            relational as never,
-          ),
+          new BunSQLDatabase(dialect, joinedSession(sql), relational as never),
           { migrationsFolder, migrationsSchema: MIGRATIONS_SCHEMA },
         );
-      } finally {
-        // A failed unlock must not hide the migration's own error; closing the
-        // client below ends the session, which drops the lock anyway.
-        await lockConnection
-          .unsafe("select pg_advisory_unlock(hashtextextended($1, 0))", [
-            MIGRATION_LOCK_KEY,
-          ])
-          .catch((error: unknown) =>
-            console.error(
-              "releasing the migration lock failed: %s",
-              describeError(error),
-            ),
-          );
-      }
-    } finally {
-      lockConnection.release();
-    }
+      },
+    );
   } finally {
     await client.close({ timeout: 0 });
   }
+}
+
+async function acquireMigrationLock(
+  sql: Queryable,
+  timeoutMs: number,
+): Promise<void> {
+  // Local to this transaction; the migration itself runs without a lock timeout.
+  await sql.unsafe("select set_config('lock_timeout', $1, true)", [
+    `${timeoutMs}ms`,
+  ]);
+  try {
+    await sql.unsafe("select pg_advisory_xact_lock(hashtextextended($1, 0))", [
+      MIGRATION_LOCK_KEY,
+    ]);
+  } catch (error) {
+    if (safeErrorInfo(error).sqlState === "55P03") {
+      throw new Error(
+        `Timed out after ${timeoutMs}ms waiting for another instance to finish its database migrations; if none is running, check for a stuck transaction holding the migration lock`,
+        { cause: error },
+      );
+    }
+    throw error;
+  }
+  await sql.unsafe("select set_config('lock_timeout', '0', true)");
 }
 
 export type { PostgresBackend };

@@ -2,7 +2,12 @@ import { AsyncLocalStorage } from "node:async_hooks";
 import type { Database } from "bun:sqlite";
 import { describeError } from "$lib/server/errors";
 import { changedMeanwhile } from "$lib/server/ledger/errors";
-import type { Backend, BackendTransaction, DB } from "./backend";
+import type {
+  Backend,
+  BackendTransaction,
+  DB,
+  TransactionMode,
+} from "./backend";
 import { readDatabaseConfig, type PostgresDatabaseConfig } from "./config";
 import { dialect } from "./dialect";
 import { openPostgres } from "./postgres";
@@ -19,7 +24,7 @@ export interface TransactionOptions {
    * (for example a last-admin check). SQLite needs nothing: the gate already
    * runs one transaction at a time. PostgreSQL takes a transaction-scoped
    * advisory lock on the key, which is only sound under READ COMMITTED (the
-   * default, and the only level the facade uses). Keys are free-form text.
+   * facade sets it explicitly at BEGIN). Keys are free-form text.
    * A wait longer than the statement timeout fails with a `conflict`
    * LedgerError.
    */
@@ -45,11 +50,11 @@ interface Tx0 {
 
 /**
  * Two keys in one transaction can deadlock against a transaction taking them
- * the other way round, and make "one invariant, one lock" untrue. Tests fail
- * on it; production still takes the lock.
+ * the other way round, and make "one invariant, one lock" untrue. It is a
+ * programming error, so it throws everywhere, before anything is locked.
  */
 async function takeLock(tx: Tx0, key: string): Promise<void> {
-  if (process.env.VITEST && tx.lockKey !== undefined && tx.lockKey !== key) {
+  if (tx.lockKey !== undefined && tx.lockKey !== key) {
     throw new Error("A transaction must not take two different lock keys");
   }
   tx.lockKey ??= key;
@@ -250,6 +255,12 @@ export async function withExclusiveClient<T>(
  * from inside it: if it needs the database it waits behind this transaction,
  * which waits for it, until the gate timeout. Work that is still running when
  * the transaction rolls back fails instead of writing outside it.
+ *
+ * On PostgreSQL a deadlock or serialization failure aborts the transaction;
+ * an outermost one then runs again from the start, up to three attempts in all,
+ * so the callback must be safe to re-run (do side effects in `afterCommit()`,
+ * which only fires for the attempt that commits). If every attempt fails the
+ * caller gets the "changed meanwhile" conflict instead of a server error.
  */
 export async function transaction<T>(
   fn: (tx: Tx) => Promise<T>,
@@ -259,11 +270,62 @@ export async function transaction<T>(
   if (parent && route(parent) === "tx") {
     return savepoint(parent, fn, options.lock);
   }
+  // Only the outermost transaction retries: a nested one is part of its
+  // parent's attempt, and the parent as a whole has to start over.
+  for (let attempt = 1; ; attempt++) {
+    try {
+      return await runTopLevel(fn, options, "write");
+    } catch (error) {
+      if (!isRetryableConflict(error)) throw error;
+      // The attempt was rolled back and released, and its hooks were dropped.
+      if (attempt >= MAX_ATTEMPTS) {
+        console.error(
+          "transaction gave up after %d attempts: %s",
+          attempt,
+          describeError(error),
+        );
+        throw changedMeanwhile();
+      }
+      console.error(
+        "transaction attempt %d hit a deadlock or serialization failure; retrying: %s",
+        attempt,
+        describeError(error),
+      );
+      await sleep(10 + Math.random() * 40 * attempt);
+    }
+  }
+}
 
+/** Attempts in total, the first included, for a transaction PostgreSQL aborted. */
+const MAX_ATTEMPTS = 3;
+const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
+
+/**
+ * Runs `fn` against one consistent view of the database, for reads that issue
+ * several queries and must add up (balances, aggregates). On PostgreSQL that
+ * is a READ ONLY REPEATABLE READ transaction, so a commit between two queries
+ * stays invisible; on SQLite the gate already keeps every writer out while it
+ * runs. It takes no lock key and cannot write. Called inside a transaction
+ * (or another snapshot) it just runs in that one, which already is consistent.
+ *
+ * It holds a connection for as long as `fn` runs, so keep the body to queries:
+ * no network or file I/O.
+ */
+export async function readSnapshot<T>(fn: (db: Tx) => Promise<T>): Promise<T> {
+  const parent = als.getStore();
+  if (parent && route(parent) === "tx") return fn(ambient);
+  return runTopLevel(fn, {}, "snapshot");
+}
+
+async function runTopLevel<T>(
+  fn: (tx: Tx) => Promise<T>,
+  options: TransactionOptions,
+  mode: TransactionMode,
+): Promise<T> {
   const owner: { tx?: Tx0 } = {};
   const btx = await currentBackend().beginTransaction(() => {
     if (owner.tx) owner.tx.state = "aborted";
-  });
+  }, mode);
   const tx: Tx0 = { btx, state: "active", savepoints: 0 };
   owner.tx = tx;
   const frame = newFrame(tx, null);
@@ -417,6 +479,30 @@ export function isForeignKeyViolation(err: unknown): boolean {
       cause?: unknown;
     };
     if (code === "23503" || errno === "23503") return true;
+    cursor = cause;
+  }
+  return false;
+}
+
+/**
+ * True for a deadlock (40P01) or serialization failure (40001): PostgreSQL
+ * aborted the transaction, and running it again from the start is the cure.
+ */
+export function isRetryableConflict(err: unknown): boolean {
+  let cursor: unknown = err;
+  for (
+    let depth = 0;
+    depth < 5 && typeof cursor === "object" && cursor;
+    depth++
+  ) {
+    const { code, errno, cause } = cursor as {
+      code?: unknown;
+      errno?: unknown;
+      cause?: unknown;
+    };
+    for (const v of [code, errno]) {
+      if (v === "40P01" || v === "40001") return true;
+    }
     cursor = cause;
   }
   return false;
