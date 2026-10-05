@@ -84,15 +84,25 @@ services:
       retries: 24
       start_period: 10s
 
-  # Kept expects the bucket to exist. This one-shot job creates it and is safe to run again.
+  # Kept expects the bucket to exist. This one-shot job creates it and is safe to run again: creating an
+  # existing bucket only prints an error, so success is decided by listing the buckets afterwards.
   s3-bucket:
     image: chrislusf/seaweedfs:4.48@sha256:4e61d15fd35994cb1e43e1e553dff106794841fd9a99ade2fc8c8bfce4d7872d
     restart: "no"
     entrypoint: ["/bin/sh", "-c"]
     command:
       - |
-        echo "s3.bucket.list" | weed shell -master=s3:9333 | grep -q "^ *kept[[:space:]]" ||
+        for attempt in 1 2 3 4 5 6; do
           echo "s3.bucket.create -name kept" | weed shell -master=s3:9333
+          if echo "s3.bucket.list" | weed shell -master=s3:9333 | grep -q "^ *kept[[:space:]]"; then
+            echo "bucket kept is ready"
+            exit 0
+          fi
+          echo "bucket kept is not there yet (attempt $$attempt)" >&2
+          sleep 5
+        done
+        echo "could not create the bucket kept" >&2
+        exit 1
     depends_on:
       s3:
         condition: service_healthy

@@ -118,6 +118,7 @@ interface Row {
   counterpartyName: string | null;
   counterpartyIban: string | null;
   categoryId: string | null;
+  source: string;
 }
 
 interface Classified {
@@ -163,6 +164,7 @@ async function loadRows(
       reference: transactions.reference,
       counterpartyName: transactions.counterpartyName,
       counterpartyIban: transactions.counterpartyIban,
+      source: transactions.source,
       categoryId: transactions.categoryId,
     })
     .from(transactions)

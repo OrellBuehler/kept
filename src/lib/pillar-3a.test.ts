@@ -180,10 +180,15 @@ describe("validateBuyIn", () => {
     ageBenefitDrawn: false,
     ordinaryPaid: minor(725_800),
     ordinaryLimit: minor(725_800),
+    today: "2027-03-01",
   };
 
   it("accepts a valid buy-in without warnings", () => {
-    expect(validateBuyIn(base)).toEqual({ errors: [], warnings: [] });
+    expect(validateBuyIn(base)).toEqual({
+      errors: [],
+      codes: [],
+      warnings: [],
+    });
   });
 
   it("rejects a gap year before 2025", () => {
@@ -254,10 +259,70 @@ describe("validateBuyIn", () => {
     ).toMatch(/positive/);
   });
 
-  it("warns, but does not fail, when the ordinary contribution is unpaid", () => {
+  it("warns, but does not fail, when the ordinary contribution of the running year is unpaid", () => {
     const r = validateBuyIn({ ...base, ordinaryPaid: minor(100_000) });
     expect(r.errors).toEqual([]);
     expect(r.warnings.join(" ")).toMatch(/not fully paid/);
+  });
+
+  it("fails when the buy-in year is over and its ordinary contribution is short", () => {
+    const r = validateBuyIn({
+      ...base,
+      ordinaryPaid: minor(100_000),
+      today: "2028-01-02",
+    });
+    expect(r.errors.join(" ")).toMatch(/not paid in full/);
+    expect(r.warnings).toEqual([]);
+    expect(validateBuyIn({ ...base, today: "2028-01-02" }).errors).toEqual([]);
+  });
+
+  it("caps the total of all buy-ins of the buy-in year at the small deduction", () => {
+    const gaps = [gap(2025), gap(2026)];
+    const first = validateBuyIn({
+      ...base,
+      gaps,
+      gapYears: [2025],
+      amount: minor(725_800),
+    });
+    expect(first.errors).toEqual([]);
+    const second = validateBuyIn({
+      ...base,
+      gaps,
+      gapYears: [2026],
+      amount: minor(725_800),
+      otherBuyInsInYear: minor(725_800),
+    });
+    expect(second.errors.join(" ")).toMatch(/small deduction of 2027/);
+    expect(
+      validateBuyIn({
+        ...base,
+        gaps,
+        gapYears: [2026],
+        amount: minor(100_000),
+        otherBuyInsInYear: minor(625_800),
+      }).errors,
+    ).toEqual([]);
+    expect(
+      validateBuyIn({
+        ...base,
+        gaps,
+        gapYears: [2026],
+        amount: minor(100_001),
+        otherBuyInsInYear: minor(625_800),
+      }).errors.join(" "),
+    ).toMatch(/small deduction of 2027/);
+  });
+
+  it("applies the yearly cap to large-deduction gap years too", () => {
+    const big = (year: number) =>
+      gap(year, { limit: minor(3_628_800), gap: minor(3_628_800) });
+    const r = validateBuyIn({
+      ...base,
+      gaps: [big(2025), big(2026)],
+      gapYears: [2025, 2026],
+      amount: minor(1_000_000),
+    });
+    expect(r.errors.join(" ")).toMatch(/small deduction of 2027/);
   });
 
   it("does not warn when the year has no limit", () => {

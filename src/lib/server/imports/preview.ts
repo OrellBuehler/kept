@@ -87,6 +87,9 @@ export interface ImportPreview {
   alreadyImportedAt: number | null;
 }
 
+export const TRADES_MOVE_CASH_MESSAGE =
+  "Turn off 'Trades move cash' for this account before importing statements: the statement already contains the trade bookings.";
+
 export const MAPPING_REQUIRED = "mapping_required";
 
 export interface PreviewOptions {
@@ -499,6 +502,7 @@ export async function buildPreview(
     };
   }
 
+  if (account.tradesMoveCash) errors.push(TRADES_MOVE_CASH_MESSAGE);
   if (statement.currency !== "XXX" && statement.currency !== account.currency) {
     errors.push(
       `The file is in ${statement.currency}, but this account is in ${account.currency}.`,

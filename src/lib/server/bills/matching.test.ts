@@ -923,6 +923,23 @@ describe("suggestMatches: ambiguity and precedence", () => {
     expect(result.every((s) => !s.ambiguous)).toBe(true);
   });
 
+  it("an IBAN-conflicting reference match does not use up the payment for another bill", () => {
+    const refBill = bill({
+      id: "b1",
+      reference: QRR,
+      referenceType: "QRR",
+      creditorIban: IBAN,
+    });
+    const ibanBill = bill({ id: "b2", creditorIban: OTHER_IBAN });
+    const result = suggestMatches(
+      [refBill, ibanBill],
+      [tx({ reference: QRR, counterpartyIban: OTHER_IBAN })],
+      [],
+    );
+    expect(result.map((s) => s.billId).sort()).toEqual(["b1", "b2"]);
+    expect(result.find((s) => s.billId === "b2")?.rule).toBe("iban_amount");
+  });
+
   it("rule 1 beats rule 2 for the same transaction", () => {
     const refBill = bill({
       id: "b1",

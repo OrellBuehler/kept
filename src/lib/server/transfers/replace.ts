@@ -81,14 +81,15 @@ export async function findReplacementsInTx(
 /**
  * A real row replaces a mirror: the transfer keeps pointing at the same
  * account pair, now at the real row (method `paired`); the mirror's note and
- * category move to the real row; the mirror is deleted.
+ * category move to the real row; the mirror is deleted. False when the mirror
+ * no longer exists, in which case nothing changed.
  */
 export async function takeOverMirror(
   tx: Tx,
   userId: string,
   mirrorId: string,
   realId: string,
-): Promise<void> {
+): Promise<boolean> {
   const mirror = await first(
     tx
       .select({
@@ -105,7 +106,7 @@ export async function takeOverMirror(
       )
       .limit(1),
   );
-  if (!mirror) return;
+  if (!mirror) return false;
   const row = await first(
     tx
       .select()
@@ -155,4 +156,5 @@ export async function takeOverMirror(
   await tx
     .delete(transactions)
     .where(and(eq(transactions.userId, userId), eq(transactions.id, mirrorId)));
+  return true;
 }

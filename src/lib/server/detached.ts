@@ -1,7 +1,8 @@
 /**
  * Registry of fire-and-forget work (bill-changed listeners, scheduler ticks,
- * webhook jobs). Production never waits for it; tests drain it between cases so
- * that work started by one test cannot write into the next test's database.
+ * webhook jobs). Nothing waits for it while serving; shutdown drains it before
+ * closing the database, and tests drain it between cases so that work started
+ * by one test cannot write into the next test's database.
  */
 import { describeError } from "$lib/server/errors";
 
@@ -23,7 +24,7 @@ export function detach(work: Promise<unknown>): void {
 }
 
 /**
- * Tests only. Resolves once every detached task, including those the drained
+ * Used by shutdown and by tests. Resolves once every detached task, including those the drained
  * ones start, has settled; throws if that takes longer than `timeoutMs`.
  */
 export async function drainDetached(timeoutMs = 15_000): Promise<void> {

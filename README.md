@@ -121,6 +121,34 @@ docker run -d --name kept -p 3000:3000 \
 - The pool, timeouts and application name are tuned with `KEPT_DB_POOL_MAX` (10), `KEPT_DB_STATEMENT_TIMEOUT_MS`
   (30000), `KEPT_DB_TRANSACTION_TIMEOUT_MS` (60000) and `KEPT_DB_APPLICATION_NAME` (`kept`), see the table
   above. Invalid values stop Kept at startup with a message that names the variable, never its value.
+- Names sort in the order of the server's collation, so lists ordered by name can differ from SQLite
+  (which compares bytes): a database with `en_US.utf8` ignores case and punctuation and sorts accented
+  letters next to their base letter, while the `C` collation sorts by byte value and puts every uppercase
+  letter before every lowercase one. Choose the collation when you create the database; Kept does not
+  depend on a particular one.
+
+**Several instances.** More than one Kept container can share one PostgreSQL database (never SQLite, which is
+one process on one file). Migrations take turns, and every scheduled job (Paperless sync, market data refresh,
+watch-folder scan, notification check) takes a PostgreSQL advisory lock for each run, so a tick runs on only one
+instance at a time; the others skip it. Some state is per process, though:
+
+- **Use sticky sessions** at the load balancer. Sessions themselves live in the database, but the
+  administrator's one-time download tokens are kept in memory by the instance that issued them, and the
+  request that uses a token must reach the same instance (a token lives 60 seconds).
+- **Rate limits apply per replica.** The login, second-factor, passkey, setup and administrator-action
+  limiters and the Paperless webhook counters and failure memory are in memory, so with N instances an attacker gets N times the
+  attempts, and a restart clears them. Put a rate limit in front of Kept as well if that matters to you.
+- The watch folder is scanned by one instance at a time, so every instance must see the same folder
+  (a shared volume); a folder that only one instance can see is scanned only while that instance holds the lock.
+- Daily backups copy the SQLite file and are not available with PostgreSQL; back the database up with
+  `pg_dump` or a managed snapshot.
+- On `SIGTERM` or `SIGINT` an instance stops its schedulers, then waits up to ten seconds (in total) for
+  requests that are still being handled and for background work that is already running, closes its
+  database connections and exits, so rolling deploys leave no lock behind (the server also releases a lock
+  when a connection drops). Responses still streaming to a client are not waited for.
+- Each running job holds one extra server connection for the length of its run to keep its lock. Behind
+  PgBouncer in transaction mode that is one pinned server connection per running job (at most four per
+  instance), and the connection is exempt from `idle_in_transaction_session_timeout`.
 
 **S3.** See [S3 storage](#s3-storage) for the variables, the bucket and the permissions it needs. It works with
 either database. [`examples/docker-compose.postgres-s3.yml`](examples/docker-compose.postgres-s3.yml) runs
