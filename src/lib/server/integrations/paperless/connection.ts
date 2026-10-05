@@ -337,8 +337,10 @@ export async function saveConnection(
     }
   }
   try {
-    return await transaction(async (tx) =>
-      saveConnectionInTx(tx, userId, input, baseUrl, token),
+    // The lock makes a concurrent first save an update instead of a conflict.
+    return await transaction(
+      async (tx) => saveConnectionInTx(tx, userId, input, baseUrl, token),
+      { lock: `paperless-connection:${userId}` },
     );
   } catch (err) {
     if (isUniqueViolation(err)) {

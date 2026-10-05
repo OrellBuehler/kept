@@ -1,4 +1,4 @@
-import { and, asc, eq, inArray, ne, sql } from "drizzle-orm";
+import { and, asc, eq, inArray, max, ne, sql } from "drizzle-orm";
 import type { AccountType, WithdrawalPeriod } from "$lib/ledger-types";
 import { shareOf, type Minor } from "$lib/money";
 import {
@@ -145,7 +145,7 @@ async function toViews(
       await db
         .select({
           id: imports.accountId,
-          t: sql<number>`max(${imports.createdAt})`,
+          t: max(imports.createdAt),
         })
         .from(imports)
         .where(
@@ -155,7 +155,7 @@ async function toViews(
           ),
         )
         .groupBy(imports.accountId)
-    ).map((r) => [r.id, r.t]),
+    ).map((r) => [r.id, r.t?.getTime() ?? null]),
   );
   const rows = await baseRows(userId, accountId);
   const values = await currentValues(userId, rows, today);

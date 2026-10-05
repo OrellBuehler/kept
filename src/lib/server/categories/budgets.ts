@@ -1,4 +1,15 @@
-import { and, count, eq, gte, isNull, lt, lte, ne, sql } from "drizzle-orm";
+import {
+  and,
+  asc,
+  count,
+  eq,
+  gte,
+  isNull,
+  lt,
+  lte,
+  ne,
+  sql,
+} from "drizzle-orm";
 import { minor, shareOf, type Minor, type ShareBasis } from "$lib/money";
 import {
   accounts,
@@ -34,7 +45,8 @@ export async function listBudgets(userId: string): Promise<BudgetView[]> {
   return await getDB()
     .select(columns)
     .from(budgets)
-    .where(eq(budgets.userId, userId));
+    .where(eq(budgets.userId, userId))
+    .orderBy(asc(budgets.categoryId), asc(budgets.currency));
 }
 
 async function getBudget(userId: string, id: string): Promise<BudgetView> {
@@ -202,23 +214,30 @@ async function ownSpend(
   const db = getDB();
   if (basis === "total") {
     return (
-      await db
-        .select({
-          categoryId: transactions.categoryId,
-          parentId: categories.parentId,
-          currency: transactions.currency,
-          total: sql<number>`sum(${transactions.amount})`.mapWith(Number),
-        })
-        .from(transactions)
-        .innerJoin(categories, eq(categories.id, transactions.categoryId))
-        .where(where)
-        .groupBy(transactions.categoryId, transactions.currency)
-    ).map((r) => ({
-      categoryId: r.categoryId!,
-      parentId: r.parentId,
-      currency: r.currency,
-      spent: 0 - r.total,
-    }));
+      (
+        await db
+          .select({
+            categoryId: transactions.categoryId,
+            parentId: categories.parentId,
+            currency: transactions.currency,
+            total: sql<number>`sum(${transactions.amount})`.mapWith(Number),
+          })
+          .from(transactions)
+          .innerJoin(categories, eq(categories.id, transactions.categoryId))
+          .where(where)
+          // PostgreSQL wants every selected column grouped or aggregated.
+          .groupBy(
+            transactions.categoryId,
+            categories.parentId,
+            transactions.currency,
+          )
+      ).map((r) => ({
+        categoryId: r.categoryId!,
+        parentId: r.parentId,
+        currency: r.currency,
+        spent: 0 - r.total,
+      }))
+    );
   }
   const sums = new Map<string, OwnSpend>();
   for (const r of await db

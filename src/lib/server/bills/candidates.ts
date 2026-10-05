@@ -5,6 +5,7 @@ import {
   billAllocations,
   first,
   getDB,
+  likeContains,
   transactions,
 } from "$lib/server/db";
 import { parseMoneyInput } from "$lib/server/ledger/schemas";
@@ -28,10 +29,6 @@ export interface CandidatePage {
   page: number;
   pageSize: number;
   pageCount: number;
-}
-
-function escapeLike(value: string): string {
-  return value.replace(/[\\%_]/g, (c) => `\\${c}`);
 }
 
 /**
@@ -83,17 +80,19 @@ export async function candidateTransactions(
       : sql`${transactions.amount} < 0`;
   const direction = status === "overpaid" ? or(primary, opposite) : primary;
 
-  const used = sql`coalesce((select sum(abs(${billAllocations.amount})) from ${billAllocations} where ${billAllocations.transactionId} = ${transactions.id}), 0)`;
+  const used =
+    sql<number>`coalesce((select sum(abs(${billAllocations.amount})) from ${billAllocations} where ${billAllocations.transactionId} = ${transactions.id}), 0)`.mapWith(
+      Number,
+    );
   const notOnBill = sql`not exists (select 1 from ${billAllocations} where ${billAllocations.transactionId} = ${transactions.id} and ${billAllocations.billId} = ${billId})`;
 
   let search;
   if (q !== "") {
-    const pattern = `%${escapeLike(q)}%`;
     const amount = parseMoneyInput(q, bill.currency);
     search = or(
-      sql`${transactions.counterpartyName} like ${pattern} escape '\\'`,
-      sql`${transactions.description} like ${pattern} escape '\\'`,
-      sql`${transactions.reference} like ${pattern} escape '\\'`,
+      likeContains(transactions.counterpartyName, q),
+      likeContains(transactions.description, q),
+      likeContains(transactions.reference, q),
       amount.ok
         ? sql`abs(${transactions.amount}) = ${Math.abs(amount.value)}`
         : undefined,
@@ -129,7 +128,7 @@ export async function candidateTransactions(
     .offset((page - 1) * pageSize);
 
   const items = rows.map(({ used: usedAbs, ...tx }): CandidateTransaction => {
-    const free = Math.abs(tx.amount) - Number(usedAbs);
+    const free = Math.abs(tx.amount) - usedAbs;
     const unallocated = minor(tx.amount < 0 ? -free : free);
     const sameDirection =
       bill.kind === "invoice" ? tx.amount < 0 : tx.amount > 0;

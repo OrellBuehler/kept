@@ -14,10 +14,18 @@
  * - index options that only exist on PostgreSQL: `.using()`, `.concurrently()`,
  *   `.with()`, `.onOnly()` on an index, and `.asc()`, `.desc()`,
  *   `.nullsFirst()`, `.nullsLast()`, `.op()` on an indexed column;
- * - raw SQL templates (`sql\`...\``) with `ilike`, `distinct on`, `for update`
- *   / `for share`, or `::` casts;
+ * - raw SQL (`sql\`...\``, `sql.raw("...")`) with `ilike`, `distinct on`,
+ *   `for update` / `for share`, or `::` casts; with functions only SQLite has
+ *   (`strftime`, `ifnull`, `group_concat`, `datetime(`, `unixepoch`, `rowid`,
+ *   `glob`, `char(`, `insert or replace`, a two-argument scalar `min`/`max`);
+ *   and with a plain `like`, which is case-insensitive on SQLite and
+ *   case-sensitive on PostgreSQL: write `lower(col) like lower(?)` (see
+ *   `likeContains` in `db/`), likewise for the `like()` / `notLike()` helpers;
  * - value imports from `drizzle-orm/pg-core`, `drizzle-orm/sqlite-core` and
  *   the driver packages, which only `db/` may use (type imports are fine).
+ *
+ * Both `import { ilike } from "drizzle-orm"` and `d.ilike` on a namespace
+ * import are caught.
  *
  * Methods are matched by the receiver's type, not just their name, so
  * `Symbol.for()`, zod's `.array()` and a CTE `db.with(cte)` are left alone.
@@ -60,6 +68,9 @@ const UNAMBIGUOUS = new Map([
   ["generatedByDefaultAsIdentity", "identity columns are PostgreSQL-only"],
 ]);
 
+/** Exist on both databases but answer differently, so neither may be used. */
+const DIFFERENT_IMPORTS = new Set(["like", "notLike"]);
+
 const INDEX_TYPES = new Set(["IndexBuilder", "IndexBuilderOn"]);
 const INDEX_OPTIONS = new Set(["using", "concurrently", "with", "onOnly"]);
 const INDEXED_COLUMN_OPTIONS = new Set([
@@ -78,7 +89,46 @@ const RAW_SQL = [
     "row locking clauses are PostgreSQL-only",
   ],
   [/::\s*[a-z_"]/i, "`::` casts are PostgreSQL-only; use cast(x as type)"],
+  [/\bstrftime\b/i, "strftime() is SQLite-only; compute dates in TypeScript"],
+  [/\bifnull\b/i, "ifnull() is SQLite-only; use coalesce()"],
+  [
+    /\bgroup_concat\b/i,
+    "group_concat() is SQLite-only; aggregate in TypeScript",
+  ],
+  [
+    /\bdatetime\s*\(/i,
+    "datetime() is SQLite-only; compute dates in TypeScript",
+  ],
+  [/\bunixepoch\b/i, "unixepoch() is SQLite-only"],
+  [/\browid\b/i, "rowid is SQLite-only; order by the seq column"],
+  [/\bglob\b/i, "GLOB is SQLite-only"],
+  [
+    /\bchar\s*\(/i,
+    "char() is SQLite-only (chr() on PostgreSQL); use a literal",
+  ],
+  [
+    /\binsert\s+or\s+(?:replace|ignore)\b/i,
+    "INSERT OR REPLACE/IGNORE is SQLite-only; use onConflictDoUpdate / onConflictDoNothing",
+  ],
+  [
+    /\b(?:min|max)\s*\([^()]*,/i,
+    "a scalar min(a, b) / max(a, b) is SQLite-only; compare in TypeScript or use a case expression",
+  ],
 ];
+
+/** `lower(x) like lower(y)`: the one spelling of LIKE that both databases answer alike. */
+const LOWERED_LIKE = /lower\([^)]*\)\s+like\s+lower\(/i;
+const PLAIN_LIKE = /\blike\b/i;
+
+function rawSqlProblem(text) {
+  for (const [pattern, reason] of RAW_SQL) {
+    if (pattern.test(text)) return reason;
+  }
+  if (PLAIN_LIKE.test(text) && !LOWERED_LIKE.test(text)) {
+    return "a plain LIKE is case-insensitive on SQLite and case-sensitive on PostgreSQL; use lower(col) like lower(?)";
+  }
+  return null;
+}
 
 const DRIVER_MODULES = new Set([
   "drizzle-orm/pg-core",
@@ -108,6 +158,8 @@ export default {
     messages: {
       importName:
         "`{{name}}` is PostgreSQL-only and has no SQLite equivalent; the code must run on both.",
+      importDifferent:
+        "`{{name}}` is case-insensitive on SQLite and case-sensitive on PostgreSQL; use lower(col) like lower(?) (likeContains in $lib/server/db).",
       importModule:
         "Import values from `{{source}}` only inside src/lib/server/db/ (a type import is fine); use `$lib/server/db`.",
       call: "{{reason}}.",
@@ -140,20 +192,42 @@ export default {
     const isColumnBuilder = (type) =>
       hasAll(checker, type, ["notNull", "$type"]);
 
+    /** Local names that `import * as x from "drizzle-orm..."` bound. */
+    const drizzleNamespaces = new Set();
+    /** Local names of drizzle's `sql` tag. */
+    const sqlNames = new Set(["sql"]);
+    const reportImportedName = (node, name) => {
+      if (BANNED_IMPORTS.has(name)) {
+        context.report({ node, messageId: "importName", data: { name } });
+      } else if (DIFFERENT_IMPORTS.has(name)) {
+        context.report({ node, messageId: "importDifferent", data: { name } });
+      }
+    };
+    const isSqlTag = (tag) =>
+      (tag.type === "Identifier" && sqlNames.has(tag.name)) ||
+      (tag.type === "MemberExpression" &&
+        !tag.computed &&
+        tag.property.type === "Identifier" &&
+        tag.property.name === "sql");
+    const checkRaw = (node, text) => {
+      if (dialectCode) return;
+      const reason = rawSqlProblem(text);
+      if (reason) context.report({ node, messageId: "raw", data: { reason } });
+    };
+
     return {
       ImportDeclaration(node) {
         const source = String(node.source.value);
         if (isDrizzle(source)) {
           for (const specifier of node.specifiers) {
+            if (specifier.type === "ImportNamespaceSpecifier") {
+              drizzleNamespaces.add(specifier.local.name);
+              continue;
+            }
             if (specifier.type !== "ImportSpecifier") continue;
             const name = specifier.imported.name ?? specifier.imported.value;
-            if (BANNED_IMPORTS.has(name)) {
-              context.report({
-                node: specifier,
-                messageId: "importName",
-                data: { name },
-              });
-            }
+            if (name === "sql") sqlNames.add(specifier.local.name);
+            reportImportedName(specifier, name);
           }
         }
         if (
@@ -168,24 +242,25 @@ export default {
         }
       },
 
+      MemberExpression(node) {
+        // `d.ilike(...)` after `import * as d from "drizzle-orm"`.
+        if (
+          node.computed ||
+          node.object.type !== "Identifier" ||
+          node.property.type !== "Identifier" ||
+          !drizzleNamespaces.has(node.object.name)
+        ) {
+          return;
+        }
+        reportImportedName(node.property, node.property.name);
+      },
+
       TaggedTemplateExpression(node) {
-        if (dialectCode) return;
-        const tag = node.tag;
-        const named =
-          (tag.type === "Identifier" && tag.name === "sql") ||
-          (tag.type === "MemberExpression" &&
-            tag.property.type === "Identifier" &&
-            tag.property.name === "sql");
-        if (!named) return;
+        if (dialectCode || !isSqlTag(node.tag)) return;
         const text = node.quasi.quasis
           .map((q) => q.value.cooked ?? q.value.raw)
           .join(" ");
-        for (const [pattern, reason] of RAW_SQL) {
-          if (pattern.test(text)) {
-            context.report({ node, messageId: "raw", data: { reason } });
-            return;
-          }
-        }
+        checkRaw(node, text);
       },
 
       CallExpression(node) {
@@ -198,6 +273,20 @@ export default {
 
         const reason = UNAMBIGUOUS.get(name);
         if (reason) return report("call", { reason });
+
+        // sql.raw("...") with a literal string; a dynamic one cannot be read.
+        if (name === "raw" && isSqlTag(callee.object)) {
+          const arg = node.arguments[0];
+          if (arg?.type === "Literal" && typeof arg.value === "string") {
+            checkRaw(node, arg.value);
+          } else if (arg?.type === "TemplateLiteral") {
+            checkRaw(
+              node,
+              arg.quasis.map((q) => q.value.cooked ?? q.value.raw).join(" "),
+            );
+          }
+          return;
+        }
 
         if (name === "unique" && node.arguments.length >= 2)
           return report("unique");

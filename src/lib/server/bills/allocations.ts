@@ -81,14 +81,26 @@ async function allocateAtomically(
   amountFor: (bill: BillView) => Minor,
   origin: AllocationOrigin,
 ): Promise<{ id: string }> {
-  const created = await transaction(async (tx) => {
-    const bill = await getBillInTx(tx, userId, billId);
-    const amount = amountFor(bill);
-    const row = await getTransactionRowInTx(tx, userId, transactionId);
-    const allocated = await allocateRow(tx, userId, bill, row, amount, origin);
-    afterCommit(() => emitBillChanged(userId, billId));
-    return allocated;
-  });
+  const created = await transaction(
+    async (tx) => {
+      const bill = await getBillInTx(tx, userId, billId);
+      const amount = amountFor(bill);
+      const row = await getTransactionRowInTx(tx, userId, transactionId);
+      const allocated = await allocateRow(
+        tx,
+        userId,
+        bill,
+        row,
+        amount,
+        origin,
+      );
+      afterCommit(() => emitBillChanged(userId, billId));
+      return allocated;
+      // The checks read every other allocation; under PostgreSQL two concurrent
+      // allocations would both pass them without this lock.
+    },
+    { lock: `bills:${userId}` },
+  );
   return created;
 }
 

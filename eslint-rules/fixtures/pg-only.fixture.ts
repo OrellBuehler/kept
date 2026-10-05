@@ -8,9 +8,13 @@ import {
   arrayContains, // @ban
   arrayContained, // @ban
   arrayOverlaps, // @ban
+  like, // @ban
+  notLike, // @ban
   eq,
   sql,
+  sql as rawTag,
 } from "drizzle-orm";
+import * as d from "drizzle-orm";
 import { exceptAll, intersectAll } from "drizzle-orm/pg-core"; // @ban 3 2 2
 import { alias, pgTable } from "drizzle-orm/pg-core"; // @ban 1 0 0
 import { sqliteTable } from "drizzle-orm/sqlite-core"; // @ban 1 0 0
@@ -64,5 +68,31 @@ export async function violations() {
   sql`select distinct on (${t.id}) ${t.id} from ${t}`; // @ban 1 0 1
   sql`select 1 from ${t} for update`; // @ban 1 0 1
   sql`${t.id}::text`; // @ban 1 0 1
-  return [eq, alias, pgTable, sqliteTable, drizzle, exceptAll, intersectAll];
+  d.ilike(t.id, "x"); // @ban
+  d.like(t.id, "x"); // @ban
+  d.arrayContains(t.id, ["x"]); // @ban
+  sql.raw("select 1 from x for update"); // @ban 1 0 1
+  sql.raw(`${"a"}::text`); // @ban 1 0 1
+  sql`strftime('%Y', ${t.id})`; // @ban 1 0 1
+  sql`ifnull(${t.id}, '')`; // @ban 1 0 1
+  rawTag`group_concat(${t.id})`; // @ban 1 0 1
+  sql`datetime(${t.id} / 1000, 'unixepoch')`; // @ban 1 0 1
+  sql`${t.id} glob 'a*'`; // @ban 1 0 1
+  sql`select rowid from ${t}`; // @ban 1 0 1
+  sql`char(9)`; // @ban 1 0 1
+  sql`insert or replace into ${t} (id) values ('a')`; // @ban 1 0 1
+  sql`max(${t.id}, ${t.id})`; // @ban 1 0 1
+  sql`${t.id} like ${"a%"}`; // @ban 1 0 1
+  return [
+    like,
+    notLike,
+    rawTag,
+    eq,
+    alias,
+    pgTable,
+    sqliteTable,
+    drizzle,
+    exceptAll,
+    intersectAll,
+  ];
 }

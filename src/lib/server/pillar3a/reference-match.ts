@@ -11,5 +11,7 @@ export function matchReference(input: string): string {
 
 /** SQL counterpart of `matchReference` for a reference column. */
 export function matchReferenceSql(column: SQL | { getSQL(): SQL }): SQL {
-  return sql`replace(replace(replace(replace(upper(${column}), ' ', ''), char(9), ''), char(10), ''), char(13), '')`;
+  // Tab, LF and CR are literal characters in the SQL text (the template's
+  // escapes), since char() is SQLite-only and chr() PostgreSQL-only.
+  return sql`replace(replace(replace(replace(upper(${column}), ' ', ''), '\t', ''), '\n', ''), '\r', '')`;
 }

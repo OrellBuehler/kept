@@ -236,25 +236,28 @@ export async function createTrade(
   accountId: string,
   input: TradeInput,
 ): Promise<TradeView> {
-  const row = await transaction(async (tx) => {
-    await assertAccountInTx(tx, userId, accountId);
-    await assertSecurityInTx(tx, userId, input.securityId);
-    await assertSequenceInTx(tx, userId, {
-      accountId,
-      securityId: input.securityId,
-      add: input,
-    });
-    const inserted = (await first(
-      tx
-        .insert(trades)
-        .values({ ...input, userId, accountId })
-        .returning({ id: trades.id }),
-    ))!;
-    if (input.side === "split") {
-      await discardProviderPrices(tx, userId, [input.securityId]);
-    }
-    return inserted;
-  });
+  const row = await transaction(
+    async (tx) => {
+      await assertAccountInTx(tx, userId, accountId);
+      await assertSecurityInTx(tx, userId, input.securityId);
+      await assertSequenceInTx(tx, userId, {
+        accountId,
+        securityId: input.securityId,
+        add: input,
+      });
+      const inserted = (await first(
+        tx
+          .insert(trades)
+          .values({ ...input, userId, accountId })
+          .returning({ id: trades.id }),
+      ))!;
+      if (input.side === "split") {
+        await discardProviderPrices(tx, userId, [input.securityId]);
+      }
+      return inserted;
+    },
+    { lock: `trades:${userId}` },
+  );
   return await getTrade(userId, row.id);
 }
 
@@ -263,55 +266,61 @@ export async function updateTrade(
   id: string,
   input: TradeInput,
 ): Promise<TradeView> {
-  await transaction(async (tx) => {
-    const current = await getTradeInTx(tx, userId, id);
-    await assertSecurityInTx(tx, userId, input.securityId);
-    if (input.securityId === current.securityId) {
-      await assertSequenceInTx(tx, userId, {
-        accountId: current.accountId,
-        securityId: current.securityId,
-        excludeId: id,
-        add: input,
-      });
-    } else {
-      await assertSequenceInTx(tx, userId, {
-        accountId: current.accountId,
-        securityId: current.securityId,
-        excludeId: id,
-      });
-      await assertSequenceInTx(tx, userId, {
-        accountId: current.accountId,
-        securityId: input.securityId,
-        add: input,
-      });
-    }
-    await tx
-      .update(trades)
-      .set({ splitNew: null, splitOld: null, ...input })
-      .where(and(eq(trades.userId, userId), eq(trades.id, id)));
-    if (current.side === "split") {
-      await discardProviderPrices(tx, userId, [current.securityId]);
-    }
-    if (input.side === "split") {
-      await discardProviderPrices(tx, userId, [input.securityId]);
-    }
-  });
+  await transaction(
+    async (tx) => {
+      const current = await getTradeInTx(tx, userId, id);
+      await assertSecurityInTx(tx, userId, input.securityId);
+      if (input.securityId === current.securityId) {
+        await assertSequenceInTx(tx, userId, {
+          accountId: current.accountId,
+          securityId: current.securityId,
+          excludeId: id,
+          add: input,
+        });
+      } else {
+        await assertSequenceInTx(tx, userId, {
+          accountId: current.accountId,
+          securityId: current.securityId,
+          excludeId: id,
+        });
+        await assertSequenceInTx(tx, userId, {
+          accountId: current.accountId,
+          securityId: input.securityId,
+          add: input,
+        });
+      }
+      await tx
+        .update(trades)
+        .set({ splitNew: null, splitOld: null, ...input })
+        .where(and(eq(trades.userId, userId), eq(trades.id, id)));
+      if (current.side === "split") {
+        await discardProviderPrices(tx, userId, [current.securityId]);
+      }
+      if (input.side === "split") {
+        await discardProviderPrices(tx, userId, [input.securityId]);
+      }
+    },
+    { lock: `trades:${userId}` },
+  );
   return await getTrade(userId, id);
 }
 
 export async function deleteTrade(userId: string, id: string): Promise<void> {
-  await transaction(async (tx) => {
-    const current = await getTradeInTx(tx, userId, id);
-    await assertSequenceInTx(tx, userId, {
-      accountId: current.accountId,
-      securityId: current.securityId,
-      excludeId: id,
-    });
-    await tx
-      .delete(trades)
-      .where(and(eq(trades.userId, userId), eq(trades.id, id)));
-    if (current.side === "split") {
-      await discardProviderPrices(tx, userId, [current.securityId]);
-    }
-  });
+  await transaction(
+    async (tx) => {
+      const current = await getTradeInTx(tx, userId, id);
+      await assertSequenceInTx(tx, userId, {
+        accountId: current.accountId,
+        securityId: current.securityId,
+        excludeId: id,
+      });
+      await tx
+        .delete(trades)
+        .where(and(eq(trades.userId, userId), eq(trades.id, id)));
+      if (current.side === "split") {
+        await discardProviderPrices(tx, userId, [current.securityId]);
+      }
+    },
+    { lock: `trades:${userId}` },
+  );
 }

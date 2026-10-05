@@ -25,6 +25,8 @@ import {
 import type { Pillar3aContributionKind } from "$lib/pillar-3a-types";
 import {
   first,
+  isUniqueViolationOn,
+  type UniqueTarget,
   getDB,
   pillar3aBuyInYears,
   pillar3aContributions,
@@ -446,27 +448,17 @@ async function pruneOrphanAnnotations(tx: Tx, userId: string) {
  * annotations of the same payment can both find no existing row and both
  * insert; the loser hits the unique index.
  */
-function isAnnotationConflict(err: unknown): boolean {
-  for (let e: unknown = err; e instanceof Error; e = e.cause) {
-    if (
-      /UNIQUE constraint failed: pillar_3a_contributions\.transaction_id/.test(
-        e.message,
-      )
-    ) {
-      return true;
-    }
-  }
-  return false;
-}
+const annotationUnique: UniqueTarget = {
+  constraint: "pillar_3a_contributions_transaction_uq",
+  table: "pillar_3a_contributions",
+  columns: ["transaction_id"],
+};
 
-function isBuyInYearConflict(err: unknown): boolean {
-  for (let e: unknown = err; e instanceof Error; e = e.cause) {
-    if (/UNIQUE constraint failed: pillar_3a_buy_in_years/.test(e.message)) {
-      return true;
-    }
-  }
-  return false;
-}
+const buyInYearUnique: UniqueTarget = {
+  constraint: "pillar_3a_buy_in_years_user_year_uq",
+  table: "pillar_3a_buy_in_years",
+  columns: ["user_id", "year"],
+};
 
 interface Spec {
   existingId: string | null;
@@ -553,13 +545,13 @@ async function save(
       }
     });
   } catch (err) {
-    if (isAnnotationConflict(err)) {
+    if (isUniqueViolationOn(err, annotationUnique)) {
       throw new LedgerError(
         "conflict",
         "This payment was just saved from another request. Reload and try again.",
       );
     }
-    if (isBuyInYearConflict(err)) {
+    if (isUniqueViolationOn(err, buyInYearUnique)) {
       throw new LedgerError(
         "conflict",
         "A gap year can only be closed by one buy-in.",

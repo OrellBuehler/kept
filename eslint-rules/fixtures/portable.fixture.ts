@@ -1,5 +1,5 @@
 // Nothing in this file may be reported by kept/no-pg-only-api.
-import { and, eq, like, sql } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 import type {
   AnyPgColumn,
   PgDatabase,
@@ -40,7 +40,12 @@ export async function portable(table: PgTable) {
   await db
     .selectDistinct()
     .from(t)
-    .where(and(eq(t.id, "a"), like(t.id, "a%")));
+    .where(
+      and(eq(t.id, "a"), sql`lower(${t.id}) like lower(${"a%"}) escape '\\'`),
+    );
+  await db
+    .select({ m: sql<number>`coalesce(max(${t.id}), 0)`, r: sql.raw("1") })
+    .from(t);
   await db
     .select({ n: sql<number>`count(*)`.mapWith(Number) })
     .from(t)

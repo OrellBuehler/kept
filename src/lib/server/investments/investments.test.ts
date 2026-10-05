@@ -1046,6 +1046,48 @@ describe("prices", () => {
     expect(await listPrices(user.id, security.id, 5000)).toHaveLength(1200);
   });
 
+  it("keeps the last of several rows for one date in a single call", async () => {
+    const { user, security } = await setup();
+    const n = await upsertProviderPrices(user.id, security.id, [
+      { date: "2024-01-01", price: parseFixed("100") },
+      { date: "2024-01-02", price: parseFixed("102") },
+      { date: "2024-01-01", price: parseFixed("105") },
+      { date: "2024-01-02", price: parseFixed("0") },
+    ]);
+    expect(n).toBe(2);
+    const prices = await listPrices(user.id, security.id);
+    expect(prices).toHaveLength(2);
+    expect(prices.find((p) => p.date === "2024-01-01")!.price).toBe(
+      parseFixed("105"),
+    );
+    expect(prices.find((p) => p.date === "2024-01-02")!.price).toBe(
+      parseFixed("102"),
+    );
+  });
+
+  it("keeps the last of several FX rows for one pair and date", async () => {
+    const user = await createTestUser();
+    const row = {
+      base: "USD",
+      quote: "CHF",
+      date: "2024-01-01",
+      rate: parseFixed("0.9"),
+    };
+    expect(
+      await upsertFxRates(user.id, [
+        row,
+        { ...row, quote: "EUR", rate: parseFixed("0.8") },
+        { ...row, rate: parseFixed("0.95") },
+      ]),
+    ).toBe(2);
+    const rows = await ctx.db
+      .select()
+      .from(fxRates)
+      .where(eq(fxRates.userId, user.id));
+    expect(rows).toHaveLength(2);
+    expect(rows.find((r) => r.quote === "CHF")!.rate).toBe(parseFixed("0.95"));
+  });
+
   it("upserts FX rates idempotently", async () => {
     const user = await createTestUser();
     const row = {
