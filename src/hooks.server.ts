@@ -26,7 +26,12 @@ import {
   setSessionCookie,
   validateSessionToken,
 } from "$lib/server/auth/sessions";
-import { isApiPath, isPublicPath } from "$lib/server/auth/routing";
+import {
+  isApiPath,
+  isExternalApiPath,
+  isPublicPath,
+} from "$lib/server/auth/routing";
+import { handleExternalApi } from "$lib/server/external-api/gate";
 import { describeError } from "$lib/server/errors";
 import {
   warnIfAddressHeaderUnset,
@@ -84,8 +89,12 @@ async function handleRequest({
   resolve,
 }: Parameters<Handle>[0]): Promise<Response> {
   warnIfProxied(event.request.headers);
+  if (isExternalApiPath(event.url.pathname)) {
+    return handleExternalApi(event, resolve);
+  }
   event.locals.user = null;
   event.locals.session = null;
+  event.locals.apiToken = null;
 
   const token = event.cookies.get(SESSION_COOKIE);
   let staleCookie: string | undefined;

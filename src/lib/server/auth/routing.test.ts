@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { isApiPath, isPublicPath, safeRedirectTo } from "./routing";
+import {
+  isApiPath,
+  isExternalApiPath,
+  isPublicPath,
+  safeRedirectTo,
+} from "./routing";
 
 describe("safeRedirectTo", () => {
   it("keeps same-origin relative paths", () => {
@@ -58,5 +63,42 @@ describe("path classification", () => {
   it("detects api paths", () => {
     expect(isApiPath("/api/x")).toBe(true);
     expect(isApiPath("/apiary")).toBe(false);
+  });
+});
+
+describe("isExternalApiPath", () => {
+  it("matches the prefix and everything under it", () => {
+    for (const p of [
+      "/api/external/v1",
+      "/api/external/v1/",
+      "/api/external/v1/me",
+      "/api/external/v1/bills/abc/links",
+      "/api/%65xternal/v1/me",
+      "/api/external/%76%31/me",
+    ]) {
+      expect(isExternalApiPath(p), p).toBe(true);
+    }
+  });
+
+  it("does not match lookalikes or other APIs", () => {
+    for (const p of [
+      "/",
+      "/api",
+      "/api/external",
+      "/api/external/v2/me",
+      "/api/externalx/v1/me",
+      "/api/external/v10/me",
+      "/api/public/external/v1",
+      "/x/api/external/v1",
+      "/api/health",
+      "/api/%E0%A4%A",
+    ]) {
+      expect(isExternalApiPath(p), p).toBe(false);
+    }
+  });
+
+  it("is not public: the hook authenticates it separately", () => {
+    expect(isPublicPath("/api/external/v1/me")).toBe(false);
+    expect(isApiPath("/api/external/v1/me")).toBe(true);
   });
 });
