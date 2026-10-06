@@ -35,6 +35,10 @@ history — on your own server, in a single SQLite file by default (PostgreSQL o
 - **Notifications**: per user, choose triggers (bill due within N days, bill overdue, monthly
   budget reaching X%, account not imported for N days) and channels (ntfy, signed webhook, email).
   Checked hourly; each event is sent once. Set up under Settings → Notifications.
+- **External API (optional)**: token-authenticated read access to bills, transactions, categories
+  and recurring payments for companion apps you run, plus links they can attach to bills and
+  transactions. Tokens are scoped, can be limited to categories, expire and are revocable. Set up
+  under Settings → API tokens.
 - Local users with an admin who creates the others; every user only sees their own data.
 - Optional two-factor authentication per user: authenticator app (TOTP) and passkeys.
 
@@ -327,6 +331,15 @@ browser must be on exactly that origin. Set `ORIGIN` to the URL you actually use
 `localhost` for development). If you change the host name later, existing passkeys stop working
 until you re-register them; TOTP is unaffected. Without `ORIGIN`, the request URL is used, which
 is only correct when Kept is not behind a proxy.
+
+### External API for companion apps
+
+Apps you run yourself can read bills, transactions, categories, recurring payments and account
+names, and attach links to bills and transactions, through a small token-authenticated API under
+`/api/external/v1/`. Create a token in **Settings → API tokens**: it carries only the permissions
+you tick (optionally limited to some categories), can expire, and can be revoked at any time. Set
+`ORIGIN` to the public URL so the `url` fields in responses are correct. See
+[docs/external-api.md](docs/external-api.md) for the endpoints, fields and examples.
 
 ### Paperless-ngx
 
