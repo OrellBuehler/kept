@@ -2,6 +2,7 @@ import { getAccount } from "$lib/server/ledger/accounts";
 import { LedgerError } from "$lib/server/ledger/errors";
 import { MAX_UPLOAD_BYTES, storePending, type PendingMeta } from "./pending";
 import { getCsvProfile } from "./profiles";
+import { isStatementFormat } from "./statements";
 
 /**
  * Stores an uploaded file for the given account (which must belong to the
@@ -34,7 +35,7 @@ export async function startUpload(
     bytes: new Uint8Array(await file.arrayBuffer()),
   });
   const needsMapping =
-    meta.format !== "camt053" &&
+    !isStatementFormat(meta.format) &&
     (await getCsvProfile(userId, account.id)) === null;
   return { meta, needsMapping };
 }

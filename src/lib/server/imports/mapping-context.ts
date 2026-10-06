@@ -18,6 +18,7 @@ import { LedgerError } from "$lib/server/ledger/errors";
 import { cachedParse } from "./cache";
 import { getPendingMeta, readPending } from "./pending";
 import { getCsvProfile, parseProfileSafe } from "./profiles";
+import { isStatementFormat } from "./statements";
 
 export interface MappingContext {
   pendingId: string;
@@ -139,10 +140,10 @@ export async function mappingContext(
 ): Promise<MappingContext> {
   const meta = await getPendingMeta(userId, pendingId);
   const readBytes = async () => (await readPending(userId, pendingId)).bytes;
-  if (meta.format === "camt053") {
+  if (isStatementFormat(meta.format)) {
     throw new LedgerError(
       "invalid",
-      "camt.053 files need no column mapping.",
+      "Statement files (camt, MT940) need no column mapping.",
       "profile",
     );
   }

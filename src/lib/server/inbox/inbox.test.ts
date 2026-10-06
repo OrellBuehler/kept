@@ -155,6 +155,42 @@ describe("scanInbox", () => {
     expect(left).toEqual([]);
   });
 
+  it("imports a camt.054 notification by its IBAN, without balances to check", async () => {
+    const { user, account } = await setup();
+    drop("alice", "notification.xml", fixture("camt054/overlap-a.xml"));
+    expect(await scan()).toMatchObject({ imported: 1, failed: 0, review: 0 });
+    expect(await count(account.id)).toBe(3);
+    expect((await listInboxEntries(user.id))[0]).toMatchObject({
+      status: "imported",
+      newCount: 3,
+    });
+  });
+
+  it.each([".sta", ".mt940", ".txt"])(
+    "imports an MT940 file with the %s extension by its :25: IBAN",
+    async (ext) => {
+      const { account } = await setup();
+      drop("alice", `statement${ext}`, fixture("mt940/unstructured.sta"));
+      expect(await scan()).toMatchObject({ imported: 1, failed: 0, review: 0 });
+      expect(await count(account.id)).toBe(4);
+      expect(names("alice", "processed")).toHaveLength(1);
+    },
+  );
+
+  it("fails an MT940 file whose account is unknown and says why", async () => {
+    await setup();
+    drop("alice", "other.sta", fixture("mt940/basic.sta"));
+    expect(await scan()).toMatchObject({ imported: 0, failed: 1 });
+    const failed = names("alice", "failed");
+    const reasonFile = failed.find((f) => f.endsWith(".reason.txt"))!;
+    const reason = readFileSync(
+      join(config.dir, "alice", "failed", reasonFile),
+      "utf8",
+    );
+    expect(reason).toMatch(/No account of yours has the statement's IBAN/);
+    expect(reason).not.toContain(IBAN_DE);
+  });
+
   it("runs bill auto-matching after an imported file, and a matching failure does not fail the import", async () => {
     const { user, account } = await setup();
     vi.mocked(runAutoMatching).mockClear();

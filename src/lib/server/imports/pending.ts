@@ -2,6 +2,7 @@ import { createHash, randomBytes } from "node:crypto";
 import { and, eq, lt } from "drizzle-orm";
 import { z } from "zod";
 import { IMPORT_FORMATS } from "$lib/ledger-types";
+import { decodeText } from "$lib/server/importers/tabular";
 import { MAX_UPLOAD_BYTES } from "$lib/import-constants";
 import { first, getDB, pendingImports, type DB } from "$lib/server/db";
 import { detach } from "$lib/server/detached";
@@ -79,8 +80,18 @@ function cleanFileName(name: string): string {
 }
 
 /**
- * Detects the format from the content, never from the extension. Only
- * camt.053 XML, xlsx (zip) and text (csv) are accepted.
+ * An MT940 message starts with its first field `:20:`, optionally behind SWIFT block headers
+ * (`{1:..}{2:..}{3:..}{4:`) and a byte order mark.
+ */
+function looksLikeMt940(head: string): boolean {
+  const text = head.replace(/^\uFEFF/, "").trimStart();
+  if (text.startsWith("{")) return /\{4:\s*:20:/.test(text);
+  return /^:20:/.test(text);
+}
+
+/**
+ * Detects the format from the content, never from the extension. Accepted are camt.053 and
+ * camt.054 XML, MT940 text, xlsx (zip) and any other text (csv).
  */
 export function detectFormat(
   bytes: Uint8Array,
@@ -104,14 +115,20 @@ export function detectFormat(
       .decode(bytes.subarray(0, 4096))
       .trimStart();
     if (head.startsWith("<")) {
-      if (/camt\.053/i.test(head)) return "camt053";
+      const camt = /camt\.(053|054)\b/i.exec(head);
+      if (camt?.[1] === "053") return "camt053";
+      if (camt?.[1] === "054") return "camt054";
       throw new LedgerError(
         "invalid",
-        "This XML file is not a camt.053 account statement (other message types such as camt.054 or pain are not supported).",
+        "This XML file is not a camt.053 statement or camt.054 notification (other message types such as pain are not supported).",
         "file",
       );
     }
   }
+  const text = utf16
+    ? decodeText(bytes.subarray(0, 8192))
+    : new TextDecoder("utf-8").decode(bytes.subarray(0, 4096));
+  if (looksLikeMt940(text)) return "mt940";
   return "csv";
 }
 

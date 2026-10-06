@@ -22,7 +22,6 @@ import {
   users,
   type InboxStatus as FileStatus,
 } from "$lib/server/db";
-import { parseCamt053 } from "$lib/server/importers/camt053";
 import { ImportFormatError } from "$lib/server/importers/types";
 import {
   MAPPING_REQUIRED,
@@ -32,6 +31,9 @@ import {
   PreviewStaleError,
   deletePending,
   detectFormat,
+  isStatementFormat,
+  parseStatementFile,
+  type StatementFormat,
   startUpload,
 } from "$lib/server/imports";
 import { listAccounts, type AccountView } from "$lib/server/ledger/accounts";
@@ -44,7 +46,15 @@ export const DEFAULT_INTERVAL_SECONDS = 60;
 const DEFAULT_SETTLE_MS = 10_000;
 
 const RESERVED = new Set(["processed", "failed", "review"]);
-const EXTENSIONS = new Set([".xml", ".csv", ".txt", ".xlsx"]);
+const EXTENSIONS = new Set([
+  ".xml",
+  ".csv",
+  ".txt",
+  ".xlsx",
+  ".sta",
+  ".mt940",
+  ".940",
+]);
 
 const configSchema = z.object({
   KEPT_INBOX_DIR: z.string().trim().min(1).optional(),
@@ -164,8 +174,12 @@ function matchAccount(list: AccountView[], folder: string): AccountView {
   );
 }
 
-function accountForCamt(bytes: Uint8Array, list: AccountView[]): AccountView {
-  const statements = parseCamt053(new TextDecoder("utf-8").decode(bytes));
+function accountForStatement(
+  format: StatementFormat,
+  bytes: Uint8Array,
+  list: AccountView[],
+): AccountView {
+  const statements = parseStatementFile(format, bytes);
   const byIban = new Map<string, AccountView>();
   for (const a of list) if (a.iban) byIban.set(normalizeIban(a.iban), a);
   const matched = new Map<string, AccountView>();
@@ -280,12 +294,12 @@ async function importCandidate(
   const format = detectFormat(bytes);
   let account = c.account;
   if (!account) {
-    if (format !== "camt053") {
+    if (!isStatementFormat(format)) {
       throw new Rejected(
         "Cannot tell which account this file belongs to. Put CSV and Excel files in a folder named after the account.",
       );
     }
-    account = accountForCamt(bytes, ctx.accounts);
+    account = accountForStatement(format, bytes, ctx.accounts);
   }
 
   const { meta } = await startUpload(

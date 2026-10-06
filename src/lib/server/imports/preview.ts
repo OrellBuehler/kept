@@ -9,7 +9,6 @@ import {
   imports,
   transactions,
 } from "$lib/server/db";
-import { parseCamt053 } from "$lib/server/importers/camt053";
 import { parseTabular } from "$lib/server/importers/csv";
 import { readCsv, readXlsx } from "$lib/server/importers/tabular";
 import type { CsvMappingProfile } from "$lib/server/importers/mapping";
@@ -32,6 +31,7 @@ import { loadHoldingsInputs } from "$lib/server/investments/load";
 import { getCsvProfile } from "./profiles";
 import { cachedParse } from "./cache";
 import { getPendingMeta, readPending, type PendingMeta } from "./pending";
+import { isStatementFormat, parseStatementFile } from "./statements";
 
 /**
  * `replaces_mirror`: a new row that takes over a mirrored transaction Kept created from a
@@ -118,7 +118,10 @@ function mergeStatements(list: NormalizedStatement[]): NormalizedStatement {
     .sort((a, b) =>
       a.openingBalance!.date.localeCompare(b.openingBalance!.date),
     );
-  const byClosing = list
+  // On the same date the statement later in the file closes the period (multi-page MT940).
+  // On the same date the statement later in the file closes the period (multi-page MT940).
+  const byClosing = [...list]
+    .reverse()
     .filter((s) => s.closingBalance)
     .sort((a, b) =>
       b.closingBalance!.date.localeCompare(a.closingBalance!.date),
@@ -146,7 +149,7 @@ interface Selection {
   errors: string[];
 }
 
-function selectCamtStatement(
+function selectStatement(
   statements: NormalizedStatement[],
   account: AccountView,
 ): Selection {
@@ -371,10 +374,11 @@ async function parseFile(
   account: AccountView,
 ): Promise<Selection> {
   try {
-    if (meta.format === "camt053") {
-      return selectCamtStatement(
-        await cachedParse(meta, "camt", async () =>
-          parseCamt053(new TextDecoder("utf-8").decode(await readBytes())),
+    if (isStatementFormat(meta.format)) {
+      const format = meta.format;
+      return selectStatement(
+        await cachedParse(meta, format, async () =>
+          parseStatementFile(format, await readBytes()),
         ),
         account,
       );
@@ -474,12 +478,11 @@ export async function buildPreview(
     ? alreadyImported.createdAt.getTime()
     : null;
 
-  const profile =
-    meta.format === "camt053"
-      ? null
-      : (options.profile ??
-        (await getCsvProfile(userId, account.id))?.profile ??
-        null);
+  const profile = isStatementFormat(meta.format)
+    ? null
+    : (options.profile ??
+      (await getCsvProfile(userId, account.id))?.profile ??
+      null);
   const selection = await parseFile(
     meta,
     async () => (await readPending(userId, pendingId)).bytes,

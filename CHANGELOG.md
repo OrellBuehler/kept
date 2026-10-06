@@ -1,5 +1,17 @@
 # Changelog
 
+## Unreleased
+
+### Added
+
+- **camt.054 import** (debit/credit notifications, `.001.02`/`.04`/`.08` and later). A booking
+  gets the same id as in camt.053, so a notification and a later statement never duplicate it.
+  Notifications carry no balances; none are invented.
+- **SWIFT MT940 import** (`.sta`, `.mt940`, `.txt`): multi-statement files, `:60F:`/`:60M:` and
+  `:62F:`/`:62M:` balances, `:61:` with or without entry date and funds code, reversals (RC/RD),
+  structured `:86:` (`?20`-`?29`, `?31`-`?33`, SEPA keywords such as EREF+/SVWZ+/IBAN+) and free
+  text. Latin-1/windows-1252 files are decoded like CSV. The watch folder picks both formats up.
+
 ## 0.4.0
 
 ### Upgrading from 0.3.0

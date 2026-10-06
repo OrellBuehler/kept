@@ -125,8 +125,9 @@
       <Card.Header>
         <Card.Title>Upload a statement</Card.Title>
         <Card.Description>
-          ISO 20022 camt.053 XML, CSV or Excel exports. For CSV and Excel you
-          map the columns once per account; the mapping is remembered.
+          ISO 20022 camt.053 or camt.054 XML, SWIFT MT940, CSV or Excel exports.
+          For CSV and Excel you map the columns once per account; the mapping is
+          remembered.
         </Card.Description>
       </Card.Header>
       <Card.Content>
@@ -184,7 +185,7 @@
             label="File"
             for="import-file"
             errors={fileErrors}
-            hint="Accepted: .xml, .csv, .txt, .xlsx, up to 20 MB."
+            hint="Accepted: .xml, .sta, .mt940, .csv, .txt, .xlsx, up to 20 MB."
           >
             <div
               role="group"
@@ -239,7 +240,7 @@
                 id="import-file"
                 name="file"
                 type="file"
-                accept=".xml,.csv,.txt,.xlsx"
+                accept=".xml,.sta,.mt940,.940,.csv,.txt,.xlsx"
                 class="sr-only"
                 tabindex={-1}
                 onchange={(e) => setFile(e.currentTarget.files?.[0] ?? null)}

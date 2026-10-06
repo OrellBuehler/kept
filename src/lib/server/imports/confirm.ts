@@ -27,6 +27,7 @@ import {
   buildPreview,
 } from "./preview";
 import { describeError } from "$lib/server/errors";
+import { isStatementFormat } from "./statements";
 
 /** The account changed between building the preview and writing it; a fresh preview may succeed. */
 export class PreviewStaleError extends LedgerError {
@@ -116,8 +117,9 @@ export async function confirmImport(
       // The preview was built outside the lock; what it validated must still hold.
       if (
         account.currency !== preview.account.currency ||
-        // Only camt statements are checked against the account IBAN.
-        (preview.format === "camt053" && account.iban !== preview.account.iban)
+        // Only statement files (camt, MT940) are checked against the account IBAN.
+        (isStatementFormat(preview.format) &&
+          account.iban !== preview.account.iban)
       ) {
         throw new PreviewStaleError();
       }
