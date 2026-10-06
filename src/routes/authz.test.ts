@@ -48,6 +48,70 @@ interface Entry {
 const matrix: Record<string, Entry> = {
   "/src/routes/api/health/+server.ts": { access: "public" },
   "/src/routes/api/public/paperless/[token]/+server.ts": { access: "public" },
+  "/src/routes/api/external/v1/me/+server.ts": {
+    access: "token",
+    scope: null,
+    handlers: {
+      GET: (m, e) => (m as never as { GET: (e: never) => unknown }).GET(e),
+    },
+  },
+  "/src/routes/api/external/v1/bills/+server.ts": {
+    access: "token",
+    scope: "bills:read",
+    handlers: {
+      GET: (m, e) => (m as never as { GET: (e: never) => unknown }).GET(e),
+    },
+  },
+  "/src/routes/api/external/v1/bills/[id]/+server.ts": {
+    access: "token",
+    scope: "bills:read",
+    handlers: {
+      GET: (m, e) => (m as never as { GET: (e: never) => unknown }).GET(e),
+    },
+  },
+  "/src/routes/api/external/v1/transactions/+server.ts": {
+    access: "token",
+    scope: "transactions:read",
+    handlers: {
+      GET: (m, e) => (m as never as { GET: (e: never) => unknown }).GET(e),
+    },
+  },
+  "/src/routes/api/external/v1/transactions/[id]/+server.ts": {
+    access: "token",
+    scope: "transactions:read",
+    handlers: {
+      GET: (m, e) => (m as never as { GET: (e: never) => unknown }).GET(e),
+    },
+  },
+  "/src/routes/api/external/v1/categories/+server.ts": {
+    access: "token",
+    scope: "categories:read",
+    handlers: {
+      GET: (m, e) => (m as never as { GET: (e: never) => unknown }).GET(e),
+    },
+  },
+  "/src/routes/api/external/v1/recurring-series/+server.ts": {
+    access: "token",
+    scope: "recurring:read",
+    handlers: {
+      GET: (m, e) => (m as never as { GET: (e: never) => unknown }).GET(e),
+    },
+  },
+  "/src/routes/api/external/v1/accounts/+server.ts": {
+    access: "token",
+    scope: "accounts:read",
+    handlers: {
+      GET: (m, e) => (m as never as { GET: (e: never) => unknown }).GET(e),
+    },
+  },
+  "/src/routes/api/external/v1/[...rest]/+server.ts": {
+    access: "token",
+    scope: null,
+    handlers: {
+      fallback: (m, e) =>
+        (m as never as { fallback: (e: never) => unknown }).fallback(e),
+    },
+  },
   "/src/routes/setup/+page.server.ts": { access: "public" },
   "/src/routes/login/+page.server.ts": { access: "public" },
   "/src/routes/logout/+page.server.ts": { access: "public" },
