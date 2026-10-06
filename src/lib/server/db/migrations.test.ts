@@ -265,7 +265,7 @@ describe.skipIf(dialect === "pg")("drizzle/sqlite", () => {
     });
   });
 
-  it("re-runs nothing on a database the old folder fully migrated", async () => {
+  it("re-runs nothing on a database the old folder fully migrated, and only appends newer migrations", async () => {
     await migrateWith(oldLayout(scratch, SHIPPED.length));
     const before = await applied();
     const tables = await tableCount();
@@ -273,8 +273,13 @@ describe.skipIf(dialect === "pg")("drizzle/sqlite", () => {
 
     await migrateDatabase(db);
 
-    expect(await applied()).toEqual(before);
-    expect(await tableCount()).toBe(tables);
+    const after = await applied();
+    expect(after.slice(0, before.length)).toEqual(before);
+    expect(after).toHaveLength(readJournal(folder).entries.length);
+    const newer = readJournal(folder).entries.length - SHIPPED.length;
+    // Newer migrations may add tables, never remove one.
+    expect(await tableCount()).toBeGreaterThanOrEqual(tables);
+    if (newer === 0) expect(await tableCount()).toBe(tables);
   });
 
   it("is a no-op the second time the new folder runs", async () => {

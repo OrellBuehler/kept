@@ -8,6 +8,20 @@
       "when": 1791192961857,
       "tag": "0000_baseline",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1791298605262,
+      "tag": "0001_round_chamber",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1791299383957,
+      "tag": "0002_clumsy_siren",
+      "breakpoints": true
     }
   ]
 }

@@ -3,6 +3,7 @@
   import { Badge } from "$lib/components/ui/badge";
   import { Button } from "$lib/components/ui/button";
   import Amount from "$lib/components/Amount.svelte";
+  import ExternalLinks from "$lib/components/ExternalLinks.svelte";
 
   import { formatIban } from "$lib/iban";
   import { resolve } from "$app/paths";
@@ -22,11 +23,13 @@
   let {
     open = $bindable(false),
     transaction,
+    links = [],
     currency,
     onDelete,
   }: {
     open?: boolean;
     transaction: Tx | null;
+    links?: { id: string; label: string; url: string; source: string }[];
     currency: string;
     onDelete: (tx: Tx) => void;
   } = $props();
@@ -84,6 +87,7 @@
       </Sheet.Header>
 
       <div class="grid gap-4 px-4 pb-4">
+        <ExternalLinks {links} />
         {#if locked}
           <dl class="grid grid-cols-[auto_1fr] gap-x-4 gap-y-2 text-sm">
             {#if transaction.valueDate}

@@ -20,6 +20,7 @@ import {
   EXAMPLE_QRR,
 } from "$lib/testing/fixtures/bill-identifiers";
 import { seedAccount, seedImportedTransaction } from "$lib/testing/ledger";
+import { createLink } from "$lib/server/external-api/links";
 import { actions, load } from "./+page.server";
 import { GET } from "./document/+server";
 
@@ -190,6 +191,7 @@ describe("bill detail page", () => {
       "candidates",
       "dismissed",
       "document",
+      "links",
       "suggestions",
     ]);
     expect(v.bill).toMatchObject({
@@ -465,5 +467,31 @@ describe("bill detail page", () => {
     });
     expect(await listBillAllocations(a.id, billA.id)).toHaveLength(1);
     expect((await getDocumentMeta(a.id, doc.id)).id).toBe(doc.id);
+  });
+});
+
+describe("bill detail page: external links", () => {
+  useTestDB();
+
+  it("shows the bill's links and nobody else's", async () => {
+    const a = await createTestUser();
+    const b = await createTestUser();
+    const bill = await seedBill(a.id);
+    const link = {
+      source: "home app",
+      label: "Costs 2026",
+      url: "https://home.example.org/costs",
+    };
+    await createLink(a.id, "bill", bill.id, link);
+    await createLink(b.id, "bill", bill.id, { ...link, label: "foreign" });
+    const mine = (await loadAs(a, bill.id)) as unknown as {
+      value: { links: unknown[] };
+    };
+    expect(mine.value.links).toEqual([{ id: expect.any(String), ...link }]);
+    const none = await seedBill(a.id);
+    const empty = (await loadAs(a, none.id)) as unknown as {
+      value: { links: unknown[] };
+    };
+    expect(empty.value.links).toEqual([]);
   });
 });

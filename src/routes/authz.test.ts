@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { API_SCOPES, type ApiScope } from "$lib/api-tokens";
 import { listUsers } from "$lib/server/auth/users";
 import { createTestUser } from "$lib/testing/auth";
 import { useTestDB } from "$lib/testing/db";
@@ -20,6 +21,10 @@ const ev = (opts?: TestEventOptions) => createTestEvent(opts) as never;
  *                       its behaviour is tested in its own test file).
  *  - access "user"    : every handler must answer 401 without a user.
  *  - access "admin"   : additionally 403 for a member.
+ *  - access "token"   : bearer-token routes under /api/external/v1/. A session
+ *                       user is not enough (401), neither is a token without
+ *                       the route's `scope` (403). The hook authenticates the
+ *                       token; hooks.server.test.ts and the route tests cover that.
  *
  * `handlers` calls each load/action/endpoint with a fake event; add one per
  * exported handler. Routes that touch user-owned data must also get a
@@ -32,13 +37,107 @@ interface Module {
 }
 type Call = (mod: Module, event: never) => unknown;
 interface Entry {
-  access: "public" | "user" | "admin";
+  access: "public" | "user" | "admin" | "token";
+  /** For "token" routes: the scope every handler needs, or null for any valid token. */
+  scope?: ApiScope | null;
+  /** For "token" routes: the scope per handler when it differs from `scope`. */
+  scopes?: Record<string, ApiScope>;
   handlers?: Record<string, Call>;
 }
 
 const matrix: Record<string, Entry> = {
   "/src/routes/api/health/+server.ts": { access: "public" },
   "/src/routes/api/public/paperless/[token]/+server.ts": { access: "public" },
+  "/src/routes/api/external/v1/me/+server.ts": {
+    access: "token",
+    scope: null,
+    handlers: {
+      GET: (m, e) => (m as never as { GET: (e: never) => unknown }).GET(e),
+    },
+  },
+  "/src/routes/api/external/v1/bills/+server.ts": {
+    access: "token",
+    scope: "bills:read",
+    handlers: {
+      GET: (m, e) => (m as never as { GET: (e: never) => unknown }).GET(e),
+    },
+  },
+  "/src/routes/api/external/v1/bills/[id]/+server.ts": {
+    access: "token",
+    scope: "bills:read",
+    handlers: {
+      GET: (m, e) => (m as never as { GET: (e: never) => unknown }).GET(e),
+    },
+  },
+  "/src/routes/api/external/v1/bills/[id]/links/+server.ts": {
+    access: "token",
+    scope: "bills:read",
+    scopes: { POST: "links:write" },
+    handlers: {
+      GET: (m, e) => (m as never as { GET: (e: never) => unknown }).GET(e),
+      POST: (m, e) => (m as never as { POST: (e: never) => unknown }).POST(e),
+    },
+  },
+  "/src/routes/api/external/v1/transactions/+server.ts": {
+    access: "token",
+    scope: "transactions:read",
+    handlers: {
+      GET: (m, e) => (m as never as { GET: (e: never) => unknown }).GET(e),
+    },
+  },
+  "/src/routes/api/external/v1/transactions/[id]/+server.ts": {
+    access: "token",
+    scope: "transactions:read",
+    handlers: {
+      GET: (m, e) => (m as never as { GET: (e: never) => unknown }).GET(e),
+    },
+  },
+  "/src/routes/api/external/v1/transactions/[id]/links/+server.ts": {
+    access: "token",
+    scope: "transactions:read",
+    scopes: { POST: "links:write" },
+    handlers: {
+      GET: (m, e) => (m as never as { GET: (e: never) => unknown }).GET(e),
+      POST: (m, e) => (m as never as { POST: (e: never) => unknown }).POST(e),
+    },
+  },
+  "/src/routes/api/external/v1/categories/+server.ts": {
+    access: "token",
+    scope: "categories:read",
+    handlers: {
+      GET: (m, e) => (m as never as { GET: (e: never) => unknown }).GET(e),
+    },
+  },
+  "/src/routes/api/external/v1/recurring-series/+server.ts": {
+    access: "token",
+    scope: "recurring:read",
+    handlers: {
+      GET: (m, e) => (m as never as { GET: (e: never) => unknown }).GET(e),
+    },
+  },
+  "/src/routes/api/external/v1/accounts/+server.ts": {
+    access: "token",
+    scope: "accounts:read",
+    handlers: {
+      GET: (m, e) => (m as never as { GET: (e: never) => unknown }).GET(e),
+    },
+  },
+  "/src/routes/api/external/v1/links/[linkId]/+server.ts": {
+    access: "token",
+    scope: "links:write",
+    handlers: {
+      DELETE: (m, e) =>
+        (m as never as { DELETE: (e: never) => unknown }).DELETE(e),
+    },
+  },
+  "/src/routes/api/external/v1/[...rest]/+server.ts": {
+    access: "token",
+    scope: null,
+    handlers: {
+      fallback: (m, e) =>
+        (m as never as { fallback: (e: never) => unknown }).fallback(e),
+    },
+  },
   "/src/routes/setup/+page.server.ts": { access: "public" },
   "/src/routes/login/+page.server.ts": { access: "public" },
   "/src/routes/logout/+page.server.ts": { access: "public" },
@@ -134,6 +233,14 @@ const matrix: Record<string, Entry> = {
       load: (m, e) => m.load(e),
       "actions.save": (m, e) => m.actions.save(e),
       "actions.setBlur": (m, e) => m.actions.setBlur(e),
+    },
+  },
+  "/src/routes/(app)/settings/api-tokens/+page.server.ts": {
+    access: "user",
+    handlers: {
+      load: (m, e) => m.load(e),
+      "actions.create": (m, e) => m.actions.create(e),
+      "actions.revoke": (m, e) => m.actions.revoke(e),
     },
   },
   "/src/routes/(app)/settings/paperless/+page.server.ts": {
@@ -437,12 +544,75 @@ describe("route inventory", () => {
 });
 
 const protectedCases = Object.entries(matrix)
-  .filter(([, e]) => e.access !== "public")
+  .filter(([, e]) => e.access === "user" || e.access === "admin")
   .flatMap(([file, entry]) =>
     Object.entries(entry.handlers ?? {}).map(
       ([name, call]) => ({ file, name, call, access: entry.access }) as const,
     ),
   );
+
+const tokenCases = Object.entries(matrix)
+  .filter(([, e]) => e.access === "token")
+  .flatMap(([file, entry]) =>
+    Object.entries(entry.handlers ?? {}).map(([name, call]) => ({
+      file,
+      name,
+      call,
+      scope: entry.scopes?.[name] ?? entry.scope ?? null,
+    })),
+  );
+
+describe("token authorization", () => {
+  useTestDB();
+
+  it("declares a scope decision for every token route", () => {
+    for (const [file, entry] of Object.entries(matrix)) {
+      if (entry.access !== "token") continue;
+      expect("scope" in entry, file).toBe(true);
+    }
+  });
+
+  it.each(tokenCases)(
+    "$file $name rejects requests without a token with 401",
+    async ({ file, call }) => {
+      const mod = await loaders[file]();
+      const res = (await call(mod, ev({ form: {} }))) as Response;
+      expect(res.status).toBe(401);
+    },
+  );
+
+  it.each(tokenCases)(
+    "$file $name is not reachable with a session user alone",
+    async ({ file, call }) => {
+      const user = await createTestUser({ role: "admin" });
+      const mod = await loaders[file]();
+      const res = (await call(mod, ev({ user, form: {} }))) as Response;
+      expect(res.status).toBe(401);
+    },
+  );
+
+  it.each(tokenCases.filter((c) => c.scope !== null))(
+    "$file $name rejects a token without $scope with 403",
+    async ({ file, call, scope }) => {
+      const user = await createTestUser();
+      const mod = await loaders[file]();
+      const apiToken = {
+        id: "t",
+        userId: user.id,
+        scopes: API_SCOPES.filter((s) => s !== scope),
+        categoryIds: null,
+      };
+      const res = (await call(mod, ev({ apiToken, form: {} }))) as Response;
+      expect(res.status).toBe(403);
+    },
+  );
+
+  it("every scope a token route asks for is a documented one", () => {
+    for (const { file, scope } of tokenCases) {
+      if (scope !== null) expect(API_SCOPES, file).toContain(scope);
+    }
+  });
+});
 
 describe("authorization", () => {
   useTestDB();

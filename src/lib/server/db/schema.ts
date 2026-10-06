@@ -29,6 +29,8 @@ import { AMOUNT_SIGNS, CATEGORY_KINDS } from "$lib/category-types";
 import { DEDUCTION_TYPES } from "$lib/tax-deductions";
 import { CHANNEL_KINDS } from "$lib/notification-types";
 import { CADENCES, SERIES_STATUSES } from "$lib/recurring-types";
+import { API_SCOPES, EXTERNAL_LINK_ENTITY_TYPES } from "$lib/api-tokens";
+import type { ApiScope } from "$lib/api-tokens";
 import { IBAN_DISPLAY, LOCALES } from "$lib/preferences";
 import { nextSeq } from "../seq";
 import {
@@ -81,6 +83,8 @@ export type {
   Pillar3aDeduction,
   PortfolioCloseReason,
 } from "$lib/pillar-3a-types";
+export { API_SCOPES, EXTERNAL_LINK_ENTITY_TYPES };
+export type { ApiScope, ExternalLinkEntityType } from "$lib/api-tokens";
 export {
   ALLOCATION_ORIGINS,
   BILL_KINDS,
@@ -217,6 +221,8 @@ export const AUTH_EVENT_TYPES = [
   "passkey_added",
   "passkey_removed",
   "two_factor_reset",
+  "api_token_created",
+  "api_token_revoked",
 ] as const;
 export type AuthEventType = (typeof AUTH_EVENT_TYPES)[number];
 
@@ -1438,5 +1444,67 @@ export const pillar3aYears = table(
   (t) => [
     uniqueIndex("pillar_3a_years_user_year_uq").on(t.userId, t.year),
     index("pillar_3a_years_user_id_idx").on(t.userId),
+  ],
+);
+
+/**
+ * A bearer token for the external read API (`/api/external/v1/`). Only the
+ * SHA-256 of the token is stored; the plaintext is shown once at creation.
+ * `scopes` are the permissions it grants; `categoryIds`, when set, limits
+ * transactions and categories to those categories (ids may outlive the
+ * category: a deleted one simply matches nothing).
+ */
+export const apiTokens = table(
+  "api_tokens",
+  {
+    id: id(),
+    userId: userId(),
+    name: text("name").notNull(),
+    tokenHash: text("token_hash").notNull(),
+    /** The first characters of the token, so the owner can tell tokens apart. */
+    prefix: text("prefix").notNull(),
+    scopes: json<ApiScope[]>("scopes").notNull(),
+    categoryIds: json<string[]>("category_ids"),
+    lastUsedAt: instant("last_used_at"),
+    expiresAt: instant("expires_at"),
+    revokedAt: instant("revoked_at"),
+    ...timestamps(),
+  },
+  (t) => [
+    uniqueIndex("api_tokens_token_hash_uq").on(t.tokenHash),
+    index("api_tokens_user_id_idx").on(t.userId),
+  ],
+);
+
+/**
+ * A link a companion app attached to a bill or transaction. `entityId` is not
+ * a foreign key (it points into one of two tables): reads always go through the
+ * owned entity, and rows whose entity is gone are swept at startup.
+ */
+export const externalLinks = table(
+  "external_links",
+  {
+    id: id(),
+    userId: userId(),
+    entityType: text("entity_type", {
+      enum: EXTERNAL_LINK_ENTITY_TYPES,
+    }).notNull(),
+    entityId: text("entity_id").notNull(),
+    /** Which app created the link, free text such as an app name. */
+    source: text("source").notNull(),
+    label: text("label").notNull(),
+    /** http or https only. */
+    url: text("url").notNull(),
+    ...timestamps(),
+  },
+  (t) => [
+    uniqueIndex("external_links_entity_source_url_uq").on(
+      t.userId,
+      t.entityType,
+      t.entityId,
+      t.source,
+      t.url,
+    ),
+    index("external_links_entity_idx").on(t.entityType, t.entityId),
   ],
 );

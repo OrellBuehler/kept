@@ -13,6 +13,25 @@ export function isPublicPath(pathname: string): boolean {
   );
 }
 
+export const EXTERNAL_API_PREFIX = "/api/external/v1";
+
+/**
+ * The token-authenticated external API. The check decodes the path the way the
+ * router does ("/api/%65xternal/v1" reaches the same routes), so no spelling of
+ * the prefix is treated as a session route.
+ */
+export function isExternalApiPath(pathname: string): boolean {
+  let path = pathname;
+  try {
+    path = decodeURI(pathname);
+  } catch (err) {
+    if (!(err instanceof URIError)) throw err;
+  }
+  return (
+    path === EXTERNAL_API_PREFIX || path.startsWith(`${EXTERNAL_API_PREFIX}/`)
+  );
+}
+
 export function isApiPath(pathname: string): boolean {
   return pathname === "/api" || pathname.startsWith("/api/");
 }

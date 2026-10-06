@@ -17,6 +17,7 @@
   import BillForm from "$lib/components/bills/BillForm.svelte";
   import BillStatusBadge from "$lib/components/bills/BillStatusBadge.svelte";
   import ConfirmActionDialog from "$lib/components/ConfirmActionDialog.svelte";
+  import ExternalLinks from "$lib/components/ExternalLinks.svelte";
   import DocumentUpload from "$lib/components/bills/DocumentUpload.svelte";
   import SuggestionCard from "$lib/components/bills/SuggestionCard.svelte";
   import * as Alert from "$lib/components/ui/alert";
@@ -105,7 +106,8 @@
       bill.expectedAccountId ||
       bill.taxYear ||
       bill.notes ||
-      externalUrl
+      externalUrl ||
+      data.links.length > 0
     ),
   );
 
@@ -355,6 +357,12 @@
               >
                 Open source document <ExternalLinkIcon class="size-3.5" />
               </a>
+            </dd>
+          {/if}
+          {#if data.links.length > 0}
+            <dt class="text-muted-foreground">Links</dt>
+            <dd class="min-w-0">
+              <ExternalLinks links={data.links} prefix={false} />
             </dd>
           {/if}
         </dl>

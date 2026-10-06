@@ -379,3 +379,12 @@ export const adminActionLimiter = new LoginRateLimiter(
   Infinity,
   Infinity,
 );
+
+/** Password and code confirmation when creating an API token, keyed by user id (ip "-"). */
+export const apiTokenConfirmLimiter = new LoginRateLimiter(
+  Date.now,
+  WINDOW_MS,
+  MAX_FAILURES_PER_USER_IP,
+  Infinity,
+  Infinity,
+);
