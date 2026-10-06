@@ -60,6 +60,10 @@ if (versions.length === 0) {
       .sort(),
   );
 }
+if (versions.length === 0) {
+  console.error(`no version directories found in ${fixtures}`);
+  process.exit(1);
+}
 
 const started = Date.now();
 const log = (message: string) =>
@@ -107,6 +111,13 @@ interface Fixture {
   password: string;
   sessionCookies: Record<"alice" | "bob", string>;
   activityTables: string[];
+  rowCounts: Record<string, number>;
+  baseline: {
+    migrations: number;
+    lastTag: string;
+    lastWhen: number;
+    lastHash: string;
+  };
   expected: Parameters<typeof compareUpgrade>[2];
   pages: {
     as: "alice" | "bob";
@@ -241,6 +252,33 @@ async function upgradeFrom(version: string): Promise<void> {
     ) {
       throw new Failure(
         "the seeded database is not consistent before the upgrade",
+      );
+    }
+    const baseline = fixture.baseline;
+    const newest = before.migrations.at(-1);
+    if (before.migrations.length !== baseline.migrations) {
+      fail(
+        `the baseline has ${before.migrations.length} migrations applied, expected ${baseline.migrations}`,
+      );
+    }
+    if (
+      newest?.hash !== baseline.lastHash ||
+      newest?.createdAt !== baseline.lastWhen
+    ) {
+      fail(`the last baseline migration is not ${baseline.lastTag}`);
+    }
+    const tables = Object.keys(before.tables).sort();
+    if (tables.join() !== Object.keys(fixture.rowCounts).sort().join()) {
+      fail(`the baseline has the tables [${tables}]`);
+    }
+    for (const [table, count] of Object.entries(fixture.rowCounts)) {
+      const got = before.tables[table]?.rows.length;
+      if (got !== count)
+        fail(`${table}: ${got} seeded rows, expected ${count}`);
+    }
+    if (problems.length > 0) {
+      throw new Failure(
+        "the seeded baseline is not what the fixture describes",
       );
     }
 
