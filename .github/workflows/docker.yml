@@ -115,6 +115,19 @@ jobs:
           docker logs kept-smoke-pg | tail -n 30
           exit 1
 
+      # For each release under src/lib/testing/fixtures/upgrade/: builds a database with that
+      # published image, seeds it with synthetic data, starts this image on the same volume and
+      # checks that the migrations lost and corrupted nothing (see scripts/upgrade/run.ts).
+      # A later release is one more directory there.
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
+        with:
+          bun-version-file: .bun-version
+
+      - name: Upgrade test
+        run: |
+          image=$(echo "${{ steps.meta.outputs.tags }}" | head -n1)
+          bun scripts/upgrade/run.ts --image "$image"
+
   # Only this job can write packages, and it never runs for pull requests.
   publish:
     name: Publish image
