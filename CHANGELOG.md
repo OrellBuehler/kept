@@ -12,6 +12,13 @@
   structured `:86:` (`?20`-`?29`, `?31`-`?33`, SEPA keywords such as EREF+/SVWZ+/IBAN+) and free
   text. Latin-1/windows-1252 files are decoded like CSV. The watch folder picks both formats up.
 
+### Changed
+
+- When a file holds several statements of one account whose closing balances share a date (also
+  camt.053), the closing balance of the one later in the file is used. Pages of a multi-page MT940
+  statement are merged by account number when they have no IBAN, and identical bookings on both
+  sides of a page break are both imported.
+
 ## 0.4.0
 
 ### Upgrading from 0.3.0

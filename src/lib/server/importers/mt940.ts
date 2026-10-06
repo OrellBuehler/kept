@@ -54,7 +54,8 @@ import {
  *            reference>:<date>:<amount>[:<party>]`, else `hash:<sha256>` of the booking content
  *            (no statement id, no position), so overlapping files agree. `NONREF` and
  *            `NOTPROVIDED` count as no reference. Identical ids within one statement get a
- *            `#2`, `#3` suffix in file order (see `assignExternalIds`).
+ *            `#2`, `#3` suffix in file order (see `assignExternalIds`); the pages of one
+ *            multi-page statement (`:62M:` / `:60M:`) count as one statement for this.
  *
  * Errors name the field and the line, never its content.
  */
@@ -455,7 +456,14 @@ function parseEntry(
   return { tx, baseId, legacyBaseId: null };
 }
 
-function parseStatement(raw: RawStatement, no: number): NormalizedStatement {
+/** Per account: the id counters of the latest statement and whether it ended on `:62M:`. */
+type Pages = Map<string, { seen: Map<string, number>; intermediate: boolean }>;
+
+function parseStatement(
+  raw: RawStatement,
+  no: number,
+  pages: Pages,
+): NormalizedStatement {
   const what = `Statement #${no}`;
   let accountField: Field | null = null;
   let numberField: Field | null = null;
@@ -523,7 +531,14 @@ function parseStatement(raw: RawStatement, no: number): NormalizedStatement {
   const drafts = entries.map((e) =>
     parseEntry(e, no, currency, accountKey, account.iban),
   );
-  const transactions = assignExternalIds(drafts);
+  // The pages of one statement (`:62M:` then `:60M:`) share their occurrence counters, so
+  // identical bookings on both sides of a page break stay distinct.
+  const previous = pages.get(accountKey);
+  const continues =
+    previous !== undefined && (previous.intermediate || opening?.tag === "60M");
+  const seen = continues ? previous.seen : new Map<string, number>();
+  pages.set(accountKey, { seen, intermediate: closing?.tag === "62M" });
+  const transactions = assignExternalIds(drafts, seen);
 
   let openingBalance: NormalizedBalance | null = null;
   if (openRead) {
@@ -560,5 +575,6 @@ export function parseMt940(text: string): NormalizedStatement[] {
   const statements = tokenize(content);
   if (statements.length === 0)
     fail("Not an MT940 file: no :20: statement field found");
-  return statements.map((s, i) => parseStatement(s, i + 1));
+  const pages: Pages = new Map();
+  return statements.map((s, i) => parseStatement(s, i + 1, pages));
 }

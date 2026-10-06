@@ -119,7 +119,6 @@ function mergeStatements(list: NormalizedStatement[]): NormalizedStatement {
       a.openingBalance!.date.localeCompare(b.openingBalance!.date),
     );
   // On the same date the statement later in the file closes the period (multi-page MT940).
-  // On the same date the statement later in the file closes the period (multi-page MT940).
   const byClosing = [...list]
     .reverse()
     .filter((s) => s.closingBalance)
@@ -162,8 +161,17 @@ function selectStatement(
   if (matching.length > 0) {
     return { statement: mergeStatements(matching), warnings: [], errors: [] };
   }
-  if (statements.length === 1) {
-    const only = statements[0]!;
+  // One account in the whole file (all pages share an IBAN, or a local account number when
+  // there is no IBAN): merge its statements.
+  const identities = new Set(
+    statements.map((s) =>
+      s.accountIban
+        ? normalizeIban(s.accountIban)
+        : `other:${s.accountOtherId ?? ""}`,
+    ),
+  );
+  if (identities.size === 1) {
+    const only = mergeStatements(statements);
     if (only.accountIban && accountIban) {
       return {
         statement: null,

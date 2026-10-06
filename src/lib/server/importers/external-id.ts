@@ -30,8 +30,11 @@ export function counterpartyKey(cp: {
  * `legacyExternalIds` holds the ids earlier versions derived (NtryRef-based or the older,
  * smaller hash) so already imported rows are still recognised as duplicates.
  */
-export function assignExternalIds(drafts: Draft[]): NormalizedTransaction[] {
-  const seen = new Map<string, number>();
+export function assignExternalIds(
+  drafts: Draft[],
+  /** Pass the same map for statements that continue each other (pages of one statement). */
+  seen: Map<string, number> = new Map(),
+): NormalizedTransaction[] {
   const occurrence = (id: string, scope: string): string => {
     const key = `${scope}|${id}`;
     const count = (seen.get(key) ?? 0) + 1;

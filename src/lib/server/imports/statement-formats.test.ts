@@ -6,6 +6,7 @@ import { balanceSnapshots, getDB, imports, transactions } from "$lib/server/db";
 import { currentBalance } from "$lib/server/ledger/balances";
 import { createTestUser } from "$lib/testing/auth";
 import { useTestDB } from "$lib/testing/db";
+import { buildCamtMulti } from "$lib/testing/fixtures/camt053/build";
 import { fixture } from "$lib/testing/fixtures";
 import { EXAMPLE_IBAN } from "$lib/testing/fixtures/bill-identifiers";
 import { IBAN_DE } from "$lib/testing/fixtures/camt053/examples";
@@ -180,6 +181,29 @@ describe("camt.054 import flow", () => {
   });
 });
 
+describe("camt.053 statements sharing a closing date", () => {
+  it("takes the closing balance of the statement later in the file", async () => {
+    const { user, account } = await setup();
+    const stmt = (ref: string, closing: string) => ({
+      iban: EXAMPLE_IBAN,
+      opening: { amount: "0.00", date: "2024-05-01" },
+      closing: { amount: closing, date: "2024-05-31" },
+      entries: [
+        { date: "2024-05-02", amount: "1.00", sign: "CRDT" as const, ref },
+      ],
+    });
+    const p = await buildPreview(
+      user.id,
+      await uploadBytes(
+        user.id,
+        account.id,
+        buildCamtMulti([stmt("R1", "10.00"), stmt("R2", "20.00")]),
+      ),
+    );
+    expect(p.statement?.closingBalance?.amount).toBe(2000);
+  });
+});
+
 describe("MT940 import flow", () => {
   const eur = { iban: IBAN_DE, currency: "EUR" };
 
@@ -311,6 +335,21 @@ describe("MT940 import flow", () => {
     );
     expect(p.statement?.openingBalance?.amount).toBe(10000);
     expect(p.statement?.closingBalance?.amount).toBe(12500);
+  });
+
+  it("imports both sides of a page break and merges pages that name a local account number", async () => {
+    const { user, account } = await setup({ iban: null, currency: "EUR" });
+    const page = (open: string, close: string) =>
+      `:20:P\n:25:12345678/0532013000\n:60${open}EUR100,00\n:61:240301D4,60NMSC\n:86:Day ticket\n:62${close}EUR95,40\n-\n`;
+    const bytes = new TextEncoder().encode(
+      page("F:C240229", "M:C240301") + page("M:C240301", "F:C240301"),
+    );
+    const id = await uploadBytes(user.id, account.id, bytes, "local.sta");
+    const p = await buildPreview(user.id, id);
+    expect(p.errors).toEqual([]);
+    expect(p.warnings.join(" ")).toMatch(/does not name an account IBAN/);
+    expect(p.rows.map((r) => r.status)).toEqual(["new", "new"]);
+    expect(await confirmImport(user.id, id)).toMatchObject({ newCount: 2 });
   });
 
   it("picks the statement of this account and rejects another IBAN", async () => {

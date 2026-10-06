@@ -436,6 +436,38 @@ describe("references and externalId", () => {
   });
 });
 
+describe("multi-page statements", () => {
+  const page = (open: string, close: string) =>
+    `:20:P\n:25:${IBAN_DE}\n:60${open}EUR100,00\n:61:240301D4,60NMSC\n:86:Day ticket\n:62${close}EUR95,40\n-\n`;
+
+  it("keeps identical unreferenced bookings on both sides of a page break apart", () => {
+    const [a, b] = parseMt940(
+      page("F:C240229", "M:C240301") + page("M:C240301", "F:C240301"),
+    );
+    expect(a!.transactions[0]!.externalId).toMatch(/^hash:/);
+    expect(b!.transactions[0]!.externalId).toBe(
+      `${a!.transactions[0]!.externalId}#2`,
+    );
+  });
+
+  it("does not link statements that are not pages of one another", () => {
+    const [a, b] = parseMt940(
+      page("F:C240229", "F:C240301") + page("F:C240229", "F:C240301"),
+    );
+    expect(b!.transactions[0]!.externalId).toBe(a!.transactions[0]!.externalId);
+  });
+
+  it("counts pages per account", () => {
+    const other = page("M:C240301", "F:C240301").replace(IBAN_DE, IBAN_CH);
+    const list = parseMt940(
+      page("F:C240229", "M:C240301") + other + page("M:C240301", "F:C240301"),
+    );
+    const id = (i: number) => list[i]!.transactions[0]!.externalId;
+    expect(id(2)).toBe(`${id(0)}#2`);
+    expect(id(1)).not.toContain("#");
+  });
+});
+
 describe("overlapping files", () => {
   const a = parse("overlap-a.sta")[0]!.transactions;
   const b = parse("overlap-b.sta")[0]!.transactions;
