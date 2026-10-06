@@ -123,6 +123,22 @@ describe("compareUpgrade", () => {
     expect(problems.some((p) => p.includes("foreign key"))).toBe(true);
   });
 
+  it("reports a weakened column definition and a redefined index", () => {
+    const weaker = takeSnapshot(
+      database(`
+        CREATE TABLE parent (id text PRIMARY KEY NOT NULL, name text DEFAULT 'x', amount);
+        CREATE TABLE child (id text PRIMARY KEY, parent_id text REFERENCES parent(id) ON DELETE cascade);
+        CREATE INDEX parent_name_uq ON parent (name);
+        INSERT INTO parent VALUES ('p1', 'one', 100), ('p2', 'two', NULL);
+        INSERT INTO child VALUES ('c1', 'p1');
+      `),
+    );
+    const problems = compareUpgrade(before, weaker, none).join("\n");
+    expect(problems).toContain("parent.name: definition changed");
+    expect(problems).toContain("child.id: definition changed");
+    expect(problems).toContain("index parent_name_uq was redefined");
+  });
+
   it("reports violations the database itself finds", () => {
     const db = database(base);
     db.exec(

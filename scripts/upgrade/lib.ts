@@ -30,6 +30,8 @@ export type Row = Record<string, Cell>;
 
 export interface TableSnapshot {
   columns: string[];
+  /** Declared type, NOT NULL, default and primary key position of each column. */
+  columnDefs: Record<string, string>;
   primaryKey: string[];
   /** Every row, with the SQLite rowid as `__rowid`; sorted by primary key. */
   rows: Row[];
@@ -40,6 +42,8 @@ export interface TableSnapshot {
 export interface Snapshot {
   tables: Record<string, TableSnapshot>;
   indexes: string[];
+  /** The `CREATE INDEX` statement of each index, whitespace collapsed. */
+  indexSql: Record<string, string>;
   /** The rows of `__drizzle_migrations`, in order. */
   migrations: { hash: string; createdAt: number }[];
   integrityCheck: string[];
@@ -59,10 +63,20 @@ export function takeSnapshot(db: Database): Snapshot {
 
   const tables: Record<string, TableSnapshot> = {};
   for (const name of tableNames) {
-    const info = db.query(`PRAGMA table_info(${quote(name)})`).all() as {
+    const info = db.query(`PRAGMA table_xinfo(${quote(name)})`).all() as {
       name: string;
+      type: string;
+      notnull: number;
+      dflt_value: string | null;
       pk: number;
+      hidden: number;
     }[];
+    const columnDefs = Object.fromEntries(
+      info.map((c) => [
+        c.name,
+        `${c.type} notnull=${c.notnull} default=${c.dflt_value} pk=${c.pk} hidden=${c.hidden}`,
+      ]),
+    );
     const columns = info.map((c) => c.name);
     const primaryKey = info
       .filter((c) => c.pk > 0)
@@ -87,16 +101,18 @@ export function takeSnapshot(db: Database): Snapshot {
     )
       .map((f) => `${f.from} -> ${f.table} on delete ${f.on_delete}`)
       .sort();
-    tables[name] = { columns, primaryKey, rows, foreignKeys };
+    tables[name] = { columns, columnDefs, primaryKey, rows, foreignKeys };
   }
 
-  const indexes = (
-    db
-      .query(
-        "SELECT name FROM sqlite_master WHERE type = 'index' AND name NOT LIKE 'sqlite_%' ORDER BY name",
-      )
-      .all() as { name: string }[]
-  ).map((r) => r.name);
+  const indexRows = db
+    .query(
+      "SELECT name, sql FROM sqlite_master WHERE type = 'index' AND name NOT LIKE 'sqlite_%' ORDER BY name",
+    )
+    .all() as { name: string; sql: string | null }[];
+  const indexes = indexRows.map((r) => r.name);
+  const indexSql = Object.fromEntries(
+    indexRows.map((r) => [r.name, (r.sql ?? "").replace(/\s+/g, " ").trim()]),
+  );
 
   const migrations = (
     db
@@ -115,7 +131,14 @@ export function takeSnapshot(db: Database): Snapshot {
     }[]
   ).map((r) => `${r.table} row ${r.rowid} -> ${r.parent}`);
 
-  return { tables, indexes, migrations, integrityCheck, foreignKeyViolations };
+  return {
+    tables,
+    indexes,
+    indexSql,
+    migrations,
+    integrityCheck,
+    foreignKeyViolations,
+  };
 }
 
 /** The key that identifies a row across both snapshots: its primary key values. */
@@ -177,7 +200,13 @@ export function compareUpgrade(
       add(`${name}: added columns [${added}], expected [${wantAdded}]`);
     }
     for (const c of b.columns) {
-      if (!a.columns.includes(c)) add(`${name}: column ${c} disappeared`);
+      if (!a.columns.includes(c)) {
+        add(`${name}: column ${c} disappeared`);
+      } else if (b.columnDefs[c] !== a.columnDefs[c]) {
+        add(
+          `${name}.${c}: definition changed from "${b.columnDefs[c]}" to "${a.columnDefs[c]}"`,
+        );
+      }
     }
     for (const fk of b.foreignKeys) {
       if (!a.foreignKeys.includes(fk))
@@ -231,7 +260,11 @@ export function compareUpgrade(
   }
 
   for (const index of before.indexes) {
-    if (!after.indexes.includes(index)) add(`index ${index} disappeared`);
+    if (!after.indexes.includes(index)) {
+      add(`index ${index} disappeared`);
+    } else if (before.indexSql[index] !== after.indexSql[index]) {
+      add(`index ${index} was redefined`);
+    }
   }
 
   if (after.migrations.length < before.migrations.length) {

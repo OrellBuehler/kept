@@ -185,7 +185,11 @@ describe.skipIf(dialect === "pg")("upgrade from 0.3.0", () => {
 
   describe("the starting point", () => {
     it("is a 0.3.0 database holding data in every table", () => {
-      expect(before.migrations).toHaveLength(17);
+      expect(before.migrations).toHaveLength(v030.baseline.migrations);
+      expect(before.migrations.at(-1)).toEqual({
+        hash: v030.baseline.lastHash,
+        createdAt: v030.baseline.lastWhen,
+      });
       expect(Object.keys(before.tables)).not.toContain("trades");
       expect(Object.keys(before.tables)).toHaveLength(35);
       for (const [table, count] of Object.entries(v030.rowCounts)) {
@@ -200,7 +204,7 @@ describe.skipIf(dialect === "pg")("upgrade from 0.3.0", () => {
 
     it("uses the migrations of the 0.3.0 release", () => {
       const tags = readJournal(releaseFolder(root)).entries.map((e) => e.tag);
-      expect(tags).toHaveLength(17);
+      expect(tags).toHaveLength(v030.baseline.migrations);
       expect(tags.at(-1)).toBe(v030.lastMigration);
       const full = readJournal(real).entries.map((e) => e.tag);
       expect(full[17]).toBe(v030.firstUpgradeMigration);

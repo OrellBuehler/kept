@@ -13,9 +13,17 @@ const int = (n: number): Cell => `i:${n}`;
 
 export const version = "0.3.0";
 /** Published image of that release (the `v` of the git tag is dropped by the image tags). */
-export const image = "ghcr.io/orellbuehler/kept:0.3.0";
+export const image =
+  "ghcr.io/orellbuehler/kept:0.3.0@sha256:41930c8739bf012d29e9ddc4e2589e6c8c44771eb8dae41aa66d83f089fa4a08";
 /** The last migration of that release, in `drizzle/sqlite/meta/_journal.json`; later ones are the upgrade. */
 export const lastMigration = "0016_warm_the_santerians";
+/** What the baseline database must have applied before the seed: its journal entry and file hash. */
+export const baseline = {
+  migrations: 17,
+  lastTag: lastMigration,
+  lastWhen: 1791107209889,
+  lastHash: "d80801d9fb6c37f6214c915bc6ef4f66e42bd4c71c857a07df3cea2f3129faff",
+};
 export const firstUpgradeMigration = "0017_purple_roland_deschain";
 
 /** 32 bytes of ASCII, base64: the key the secrets in `seed.sql` were encrypted with. Not a secret. */
@@ -283,11 +291,31 @@ export const pages: PageCheck[] = [
     status: 200,
     includes: ["moved from tax payment to deduction year"],
   },
-  { as: "alice", path: "/budgets", status: 200 },
-  { as: "alice", path: "/recurring", status: 200 },
-  { as: "alice", path: "/forecast", status: 200 },
-  { as: "alice", path: "/settings/notifications", status: 200 },
-  { as: "alice", path: "/settings/paperless", status: 200 },
+  { as: "alice", path: "/budgets", status: 200, includes: ["Groceries"] },
+  {
+    as: "alice",
+    path: "/recurring",
+    status: 200,
+    includes: ["Grocer subscription"],
+  },
+  {
+    as: "alice",
+    path: "/forecast",
+    status: 200,
+    includes: ["Expected refund"],
+  },
+  {
+    as: "alice",
+    path: "/settings/notifications",
+    status: 200,
+    includes: ["kept-upgrade-alice"],
+  },
+  {
+    as: "alice",
+    path: "/settings/paperless",
+    status: 200,
+    includes: ["paperless.example.invalid"],
+  },
   {
     as: "alice",
     path: "/admin/users",
