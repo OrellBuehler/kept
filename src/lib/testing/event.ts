@@ -1,4 +1,5 @@
 import { isActionFailure, isHttpError, isRedirect } from "@sveltejs/kit";
+import type { ApiTokenAuth } from "$lib/server/auth/api-tokens";
 import type { SessionInfo, SessionUser } from "$lib/server/auth/types";
 
 interface CookieRecord {
@@ -41,10 +42,11 @@ export class FakeCookies {
 export interface TestEventOptions {
   user?: SessionUser | null;
   session?: SessionInfo | null;
+  apiToken?: ApiTokenAuth | null;
   params?: Record<string, string>;
   url?: string;
   method?: string;
-  form?: Record<string, string | File>;
+  form?: Record<string, string | File | (string | File)[]>;
   /** Raw request body (e.g. JSON); use with `headers`. */
   body?: string;
   headers?: Record<string, string>;
@@ -63,7 +65,9 @@ export function createTestEvent(opts: TestEventOptions = {}) {
   let body: FormData | string | undefined = opts.body;
   if (opts.form) {
     body = new FormData();
-    for (const [k, v] of Object.entries(opts.form)) body.append(k, v);
+    for (const [k, v] of Object.entries(opts.form)) {
+      for (const item of Array.isArray(v) ? v : [v]) body.append(k, item);
+    }
   }
   const cookies = new FakeCookies(opts.cookies);
   return {
@@ -77,6 +81,7 @@ export function createTestEvent(opts: TestEventOptions = {}) {
           }
         : null,
       session: opts.session ?? null,
+      apiToken: opts.apiToken ?? null,
     },
     params: opts.params ?? {},
     url,

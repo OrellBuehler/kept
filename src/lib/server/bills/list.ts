@@ -44,7 +44,10 @@ export function parseBillListQuery(
   });
 }
 
-function matchesStatus(v: BillWithStatus, status: BillListStatus): boolean {
+export function matchesStatus(
+  v: BillWithStatus,
+  status: BillListStatus,
+): boolean {
   switch (status) {
     case "all":
       return true;

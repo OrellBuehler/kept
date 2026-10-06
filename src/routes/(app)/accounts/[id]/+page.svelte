@@ -63,8 +63,20 @@
   let archiving = $state(false);
 
   const selected = $derived(
-    data.transactions.items.find((t) => t.id === selectedId) ?? null,
+    data.transactions.items.find((t) => t.id === selectedId) ??
+      (data.focused?.id === selectedId ? data.focused : null),
   );
+
+  // The external API links to ?tx=<id>: open that transaction once per link.
+  const focusId = $derived(data.focused?.id ?? null);
+  let handledFocus: string | null = null;
+  $effect(() => {
+    if (focusId && focusId !== handledFocus) {
+      handledFocus = focusId;
+      selectedId = focusId;
+      sheetOpen = true;
+    }
+  });
 
   afterNavigate(() => {
     // The import flow redirects here with ?imported=<id>; show it once, then
@@ -366,6 +378,7 @@
 <TransactionSheet
   bind:open={sheetOpen}
   transaction={selected}
+  links={selected ? (data.transactionLinks[selected.id] ?? []) : []}
   currency={account.currency}
   onDelete={(tx) => {
     deletingTxId = tx.id;

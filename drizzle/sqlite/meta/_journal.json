@@ -211,6 +211,20 @@
       "when": 1791150347030,
       "tag": "0029_strong_scourge",
       "breakpoints": true
+    },
+    {
+      "idx": 30,
+      "version": "6",
+      "when": 1791298602933,
+      "tag": "0030_new_luke_cage",
+      "breakpoints": true
+    },
+    {
+      "idx": 31,
+      "version": "6",
+      "when": 1791299381580,
+      "tag": "0031_short_ben_grimm",
+      "breakpoints": true
     }
   ]
 }

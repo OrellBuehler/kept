@@ -4,7 +4,7 @@
 
 ### Upgrading from 0.3.0
 
-- **Back up `kept.db` first.** Migrations 0017–0029 run automatically on the first start, in one
+- **Back up `kept.db` first.** Migrations 0017–0031 run automatically on the first start, in one
   transaction (a failure leaves the database as it was). Two of them rewrite existing rows.
 - **Finish or cancel open imports before upgrading.** Uploads waiting for confirmation now live in
   the database and blob store; previews started on 0.3.0 are not carried over.
@@ -40,6 +40,9 @@
 - Several instances can share one PostgreSQL database: scheduled jobs and cleanups run on one
   instance, and every instance shuts down gracefully.
 - Security headers and a content security policy; app error pages.
+- External API for companion apps: scoped, revocable tokens (Settings → API tokens) with read
+  access to bills, transactions, categories, recurring payments and accounts, and links back to
+  bills and transactions. See `docs/external-api.md`.
 - Warning about lost edits before undoing an import.
 
 ### Fixed

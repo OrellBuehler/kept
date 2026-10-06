@@ -35,6 +35,7 @@ import {
   removeAllocation,
   undismissSuggestion,
 } from "$lib/server/bills/suggestions";
+import { linksByEntity } from "$lib/server/external-api/links";
 import { parseForm, safeValues } from "$lib/server/forms";
 import { listAccounts } from "$lib/server/ledger/accounts";
 import { ledgerFailure, orNotFoundAsync } from "$lib/server/ledger/http";
@@ -52,8 +53,16 @@ export const load: PageServerLoad = async ({ locals, params, url }) => {
     billView(user.id, params.id, { today: todayLocal() }),
   );
   const q = url.searchParams.get("q")?.trim() ?? "";
+  const links =
+    (await linksByEntity(user.id, "bill", [bill.id]))[bill.id] ?? [];
   return {
     bill,
+    links: links.map(({ id, label, url, source }) => ({
+      id,
+      label,
+      url,
+      source,
+    })),
     allocations: await listBillAllocations(user.id, bill.id),
     suggestions: await getSuggestions(user.id, { billId: bill.id }),
     dismissed: await listDismissed(user.id, bill.id),
