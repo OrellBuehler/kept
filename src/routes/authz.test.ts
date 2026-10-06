@@ -69,6 +69,15 @@ const matrix: Record<string, Entry> = {
       GET: (m, e) => (m as never as { GET: (e: never) => unknown }).GET(e),
     },
   },
+  "/src/routes/api/external/v1/bills/[id]/links/+server.ts": {
+    access: "token",
+    scope: "bills:read",
+    scopes: { POST: "links:write" },
+    handlers: {
+      GET: (m, e) => (m as never as { GET: (e: never) => unknown }).GET(e),
+      POST: (m, e) => (m as never as { POST: (e: never) => unknown }).POST(e),
+    },
+  },
   "/src/routes/api/external/v1/transactions/+server.ts": {
     access: "token",
     scope: "transactions:read",
@@ -81,6 +90,15 @@ const matrix: Record<string, Entry> = {
     scope: "transactions:read",
     handlers: {
       GET: (m, e) => (m as never as { GET: (e: never) => unknown }).GET(e),
+    },
+  },
+  "/src/routes/api/external/v1/transactions/[id]/links/+server.ts": {
+    access: "token",
+    scope: "transactions:read",
+    scopes: { POST: "links:write" },
+    handlers: {
+      GET: (m, e) => (m as never as { GET: (e: never) => unknown }).GET(e),
+      POST: (m, e) => (m as never as { POST: (e: never) => unknown }).POST(e),
     },
   },
   "/src/routes/api/external/v1/categories/+server.ts": {
@@ -102,6 +120,14 @@ const matrix: Record<string, Entry> = {
     scope: "accounts:read",
     handlers: {
       GET: (m, e) => (m as never as { GET: (e: never) => unknown }).GET(e),
+    },
+  },
+  "/src/routes/api/external/v1/links/[linkId]/+server.ts": {
+    access: "token",
+    scope: "links:write",
+    handlers: {
+      DELETE: (m, e) =>
+        (m as never as { DELETE: (e: never) => unknown }).DELETE(e),
     },
   },
   "/src/routes/api/external/v1/[...rest]/+server.ts": {

@@ -29,7 +29,7 @@ import { AMOUNT_SIGNS, CATEGORY_KINDS } from "$lib/category-types";
 import { DEDUCTION_TYPES } from "$lib/tax-deductions";
 import { CHANNEL_KINDS } from "$lib/notification-types";
 import { CADENCES, SERIES_STATUSES } from "$lib/recurring-types";
-import { API_SCOPES } from "$lib/api-tokens";
+import { API_SCOPES, EXTERNAL_LINK_ENTITY_TYPES } from "$lib/api-tokens";
 import type { ApiScope } from "$lib/api-tokens";
 import { IBAN_DISPLAY, LOCALES } from "$lib/preferences";
 import { nextSeq } from "../seq";
@@ -83,8 +83,8 @@ export type {
   Pillar3aDeduction,
   PortfolioCloseReason,
 } from "$lib/pillar-3a-types";
-export { API_SCOPES };
-export type { ApiScope } from "$lib/api-tokens";
+export { API_SCOPES, EXTERNAL_LINK_ENTITY_TYPES };
+export type { ApiScope, ExternalLinkEntityType } from "$lib/api-tokens";
 export {
   ALLOCATION_ORIGINS,
   BILL_KINDS,
@@ -1473,5 +1473,38 @@ export const apiTokens = table(
   (t) => [
     uniqueIndex("api_tokens_token_hash_uq").on(t.tokenHash),
     index("api_tokens_user_id_idx").on(t.userId),
+  ],
+);
+
+/**
+ * A link a companion app attached to a bill or transaction. `entityId` is not
+ * a foreign key (it points into one of two tables): reads always go through the
+ * owned entity, and rows whose entity is gone are swept at startup.
+ */
+export const externalLinks = table(
+  "external_links",
+  {
+    id: id(),
+    userId: userId(),
+    entityType: text("entity_type", {
+      enum: EXTERNAL_LINK_ENTITY_TYPES,
+    }).notNull(),
+    entityId: text("entity_id").notNull(),
+    /** Which app created the link, free text such as an app name. */
+    source: text("source").notNull(),
+    label: text("label").notNull(),
+    /** http or https only. */
+    url: text("url").notNull(),
+    ...timestamps(),
+  },
+  (t) => [
+    uniqueIndex("external_links_entity_source_url_uq").on(
+      t.userId,
+      t.entityType,
+      t.entityId,
+      t.source,
+      t.url,
+    ),
+    index("external_links_entity_idx").on(t.entityType, t.entityId),
   ],
 );

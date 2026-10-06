@@ -37,6 +37,7 @@ import {
 import { getDB, transactions as transactionsTable } from "$lib/server/db";
 import { eq } from "drizzle-orm";
 import { linkTransfers, listNeedsAmount } from "$lib/server/transfers";
+import { createLink } from "$lib/server/external-api/links";
 import { actions, load } from "./+page.server";
 
 type LoadData = Exclude<Awaited<ReturnType<typeof load>>, void>;
@@ -234,6 +235,7 @@ describe("account detail page", () => {
       "categories",
       "filterErrors",
       "filters",
+      "focused",
       "hasHoldings",
       "institutions",
       "portfolioValues",
@@ -242,6 +244,7 @@ describe("account detail page", () => {
       "showPortfolios",
       "snapshots",
       "trades",
+      "transactionLinks",
       "transactions",
       "transfers",
       "value",
@@ -1413,5 +1416,75 @@ describe("account page: transfer linking", () => {
 
     expect(await rowsOf(b.id)).toHaveLength(1);
     expect(await listNeedsAmount(intruder.id)).toEqual([]);
+  });
+});
+
+describe("account detail page: external links and ?tx=", () => {
+  useTestDB();
+
+  const link = {
+    source: "home app",
+    label: "Costs 2026",
+    url: "https://home.example.org/costs",
+  };
+
+  it("hands the links of the listed transactions to the page", async () => {
+    const u = await createTestUser();
+    const acc = await seedAccount(u.id);
+    const tx = await manualTx(u.id, acc.id);
+    const other = await manualTx(u.id, acc.id, "other");
+    await createLink(u.id, "transaction", tx.id, link);
+    const r = await loadAs(u, acc.id);
+    const v = (r as { value: LoadData }).value;
+    expect(v.transactionLinks[tx.id]).toEqual([
+      { id: expect.any(String), ...link },
+    ]);
+    expect(v.transactionLinks[other.id]).toBeUndefined();
+    expect(v.focused).toBeNull();
+  });
+
+  it("does not show another user's links on the user's transactions", async () => {
+    const a = await createTestUser();
+    const b = await createTestUser();
+    const acc = await seedAccount(a.id);
+    const tx = await manualTx(a.id, acc.id);
+    await createLink(b.id, "transaction", tx.id, link);
+    const v = ((await loadAs(a, acc.id)) as { value: LoadData }).value;
+    expect(v.transactionLinks).toEqual({});
+  });
+
+  it("?tx= focuses a transaction of this account, wherever it sits in the list", async () => {
+    const u = await createTestUser();
+    const acc = await seedAccount(u.id);
+    const old = await seedImportedTransaction(u.id, acc.id, {
+      bookingDate: "2020-01-01",
+    });
+    for (let i = 0; i < 3; i++) await manualTx(u.id, acc.id, `row ${i}`);
+    await createLink(u.id, "transaction", old.id, link);
+    const v = (
+      (await loadAs(u, acc.id, `?tx=${old.id}&pageSize=1`)) as {
+        value: LoadData;
+      }
+    ).value;
+    expect(v.transactions.items.map((t: { id: string }) => t.id)).not.toContain(
+      old.id,
+    );
+    expect(v.focused?.id).toBe(old.id);
+    expect(v.transactionLinks[old.id]).toHaveLength(1);
+  });
+
+  it("?tx= ignores transactions of another account or user, and nonsense", async () => {
+    const a = await createTestUser();
+    const b = await createTestUser();
+    const acc = await seedAccount(a.id);
+    const second = await seedAccount(a.id, { name: "Second" });
+    const theirs = await seedAccount(b.id);
+    const mine = await manualTx(a.id, second.id);
+    const foreign = await manualTx(b.id, theirs.id);
+    for (const id of [mine.id, foreign.id, "nope", ""]) {
+      const v = ((await loadAs(a, acc.id, `?tx=${id}`)) as { value: LoadData })
+        .value;
+      expect(v.focused, id).toBeNull();
+    }
   });
 });

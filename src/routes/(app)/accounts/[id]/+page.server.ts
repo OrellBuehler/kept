@@ -6,6 +6,7 @@ import {
   assignCategorySchema,
   listCategories,
 } from "$lib/server/categories";
+import { linksByEntity } from "$lib/server/external-api/links";
 import { parseForm, safeValues } from "$lib/server/forms";
 import {
   createTrade,
@@ -24,6 +25,7 @@ import {
   unarchiveAccount,
   updateAccount,
 } from "$lib/server/ledger/accounts";
+import { LedgerError } from "$lib/server/ledger/errors";
 import { ledgerFailure, orNotFoundAsync } from "$lib/server/ledger/http";
 import { listInstitutions } from "$lib/server/ledger/institutions";
 import {
@@ -140,6 +142,33 @@ export const load: PageServerLoad = async ({ locals, params, url }) => {
     account.currency,
     (await getPreferences(user.id)).pageSize,
   );
+  const transactionsPage = await listTransactions(user.id, account.id, {
+    filters: query.filters,
+    page: query.page,
+    pageSize: query.pageSize,
+  });
+  // ?tx=<id> (the link the external API hands out) opens that transaction's sheet,
+  // wherever it sits in the list.
+  const focused = await focusedTransaction(
+    user.id,
+    account.id,
+    url.searchParams.get("tx"),
+  );
+  const shownTransactions = focused
+    ? [...transactionsPage.items, focused]
+    : transactionsPage.items;
+  const transactionLinks = Object.fromEntries(
+    Object.entries(
+      await linksByEntity(
+        user.id,
+        "transaction",
+        shownTransactions.map((t) => t.id),
+      ),
+    ).map(([id, list]) => [
+      id,
+      list.map(({ id, label, url, source }) => ({ id, label, url, source })),
+    ]),
+  );
   const trades = await listTrades(user.id, account.id);
   const portfolios = await listPortfolios(user.id, account.id);
   const hasHoldings = account.type === "investment" || trades.length > 0;
@@ -166,11 +195,9 @@ export const load: PageServerLoad = async ({ locals, params, url }) => {
       id: i.id,
       name: i.name,
     })),
-    transactions: await listTransactions(user.id, account.id, {
-      filters: query.filters,
-      page: query.page,
-      pageSize: query.pageSize,
-    }),
+    transactions: transactionsPage,
+    focused,
+    transactionLinks,
     snapshots: await listSnapshots(user.id, account.id),
     transfers: {
       /** Mirrored transactions on this account (for the confirm dialog when filling is turned off). */
@@ -185,6 +212,22 @@ export const load: PageServerLoad = async ({ locals, params, url }) => {
     filterErrors: query.errors,
   };
 };
+
+/** The transaction a `?tx=` link points at, when it is one of this account's. */
+async function focusedTransaction(
+  userId: string,
+  accountId: string,
+  id: string | null,
+) {
+  if (!id) return null;
+  try {
+    const tx = await getTransaction(userId, id);
+    return tx.accountId === accountId ? tx : null;
+  } catch (err) {
+    if (err instanceof LedgerError && err.code === "not_found") return null;
+    throw err;
+  }
+}
 
 async function ownedTransaction(userId: string, accountId: string, id: string) {
   const tx = await orNotFoundAsync(() => getTransaction(userId, id));

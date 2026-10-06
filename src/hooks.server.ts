@@ -32,6 +32,7 @@ import {
   isPublicPath,
 } from "$lib/server/auth/routing";
 import { handleExternalApi } from "$lib/server/external-api/gate";
+import { sweepOrphanedLinks } from "$lib/server/external-api/links";
 import { describeError } from "$lib/server/errors";
 import {
   warnIfAddressHeaderUnset,
@@ -54,6 +55,9 @@ export async function init() {
   startDocumentSweep();
   sweepStaleStorageTemp().catch((err) =>
     console.error("storage temp cleanup failed: %s", describeError(err)),
+  );
+  sweepOrphanedLinks().catch((err) =>
+    console.error("external link cleanup failed: %s", describeError(err)),
   );
   registerBackups();
   registerInbox();
