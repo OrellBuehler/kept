@@ -159,10 +159,10 @@ describe("static/offline.html", () => {
   const html = readFileSync("static/offline.html", "utf8");
 
   it("runs no inline script", () => {
-    for (const tag of html.match(/<script\b[^>]*>/g) ?? []) {
-      expect(tag).toMatch(/\ssrc=/);
+    for (const tag of html.match(/<script\b[^>]*>/gi) ?? []) {
+      expect(tag).toMatch(/\ssrc=/i);
     }
-    expect(html).not.toMatch(/\son[a-z]+=/);
+    expect(html).not.toMatch(/\son[a-z]+=/i);
   });
 
   it("restricts itself to same-origin files, as the static server sends no CSP", () => {
