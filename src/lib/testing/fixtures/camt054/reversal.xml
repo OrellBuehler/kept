@@ -1,0 +1,64 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Document xmlns="urn:iso:std:iso:20022:tech:xsd:camt.054.001.04">
+  <BkToCstmrDbtCdtNtfctn>
+    <GrpHdr>
+      <MsgId>EXAMPLE-NTFCTN</MsgId>
+      <CreDtTm>2024-06-01T06:00:00</CreDtTm>
+    </GrpHdr>
+    <Ntfctn>
+      <Id>NTF-RVSL-1</Id>
+      <CreDtTm>2024-06-01T06:00:00</CreDtTm>
+      <Acct>
+        <Id><IBAN>CH9300762011623852957</IBAN></Id>
+        <Ccy>CHF</Ccy>
+      </Acct>
+      <Ntry>
+        <Amt Ccy="CHF">200.00</Amt>
+        <CdtDbtInd>CRDT</CdtDbtInd>
+        <Sts>BOOK</Sts>
+        <BookgDt><Dt>2024-09-03</Dt></BookgDt>
+        <AcctSvcrRef>RV-1</AcctSvcrRef>
+        <NtryDtls>
+          <TxDtls>
+            <RltdPties><Dbtr><Nm>Jane Example</Nm></Dbtr></RltdPties>
+            <RmtInf><Ustrd>Deposit</Ustrd></RmtInf>
+          </TxDtls>
+        </NtryDtls>
+      </Ntry>
+      <Ntry>
+        <Amt Ccy="CHF">80.00</Amt>
+        <CdtDbtInd>DBIT</CdtDbtInd>
+        <RvslInd>true</RvslInd>
+        <Sts>BOOK</Sts>
+        <BookgDt><Dt>2024-09-10</Dt></BookgDt>
+        <AcctSvcrRef>RV-2</AcctSvcrRef>
+        <NtryDtls>
+          <TxDtls>
+            <RltdPties>
+              <Dbtr><Nm>Example Energy Ltd</Nm></Dbtr>
+              <DbtrAcct><Id><IBAN>GB82WEST12345698765432</IBAN></Id></DbtrAcct>
+            </RltdPties>
+            <RmtInf><Ustrd>Returned direct debit</Ustrd></RmtInf>
+          </TxDtls>
+        </NtryDtls>
+      </Ntry>
+      <Ntry>
+        <Amt Ccy="CHF">30.00</Amt>
+        <CdtDbtInd>CRDT</CdtDbtInd>
+        <RvslInd>true</RvslInd>
+        <Sts>BOOK</Sts>
+        <BookgDt><Dt>2024-09-20</Dt></BookgDt>
+        <AcctSvcrRef>RV-3</AcctSvcrRef>
+        <NtryDtls>
+          <TxDtls>
+            <RltdPties>
+              <Cdtr><Nm>Sample Insurance AG</Nm></Cdtr>
+              <CdtrAcct><Id><IBAN>CH4431999123000889012</IBAN></Id></CdtrAcct>
+            </RltdPties>
+            <RmtInf><Ustrd>Cancelled credit</Ustrd></RmtInf>
+          </TxDtls>
+        </NtryDtls>
+      </Ntry>
+    </Ntfctn>
+  </BkToCstmrDbtCdtNtfctn>
+</Document>

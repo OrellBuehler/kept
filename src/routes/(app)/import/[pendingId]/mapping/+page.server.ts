@@ -3,6 +3,7 @@ import { requireUser } from "$lib/server/auth/guards";
 import { parseForm, safeValues } from "$lib/server/forms";
 import {
   getPendingMeta,
+  isStatementFormat,
   mappingContext,
   saveCsvProfile,
 } from "$lib/server/imports";
@@ -20,7 +21,7 @@ export const load: PageServerLoad = async ({ locals, params }) => {
   const meta = await orNotFoundAsync(() =>
     getPendingMeta(user.id, params.pendingId),
   );
-  if (meta.format === "camt053") redirect(303, `/import/${meta.id}`);
+  if (isStatementFormat(meta.format)) redirect(303, `/import/${meta.id}`);
   return orNotFoundAsync(() => mappingContext(user.id, meta.id));
 };
 

@@ -12,8 +12,10 @@ history — on your own server, in a single SQLite file by default (PostgreSQL o
 - **Shared accounts**: set "my share" (e.g. 50% or 33.33%) on an account you co-own. Imports and
   transactions keep their full amounts; a "My share" view on the dashboard, net worth chart and
   report, budgets and category totals counts them at your share (the co-owner needs no account).
-- **Statement import** from ISO 20022 camt.053 (`.001.02`/`.04`/`.08` and later) and from any
-  CSV or Excel export through a column mapping you set up once per account, with a live preview.
+- **Statement import** from ISO 20022 camt.053 statements and camt.054 notifications
+  (`.001.02`/`.04`/`.08` and later), from SWIFT MT940 (UTF-8 or Latin-1, structured `:86:` and
+  SEPA keywords) and from any CSV or Excel export through a column mapping you set up once per
+  account, with a live preview.
   Re-importing overlapping files never duplicates transactions; Kept warns when a file's opening
   balance doesn't continue the account's history. Every import can be undone.
 - **Bills**: upload a PDF and Kept reads the Swiss QR-bill (falls back to the text when there is
@@ -216,7 +218,7 @@ user has a folder named after their username (created on the first scan). The pr
 write access to the directory.
 
 ```
-<inbox>/<username>/statement.xml        camt.053: account found by the statement IBAN
+<inbox>/<username>/statement.xml        camt.053/.054, MT940 (.sta .mt940 .txt): account found by the IBAN
 <inbox>/<username>/<account>/export.csv CSV or Excel: account named by the folder
 <inbox>/<username>/processed/           imported (or already known) files
 <inbox>/<username>/review/              files waiting for you on the Import page
@@ -225,8 +227,8 @@ write access to the directory.
 
 - The folder `<account>` is the account's name (case-insensitive) or its IBAN. CSV and Excel
   files also need the column mapping saved for that account (map one file by hand once); without
-  it the file waits in `review/`. A camt.053 file placed in an account folder is imported into
-  that account, and the usual IBAN check still applies.
+  it the file waits in `review/`. A camt or MT940 file placed in an account folder is imported
+  into that account, and the usual IBAN check still applies.
 - Files go through the same preview and confirm path as uploads: duplicates are skipped, and the
   import shows up in history and can be undone. A file is imported automatically only when the
   account is unambiguous and the preview has no warnings (for example a balance gap). Otherwise

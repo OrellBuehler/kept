@@ -3,6 +3,8 @@ import type { ImportImpact } from "$lib/ledger-types";
 
 export const FORMAT_LABELS = {
   camt053: "camt.053",
+  camt054: "camt.054",
+  mt940: "MT940",
   csv: "CSV",
   xlsx: "Excel",
 } as const;

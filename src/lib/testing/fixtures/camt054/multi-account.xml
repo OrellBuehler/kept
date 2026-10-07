@@ -1,0 +1,69 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Document xmlns="urn:iso:std:iso:20022:tech:xsd:camt.054.001.04">
+  <BkToCstmrDbtCdtNtfctn>
+    <GrpHdr>
+      <MsgId>EXAMPLE-NTFCTN</MsgId>
+      <CreDtTm>2024-06-01T06:00:00</CreDtTm>
+    </GrpHdr>
+    <Ntfctn>
+      <Id>NTF-MULTI-1</Id>
+      <CreDtTm>2024-06-01T06:00:00</CreDtTm>
+      <Acct>
+        <Id><IBAN>CH9300762011623852957</IBAN></Id>
+        <Ccy>CHF</Ccy>
+      </Acct>
+      <Ntry>
+        <Amt Ccy="CHF">10.00</Amt>
+        <CdtDbtInd>CRDT</CdtDbtInd>
+        <Sts>BOOK</Sts>
+        <BookgDt><Dt>2024-04-02</Dt></BookgDt>
+        <AcctSvcrRef>MA-1</AcctSvcrRef>
+        <NtryDtls>
+          <TxDtls>
+            <RltdPties><Dbtr><Nm>Jane Example</Nm></Dbtr></RltdPties>
+          </TxDtls>
+        </NtryDtls>
+      </Ntry>
+    </Ntfctn>
+    <Ntfctn>
+      <Id>NTF-MULTI-2</Id>
+      <CreDtTm>2024-06-01T06:00:00</CreDtTm>
+      <Acct>
+        <Id><IBAN>DE89370400440532013000</IBAN></Id>
+        <Ccy>EUR</Ccy>
+      </Acct>
+      <Ntry>
+        <Amt Ccy="EUR">20.00</Amt>
+        <CdtDbtInd>DBIT</CdtDbtInd>
+        <Sts>BOOK</Sts>
+        <BookgDt><Dt>2024-04-03</Dt></BookgDt>
+        <AcctSvcrRef>MA-2</AcctSvcrRef>
+        <NtryDtls>
+          <TxDtls>
+            <RltdPties><Cdtr><Nm>Example Energy Ltd</Nm></Cdtr></RltdPties>
+          </TxDtls>
+        </NtryDtls>
+      </Ntry>
+    </Ntfctn>
+    <Ntfctn>
+      <Id>NTF-MULTI-3</Id>
+      <CreDtTm>2024-06-01T06:00:00</CreDtTm>
+      <Acct>
+        <Id><IBAN>CH9300762011623852957</IBAN></Id>
+        <Ccy>CHF</Ccy>
+      </Acct>
+      <Ntry>
+        <Amt Ccy="CHF">5.50</Amt>
+        <CdtDbtInd>DBIT</CdtDbtInd>
+        <Sts>BOOK</Sts>
+        <BookgDt><Dt>2024-04-04</Dt></BookgDt>
+        <AcctSvcrRef>MA-3</AcctSvcrRef>
+        <NtryDtls>
+          <TxDtls>
+            <RltdPties><Cdtr><Nm>Example Transit Ltd</Nm></Cdtr></RltdPties>
+          </TxDtls>
+        </NtryDtls>
+      </Ntry>
+    </Ntfctn>
+  </BkToCstmrDbtCdtNtfctn>
+</Document>

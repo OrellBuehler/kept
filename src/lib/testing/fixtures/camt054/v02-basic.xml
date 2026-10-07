@@ -1,0 +1,53 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Document xmlns="urn:iso:std:iso:20022:tech:xsd:camt.054.001.02">
+  <BkToCstmrDbtCdtNtfctn>
+    <GrpHdr>
+      <MsgId>EXAMPLE-NTFCTN</MsgId>
+      <CreDtTm>2024-06-01T06:00:00</CreDtTm>
+    </GrpHdr>
+    <Ntfctn>
+      <Id>NTF-V02-1</Id>
+      <CreDtTm>2024-06-01T06:00:00</CreDtTm>
+      <FrToDt><FrDtTm>2024-05-06T00:00:00</FrDtTm><ToDtTm>2024-05-07T23:59:59</ToDtTm></FrToDt>
+      <Acct>
+        <Id><IBAN>CH9300762011623852957</IBAN></Id>
+        <Ccy>CHF</Ccy>
+      </Acct>
+      <Ntry>
+        <Amt Ccy="CHF">150.00</Amt>
+        <CdtDbtInd>CRDT</CdtDbtInd>
+        <Sts>BOOK</Sts>
+        <BookgDt><Dt>2024-05-06</Dt></BookgDt>
+        <ValDt><Dt>2024-05-06</Dt></ValDt>
+        <AcctSvcrRef>V02-REF-1</AcctSvcrRef>
+        <NtryDtls>
+          <TxDtls>
+            <Refs><EndToEndId>E2E-V02-1</EndToEndId></Refs>
+            <RltdPties>
+              <Dbtr><Nm>Jane Example</Nm></Dbtr>
+              <DbtrAcct><Id><IBAN>DE89370400440532013000</IBAN></Id></DbtrAcct>
+            </RltdPties>
+            <RmtInf><Strd><CdtrRefInf><Tp><CdOrPrtry><Prtry>QRR</Prtry></CdOrPrtry></Tp><Ref>210000000003139471430009017</Ref></CdtrRefInf></Strd></RmtInf>
+          </TxDtls>
+        </NtryDtls>
+      </Ntry>
+      <Ntry>
+        <Amt Ccy="CHF">45.10</Amt>
+        <CdtDbtInd>DBIT</CdtDbtInd>
+        <Sts>BOOK</Sts>
+        <BookgDt><Dt>2024-05-07</Dt></BookgDt>
+        <ValDt><Dt>2024-05-08</Dt></ValDt>
+        <AcctSvcrRef>V02-REF-2</AcctSvcrRef>
+        <NtryDtls>
+          <TxDtls>
+            <RltdPties>
+              <Cdtr><Nm>Sample Insurance AG</Nm></Cdtr>
+              <CdtrAcct><Id><IBAN>CH4431999123000889012</IBAN></Id></CdtrAcct>
+            </RltdPties>
+            <RmtInf><Ustrd>Premium May</Ustrd></RmtInf>
+          </TxDtls>
+        </NtryDtls>
+      </Ntry>
+    </Ntfctn>
+  </BkToCstmrDbtCdtNtfctn>
+</Document>

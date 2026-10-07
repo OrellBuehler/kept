@@ -1,0 +1,73 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Document xmlns="urn:iso:std:iso:20022:tech:xsd:camt.054.001.04">
+  <BkToCstmrDbtCdtNtfctn>
+    <GrpHdr>
+      <MsgId>EXAMPLE-NTFCTN</MsgId>
+      <CreDtTm>2024-06-01T06:00:00</CreDtTm>
+    </GrpHdr>
+    <Ntfctn>
+      <Id>NTF-V04-1</Id>
+      <CreDtTm>2024-06-01T06:00:00</CreDtTm>
+      <Acct>
+        <Id><IBAN>CH9300762011623852957</IBAN></Id>
+        <Ccy>CHF</Ccy>
+      </Acct>
+      <Ntry>
+        <NtryRef>1</NtryRef>
+        <Amt Ccy="CHF">1200.00</Amt>
+        <CdtDbtInd>CRDT</CdtDbtInd>
+        <Sts>BOOK</Sts>
+        <BookgDt><Dt>2024-06-03</Dt></BookgDt>
+        <ValDt><Dt>2024-06-03</Dt></ValDt>
+        <AcctSvcrRef>V04-REF-1</AcctSvcrRef>
+        <NtryDtls>
+          <TxDtls>
+            <Refs><EndToEndId>E2E-V04-1</EndToEndId><TxId>TX-V04-1</TxId></Refs>
+            <RltdPties>
+              <Dbtr><Nm>Example Employer AG</Nm></Dbtr>
+              <DbtrAcct><Id><IBAN>DE89370400440532013000</IBAN></Id></DbtrAcct>
+            </RltdPties>
+            <RmtInf><Ustrd>Salary June</Ustrd></RmtInf>
+          </TxDtls>
+        </NtryDtls>
+      </Ntry>
+      <Ntry>
+        <Amt Ccy="CHF">0.00</Amt>
+        <CdtDbtInd>DBIT</CdtDbtInd>
+        <Sts>BOOK</Sts>
+        <BookgDt><Dt>2024-06-04</Dt></BookgDt>
+        <AcctSvcrRef>V04-REF-2</AcctSvcrRef>
+        <NtryDtls>
+          <TxDtls>
+            <RmtInf><Ustrd>Account fee waived</Ustrd></RmtInf>
+          </TxDtls>
+        </NtryDtls>
+      </Ntry>
+      <Ntry>
+        <NtryRef>3</NtryRef>
+        <Amt Ccy="CHF">19.90</Amt>
+        <CdtDbtInd>DBIT</CdtDbtInd>
+        <Sts>BOOK</Sts>
+        <BookgDt><Dt>2024-06-05</Dt></BookgDt>
+        <ValDt><Dt>2024-06-05</Dt></ValDt>
+        <AcctSvcrRef>V04-REF-3</AcctSvcrRef>
+        <NtryDtls>
+          <TxDtls>
+            <RltdPties>
+              <Cdtr><Nm>Example Streaming Ltd</Nm></Cdtr>
+              <CdtrAcct><Id><IBAN>GB82WEST12345698765432</IBAN></Id></CdtrAcct>
+            </RltdPties>
+            <RmtInf><Ustrd>Subscription</Ustrd></RmtInf>
+          </TxDtls>
+        </NtryDtls>
+      </Ntry>
+      <Ntry>
+        <Amt Ccy="CHF">5.00</Amt>
+        <CdtDbtInd>CRDT</CdtDbtInd>
+        <Sts>PDNG</Sts>
+        <BookgDt><Dt>2024-06-05</Dt></BookgDt>
+        <AcctSvcrRef>V04-REF-PDNG</AcctSvcrRef>
+      </Ntry>
+    </Ntfctn>
+  </BkToCstmrDbtCdtNtfctn>
+</Document>

@@ -1,0 +1,55 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Document xmlns="urn:iso:std:iso:20022:tech:xsd:camt.054.001.04">
+  <BkToCstmrDbtCdtNtfctn>
+    <GrpHdr>
+      <MsgId>EXAMPLE-NTFCTN</MsgId>
+      <CreDtTm>2024-06-01T06:00:00</CreDtTm>
+    </GrpHdr>
+    <Ntfctn>
+      <Id>NTF-NOREF-1</Id>
+      <CreDtTm>2024-06-01T06:00:00</CreDtTm>
+      <Acct>
+        <Id><IBAN>CH9300762011623852957</IBAN></Id>
+        <Ccy>CHF</Ccy>
+      </Acct>
+      <Ntry>
+        <Amt Ccy="CHF">4.60</Amt>
+        <CdtDbtInd>DBIT</CdtDbtInd>
+        <Sts>BOOK</Sts>
+        <BookgDt><Dt>2024-08-05</Dt></BookgDt>
+        <ValDt><Dt>2024-08-05</Dt></ValDt>
+        <NtryDtls>
+          <TxDtls>
+            <RltdPties><Cdtr><Nm>Example Transit Ltd</Nm></Cdtr></RltdPties>
+            <RmtInf><Ustrd>Day ticket</Ustrd></RmtInf>
+          </TxDtls>
+        </NtryDtls>
+      </Ntry>
+      <Ntry>
+        <Amt Ccy="CHF">4.60</Amt>
+        <CdtDbtInd>DBIT</CdtDbtInd>
+        <Sts>BOOK</Sts>
+        <BookgDt><Dt>2024-08-05</Dt></BookgDt>
+        <ValDt><Dt>2024-08-05</Dt></ValDt>
+        <NtryDtls>
+          <TxDtls>
+            <RltdPties><Cdtr><Nm>Example Transit Ltd</Nm></Cdtr></RltdPties>
+            <RmtInf><Ustrd>Day ticket</Ustrd></RmtInf>
+          </TxDtls>
+        </NtryDtls>
+      </Ntry>
+      <Ntry>
+        <Amt Ccy="CHF">88.00</Amt>
+        <CdtDbtInd>CRDT</CdtDbtInd>
+        <Sts>BOOK</Sts>
+        <BookgDt><Dt>2024-08-06</Dt></BookgDt>
+        <NtryDtls>
+          <TxDtls>
+            <RltdPties><Dbtr><Nm>Jane Example</Nm></Dbtr></RltdPties>
+            <RmtInf><Ustrd>Shared dinner</Ustrd></RmtInf>
+          </TxDtls>
+        </NtryDtls>
+      </Ntry>
+    </Ntfctn>
+  </BkToCstmrDbtCdtNtfctn>
+</Document>

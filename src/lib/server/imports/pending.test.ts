@@ -50,15 +50,45 @@ describe("detectFormat", () => {
     expect(detectFormat(fixture("csv/utf16le-bom.csv"))).toBe("csv");
   });
 
-  it("rejects camt.054 and other XML with a clear message", () => {
-    const xml054 = enc(
-      '<?xml version="1.0"?><Document xmlns="urn:iso:std:iso:20022:tech:xsd:camt.054.001.08"><BkToCstmrDbtCdtNtfctn/></Document>',
+  it("detects camt.054 by content", () => {
+    expect(detectFormat(fixture("camt054/v02-basic.xml"))).toBe("camt054");
+    expect(detectFormat(fixture("camt054/v04-basic.xml"))).toBe("camt054");
+    expect(detectFormat(fixture("camt054/v08-basic.xml"))).toBe("camt054");
+  });
+
+  it("detects MT940 by its :20: field, with block headers, a BOM or CRLF", () => {
+    const mt = fixture("mt940/basic.sta");
+    expect(detectFormat(mt)).toBe("mt940");
+    expect(detectFormat(fixture("mt940/blocks.sta"))).toBe("mt940");
+    expect(detectFormat(new Uint8Array([0xef, 0xbb, 0xbf, ...mt]))).toBe(
+      "mt940",
     );
+    expect(
+      detectFormat(enc(new TextDecoder().decode(mt).replace(/\n/g, "\r\n"))),
+    ).toBe("mt940");
+    expect(detectFormat(enc("\n\n:20:REF\n:25:X\n"))).toBe("mt940");
+  });
+
+  it("detects a windows-1252 MT940 file", () => {
+    expect(detectFormat(fixture("mt940/latin1.sta"))).toBe("mt940");
+  });
+
+  it("does not take csv text for MT940", () => {
+    expect(detectFormat(enc("Date;Text\n2024-01-01;:20:x\n"))).toBe("csv");
+    expect(detectFormat(enc("{braces};only\n1;2\n"))).toBe("csv");
+  });
+
+  it("rejects other XML with a clear message", () => {
     const pain = enc(
       '<?xml version="1.0"?><Document xmlns="urn:iso:std:iso:20022:tech:xsd:pain.001.001.03"/>',
     );
-    for (const bytes of [xml054, pain]) {
-      expect(() => detectFormat(bytes)).toThrow(/not a camt\.053/);
+    const camt052 = enc(
+      '<?xml version="1.0"?><Document xmlns="urn:iso:std:iso:20022:tech:xsd:camt.052.001.02"/>',
+    );
+    for (const bytes of [pain, camt052]) {
+      expect(() => detectFormat(bytes)).toThrow(
+        /not a camt\.053 statement or camt\.054 notification/,
+      );
     }
   });
 

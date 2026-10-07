@@ -22,7 +22,13 @@ export const NOTICE_ACCOUNT_TYPES: readonly AccountType[] = [
 export const WITHDRAWAL_PERIODS = ["month", "year"] as const;
 export type WithdrawalPeriod = (typeof WITHDRAWAL_PERIODS)[number];
 
-export const IMPORT_FORMATS = ["camt053", "csv", "xlsx"] as const;
+export const IMPORT_FORMATS = [
+  "camt053",
+  "camt054",
+  "mt940",
+  "csv",
+  "xlsx",
+] as const;
 export type ImportFormat = (typeof IMPORT_FORMATS)[number];
 
 /** `mirror`: a counter-transaction Kept created from a transfer on another account. */

@@ -1,0 +1,51 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Document xmlns="urn:iso:std:iso:20022:tech:xsd:camt.054.001.08" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+  <BkToCstmrDbtCdtNtfctn>
+    <GrpHdr>
+      <MsgId>EXAMPLE-NTFCTN-V08</MsgId>
+      <CreDtTm>2024-07-01T06:00:00+02:00</CreDtTm>
+    </GrpHdr>
+    <Ntfctn>
+      <Id>NTF-V08-1</Id>
+      <CreDtTm>2024-07-01T06:00:00+02:00</CreDtTm>
+      <Acct>
+        <Id><IBAN>DE89370400440532013000</IBAN></Id>
+        <Ccy>EUR</Ccy>
+      </Acct>
+      <Ntry>
+        <Amt Ccy="EUR">2500.00</Amt>
+        <CdtDbtInd>CRDT</CdtDbtInd>
+        <Sts><Cd>BOOK</Cd></Sts>
+        <BookgDt><DtTm>2024-06-28T10:15:00+02:00</DtTm></BookgDt>
+        <ValDt><Dt>2024-06-28</Dt></ValDt>
+        <AcctSvcrRef>V08-REF-1</AcctSvcrRef>
+        <NtryDtls>
+          <TxDtls>
+            <Refs><EndToEndId>E2E-V08-1</EndToEndId><UETR>8f1c9a52-3b5e-4d7a-9c10-2e6b7a4d8f31</UETR></Refs>
+            <RltdPties>
+              <Dbtr><Pty><Nm>Example Employer AG</Nm></Pty></Dbtr>
+              <DbtrAcct><Id><IBAN>CH9300762011623852957</IBAN></Id></DbtrAcct>
+            </RltdPties>
+            <RmtInf><Ustrd>Invoice 2024-17</Ustrd></RmtInf>
+          </TxDtls>
+        </NtryDtls>
+      </Ntry>
+      <Ntry>
+        <Amt Ccy="EUR">89.90</Amt>
+        <CdtDbtInd>DBIT</CdtDbtInd>
+        <Sts><Cd>BOOK</Cd></Sts>
+        <BookgDt><Dt>2024-06-29</Dt></BookgDt>
+        <AcctSvcrRef>V08-REF-2</AcctSvcrRef>
+        <NtryDtls>
+          <TxDtls>
+            <RltdPties>
+              <Cdtr><Pty><Nm>Example Energy Ltd</Nm></Pty></Cdtr>
+              <CdtrAcct><Id><IBAN>GB82WEST12345698765432</IBAN></Id></CdtrAcct>
+            </RltdPties>
+            <RmtInf><Strd><CdtrRefInf><Tp><CdOrPrtry><Cd>SCOR</Cd></CdOrPrtry></Tp><Ref>RF18 5390 0754 7034</Ref></CdtrRefInf></Strd></RmtInf>
+          </TxDtls>
+        </NtryDtls>
+      </Ntry>
+    </Ntfctn>
+  </BkToCstmrDbtCdtNtfctn>
+</Document>
