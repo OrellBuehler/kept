@@ -19,6 +19,21 @@
   statement are merged by account number when they have no IBAN, and identical bookings on both
   sides of a page break are both imported.
 
+## 0.5.0
+
+### Upgrading from 0.4.0
+
+- **Reverse proxies and CDNs must not cache `/sw.js` or `/workbox-*.js`.** Kept sends
+  `Cache-Control: no-cache` for them; a proxy that caches them anyway keeps browsers on an old
+  version after an upgrade.
+
+### Added
+
+- Installable app (PWA): a service worker precaches the static, content-hashed assets so the app
+  loads faster, shows an offline page when the server cannot be reached, and offers to reload
+  when a new version is available. Pages, data, documents and API responses are never cached in
+  the browser.
+
 ## 0.4.0
 
 ### Upgrading from 0.3.0
