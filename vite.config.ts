@@ -1,8 +1,10 @@
 import { sveltekit } from "@sveltejs/kit/vite";
 import tailwindcss from "@tailwindcss/vite";
+import { SvelteKitPWA } from "@vite-pwa/sveltekit";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { configDefaults, defineConfig } from "vitest/config";
+import { pwaOptions } from "./src/lib/pwa-config.ts";
 
 const pgUrl = process.env.KEPT_TEST_DATABASE_URL?.trim() ?? "";
 // Only selects the dialect: it names no real database, so a test that reaches
@@ -35,7 +37,7 @@ const pgExclude: string[] = [
 ];
 
 export default defineConfig({
-  plugins: [tailwindcss(), sveltekit()],
+  plugins: [tailwindcss(), sveltekit(), SvelteKitPWA(pwaOptions)],
   // Native/WASM-backed PDF stack must be loaded from node_modules at runtime,
   // not bundled (the zxing WASM binary is resolved relative to the package).
   ssr: {

@@ -42,6 +42,8 @@ history — on your own server, in a single SQLite file by default (PostgreSQL o
   and recurring payments for companion apps you run, plus links they can attach to bills and
   transactions. Tokens are scoped, can be limited to categories, expire and are revocable. Set up
   under Settings → API tokens.
+- **Installable**: add Kept to your home screen or desktop from the browser. Only the app's own
+  static files are cached on the device, so nothing from your accounts is stored there.
 - Local users with an admin who creates the others; every user only sees their own data.
 - Optional two-factor authentication per user: authenticator app (TOTP) and passkeys.
 
@@ -357,6 +359,18 @@ address — the periodic sync still works. Kept connects to whatever address you
 private ones, so only give accounts to people you trust. Requests that must not reach private
 networks (Paperless for members, ntfy, webhooks) are made directly and ignore `HTTP_PROXY` and
 `HTTPS_PROXY`, because Kept resolves and checks the destination itself.
+
+### Install as an app
+
+Over HTTPS (or on `localhost`), browsers offer to install Kept from the address bar or menu. A
+service worker caches only the build's static files (scripts, styles, fonts, icons) so the app
+loads faster. Pages, API responses, bill documents, logos and everything else that needs your
+session always come from the server and are never stored on the device, so there is nothing to
+clear on logout. When the server can't be reached, an offline page is shown instead of the
+browser's error page. After an update is deployed, a toast offers to reload into the new version.
+
+Behind a reverse proxy or CDN, don't cache or rewrite `/sw.js` and `/workbox-*.js`: Kept sends
+`Cache-Control: no-cache` for them, and a proxy that overrides that delays updates to the app.
 
 ## Development
 

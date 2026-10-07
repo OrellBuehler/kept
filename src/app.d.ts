@@ -1,4 +1,5 @@
 /// <reference types="bun" />
+/// <reference types="vite-plugin-pwa/client" />
 
 import type { ApiTokenAuth } from "$lib/server/auth/api-tokens";
 import type { SessionInfo, SessionUser } from "$lib/server/auth/types";
