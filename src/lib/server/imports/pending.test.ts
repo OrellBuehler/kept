@@ -304,6 +304,8 @@ describe("purgeExpired", () => {
   it("an upload purges expired uploads", async () => {
     const { user, account } = await setup();
     const old = await store(user.id, account.id);
+    // Still-running housekeeping of this upload would make the next one skip its own.
+    await drainDetached();
     await expire(old.id, Date.now() - 1000);
     const next = await store(user.id, account.id);
     await drainDetached();
