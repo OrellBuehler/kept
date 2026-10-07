@@ -1,0 +1,82 @@
+:root {
+  --background: 220 20% 98.5%;
+  --foreground: 224 25% 10%;
+  --muted-foreground: 222 9% 40%;
+  --brand: 170 78% 28%;
+  --brand-foreground: 0 0% 100%;
+}
+
+.dark {
+  --background: 225 16% 6.5%;
+  --foreground: 220 14% 96%;
+  --muted-foreground: 222 8% 66%;
+  --brand: 168 70% 50%;
+  --brand-foreground: 168 80% 8%;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  display: flex;
+  min-height: 100dvh;
+  margin: 0;
+  align-items: center;
+  justify-content: center;
+  padding: 1rem;
+  background: hsl(var(--background));
+  color: hsl(var(--foreground));
+  font-family:
+    ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto,
+    "Helvetica Neue", Arial, sans-serif;
+  -webkit-text-size-adjust: 100%;
+}
+
+main {
+  display: flex;
+  max-width: 24rem;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.75rem;
+}
+
+.dark img {
+  filter: invert(1);
+}
+
+h1 {
+  margin: 0.5rem 0 0;
+  font-size: 1.5rem;
+  line-height: 2rem;
+  font-weight: 600;
+  letter-spacing: -0.025em;
+  text-wrap: balance;
+}
+
+p {
+  margin: 0;
+  color: hsl(var(--muted-foreground));
+  font-size: 0.875rem;
+  line-height: 1.5rem;
+}
+
+a {
+  margin-top: 0.5rem;
+  border-radius: 0.5rem;
+  background: hsl(var(--brand));
+  padding: 0.5rem 1rem;
+  color: hsl(var(--brand-foreground));
+  font-size: 0.875rem;
+  font-weight: 500;
+  text-decoration: none;
+}
+
+a:hover {
+  opacity: 0.9;
+}
+
+a:focus-visible {
+  outline: 2px solid hsl(var(--brand));
+  outline-offset: 2px;
+}
