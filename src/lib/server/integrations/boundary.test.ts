@@ -59,6 +59,8 @@ describe("integration boundary", () => {
       .filter((f) => !mayImportIntegrations(f.path))
       .filter((f) => !f.path.endsWith(".test.ts"))
       .filter((f) => f.path !== "lib/server/db/schema.ts")
+      // Describes the tables of released versions, which include the integration's.
+      .filter((f) => !f.path.startsWith("lib/testing/fixtures/upgrade/"))
       .filter((f) => /paperless/i.test(f.text))
       .map((f) => f.path);
     expect(offenders).toEqual([]);

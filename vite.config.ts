@@ -30,6 +30,8 @@ const pgExclude: string[] = [
   "src/lib/server/db/hardening.test.ts",
   // A SQLite data migration, run on a hand-opened in-memory database.
   "src/lib/server/seq-migration.test.ts",
+  // The upgrade of a 0.3.0 SQLite database; PostgreSQL has no release before 0.4.0 to upgrade from.
+  "src/lib/server/db/upgrade.test.ts",
 ];
 
 export default defineConfig({
