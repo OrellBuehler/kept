@@ -1,4 +1,4 @@
-import { and, eq } from "drizzle-orm";
+import { and, asc, eq, ne } from "drizzle-orm";
 import { ZodError } from "zod";
 import {
   accounts,
@@ -18,6 +18,13 @@ export interface SavedCsvProfile {
   name: string;
   profile: CsvMappingProfile;
   updatedAt: number;
+}
+
+export interface OtherCsvProfile {
+  accountId: string;
+  accountName: string;
+  name: string;
+  profile: CsvMappingProfile;
 }
 
 /** Field-level messages of a mapping profile validation failure (never the submitted values). */
@@ -46,6 +53,18 @@ export async function getCsvProfile(
       .limit(1),
   );
   if (!row) return null;
+  // An invalid stored profile counts as none: the user is sent to the mapping page.
+  const profile = storedProfile(row);
+  return profile
+    ? { name: row.name, profile, updatedAt: row.updatedAt.getTime() }
+    : null;
+}
+
+/** The parsed profile of a stored row, or null (logged) when it no longer validates. */
+function storedProfile(row: {
+  id: string;
+  profile: string;
+}): CsvMappingProfile | null {
   let json: unknown;
   try {
     json = JSON.parse(row.profile);
@@ -56,15 +75,48 @@ export async function getCsvProfile(
   }
   const parsed = parseProfileSafe(json);
   if (!parsed.ok) {
-    // The caller treats this as "no profile": the user is sent to the mapping page.
     console.error("csv profile %s no longer validates", row.id);
     return null;
   }
-  return {
-    name: row.name,
-    profile: parsed.profile,
-    updatedAt: row.updatedAt.getTime(),
-  };
+  return parsed.profile;
+}
+
+/** Profiles saved for the user's other accounts, to start a new mapping from. */
+export async function listOtherCsvProfiles(
+  userId: string,
+  accountId: string,
+): Promise<OtherCsvProfile[]> {
+  const rows = await getDB()
+    .select({
+      id: csvProfiles.id,
+      name: csvProfiles.name,
+      profile: csvProfiles.profile,
+      accountId: accounts.id,
+      accountName: accounts.name,
+    })
+    .from(csvProfiles)
+    .innerJoin(accounts, eq(accounts.id, csvProfiles.accountId))
+    .where(
+      and(
+        eq(csvProfiles.userId, userId),
+        eq(accounts.userId, userId),
+        ne(csvProfiles.accountId, accountId),
+      ),
+    )
+    .orderBy(asc(accounts.name), asc(accounts.id));
+  return rows.flatMap((row) => {
+    const profile = storedProfile(row);
+    return profile
+      ? [
+          {
+            accountId: row.accountId,
+            accountName: row.accountName,
+            name: row.name,
+            profile,
+          },
+        ]
+      : [];
+  });
 }
 
 export function parseProfileSafe(

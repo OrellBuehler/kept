@@ -14,7 +14,11 @@ import {
 } from "$lib/testing/imports";
 import { seedAccount } from "$lib/testing/ledger";
 import { mappingContext } from "./mapping-context";
-import { getCsvProfile, saveCsvProfile } from "./profiles";
+import {
+  getCsvProfile,
+  listOtherCsvProfiles,
+  saveCsvProfile,
+} from "./profiles";
 import { startUpload } from "./upload";
 
 useTestDB();
@@ -84,6 +88,44 @@ describe("csv profiles", () => {
     await saveCsvProfile(user.id, account.id, "Mine", SIMPLE_CSV_PROFILE);
     await getDB().update(csvProfiles).set({ profile: '{"amountMode":"nope"}' });
     expect(await getCsvProfile(user.id, account.id)).toBeNull();
+  });
+});
+
+describe("listOtherCsvProfiles", () => {
+  it("lists the user's profiles of other accounts by account name", async () => {
+    const { user, account } = await setup();
+    const zeta = await seedAccount(user.id, { name: "Zeta", iban: null });
+    const alpha = await seedAccount(user.id, { name: "Alpha", iban: null });
+    const stranger = await createTestUser();
+    const theirs = await seedAccount(stranger.id, {
+      name: "Theirs",
+      iban: null,
+    });
+    await saveCsvProfile(user.id, account.id, "Own", SIMPLE_CSV_PROFILE);
+    await saveCsvProfile(user.id, zeta.id, "Zeta export", SIMPLE_CSV_PROFILE);
+    await saveCsvProfile(user.id, alpha.id, "Alpha export", {
+      ...SIMPLE_CSV_PROFILE,
+      dateFormat: "DD.MM.YYYY",
+    });
+    await saveCsvProfile(stranger.id, theirs.id, "Foreign", SIMPLE_CSV_PROFILE);
+
+    const list = await listOtherCsvProfiles(user.id, account.id);
+    expect(list.map((p) => [p.accountName, p.name])).toEqual([
+      ["Alpha", "Alpha export"],
+      ["Zeta", "Zeta export"],
+    ]);
+    expect(list[0]).toMatchObject({
+      accountId: alpha.id,
+      profile: { dateFormat: "DD.MM.YYYY", columns: { amount: "Amount" } },
+    });
+  });
+
+  it("skips stored profiles that no longer validate", async () => {
+    const { user, account } = await setup();
+    const other = await seedAccount(user.id, { name: "Other", iban: null });
+    await saveCsvProfile(user.id, other.id, "Broken", SIMPLE_CSV_PROFILE);
+    await getDB().update(csvProfiles).set({ profile: '{"amountMode":"nope"}' });
+    expect(await listOtherCsvProfiles(user.id, account.id)).toEqual([]);
   });
 });
 

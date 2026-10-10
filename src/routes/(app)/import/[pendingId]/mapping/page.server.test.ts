@@ -6,7 +6,7 @@ import { createTestEvent, outcome } from "$lib/testing/event";
 import { EXAMPLE_IBAN } from "$lib/testing/fixtures/bill-identifiers";
 import { SIMPLE_CSV_PROFILE, uploadFixture } from "$lib/testing/imports";
 import { seedAccount } from "$lib/testing/ledger";
-import { getCsvProfile } from "$lib/server/imports";
+import { getCsvProfile, saveCsvProfile } from "$lib/server/imports";
 import { actions, load } from "./+page.server";
 
 useTestDB();
@@ -49,6 +49,19 @@ describe("/import/[pendingId]/mapping", () => {
       preview: expect.any(Array),
       draft: expect.any(Object),
     });
+  });
+
+  it("load offers the mappings of the user's other accounts", async () => {
+    const { user, account } = await setup();
+    const other = await seedAccount(user.id, { name: "Other", iban: null });
+    await saveCsvProfile(user.id, other.id, "Other export", SIMPLE_CSV_PROFILE);
+    const id = await uploadFixture(user.id, account.id, "csv/overlap-a.csv");
+    const r = await loadAs(user, id);
+    expect(
+      (r as { value: { otherProfiles: unknown } }).value.otherProfiles,
+    ).toMatchObject([
+      { accountId: other.id, accountName: "Other", name: "Other export" },
+    ]);
   });
 
   it("camt uploads redirect to the preview", async () => {
