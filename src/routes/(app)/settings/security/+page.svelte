@@ -1,6 +1,6 @@
 <script lang="ts">
   import { enhance } from "$app/forms";
-  import { invalidateAll } from "$app/navigation";
+  import { refreshAll } from "$app/navigation";
   import {
     startAuthentication,
     startRegistration,
@@ -93,7 +93,7 @@
       }
       stepUpPassword = "";
       toast.success("Confirmed. You can change passkeys for 5 minutes.");
-      await invalidateAll();
+      await refreshAll();
     } catch (err) {
       passkeyError =
         err instanceof Error && err.name === "NotAllowedError"
@@ -131,7 +131,7 @@
       }
       passkeyName = "";
       toast.success("Passkey added.");
-      await invalidateAll();
+      await refreshAll();
     } catch (err) {
       passkeyError =
         err instanceof Error && err.name === "NotAllowedError"

@@ -1,6 +1,6 @@
 <script lang="ts">
   import { enhance } from "$app/forms";
-  import { invalidateAll } from "$app/navigation";
+  import { refreshAll } from "$app/navigation";
   import { toast } from "svelte-sonner";
   import * as Card from "$lib/components/ui/card/index.js";
   import * as Field from "$lib/components/ui/field/index.js";
@@ -69,7 +69,7 @@
       await update({ reset: false });
       pending = false;
       if (result.type === "success") {
-        await invalidateAll();
+        await refreshAll();
         toast.success("Preferences saved.");
       } else if (result.type === "error") {
         toast.error("Something went wrong. Please try again.");

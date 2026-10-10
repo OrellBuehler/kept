@@ -1,4 +1,5 @@
-import { json, type Handle, type HandleServerError } from "@sveltejs/kit";
+import { json } from "@sveltejs/kit";
+import type { Handle, HandleServerError } from "@sveltejs/kit/hooks";
 import { warmDummyHash } from "$lib/server/auth/password";
 import { assertSecretKeyConfigured } from "$lib/server/crypto";
 import { registerBackups, stopBackups } from "$lib/server/backup";
@@ -73,7 +74,10 @@ export async function init() {
   installShutdownHandler();
 }
 
-export const handleError: HandleServerError = ({ error, event, status }) => {
+export const handleError: HandleServerError = (input) => {
+  if (input.kind === "app") return;
+  const { error, event } = input;
+  const status = input.kind === "unknown" ? 500 : input.error.status;
   const errorId = crypto.randomUUID();
   console.error(
     `unhandled error ${errorId} status=${status} route=${event.route.id ?? "none"}`,

@@ -6,7 +6,7 @@
 </script>
 
 <img
-  src={asset("/brand/kept-lockup.svg")}
+  src={asset("brand/kept-lockup.svg")}
   alt="Kept"
   class={cn("h-10 w-auto dark:invert", className)}
 />

@@ -66,7 +66,7 @@
   );
 
   function pageHref(n: number) {
-    const params = new SvelteURLSearchParams(page.url.searchParams);
+    const params = new SvelteURLSearchParams(page.url.search);
     if (n <= 1) params.delete("page");
     else params.set("page", String(n));
     const qs = params.toString();

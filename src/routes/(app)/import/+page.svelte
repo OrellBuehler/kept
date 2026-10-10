@@ -117,7 +117,7 @@
         </Empty.Description>
       </Empty.Header>
       <Empty.Content>
-        <Button href={resolve("/accounts")}>Go to accounts</Button>
+        <Button href={resolve("/(app)/accounts")}>Go to accounts</Button>
       </Empty.Content>
     </Empty.Root>
   {:else}

@@ -86,7 +86,7 @@
       </Empty.Description>
     </Empty.Header>
     <Empty.Content>
-      <Button href={resolve("/import")}>Import a statement</Button>
+      <Button href={resolve("/(app)/import")}>Import a statement</Button>
     </Empty.Content>
   </Empty.Root>
 {:else}

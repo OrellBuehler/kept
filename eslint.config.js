@@ -3,7 +3,6 @@ import prettier from "eslint-config-prettier";
 import svelte from "eslint-plugin-svelte";
 import globals from "globals";
 import ts from "typescript-eslint";
-import svelteConfig from "./svelte.config.js";
 
 import noPgOnlyApi from "./eslint-rules/no-pg-only-api.js";
 import noQueryTerminals from "./eslint-rules/no-query-terminals.js";
@@ -62,7 +61,6 @@ export default ts.config(
         tsconfigRootDir: import.meta.dirname,
         extraFileExtensions: [".svelte"],
         parser: ts.parser,
-        svelteConfig,
       },
     },
   },
