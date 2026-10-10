@@ -97,10 +97,10 @@ export function shutdown(drainTimeoutMs = DRAIN_TIMEOUT_MS): Promise<void> {
 }
 
 /**
- * Runs `shutdown()` when the server is told to stop. svelte-adapter-bun owns
- * SIGTERM and SIGINT: it emits `sveltekit:shutdown` on `process` and then stops
- * the HTTP server, so this listens for that event instead of adding signal
- * handlers of its own. Call once from the init hook.
+ * Runs `shutdown()` when the server is told to stop. @sveltejs/adapter-bun owns
+ * SIGTERM and SIGINT: it stops the HTTP server, waits for pending requests and
+ * then emits `sveltekit:shutdown` on `process`, so this listens for that event
+ * instead of adding signal handlers of its own. Call once from the init hook.
  */
 export function installShutdownHandler(): void {
   if (installed) return;
