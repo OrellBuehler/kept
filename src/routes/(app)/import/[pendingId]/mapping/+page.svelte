@@ -88,35 +88,58 @@
   const DEFAULT_CREDIT = ["CRDT", "Credit", "CR", "C"];
   const DEFAULT_DEBIT = ["DBIT", "Debit", "DR", "D"];
 
-  // The draft only supplies the initial state; later edits live in `ui`.
-  const base = untrack(() =>
-    $state.snapshot(data.draft),
-  ) as CsvMappingProfileInput;
-  const baseColumns = (base.columns ?? {}) as Record<string, unknown>;
   const text = (v: unknown) => (v === undefined || v === null ? "" : String(v));
   const asList = (v: unknown): string[] =>
     v === undefined || v === null || v === ""
       ? []
       : (Array.isArray(v) ? v : [v]).map(String);
 
-  let ui = $state({
-    delimiter: base.delimiter ?? "auto",
-    encoding: base.encoding ?? "auto",
-    headerRow: (base.headerRow ?? 1) as number | null,
-    skipFooterRows: (base.skipFooterRows ?? 0) as number | null,
-    dateFormat: base.dateFormat ?? "YYYY-MM-DD",
-    decimalSeparator: base.decimalSeparator ?? ".",
-    thousandsSeparator: base.thousandsSeparator ?? "",
-    amountMode: base.amountMode,
-    invertSign: base.invertSign ?? false,
-    creditValues: (base.indicatorCreditValues ?? DEFAULT_CREDIT).join(", "),
-    debitValues: (base.indicatorDebitValues ?? DEFAULT_DEBIT).join(", "),
-    defaultCurrency: base.defaultCurrency ?? "",
-    columns: Object.fromEntries(
-      MANAGED.map((k) => [k, text(baseColumns[k])]),
-    ) as Record<Managed, string>,
-    description: asList(baseColumns.description),
-  });
+  function uiFrom(draft: CsvMappingProfileInput) {
+    const columns = (draft.columns ?? {}) as Record<string, unknown>;
+    return {
+      delimiter: draft.delimiter ?? "auto",
+      encoding: draft.encoding ?? "auto",
+      headerRow: (draft.headerRow ?? 1) as number | null,
+      skipFooterRows: (draft.skipFooterRows ?? 0) as number | null,
+      dateFormat: draft.dateFormat ?? "YYYY-MM-DD",
+      decimalSeparator: draft.decimalSeparator ?? ".",
+      thousandsSeparator: draft.thousandsSeparator ?? "",
+      amountMode: draft.amountMode,
+      invertSign: draft.invertSign ?? false,
+      creditValues: (draft.indicatorCreditValues ?? DEFAULT_CREDIT).join(", "),
+      debitValues: (draft.indicatorDebitValues ?? DEFAULT_DEBIT).join(", "),
+      defaultCurrency: draft.defaultCurrency ?? "",
+      columns: Object.fromEntries(
+        MANAGED.map((k) => [k, text(columns[k])]),
+      ) as Record<Managed, string>,
+      description: asList(columns.description),
+    };
+  }
+
+  // The draft only supplies the initial state; later edits live in `ui`.
+  let base = untrack(() =>
+    $state.snapshot(data.draft),
+  ) as CsvMappingProfileInput;
+  let baseColumns = (base.columns ?? {}) as Record<string, unknown>;
+  let ui = $state(uiFrom(base));
+
+  let copyFrom = $state("");
+  const copyable = $derived(
+    data.otherProfiles.find((p) => p.accountId === copyFrom),
+  );
+
+  function applyCopy() {
+    if (!copyable) return;
+    base = {
+      ...$state.snapshot(copyable.profile),
+      defaultCurrency: data.account.currency,
+    } as CsvMappingProfileInput;
+    baseColumns = (base.columns ?? {}) as Record<string, unknown>;
+    ui = uiFrom(base);
+    profileName = copyable.name;
+    saveErrors = {};
+    copyFrom = "";
+  }
 
   const modeColumns: Record<Mode, Managed[]> = {
     single: ["amount"],
@@ -311,6 +334,38 @@
     class="grid items-start gap-6 lg:grid-cols-[minmax(0,24rem)_minmax(0,1fr)]"
   >
     <div class="grid min-w-0 gap-4">
+      {#if data.otherProfiles.length > 0}
+        <Card.Root>
+          <Card.Header>
+            <Card.Title class="text-base">Start from a saved mapping</Card.Title
+            >
+            <Card.Description>
+              Copy the mapping of another account, for example one at the same
+              bank. Changes here only affect this account.
+            </Card.Description>
+          </Card.Header>
+          <Card.Content class="flex items-end gap-2">
+            <FormField label="Mapping" for="m-copy" class="min-w-0 flex-1">
+              <NativeSelect id="m-copy" bind:value={copyFrom} class="w-full">
+                <option value="">Choose a mapping</option>
+                {#each data.otherProfiles as p (p.accountId)}
+                  <option value={p.accountId}>
+                    {p.name} ({p.accountName})
+                  </option>
+                {/each}
+              </NativeSelect>
+            </FormField>
+            <Button
+              variant="secondary"
+              disabled={!copyable}
+              onclick={applyCopy}
+            >
+              Apply
+            </Button>
+          </Card.Content>
+        </Card.Root>
+      {/if}
+
       <Card.Root>
         <Card.Header>
           <Card.Title class="text-base">File layout</Card.Title>
