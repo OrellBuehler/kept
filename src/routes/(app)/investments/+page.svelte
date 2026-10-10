@@ -46,10 +46,7 @@
   }
 
   function closeSheet() {
-    void goto(resolve("/(app)/investments"), {
-      keepFocus: true,
-      noScroll: true,
-    });
+    void goto(resolve("/(app)/investments"), { reset: false });
   }
 
   const qty = (v: Parameters<typeof formatFixed>[0]) =>

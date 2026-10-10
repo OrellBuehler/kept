@@ -4,6 +4,8 @@ import { SvelteKitPWA } from "@vite-pwa/sveltekit";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { configDefaults, defineConfig } from "vitest/config";
+import adapter from "./scripts/adapter-bun.js";
+import { csp } from "./src/lib/csp-config.ts";
 import { pwaOptions } from "./src/lib/pwa-config.ts";
 
 const pgUrl = process.env.KEPT_TEST_DATABASE_URL?.trim() ?? "";
@@ -37,7 +39,15 @@ const pgExclude: string[] = [
 ];
 
 export default defineConfig({
-  plugins: [tailwindcss(), sveltekit(), SvelteKitPWA(pwaOptions)],
+  plugins: [
+    tailwindcss(),
+    sveltekit({
+      adapter: adapter({ precompress: true, workbox: pwaOptions.workbox }),
+      alias: { $lib: "src/lib", "$lib/*": "src/lib/*" },
+      csp,
+    }),
+    SvelteKitPWA(pwaOptions),
+  ],
   // Native/WASM-backed PDF stack must be loaded from node_modules at runtime,
   // not bundled (the zxing WASM binary is resolved relative to the package).
   ssr: {

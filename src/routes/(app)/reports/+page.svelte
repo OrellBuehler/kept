@@ -91,13 +91,13 @@
             </Empty.Description>
           </Empty.Header>
           <Empty.Content>
-            <Button href={resolve("/accounts")}>Go to accounts</Button>
+            <Button href={resolve("/(app)/accounts")}>Go to accounts</Button>
           </Empty.Content>
         </Empty.Root>
       {:else}
         <form
           method="GET"
-          action={resolve("/reports/statement")}
+          action={resolve("/(app)/reports/[kind]", { kind: "statement" })}
           data-sveltekit-reload
           class="grid gap-4 sm:grid-cols-2"
           onsubmit={(e) => {
@@ -181,7 +181,7 @@
       <Button
         variant="outline"
         class="w-fit"
-        href={resolve("/reports/bills")}
+        href={resolve("/(app)/reports/[kind]", { kind: "bills" })}
         data-sveltekit-reload
         download
       >
@@ -205,7 +205,7 @@
       <Button
         variant="outline"
         class="w-fit"
-        href={resolve("/reports/net-worth")}
+        href={resolve("/(app)/reports/[kind]", { kind: "net-worth" })}
         data-sveltekit-reload
         download
       >
@@ -216,7 +216,9 @@
         <Button
           variant="outline"
           class="w-fit"
-          href="{resolve('/reports/net-worth')}?basis=share"
+          href="{resolve('/(app)/reports/[kind]', {
+            kind: 'net-worth',
+          })}?basis=share"
           data-sveltekit-reload
           download
         >
