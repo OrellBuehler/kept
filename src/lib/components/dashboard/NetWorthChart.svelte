@@ -109,7 +109,7 @@
       },
     }}
   >
-    {#snippet marks({ getAreaProps })}
+    {#snippet marks()}
       <LinearGradient vertical>
         {#snippet stopsContent()}
           <stop offset="0%" stop-color={color} stop-opacity="0.4" />
@@ -117,10 +117,8 @@
         {/snippet}
         {#snippet children({ gradient })}
           <Area
-            {...getAreaProps(
-              { key: "value", label: config.value.label, color },
-              0,
-            )}
+            seriesKey="value"
+            line={{ class: "stroke-2" }}
             fill={gradient}
             fillOpacity={1}
           />
@@ -132,7 +130,7 @@
         indicator="dot"
         labelFormatter={(v: Date) => prefs.date(isoOf(v))}
       >
-        {#snippet formatter({ item })}
+        {#snippet formatter({ data })}
           <span class="text-muted-foreground">{label}</span>
           <span
             class={cn(
@@ -140,7 +138,7 @@
               prefs.blur && "blur-sm select-none",
             )}
           >
-            {prefs.amount(item.payload.amount as Minor, currency)}
+            {prefs.amount((data as { amount: Minor }).amount, currency)}
           </span>
         {/snippet}
       </Chart.Tooltip>
