@@ -412,7 +412,7 @@ function joinedSession(sql: Queryable): BunSQLSession<Bun.SQL, never, never> {
     {},
   );
   session.transaction = (fn) =>
-    fn(new BunSQLTransaction(dialect, session, relational as never));
+    fn(new BunSQLTransaction(dialect, session as never, relational as never));
   return session as never;
 }
 
