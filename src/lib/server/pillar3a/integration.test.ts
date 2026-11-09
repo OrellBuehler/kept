@@ -10,7 +10,6 @@ import {
 import { portfolioOnlyAccounts } from "$lib/server/ledger/balances";
 import {
   accountValue,
-  archiveAccount,
   balanceSeries,
   currentBalance,
   getAccount,
@@ -29,7 +28,11 @@ import {
   seedTrade,
   seedManualPrice,
 } from "$lib/testing/investments";
-import { seedAccount, seedImportedTransaction } from "$lib/testing/ledger";
+import {
+  archiveAccountOn,
+  seedAccount,
+  seedImportedTransaction,
+} from "$lib/testing/ledger";
 import {
   makeQrr,
   QR_IBAN,
@@ -297,7 +300,7 @@ describe("net worth with portfolios", () => {
       { portfolioId: a.id, amount: minor(10_000) },
     ]);
     expect(await earliestDataDate(user.id)).toBe("2025-03-01");
-    await archiveAccount(user.id, acc.id);
+    await archiveAccountOn(user.id, acc.id, "2026-10-01");
     expect(await earliestDataDate(user.id)).toBe("2025-03-01");
     const points = (await netWorthSeries(user.id, { today: TODAY }))[0]!.points;
     expect(points.at(-1)!.amount).toBe(0);

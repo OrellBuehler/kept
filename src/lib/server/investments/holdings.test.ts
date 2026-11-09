@@ -9,7 +9,6 @@ import {
 import {
   accountBalanceAt,
   accountValue,
-  archiveAccount,
   balanceSeries,
   createSnapshot,
   currentBalance,
@@ -25,6 +24,7 @@ import {
   seedTrade,
 } from "$lib/testing/investments";
 import {
+  archiveAccountOn,
   seedAccount,
   seedImport,
   seedImportedTransaction,
@@ -273,7 +273,7 @@ describe("net worth with holdings", () => {
     await seedTrade(user.id, archived.id, archivedSecurity.id, {
       amount: 99999,
     });
-    await archiveAccount(user.id, archived.id);
+    await archiveAccountOn(user.id, archived.id, "2026-10-01");
 
     const series = await netWorthSeries(user.id, {
       today: TODAY,
@@ -344,7 +344,7 @@ describe("earliestDataDate", () => {
       date: "2020-01-01",
       amount: 1,
     });
-    await archiveAccount(user.id, archived.id);
+    await archiveAccountOn(user.id, archived.id, "2026-10-01");
     const otherAccount = await seedAccount(other.id);
     const otherSec = await seedSecurity(other.id);
     await seedTrade(other.id, otherAccount.id, otherSec.id, {
