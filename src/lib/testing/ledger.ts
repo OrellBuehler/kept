@@ -1,7 +1,12 @@
 import { randomUUID } from "node:crypto";
+import { vi } from "vitest";
 import { minor } from "$lib/money";
 import { getDB, imports, transactions } from "$lib/server/db";
-import { createAccount, createInstitution } from "$lib/server/ledger";
+import {
+  archiveAccount,
+  createAccount,
+  createInstitution,
+} from "$lib/server/ledger";
 import type { AccountInput } from "$lib/server/ledger/schemas";
 
 export async function seedInstitution(
@@ -78,4 +83,18 @@ export async function seedImport(
       })
       .returning()
   )[0]!;
+}
+
+export async function archiveAccountOn(
+  userId: string,
+  accountId: string,
+  date: string,
+) {
+  vi.useFakeTimers({ toFake: ["Date"] });
+  try {
+    vi.setSystemTime(new Date(`${date}T12:00:00.000Z`));
+    await archiveAccount(userId, accountId);
+  } finally {
+    vi.useRealTimers();
+  }
 }
