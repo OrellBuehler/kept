@@ -223,7 +223,7 @@ describe.skipIf(!enabled)("postgres migrations", () => {
     await holder.unsafe("select pg_advisory_unlock(hashtextextended($1, 0))", [
       MIGRATION_LOCK_KEY,
     ]);
-    holder.release();
+    await holder.release();
     await run;
     expect(done).toBe(true);
     expect(await tableCount()).toBeGreaterThan(40);
@@ -293,7 +293,7 @@ describe.skipIf(!enabled)("postgres migrations", () => {
       expect(await tableCount()).toBe(0);
     } finally {
       await holder.unsafe("select pg_advisory_unlock_all()");
-      holder.release();
+      await holder.release();
       await backend.close();
     }
     // Nothing is left held by the timed out run: a normal run goes through.
