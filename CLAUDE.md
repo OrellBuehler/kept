@@ -39,7 +39,7 @@ Bun only — never npm, pnpm or yarn. Hooks run via prek: `prek install` once pe
 
 ## Stack
 
-Bun · SvelteKit (`svelte-adapter-bun`) · TypeScript strict · Svelte 5 runes · Tailwind CSS v4 ·
+Bun · SvelteKit 3 (`@sveltejs/adapter-bun`, configured in `vite.config.ts`) · TypeScript strict · Svelte 5 runes · Tailwind CSS v4 ·
 shadcn-svelte (`$lib/components/ui/`, add with `bunx shadcn-svelte@latest add <name>`) ·
 `@lucide/svelte` · Drizzle ORM on SQLite (`bun:sqlite`, the default) or PostgreSQL 17+ (`Bun.SQL`) ·
 files on disk or in S3 (`Bun.S3Client`) · Zod · Vitest · pdfmake for PDF

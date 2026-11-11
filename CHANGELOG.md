@@ -2,11 +2,23 @@
 
 ## Unreleased
 
+### Upgrading from 0.5.0
+
+- **Set `ORIGIN` when Kept is reached over plain HTTP without a reverse proxy.** The server now
+  assumes HTTPS unless `ORIGIN` says otherwise, and rejects logins and form posts from any other
+  origin. Behind a reverse proxy `ORIGIN` was already required.
+- `IDLE_TIMEOUT` is now `CONNECTION_IDLE_TIMEOUT`.
+
 ### Added
 
 - **Copy a CSV mapping from another account**: the column-mapping page offers the mappings saved
   for your other accounts. Applying one fills the form (with this account's currency as the
   default) and the preview checks it against the file before it is saved for this account.
+
+### Changed
+
+- Kept runs on SvelteKit 3 and the official `@sveltejs/adapter-bun`, which replaces the
+  unmaintained `svelte-adapter-bun`.
 
 ## 0.5.0
 
