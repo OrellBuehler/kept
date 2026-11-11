@@ -12,7 +12,7 @@ import {
   apiTokenLimiter,
 } from "$lib/server/external-api/gate";
 import { seedToken } from "$lib/testing/external-api";
-import { handle } from "./hooks.server";
+import { handle, handleError } from "./hooks.server";
 
 async function run(path: string, cookies: Record<string, string> = {}) {
   const event = createTestEvent({ url: `http://localhost${path}`, cookies });
@@ -378,5 +378,55 @@ describe("handle: external API", () => {
     expect(res.status).toBe(404);
     expect(res.headers.get("content-type")).toContain("application/json");
     expect(await res.json()).toEqual({ message: "Not found" });
+  });
+});
+
+describe("handleError", () => {
+  const event = createTestEvent({ url: "http://localhost/accounts" });
+  const report = (input: object) =>
+    handleError({ ...input, event } as never) as unknown;
+
+  it("leaves errors thrown with error() as they are, without logging", () => {
+    const log = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      expect(
+        report({ kind: "app", error: { message: "Account not found" } }),
+      ).toBeUndefined();
+      expect(log).not.toHaveBeenCalled();
+    } finally {
+      log.mockRestore();
+    }
+  });
+
+  it("logs an unexpected error as a 500 under an id and hides its message", () => {
+    const log = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      const result = report({
+        kind: "unknown",
+        error: new Error("secret detail"),
+      }) as { message: string; errorId: string };
+      expect(result.message).toBe("An unexpected error occurred.");
+      expect(log).toHaveBeenCalledOnce();
+      expect(String(log.mock.calls[0]![0])).toContain(
+        `unhandled error ${result.errorId} status=500`,
+      );
+      expect(JSON.stringify(result)).not.toContain("secret detail");
+    } finally {
+      log.mockRestore();
+    }
+  });
+
+  it("logs a framework error with its own status", () => {
+    const log = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      const result = report({
+        kind: "framework",
+        error: { status: 404, message: "Not Found" },
+      }) as { errorId: string };
+      expect(result.errorId).toBeTruthy();
+      expect(String(log.mock.calls[0]![0])).toContain("status=404");
+    } finally {
+      log.mockRestore();
+    }
   });
 });

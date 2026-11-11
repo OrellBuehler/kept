@@ -14,9 +14,10 @@ const idleWaiters: (() => void)[] = [];
 
 /**
  * Runs one request's handler, counting it so shutdown can wait for it. The
- * adapter stops the HTTP server right after announcing the shutdown, without
- * waiting for us, so requests still mid-handler are what shutdown must outlast.
- * Only the handler is counted, not a response body that is still streaming.
+ * adapter waits for pending requests itself, but only up to SHUTDOWN_TIMEOUT
+ * and then closes their connections; handlers still running after that are
+ * what shutdown must outlast. Only the handler is counted, not a response
+ * body that is still streaming.
  */
 export async function trackRequest<T>(work: () => Promise<T>): Promise<T> {
   inFlight++;

@@ -7,7 +7,12 @@
 - **Set `ORIGIN` when Kept is reached over plain HTTP without a reverse proxy.** The server now
   assumes HTTPS unless `ORIGIN` says otherwise, and rejects logins and form posts from any other
   origin. Behind a reverse proxy `ORIGIN` was already required.
+- **An empty `ORIGIN` is now an error** and stops the server at startup. Unset it or give a full
+  `http://` or `https://` URL.
 - `IDLE_TIMEOUT` is now `CONNECTION_IDLE_TIMEOUT`.
+- On SIGTERM the server now waits for requests in flight (up to `SHUTDOWN_TIMEOUT`, 30 seconds by
+  default) before it closes the database. Give the container at least that long to stop, or lower
+  `SHUTDOWN_TIMEOUT`.
 
 ### Added
 
