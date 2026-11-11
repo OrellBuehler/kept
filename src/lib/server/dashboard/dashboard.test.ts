@@ -15,6 +15,7 @@ import {
   EXAMPLE_SCOR,
 } from "$lib/testing/fixtures/bill-identifiers";
 import {
+  archiveAccountOn,
   seedAccount,
   seedImport,
   seedImportedTransaction,
@@ -141,8 +142,7 @@ describe("netWorthSeries", () => {
       openingBalance: m(99999),
     });
     await seedImportedTransaction(u.id, archived.id, { amount: m(5) });
-    const { archiveAccount } = await import("$lib/server/ledger");
-    await archiveAccount(u.id, archived.id);
+    await archiveAccountOn(u.id, archived.id, "2026-10-01");
     const foreign = await seedAccount(other.id, { openingBalance: m(777777) });
     await seedImportedTransaction(other.id, foreign.id, {
       bookingDate: "2026-09-01",
