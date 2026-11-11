@@ -11,6 +11,9 @@
   `:62F:`/`:62M:` balances, `:61:` with or without entry date and funds code, reversals (RC/RD),
   structured `:86:` (`?20`-`?29`, `?31`-`?33`, SEPA keywords such as EREF+/SVWZ+/IBAN+) and free
   text. Latin-1/windows-1252 files are decoded like CSV. The watch folder picks both formats up.
+- **Copy a CSV mapping from another account**: the column-mapping page offers the mappings saved
+  for your other accounts. Applying one fills the form (with this account's currency as the
+  default) and the preview checks it against the file before it is saved for this account.
 
 ### Changed
 
