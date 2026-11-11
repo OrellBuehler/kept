@@ -58,6 +58,7 @@ describe("shutdown", () => {
   });
 
   it("passes the bound to the drain", async () => {
+    vi.spyOn(Date, "now").mockReturnValue(1_000_000);
     await shutdown(1234);
     expect(drain).toHaveBeenCalledWith(1234);
   });
