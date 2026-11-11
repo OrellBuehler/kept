@@ -15,6 +15,9 @@ export const PRECACHE_GLOBS = [
 ];
 
 export const pwaOptions: Partial<SvelteKitPWAOptions> = {
+  // SvelteKit 3 builds with Vite's base set to "./", which would register
+  // "./sw.js" relative to the page and give it the page's directory as scope.
+  base: "/",
   registerType: "prompt",
   injectRegister: false,
   manifest: false,

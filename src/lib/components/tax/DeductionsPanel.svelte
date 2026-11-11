@@ -33,7 +33,7 @@
   });
 
   const reportHref = $derived(
-    `${resolve("/reports/tax-deductions")}?year=${encodeURIComponent(String(summary.year))}`,
+    `${resolve("/(app)/reports/[kind]", { kind: "tax-deductions" })}?year=${encodeURIComponent(String(summary.year))}`,
   );
 </script>
 

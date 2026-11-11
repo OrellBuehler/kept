@@ -14,9 +14,10 @@ const idleWaiters: (() => void)[] = [];
 
 /**
  * Runs one request's handler, counting it so shutdown can wait for it. The
- * adapter stops the HTTP server right after announcing the shutdown, without
- * waiting for us, so requests still mid-handler are what shutdown must outlast.
- * Only the handler is counted, not a response body that is still streaming.
+ * adapter waits for pending requests itself, but only up to SHUTDOWN_TIMEOUT
+ * and then closes their connections; handlers still running after that are
+ * what shutdown must outlast. Only the handler is counted, not a response
+ * body that is still streaming.
  */
 export async function trackRequest<T>(work: () => Promise<T>): Promise<T> {
   inFlight++;
@@ -97,10 +98,10 @@ export function shutdown(drainTimeoutMs = DRAIN_TIMEOUT_MS): Promise<void> {
 }
 
 /**
- * Runs `shutdown()` when the server is told to stop. svelte-adapter-bun owns
- * SIGTERM and SIGINT: it emits `sveltekit:shutdown` on `process` and then stops
- * the HTTP server, so this listens for that event instead of adding signal
- * handlers of its own. Call once from the init hook.
+ * Runs `shutdown()` when the server is told to stop. @sveltejs/adapter-bun owns
+ * SIGTERM and SIGINT: it stops the HTTP server, waits for pending requests and
+ * then emits `sveltekit:shutdown` on `process`, so this listens for that event
+ * instead of adding signal handlers of its own. Call once from the init hook.
  */
 export function installShutdownHandler(): void {
   if (installed) return;

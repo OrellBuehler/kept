@@ -44,7 +44,7 @@
             "Could not change the category. Please try again.",
           ),
         );
-        await update({ reset: false, invalidateAll: true });
+        await update({ reset: false, refreshAll: true });
       }
     };
   }}

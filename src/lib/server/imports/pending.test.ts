@@ -350,6 +350,8 @@ describe("purgeExpired", () => {
   it("drops the row even when its blob cannot be deleted, leaving the blob to the orphan sweep", async () => {
     const { user, account } = await setup();
     const old = await store(user.id, account.id);
+    // Housekeeping of this upload still running would purge too and log a second error.
+    await drainDetached();
     await expire(old.id, Date.now() - 1000);
     const realDelete = ctx.store.delete.bind(ctx.store);
     ctx.store.delete = () => Promise.reject(new Error("offline"));

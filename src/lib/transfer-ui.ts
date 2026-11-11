@@ -21,7 +21,9 @@ export function transferSummary(outcome: TransferOutcome): string | null {
 }
 
 /** Reads the `linked`, `mirrored` and `needsAmount` counts the import redirect adds. */
-export function outcomeFromParams(params: URLSearchParams): TransferOutcome {
+export function outcomeFromParams(
+  params: Pick<URLSearchParams, "get">,
+): TransferOutcome {
   const count = (key: string) => {
     const n = Number(params.get(key));
     return Number.isInteger(n) && n > 0 ? n : 0;

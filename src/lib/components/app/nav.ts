@@ -1,21 +1,21 @@
 import type { Component } from "svelte";
 
 export type NavHref =
-  | "/"
-  | "/accounts"
-  | "/investments"
-  | "/pillar-3a"
-  | "/import"
-  | "/bills"
-  | "/budgets"
-  | "/forecast"
-  | "/recurring"
-  | "/taxes"
-  | "/review"
-  | "/reports"
-  | "/settings/account"
-  | "/admin/users"
-  | "/admin/backup";
+  | "/(app)"
+  | "/(app)/accounts"
+  | "/(app)/investments"
+  | "/(app)/pillar-3a"
+  | "/(app)/import"
+  | "/(app)/bills"
+  | "/(app)/budgets"
+  | "/(app)/forecast"
+  | "/(app)/recurring"
+  | "/(app)/taxes"
+  | "/(app)/review"
+  | "/(app)/reports"
+  | "/(app)/settings/account"
+  | "/(app)/admin/users"
+  | "/(app)/admin/backup";
 
 export type NavItem = {
   href: NavHref;

@@ -40,6 +40,10 @@ describe("registration", () => {
     expect(pwaOptions.injectRegister).toBe(false);
   });
 
+  it("registers /sw.js with the whole origin as scope, whatever page registers it", () => {
+    expect(pwaOptions.base).toBe("/");
+  });
+
   it("keeps the manifest in static/", () => {
     expect(pwaOptions.manifest).toBe(false);
     expect(existsSync("static/site.webmanifest")).toBe(true);

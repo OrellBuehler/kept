@@ -1,5 +1,4 @@
-import { applyAction } from "$app/forms";
-import type { SubmitFunction } from "@sveltejs/kit";
+import { applyAction, type SubmitFunction } from "$app/forms";
 import { toast } from "svelte-sonner";
 
 import type { FormErrors } from "$lib/form-errors";

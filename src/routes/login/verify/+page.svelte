@@ -44,7 +44,7 @@
       if (!res.ok) {
         throw new Error(body?.message ?? "The passkey could not be verified.");
       }
-      await goto(body.redirectTo, { invalidateAll: true });
+      await goto(body.redirectTo, { refreshAll: true });
     } catch (err) {
       passkeyError =
         err instanceof Error && err.name === "NotAllowedError"

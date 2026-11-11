@@ -62,7 +62,7 @@
   );
 
   function pageHref(n: number) {
-    const params = new SvelteURLSearchParams(page.url.searchParams);
+    const params = new SvelteURLSearchParams(page.url.search);
     for (const key of ["imported", "linked", "mirrored", "needsAmount"])
       params.delete(key);
     if (n <= 1) params.delete("page");

@@ -48,7 +48,8 @@
 {:else if mode === "passkey"}
   <Field.Description>
     Your account uses passkeys: confirm with a passkey on the
-    <a href={resolve("/settings/security")} class="underline">security page</a> first,
-    then submit this form within five minutes.
+    <a href={resolve("/(app)/settings/security")} class="underline"
+      >security page</a
+    > first, then submit this form within five minutes.
   </Field.Description>
 {/if}

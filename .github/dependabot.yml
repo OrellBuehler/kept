@@ -12,6 +12,9 @@ updates:
         update-types: ["version-update:semver-major"]
       - dependency-name: "@tanstack/table-core"
         update-types: ["version-update:semver-major"]
+      # 2.x needs node:module's findPackageJSON, which Bun does not have yet.
+      - dependency-name: "@vite-pwa/sveltekit"
+        update-types: ["version-update:semver-major"]
 
   - package-ecosystem: "github-actions"
     directory: "/"

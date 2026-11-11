@@ -46,7 +46,7 @@
       rec.counts.missing_mine,
   );
   const reportHref = $derived(
-    `${resolve("/reports/tax")}?year=${encodeURIComponent(String(year.year))}`,
+    `${resolve("/(app)/reports/[kind]", { kind: "tax" })}?year=${encodeURIComponent(String(year.year))}`,
   );
 
   const KIND: Record<RowKind, { label: string; class: string }> = {

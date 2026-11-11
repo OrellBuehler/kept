@@ -1,7 +1,7 @@
 <script lang="ts">
   import { page } from "$app/state";
   import { deserialize } from "$app/forms";
-  import { invalidateAll } from "$app/navigation";
+  import { refreshAll } from "$app/navigation";
   import { toast } from "svelte-sonner";
   import { resolve, asset } from "$app/paths";
   import { cn } from "$lib/utils";
@@ -67,33 +67,37 @@
       return;
     }
     blurPending = false;
-    await invalidateAll();
+    await refreshAll();
   }
 
   const nav: NavItem[] = $derived([
-    { href: "/", label: "Dashboard", icon: LayoutDashboardIcon },
-    { href: "/accounts", label: "Accounts", icon: LandmarkIcon },
-    { href: "/investments", label: "Investments", icon: ChartLineIcon },
-    { href: "/pillar-3a", label: "Pillar 3a", icon: VaultIcon },
-    { href: "/import", label: "Import", icon: UploadIcon },
+    { href: "/(app)", label: "Dashboard", icon: LayoutDashboardIcon },
+    { href: "/(app)/accounts", label: "Accounts", icon: LandmarkIcon },
+    { href: "/(app)/investments", label: "Investments", icon: ChartLineIcon },
+    { href: "/(app)/pillar-3a", label: "Pillar 3a", icon: VaultIcon },
+    { href: "/(app)/import", label: "Import", icon: UploadIcon },
     {
-      href: "/bills",
+      href: "/(app)/bills",
       label: "Bills",
       icon: ReceiptIcon,
       badge: data.overdueBills,
     },
-    { href: "/budgets", label: "Budgets", icon: PiggyBankIcon },
-    { href: "/forecast", label: "Forecast", icon: TrendingUpIcon },
-    { href: "/recurring", label: "Recurring", icon: RepeatIcon },
-    { href: "/taxes", label: "Taxes", icon: ScaleIcon },
-    { href: "/review", label: "Year in review", icon: CalendarRangeIcon },
-    { href: "/reports", label: "Reports", icon: FileTextIcon },
-    { href: "/settings/account", label: "Settings", icon: SettingsIcon },
+    { href: "/(app)/budgets", label: "Budgets", icon: PiggyBankIcon },
+    { href: "/(app)/forecast", label: "Forecast", icon: TrendingUpIcon },
+    { href: "/(app)/recurring", label: "Recurring", icon: RepeatIcon },
+    { href: "/(app)/taxes", label: "Taxes", icon: ScaleIcon },
+    { href: "/(app)/review", label: "Year in review", icon: CalendarRangeIcon },
+    { href: "/(app)/reports", label: "Reports", icon: FileTextIcon },
+    { href: "/(app)/settings/account", label: "Settings", icon: SettingsIcon },
     ...(data.user.role === "admin"
       ? [
-          { href: "/admin/users" as const, label: "Users", icon: UsersIcon },
           {
-            href: "/admin/backup" as const,
+            href: "/(app)/admin/users" as const,
+            label: "Users",
+            icon: UsersIcon,
+          },
+          {
+            href: "/(app)/admin/backup" as const,
             label: "Backup",
             icon: DatabaseBackupIcon,
           },
@@ -101,7 +105,8 @@
       : []),
   ]);
 
-  function isActive(href: string) {
+  function isActive(routeId: string) {
+    const href = routeId.replace("/(app)", "") || "/";
     const path = page.url.pathname;
     if (href === "/") return path === "/";
     if (href === "/settings/account") return path.startsWith("/settings");
@@ -122,12 +127,12 @@
   <Sidebar.Root collapsible="icon">
     <Sidebar.Header>
       <a
-        href={resolve("/")}
+        href={resolve("/(app)")}
         class="ring-sidebar-ring flex h-11 items-center rounded-md px-2 outline-hidden transition-opacity hover:opacity-80 focus-visible:ring-2"
         aria-label="Kept, go to dashboard"
       >
         <img
-          src={asset("/brand/kept-symbol-small.svg")}
+          src={asset("brand/kept-symbol-small.svg")}
           alt=""
           class="size-6 shrink-0 dark:invert"
         />
@@ -176,7 +181,7 @@
               <DropdownMenu.Separator />
               <DropdownMenu.Item>
                 {#snippet child({ props })}
-                  <a href={resolve("/settings/account")} {...props}>
+                  <a href={resolve("/(app)/settings/account")} {...props}>
                     <SettingsIcon />
                     Account settings
                   </a>

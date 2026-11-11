@@ -202,11 +202,11 @@
     </Empty.Header>
     <Empty.Content>
       <div class="flex flex-wrap justify-center gap-2">
-        <Button href={resolve("/accounts")}>Go to accounts</Button>
-        <Button variant="outline" href={resolve("/import")}>
+        <Button href={resolve("/(app)/accounts")}>Go to accounts</Button>
+        <Button variant="outline" href={resolve("/(app)/import")}>
           Import a statement
         </Button>
-        <Button variant="outline" href={resolve("/bills/new")}>
+        <Button variant="outline" href={resolve("/(app)/bills/new")}>
           Add a bill
         </Button>
       </div>
@@ -379,7 +379,7 @@
           <p class="text-muted-foreground text-xs">
             Not counted: {notCounted.join(", ")}.
             <a
-              href={resolve("/settings/preferences")}
+              href={resolve("/(app)/settings/preferences")}
               class="underline underline-offset-2"
             >
               Change in preferences
@@ -398,7 +398,11 @@
             {#if d.hasShared}Shared accounts counted at your share.{/if}
           </Card.Description>
           <Card.Action>
-            <Button variant="ghost" size="sm" href={resolve("/investments")}>
+            <Button
+              variant="ghost"
+              size="sm"
+              href={resolve("/(app)/investments")}
+            >
               Investments
             </Button>
           </Card.Action>
@@ -538,7 +542,11 @@
             Expected to go below zero within 30 days.
           </Card.Description>
           <Card.Action>
-            <Button variant="outline" size="sm" href={resolve("/forecast")}>
+            <Button
+              variant="outline"
+              size="sm"
+              href={resolve("/(app)/forecast")}
+            >
               View forecast
             </Button>
           </Card.Action>
@@ -664,7 +672,7 @@
         <Card.Title>Bills</Card.Title>
         <Card.Description>What needs attention.</Card.Description>
         <Card.Action>
-          <Button variant="ghost" size="sm" href={resolve("/bills")}>
+          <Button variant="ghost" size="sm" href={resolve("/(app)/bills")}>
             All bills
           </Button>
         </Card.Action>
@@ -682,7 +690,7 @@
             >
               <div class="min-w-0">
                 <a
-                  href={resolve("/bills")}
+                  href={resolve("/(app)/bills")}
                   class={cn(
                     "text-sm font-medium hover:underline",
                     isAlert && "text-destructive",
@@ -756,7 +764,7 @@
 
         {#if d.bills.unmatchedSuggestions > 0}
           <a
-            href={resolve("/bills")}
+            href={resolve("/(app)/bills")}
             class="hover:bg-accent flex items-center justify-between rounded-md border px-3 py-2 text-sm"
           >
             <span>Payment matches waiting for confirmation</span>
@@ -766,7 +774,7 @@
 
         {#if d.unmatched.count > 0}
           <a
-            href={resolve("/bills")}
+            href={resolve("/(app)/bills")}
             class="hover:bg-accent flex items-start gap-2 rounded-md border px-3 py-2 text-sm"
           >
             <TriangleAlertIcon
@@ -887,7 +895,7 @@
         <Card.Title>Accounts</Card.Title>
         <Card.Description>Current balance per account.</Card.Description>
         <Card.Action>
-          <Button variant="ghost" size="sm" href={resolve("/accounts")}>
+          <Button variant="ghost" size="sm" href={resolve("/(app)/accounts")}>
             Manage
           </Button>
         </Card.Action>

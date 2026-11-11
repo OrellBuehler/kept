@@ -1,6 +1,6 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
-import config from "../../../svelte.config.js";
+import { csp } from "../csp-config";
 import {
   FALLBACK_CSP,
   applySecurityHeaders,
@@ -51,9 +51,7 @@ describe("applySecurityHeaders", () => {
   });
 });
 
-describe("kit.csp", () => {
-  const csp = config.kit?.csp;
-
+describe("csp", () => {
   it("uses auto mode so SvelteKit's inline bootstrap gets a nonce or hash", () => {
     expect(csp?.mode).toBe("auto");
   });
