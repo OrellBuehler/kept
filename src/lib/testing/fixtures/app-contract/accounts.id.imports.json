@@ -1,0 +1,102 @@
+{
+  "data": {
+    "account": {
+      "id": "fac3616a-1a96-4171-ac3d-50b72d0d3cfb",
+      "name": "Example Checking",
+      "type": "current",
+      "currency": "CHF",
+      "iban": "CH9300762011623852957",
+      "contractNumber": null,
+      "depositIban": null,
+      "openingBalance": 250000,
+      "openingDate": null,
+      "noticeMonths": null,
+      "freeWithdrawal": null,
+      "freeWithdrawalPeriod": null,
+      "fillFromTransfers": false,
+      "tradesMoveCash": false,
+      "archived": false,
+      "sortOrder": 0,
+      "shareBps": 10000,
+      "sharedWith": null,
+      "institution": {
+        "id": "1fd13a15-292d-4b4a-aba8-e6d033b536bb",
+        "name": "Example Bank",
+        "color": "#1a73e8",
+        "logoVersion": "fa25202f7fd431e3"
+      },
+      "balance": 112860,
+      "cashBalance": 112860,
+      "holdings": null,
+      "shareBalance": 112860,
+      "lastBookingDate": "2026-11-20",
+      "lastImportAt": 1795292415888
+    },
+    "imports": [
+      {
+        "id": "0f54f833-89bc-4859-8790-d8d17d8f84cf",
+        "accountId": "fac3616a-1a96-4171-ac3d-50b72d0d3cfb",
+        "accountName": "Example Checking",
+        "currency": "CHF",
+        "format": "camt053",
+        "fileName": "empty-statement.xml",
+        "statementFrom": "2025-01-01",
+        "statementTo": "2025-01-31",
+        "openingBalance": 7500,
+        "openingBalanceDate": "2025-01-01",
+        "closingBalance": 7500,
+        "closingBalanceDate": "2025-01-31",
+        "newCount": 0,
+        "duplicateCount": 0,
+        "warnings": [
+          "The file contains no transactions.",
+          "The file's opening balance (CHF 75.00 on 2025-01-01) does not match the ledger balance at the end of the previous day (CHF 1,232.50). This usually means a gap between imports or missing transactions.",
+          "After this import the ledger balance on 2025-01-31 would be CHF 1,232.50, but the file's closing balance is CHF 75.00. This usually means a gap between imports or missing transactions."
+        ],
+        "createdAt": 1795292415888
+      },
+      {
+        "id": "d392ae18-cf07-4c3e-a26d-7740dfaf7c1b",
+        "accountId": "fac3616a-1a96-4171-ac3d-50b72d0d3cfb",
+        "accountName": "Example Checking",
+        "currency": "CHF",
+        "format": "camt053",
+        "fileName": "overlap-a.xml",
+        "statementFrom": "2024-07-01",
+        "statementTo": "2024-07-10",
+        "openingBalance": 100000,
+        "openingBalanceDate": "2024-07-01",
+        "closingBalance": 123250,
+        "closingBalanceDate": "2024-07-10",
+        "newCount": 5,
+        "duplicateCount": 0,
+        "warnings": [],
+        "createdAt": 1795292415882
+      }
+    ],
+    "impacts": {
+      "0f54f833-89bc-4859-8790-d8d17d8f84cf": {
+        "transactions": 0,
+        "categorized": 0,
+        "notes": 0,
+        "taxYears": 0,
+        "deductionYears": 0,
+        "billAllocations": 0,
+        "pillar3a": 0,
+        "transferLinks": 0,
+        "mirrors": 0
+      },
+      "d392ae18-cf07-4c3e-a26d-7740dfaf7c1b": {
+        "transactions": 5,
+        "categorized": 3,
+        "notes": 0,
+        "taxYears": 0,
+        "deductionYears": 0,
+        "billAllocations": 0,
+        "pillar3a": 0,
+        "transferLinks": 0,
+        "mirrors": 0
+      }
+    }
+  }
+}

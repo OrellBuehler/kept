@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<lint>
+    <!-- All user-facing Compose UI text goes through stringResource(...) / strings*.xml. -->
+    <issue id="HardcodedText" severity="error" />
+</lint>

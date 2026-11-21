@@ -25,3 +25,16 @@ updates:
     directory: "/"
     schedule:
       interval: "weekly"
+
+  - package-ecosystem: "gradle"
+    directory: "/mobile"
+    schedule:
+      interval: "weekly"
+    groups:
+      gradle-minor-patch:
+        update-types: ["minor", "patch"]
+    # SKIE hard-fails the build on any Kotlin version it hasn't whitelisted.
+    # Bump Kotlin by hand together with SKIE.
+    ignore:
+      - dependency-name: "org.jetbrains.kotlin:*"
+      - dependency-name: "org.jetbrains.kotlin.*"

@@ -1,0 +1,78 @@
+{
+  "data": {
+    "today": "2026-11-21",
+    "hasShared": true,
+    "accounts": [
+      {
+        "id": "fac3616a-1a96-4171-ac3d-50b72d0d3cfb",
+        "name": "Example Checking",
+        "currency": "CHF",
+        "iban": "CH9300762011623852957",
+        "archived": false
+      },
+      {
+        "id": "b0da608d-0c75-4473-954f-999f8a577658",
+        "name": "Example Savings",
+        "currency": "CHF",
+        "iban": "CH5604835012345678009",
+        "archived": false
+      },
+      {
+        "id": "4723c0bd-5915-4bb4-bf8a-e4c4e6c71ab3",
+        "name": "Example Credit Card",
+        "currency": "CHF",
+        "iban": null,
+        "archived": false
+      },
+      {
+        "id": "46d68a57-3f39-40a8-b5c2-2c6908edecbb",
+        "name": "Example Brokerage",
+        "currency": "CHF",
+        "iban": null,
+        "archived": false
+      },
+      {
+        "id": "d436a836-7204-4373-ad12-082d0d7aa5d8",
+        "name": "Example Pillar 3a",
+        "currency": "CHF",
+        "iban": null,
+        "archived": false
+      },
+      {
+        "id": "a0c71505-621d-4c92-846f-59b9fc558340",
+        "name": "Example Pension Fund",
+        "currency": "CHF",
+        "iban": "NL91ABNA0417164300",
+        "archived": false
+      },
+      {
+        "id": "5e3f3af3-8d32-4036-b403-b20a5eef538c",
+        "name": "Example Euro Account",
+        "currency": "EUR",
+        "iban": "DE89370400440532013000",
+        "archived": false
+      },
+      {
+        "id": "789bf03b-84f9-44f1-bec9-0dcb3b0c55c2",
+        "name": "Example Joint Account",
+        "currency": "CHF",
+        "iban": "AT611904300234573201",
+        "archived": false
+      },
+      {
+        "id": "abf4ce0f-0eb2-4dbe-886d-8370faf6e15c",
+        "name": "Example Wallet",
+        "currency": "CHF",
+        "iban": null,
+        "archived": false
+      },
+      {
+        "id": "9903d314-508d-44b1-9052-6a298bc99e0f",
+        "name": "Example Old Account",
+        "currency": "CHF",
+        "iban": null,
+        "archived": true
+      }
+    ]
+  }
+}

@@ -1,0 +1,95 @@
+{
+  "data": {
+    "series": [
+      {
+        "id": "9b7bea56-1063-4d15-b181-164ef0950883",
+        "status": "dismissed",
+        "name": "Example Streaming SA",
+        "counterpartyIban": null,
+        "cadence": "monthly",
+        "currency": "CHF",
+        "amount": -1290,
+        "annualCost": -15480,
+        "monthlyCost": -1290,
+        "firstDate": "2026-08-10",
+        "lastDate": "2026-10-10",
+        "lastAmount": -1290,
+        "occurrences": 3,
+        "nextExpected": "2026-11-10",
+        "overdue": true,
+        "priceChange": {
+          "previous": -1190,
+          "latest": -1290,
+          "delta": -100
+        }
+      },
+      {
+        "id": "aab7b4e4-03e9-48d2-a3ef-1a9d47690237",
+        "status": "confirmed",
+        "name": "Example Employer AG",
+        "counterpartyIban": "BE68539007547034",
+        "cadence": "monthly",
+        "currency": "CHF",
+        "amount": 950000,
+        "annualCost": 11400000,
+        "monthlyCost": 950000,
+        "firstDate": "2026-08-25",
+        "lastDate": "2026-10-25",
+        "lastAmount": 950000,
+        "occurrences": 3,
+        "nextExpected": "2026-11-25",
+        "overdue": false,
+        "priceChange": null
+      },
+      {
+        "id": "a9b40672-3714-4f00-a8b1-f4234f231e77",
+        "status": "confirmed",
+        "name": "Example Property Management AG",
+        "counterpartyIban": "GB82WEST12345698765432",
+        "cadence": "monthly",
+        "currency": "CHF",
+        "amount": -180000,
+        "annualCost": -2160000,
+        "monthlyCost": -180000,
+        "firstDate": "2026-08-01",
+        "lastDate": "2026-11-01",
+        "lastAmount": -180000,
+        "occurrences": 4,
+        "nextExpected": "2026-12-01",
+        "overdue": false,
+        "priceChange": null
+      },
+      {
+        "id": "8ce6198c-65f8-4f3e-895a-0a4163864755",
+        "status": "suggested",
+        "name": "Example Tax Office",
+        "counterpartyIban": null,
+        "cadence": "yearly",
+        "currency": "CHF",
+        "amount": -120000,
+        "annualCost": -120000,
+        "monthlyCost": -10000,
+        "firstDate": "2025-11-02",
+        "lastDate": "2026-11-11",
+        "lastAmount": -120000,
+        "occurrences": 2,
+        "nextExpected": "2027-11-11",
+        "overdue": false,
+        "priceChange": {
+          "previous": -90000,
+          "latest": -120000,
+          "delta": -30000
+        }
+      }
+    ],
+    "totals": [
+      {
+        "currency": "CHF",
+        "outflowMonthly": 180000,
+        "outflowAnnual": 2160000,
+        "inflowMonthly": 950000,
+        "inflowAnnual": 11400000
+      }
+    ]
+  }
+}

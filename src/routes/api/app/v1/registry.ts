@@ -16,7 +16,9 @@ const page = (
 });
 
 /**
- * The web pages the apps can use. A page's `load` data and the fields of its
+ * The web pages the apps can use. Pages that hand out or manage credentials
+ * (security settings, API tokens), the integrations and the administrator
+ * pages are left out on purpose: the apps open those in the browser. A page's `load` data and the fields of its
  * actions are the contract of `/api/app/v1/pages/…`: released apps depend on
  * them, so change them additively only (see docs/app-api.md).
  */
@@ -60,10 +62,6 @@ export const pages: readonly Route<PageModule>[] = [
     () => import("../../../(app)/settings/account/+page.server"),
   ),
   page(
-    "settings/api-tokens",
-    () => import("../../../(app)/settings/api-tokens/+page.server"),
-  ),
-  page(
     "settings/categories",
     () => import("../../../(app)/settings/categories/+page.server"),
   ),
@@ -76,21 +74,8 @@ export const pages: readonly Route<PageModule>[] = [
     () => import("../../../(app)/settings/notifications/+page.server"),
   ),
   page(
-    "settings/paperless",
-    () => import("../../../(app)/settings/paperless/+page.server"),
-  ),
-  page(
     "settings/preferences",
     () => import("../../../(app)/settings/preferences/+page.server"),
-  ),
-  page(
-    "settings/security",
-    () => import("../../../(app)/settings/security/+page.server"),
-  ),
-  page("admin/users", () => import("../../../(app)/admin/users/+page.server")),
-  page(
-    "admin/backup",
-    () => import("../../../(app)/admin/backup/+page.server"),
   ),
 ];
 
@@ -121,11 +106,6 @@ export const endpoints: readonly Route<EndpointModule>[] = [
     "institutions/[id]/logo",
     "/(app)/institutions/[id]/logo",
     () => import("../../../(app)/institutions/[id]/logo/+server"),
-  ),
-  endpoint(
-    "admin/backup/download",
-    "/(app)/admin/backup/download",
-    () => import("../../../(app)/admin/backup/download/+server"),
   ),
   endpoint(
     "imports/[pendingId]/preview",

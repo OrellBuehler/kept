@@ -1,0 +1,91 @@
+name: Kept
+options:
+  bundleIdPrefix: ch.orellbuehler
+  developmentLanguage: en
+  deploymentTarget:
+    iOS: '18.0'
+  xcodeVersion: '16.2'
+
+settings:
+  base:
+    SWIFT_VERSION: '6.0'
+    CODE_SIGNING_ALLOWED: 'NO'
+    GENERATE_INFOPLIST_FILE: 'YES'
+    MARKETING_VERSION: '1.0'
+    CURRENT_PROJECT_VERSION: '1'
+    ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+    ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME: AccentColor
+    INFOPLIST_KEY_UIApplicationSceneManifest_Generation: 'YES'
+    INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents: 'YES'
+    INFOPLIST_KEY_UILaunchScreen_Generation: 'YES'
+    INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone: 'UIInterfaceOrientationPortrait'
+    INFOPLIST_KEY_CFBundleDisplayName: Kept
+
+targets:
+  Kept:
+    type: application
+    platform: iOS
+    sources:
+      - path: Kept
+    settings:
+      base:
+        TARGETED_DEVICE_FAMILY: '1'
+        PRODUCT_BUNDLE_IDENTIFIER: ch.orellbuehler.kept
+        # Link the KMP shared framework. Gradle builds it and stages it under
+        # shared/build/xcode-frameworks/<configuration>/<sdk>/ (see the shared
+        # iOS framework steps in mobile-ios.yml / mobile-release.yml).
+        FRAMEWORK_SEARCH_PATHS:
+          - '$(SRCROOT)/../shared/build/xcode-frameworks/$(CONFIGURATION)/$(SDK_NAME)'
+        OTHER_LDFLAGS:
+          - '-framework'
+          - 'shared'
+    info:
+      path: Kept/Info.plist
+      properties:
+        # Only standard (exempt) encryption is used (TLS), so declare no non-exempt
+        # encryption: TestFlight then skips the per-build export-compliance prompt.
+        ITSAppUsesNonExemptEncryption: false
+        CFBundleLocalizations:
+          - en
+        # Kept is self-hosted: the server is wherever the user runs it, often inside
+        # the home network over plain http. The app warns when the address is not https.
+        NSAppTransportSecurity:
+          NSAllowsArbitraryLoads: true
+        NSCameraUsageDescription: Kept uses the camera to scan a bill you want to add.
+        # Reminders: a periodic background refresh asks the server what is due.
+        UIBackgroundModes:
+          - fetch
+        BGTaskSchedulerPermittedIdentifiers:
+          - ch.orellbuehler.kept.reminders
+    dependencies:
+      - framework: '../shared/build/xcode-frameworks/$(CONFIGURATION)/$(SDK_NAME)/shared.framework'
+        embed: false
+
+  KeptTests:
+    type: bundle.unit-test
+    platform: iOS
+    sources:
+      - path: KeptTests
+      # The page fixtures the server writes (src/routes/api/app/v1/contract.test.ts):
+      # the models must decode them. Copied as the folder `app-contract`.
+      - path: ../../src/lib/testing/fixtures/app-contract
+        type: folder
+        buildPhase: resources
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: ch.orellbuehler.kept.tests
+        GENERATE_INFOPLIST_FILE: 'YES'
+        TEST_HOST: '$(BUILT_PRODUCTS_DIR)/Kept.app/Kept'
+        BUNDLE_LOADER: '$(TEST_HOST)'
+    dependencies:
+      - target: Kept
+
+schemes:
+  Kept:
+    build:
+      targets:
+        Kept: all
+        KeptTests: [test]
+    test:
+      targets:
+        - KeptTests

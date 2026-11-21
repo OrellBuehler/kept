@@ -1,0 +1,376 @@
+{
+  "data": {
+    "bill": {
+      "id": "13d0b252-8ced-4fd9-8b15-bc3a6120fa61",
+      "kind": "invoice",
+      "creditorName": "Example Tax Office",
+      "creditorIban": null,
+      "amount": 120000,
+      "currency": "CHF",
+      "issueDate": "2026-10-12",
+      "dueDate": "2026-11-12",
+      "reference": null,
+      "referenceType": null,
+      "message": null,
+      "invoiceNumber": null,
+      "cancelled": false,
+      "documentId": null,
+      "expectedAccountId": null,
+      "notes": "Final instalment",
+      "taxYear": 2025,
+      "externalSource": null,
+      "externalRef": null,
+      "externalUrl": null,
+      "extraction": null,
+      "createdAt": 1795292415950,
+      "updatedAt": 1795292415950,
+      "status": "paid",
+      "settled": 120000,
+      "remaining": 0,
+      "overdue": false,
+      "dueInDays": -9,
+      "lastPaymentDate": "2026-11-11",
+      "allocationCount": 1
+    },
+    "links": [],
+    "allocations": [
+      {
+        "id": "d7fe8983-02d2-4a1a-b4a8-238de254f7cc",
+        "billId": "13d0b252-8ced-4fd9-8b15-bc3a6120fa61",
+        "amount": 120000,
+        "origin": "user",
+        "createdAt": 1795292415953,
+        "transaction": {
+          "id": "2950187c-a865-4860-8a77-1a0841884f16",
+          "accountId": "fac3616a-1a96-4171-ac3d-50b72d0d3cfb",
+          "accountName": "Example Checking",
+          "bookingDate": "2026-11-11",
+          "amount": -120000,
+          "currency": "CHF",
+          "counterpartyName": "Example Tax Office",
+          "description": "Final instalment",
+          "reference": null
+        }
+      }
+    ],
+    "suggestions": [],
+    "dismissed": [],
+    "candidates": {
+      "items": [
+        {
+          "id": "941b427a-f78f-4052-a9c7-4c8e11f9405b",
+          "accountId": "fac3616a-1a96-4171-ac3d-50b72d0d3cfb",
+          "accountName": "Example Checking",
+          "bookingDate": "2026-11-20",
+          "amount": -3480,
+          "currency": "CHF",
+          "counterpartyName": "Example Grocer",
+          "description": "Weekly shop",
+          "reference": null,
+          "unallocated": -3480,
+          "suggestedAmount": 3480
+        },
+        {
+          "id": "07919a54-c8ad-461e-bc3b-fabd4dca133b",
+          "accountId": "fac3616a-1a96-4171-ac3d-50b72d0d3cfb",
+          "accountName": "Example Checking",
+          "bookingDate": "2026-11-20",
+          "amount": -194975,
+          "currency": "CHF",
+          "counterpartyName": "Example Supplier AG",
+          "description": "Invoice 2001",
+          "reference": "210000000003139471430009017",
+          "unallocated": -194975,
+          "suggestedAmount": 194975
+        },
+        {
+          "id": "cdcb972f-85c7-4ac5-9bad-141ffab9d4e0",
+          "accountId": "fac3616a-1a96-4171-ac3d-50b72d0d3cfb",
+          "accountName": "Example Checking",
+          "bookingDate": "2026-11-18",
+          "amount": -194975,
+          "currency": "CHF",
+          "counterpartyName": "Example Supplier AG",
+          "description": "Invoice 2001 (first try)",
+          "reference": null,
+          "unallocated": -194975,
+          "suggestedAmount": 194975
+        },
+        {
+          "id": "b4d2e0f0-e274-46e2-9a06-d8d37bcdd6e0",
+          "accountId": "fac3616a-1a96-4171-ac3d-50b72d0d3cfb",
+          "accountName": "Example Checking",
+          "bookingDate": "2026-11-17",
+          "amount": -2740,
+          "currency": "CHF",
+          "counterpartyName": "Example Bistro",
+          "description": "Lunch",
+          "reference": null,
+          "unallocated": -2740,
+          "suggestedAmount": 2740
+        },
+        {
+          "id": "6c075a84-c16c-4587-a6ff-badf49f7115a",
+          "accountId": "fac3616a-1a96-4171-ac3d-50b72d0d3cfb",
+          "accountName": "Example Checking",
+          "bookingDate": "2026-11-16",
+          "amount": -25000,
+          "currency": "CHF",
+          "counterpartyName": "Example Pension Fund",
+          "description": "Voluntary payment",
+          "reference": null,
+          "unallocated": -25000,
+          "suggestedAmount": 25000
+        },
+        {
+          "id": "fe85a7a1-9534-46d3-945e-7598144429c1",
+          "accountId": "fac3616a-1a96-4171-ac3d-50b72d0d3cfb",
+          "accountName": "Example Checking",
+          "bookingDate": "2026-11-15",
+          "amount": -20000,
+          "currency": "CHF",
+          "counterpartyName": "Example Euro Account",
+          "description": "Top up euros",
+          "reference": null,
+          "unallocated": -20000,
+          "suggestedAmount": 20000
+        },
+        {
+          "id": "0a95a0bf-5dd1-4d9f-995c-2f2a64a83e90",
+          "accountId": "fac3616a-1a96-4171-ac3d-50b72d0d3cfb",
+          "accountName": "Example Checking",
+          "bookingDate": "2026-11-13",
+          "amount": -1850,
+          "currency": "CHF",
+          "counterpartyName": null,
+          "description": null,
+          "reference": null,
+          "unallocated": -1850,
+          "suggestedAmount": 1850
+        },
+        {
+          "id": "3844694e-4408-4e4e-9eaf-a0e05f1b270b",
+          "accountId": "4723c0bd-5915-4bb4-bf8a-e4c4e6c71ab3",
+          "accountName": "Example Credit Card",
+          "bookingDate": "2026-11-12",
+          "amount": -4500,
+          "currency": "CHF",
+          "counterpartyName": "Example Online Shop",
+          "description": "Order 1001",
+          "reference": null,
+          "unallocated": -4500,
+          "suggestedAmount": 4500
+        },
+        {
+          "id": "889c054e-352a-402d-8895-218b620568bc",
+          "accountId": "789bf03b-84f9-44f1-bec9-0dcb3b0c55c2",
+          "accountName": "Example Joint Account",
+          "bookingDate": "2026-11-10",
+          "amount": -12000,
+          "currency": "CHF",
+          "counterpartyName": "Example Grocer",
+          "description": "Weekly shop",
+          "reference": null,
+          "unallocated": -12000,
+          "suggestedAmount": 12000
+        },
+        {
+          "id": "1a6c79a5-fc5a-4462-b14c-fc99d19049ed",
+          "accountId": "4723c0bd-5915-4bb4-bf8a-e4c4e6c71ab3",
+          "accountName": "Example Credit Card",
+          "bookingDate": "2026-11-09",
+          "amount": -31000,
+          "currency": "CHF",
+          "counterpartyName": "Example Airline",
+          "description": "Flight",
+          "reference": null,
+          "unallocated": -31000,
+          "suggestedAmount": 31000
+        },
+        {
+          "id": "1119de0a-1f32-4ebc-b02f-b0f2cea688fd",
+          "accountId": "fac3616a-1a96-4171-ac3d-50b72d0d3cfb",
+          "accountName": "Example Checking",
+          "bookingDate": "2026-11-07",
+          "amount": -30000,
+          "currency": "CHF",
+          "counterpartyName": "Example Joint Account",
+          "description": "Share of the shopping",
+          "reference": null,
+          "unallocated": -30000,
+          "suggestedAmount": 30000
+        },
+        {
+          "id": "d6760baa-f2ea-4b71-9e4c-249528933d21",
+          "accountId": "fac3616a-1a96-4171-ac3d-50b72d0d3cfb",
+          "accountName": "Example Checking",
+          "bookingDate": "2026-11-01",
+          "amount": -180000,
+          "currency": "CHF",
+          "counterpartyName": "Example Property Management AG",
+          "description": "Rent 2026-11",
+          "reference": "RF18539007547034",
+          "unallocated": -180000,
+          "suggestedAmount": 180000
+        },
+        {
+          "id": "6a92f70b-0689-4250-9640-8c0a4712149b",
+          "accountId": "fac3616a-1a96-4171-ac3d-50b72d0d3cfb",
+          "accountName": "Example Checking",
+          "bookingDate": "2026-11-01",
+          "amount": -50000,
+          "currency": "CHF",
+          "counterpartyName": "Example Savings",
+          "description": "Move to savings",
+          "reference": null,
+          "unallocated": -50000,
+          "suggestedAmount": 50000
+        },
+        {
+          "id": "73a5edad-ef99-491e-a953-a263a21be0c7",
+          "accountId": "fac3616a-1a96-4171-ac3d-50b72d0d3cfb",
+          "accountName": "Example Checking",
+          "bookingDate": "2026-10-27",
+          "amount": -4820,
+          "currency": "CHF",
+          "counterpartyName": "Example Grocer",
+          "description": "Weekly shop",
+          "reference": null,
+          "unallocated": -4820,
+          "suggestedAmount": 4820
+        },
+        {
+          "id": "3a9421fc-c043-4a6f-b6ec-7abfe9f4a850",
+          "accountId": "fac3616a-1a96-4171-ac3d-50b72d0d3cfb",
+          "accountName": "Example Checking",
+          "bookingDate": "2026-10-23",
+          "amount": -2390,
+          "currency": "CHF",
+          "counterpartyName": "Example Hardware Store",
+          "description": "Tools",
+          "reference": null,
+          "unallocated": -2390,
+          "suggestedAmount": 2390
+        },
+        {
+          "id": "7f322db7-17d3-437a-a2f7-9e2cc30a1180",
+          "accountId": "fac3616a-1a96-4171-ac3d-50b72d0d3cfb",
+          "accountName": "Example Checking",
+          "bookingDate": "2026-10-22",
+          "amount": -7250,
+          "currency": "CHF",
+          "counterpartyName": "Example Bistro",
+          "description": "Dinner",
+          "reference": null,
+          "unallocated": -7250,
+          "suggestedAmount": 7250
+        },
+        {
+          "id": "472f6513-b82d-424d-b90a-d757c407506e",
+          "accountId": "fac3616a-1a96-4171-ac3d-50b72d0d3cfb",
+          "accountName": "Example Checking",
+          "bookingDate": "2026-10-20",
+          "amount": -7830,
+          "currency": "CHF",
+          "counterpartyName": "Example Grocer",
+          "description": "Weekly shop",
+          "reference": null,
+          "unallocated": -7830,
+          "suggestedAmount": 7830
+        },
+        {
+          "id": "72770e6e-91f7-48ce-a55c-9d00d621e12d",
+          "accountId": "fac3616a-1a96-4171-ac3d-50b72d0d3cfb",
+          "accountName": "Example Checking",
+          "bookingDate": "2026-10-18",
+          "amount": -4230,
+          "currency": "CHF",
+          "counterpartyName": "Example Pharmacy",
+          "description": "Prescription",
+          "reference": null,
+          "unallocated": -4230,
+          "suggestedAmount": 4230
+        },
+        {
+          "id": "13eccdc6-2bd6-4059-8679-507fc35031de",
+          "accountId": "fac3616a-1a96-4171-ac3d-50b72d0d3cfb",
+          "accountName": "Example Checking",
+          "bookingDate": "2026-10-15",
+          "amount": -8600,
+          "currency": "CHF",
+          "counterpartyName": "Example Rail AG",
+          "description": "Season ticket",
+          "reference": null,
+          "unallocated": -8600,
+          "suggestedAmount": 8600
+        },
+        {
+          "id": "cef98595-c728-46bd-9d0e-ad8098b75aa1",
+          "accountId": "fac3616a-1a96-4171-ac3d-50b72d0d3cfb",
+          "accountName": "Example Checking",
+          "bookingDate": "2026-10-12",
+          "amount": -6800,
+          "currency": "CHF",
+          "counterpartyName": "Example Bistro",
+          "description": "Dinner",
+          "reference": null,
+          "unallocated": -6800,
+          "suggestedAmount": 6800
+        }
+      ],
+      "total": 53,
+      "page": 1,
+      "pageSize": 20,
+      "pageCount": 3
+    },
+    "candidateQuery": "",
+    "accounts": [
+      {
+        "id": "fac3616a-1a96-4171-ac3d-50b72d0d3cfb",
+        "name": "Example Checking",
+        "currency": "CHF"
+      },
+      {
+        "id": "b0da608d-0c75-4473-954f-999f8a577658",
+        "name": "Example Savings",
+        "currency": "CHF"
+      },
+      {
+        "id": "4723c0bd-5915-4bb4-bf8a-e4c4e6c71ab3",
+        "name": "Example Credit Card",
+        "currency": "CHF"
+      },
+      {
+        "id": "46d68a57-3f39-40a8-b5c2-2c6908edecbb",
+        "name": "Example Brokerage",
+        "currency": "CHF"
+      },
+      {
+        "id": "d436a836-7204-4373-ad12-082d0d7aa5d8",
+        "name": "Example Pillar 3a",
+        "currency": "CHF"
+      },
+      {
+        "id": "a0c71505-621d-4c92-846f-59b9fc558340",
+        "name": "Example Pension Fund",
+        "currency": "CHF"
+      },
+      {
+        "id": "5e3f3af3-8d32-4036-b403-b20a5eef538c",
+        "name": "Example Euro Account",
+        "currency": "EUR"
+      },
+      {
+        "id": "789bf03b-84f9-44f1-bec9-0dcb3b0c55c2",
+        "name": "Example Joint Account",
+        "currency": "CHF"
+      },
+      {
+        "id": "abf4ce0f-0eb2-4dbe-886d-8370faf6e15c",
+        "name": "Example Wallet",
+        "currency": "CHF"
+      }
+    ],
+    "document": null
+  }
+}

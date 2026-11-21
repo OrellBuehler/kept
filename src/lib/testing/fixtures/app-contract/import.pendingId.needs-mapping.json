@@ -1,0 +1,34 @@
+{
+  "data": {
+    "pendingId": "SrtPXYVxukg_KVkxaTp6rW6PxVBSD0Lz",
+    "account": {
+      "id": "abf4ce0f-0eb2-4dbe-886d-8370faf6e15c",
+      "name": "Example Wallet",
+      "currency": "CHF",
+      "iban": null
+    },
+    "format": "csv",
+    "fileName": "overlap-b.csv",
+    "balanceWarnings": [],
+    "statement": null,
+    "rows": [],
+    "counts": {
+      "new": 0,
+      "replacesMirror": 0,
+      "duplicate": 0,
+      "total": 0
+    },
+    "warnings": [],
+    "errors": [
+      "mapping_required"
+    ],
+    "alreadyImportedAt": null,
+    "filter": "all",
+    "page": 1,
+    "pageSize": 100,
+    "pageCount": 1,
+    "filteredTotal": 0,
+    "needsMapping": true,
+    "canConfirm": false
+  }
+}

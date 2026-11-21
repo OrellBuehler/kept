@@ -1,0 +1,557 @@
+name: Mobile Release
+
+# Builds the signed Android release (AAB + APK) and the iOS release and ships them:
+#   Android: attached to the GitHub release, uploaded to Google Play internal testing
+#            when GOOGLE_PLAY_SERVICE_ACCOUNT_JSON is set.
+#   iOS:     uploaded to TestFlight.
+# Every secret is listed in mobile/README.md ("Release"). Kept's server releases use the
+# same GitHub releases: a platform whose signing secrets are not set is skipped on a
+# release (with a notice), and fails with their names when the workflow is started by hand.
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Release version (e.g. 1.0.0)"
+        required: true
+        type: string
+      # Lets one platform be retried on its own. Re-running a release's failed
+      # jobs uses the workflow file from the tag, so picking up a fix on main
+      # needs a dispatch — and without this, that would re-upload the other
+      # platform under a fresh build number.
+      platforms:
+        description: "Which apps to build and upload"
+        required: false
+        default: both
+        type: choice
+        options:
+          - both
+          - android
+          - ios
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+concurrency:
+  group: mobile-release
+  cancel-in-progress: false
+
+permissions: {}
+
+jobs:
+  # Store builds always belong to a GitHub release. Publishing a release starts
+  # this workflow; a dispatch only retries a platform of an existing release.
+  prepare:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    outputs:
+      android: ${{ steps.secrets.outputs.android }}
+      ios: ${{ steps.secrets.outputs.ios }}
+    steps:
+      - name: Require a GitHub release for a dispatched version
+        if: github.event_name == 'workflow_dispatch'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          INPUT_VERSION: ${{ inputs.version }}
+        run: |
+          VERSION="${INPUT_VERSION#v}"
+          for candidate in "$INPUT_VERSION" "v$VERSION" "$VERSION"; do
+            if gh release view "$candidate" > /dev/null 2>&1; then
+              echo "Found release $candidate."
+              exit 0
+            fi
+          done
+          echo "::error::There is no published GitHub release for $INPUT_VERSION. Publish a release with the tag v$VERSION instead: that starts this workflow."
+          exit 1
+
+      - name: Check which platforms have their signing secrets
+        id: secrets
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          PLATFORMS: ${{ inputs.platforms }}
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+          APP_STORE_CONNECT_API_KEY_BASE64: ${{ secrets.APP_STORE_CONNECT_API_KEY_BASE64 }}
+          APP_STORE_CONNECT_KEY_ID: ${{ secrets.APP_STORE_CONNECT_KEY_ID }}
+          APP_STORE_CONNECT_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          IOS_DIST_CERT_P12_BASE64: ${{ secrets.IOS_DIST_CERT_P12_BASE64 }}
+          IOS_DIST_CERT_PASSWORD: ${{ secrets.IOS_DIST_CERT_PASSWORD }}
+          IOS_PROFILE_APP_BASE64: ${{ secrets.IOS_PROFILE_APP_BASE64 }}
+        run: |
+          failed=0
+          check() {
+            platform="$1"; shift
+            missing=""
+            for name in "$@"; do
+              if [ -z "${!name}" ]; then
+                missing="$missing $name"
+              fi
+            done
+            wanted=true
+            if [ "$EVENT_NAME" = "workflow_dispatch" ] && [ "$PLATFORMS" != "both" ] && [ "$PLATFORMS" != "$platform" ]; then
+              wanted=false
+            fi
+            if [ "$wanted" = "false" ]; then
+              echo "$platform=false" >> "$GITHUB_OUTPUT"
+            elif [ -z "$missing" ]; then
+              echo "$platform=true" >> "$GITHUB_OUTPUT"
+            elif [ "$EVENT_NAME" = "workflow_dispatch" ]; then
+              echo "::error::Missing GitHub secrets for $platform:$missing. See the Release section of mobile/README.md."
+              failed=1
+            else
+              echo "::notice::Skipping the $platform app: these secrets are not set:$missing. See the Release section of mobile/README.md."
+              echo "$platform=false" >> "$GITHUB_OUTPUT"
+            fi
+          }
+          check android ANDROID_KEYSTORE_BASE64 ANDROID_KEYSTORE_PASSWORD ANDROID_KEY_ALIAS ANDROID_KEY_PASSWORD
+          check ios APP_STORE_CONNECT_API_KEY_BASE64 APP_STORE_CONNECT_KEY_ID APP_STORE_CONNECT_ISSUER_ID APPLE_TEAM_ID IOS_DIST_CERT_P12_BASE64 IOS_DIST_CERT_PASSWORD IOS_PROFILE_APP_BASE64
+          exit "$failed"
+
+  android-release:
+    needs: prepare
+    if: needs.prepare.outputs.android == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: write
+    defaults:
+      run:
+        working-directory: mobile
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@77dd5b2ce225ea11469928ac317850245a74ae78 # v6.2.0
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@be39fa834029ff78f1a44aa3bb0819b8fc2bd8fd # v4.0.4
+        # The legacy 'tools' package the action installs by default was removed
+        # from the SDK repository (android-actions/setup-android#537), so the
+        # default 'tools platform-tools' list makes sdkmanager exit 1.
+        with:
+          packages: platform-tools
+
+      - name: Cache Gradle dependencies
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+            ~/.gradle/build-cache
+          key: gradle-android-${{ runner.os }}-${{ hashFiles('**/*.gradle*', '**/libs.versions.toml', '**/gradle-wrapper.properties') }}
+          restore-keys: |
+            gradle-android-${{ runner.os }}-
+
+      - name: Decode keystore
+        env:
+          KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          KEYSTORE_PATH: ${{ runner.temp }}/keystore.jks
+          KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+        run: |
+          echo "$KEYSTORE_BASE64" | base64 -d > "$KEYSTORE_PATH"
+          if ! keytool -list -keystore "$KEYSTORE_PATH" -storepass:env KEYSTORE_PASSWORD -alias "$KEY_ALIAS" > /dev/null; then
+            echo "::error::The keystore in ANDROID_KEYSTORE_BASE64 cannot be opened with ANDROID_KEYSTORE_PASSWORD, or has no key named ANDROID_KEY_ALIAS."
+            exit 1
+          fi
+
+      - name: Determine version
+        id: version
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          REF_NAME: ${{ github.ref_name }}
+          INPUT_VERSION: ${{ inputs.version }}
+        run: |
+          if [ "$EVENT_NAME" = "release" ]; then
+            TAG="$REF_NAME"
+          else
+            TAG="$INPUT_VERSION"
+          fi
+          # Gradle derives versionName and versionCode from this; anything but
+          # x.y or x.y.z (optionally prefixed with v) would silently become 0.
+          if ! echo "$TAG" | grep -Eq '^v?[0-9]+(\.[0-9]+){1,2}$'; then
+            echo "::error::Version '$TAG' is not of the form 1.2.3 or v1.2.3."
+            exit 1
+          fi
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+
+      - name: Build release AAB and APK
+        env:
+          ANDROID_KEYSTORE_FILE: ${{ runner.temp }}/keystore.jks
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+          APP_VERSION: ${{ steps.version.outputs.tag }}
+          BUILD_NUMBER: ${{ github.run_number }}
+        run: ./gradlew androidApp:bundleRelease androidApp:assembleRelease -PAPP_VERSION="$APP_VERSION" -PBUILD_NUMBER="$BUILD_NUMBER"
+
+      - name: Upload release AAB artifact
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: release-aab
+          path: mobile/androidApp/build/outputs/bundle/release/*.aab
+
+      - name: Upload release APK artifact
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: release-apk
+          path: mobile/androidApp/build/outputs/apk/release/*.apk
+
+      # On a release event the tag is the release itself. A dispatch (the retry
+      # path) attaches to the release of that version if one exists, trying the
+      # version as typed and with a leading v.
+      - name: Attach APK and AAB to the GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          TAG: ${{ steps.version.outputs.tag }}
+        run: |
+          set -euo pipefail
+          VERSION="${TAG#v}"
+          APK="$RUNNER_TEMP/kept-$VERSION.apk"
+          AAB="$RUNNER_TEMP/kept-$VERSION.aab"
+          cp androidApp/build/outputs/apk/release/*.apk "$APK"
+          cp androidApp/build/outputs/bundle/release/*.aab "$AAB"
+          for candidate in "$TAG" "v$VERSION"; do
+            if gh release view "$candidate" > /dev/null 2>&1; then
+              gh release upload "$candidate" "$APK" "$AAB" --clobber
+              echo "Attached to release $candidate."
+              exit 0
+            fi
+          done
+          echo "::notice::No GitHub release found for $TAG; the APK and AAB are only available as workflow artifacts."
+
+      - name: Check for Google Play credentials
+        id: play
+        env:
+          PLAY_JSON: ${{ secrets.GOOGLE_PLAY_SERVICE_ACCOUNT_JSON }}
+        run: |
+          if [ -n "$PLAY_JSON" ]; then
+            echo "configured=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "::notice::GOOGLE_PLAY_SERVICE_ACCOUNT_JSON is not set; skipping the Google Play upload."
+            echo "configured=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Upload to Google Play (internal testing)
+        if: steps.play.outputs.configured == 'true'
+        uses: r0adkll/upload-google-play@e738b9dd8f2476ea806d921b64aacd24f34515a5 # v1.1.5
+        with:
+          serviceAccountJsonPlainText: ${{ secrets.GOOGLE_PLAY_SERVICE_ACCOUNT_JSON }}
+          packageName: ch.orellbuehler.kept
+          releaseFiles: mobile/androidApp/build/outputs/bundle/release/*.aab
+          track: internal
+          status: completed
+          # Without this, Play reuses the track's previous release name, so the
+          # release reads as the previous version.
+          releaseName: ${{ steps.version.outputs.tag }}
+
+  ios-release:
+    needs: prepare
+    if: needs.prepare.outputs.ios == 'true'
+    # GitHub's arm64 Xcode 27 image, matching the iOS PR build (mobile-ios.yml). It
+    # carries the Xcode 27.0 GM alongside 27.1/27.2 previews; the ios-setup
+    # action pins and verifies the GM.
+    runs-on: xcode-27
+    timeout-minutes: 45
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      # Export signs manually against the profile kept in a secret. Compare it
+      # with the export options and the app's entitlements first: an expired,
+      # misnamed or stale profile otherwise fails the job ~25 minutes in with a
+      # bare "doesn't include the <entitlement> entitlement".
+      - name: Check provisioning profile
+        working-directory: mobile/iosApp
+        env:
+          PROFILE_APP_BASE64: ${{ secrets.IOS_PROFILE_APP_BASE64 }}
+          TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          set -euo pipefail
+          BUNDLE_ID=ch.orellbuehler.kept
+          ENTITLEMENTS=Kept/Kept.entitlements
+          prof="$RUNNER_TEMP/pf.mobileprovision"
+          plist="$RUNNER_TEMP/pf.plist"
+          failed=0
+
+          # <key> names out of an xml1 dump. plutil's json converter refuses
+          # values JSON cannot represent (data, date), and a profile's
+          # Entitlements dict can hold them.
+          keys_of() {
+            { grep -o '<key>[^<]*</key>' || true; } | sed 's/<[^>]*>//g' | sort -u
+          }
+
+          echo "$PROFILE_APP_BASE64" | base64 -d > "$prof"
+          security cms -D -i "$prof" > "$plist"
+
+          expires=$(plutil -extract ExpirationDate raw -o - "$plist" 2>/dev/null || true)
+          if [ -n "$expires" ] && [ "$(date -u +%Y-%m-%d)" \> "${expires%%T*}" ]; then
+            echo "::error::Provisioning profile expired on $expires"
+            failed=1
+          fi
+
+          actual_name=$(plutil -extract Name raw -o - "$plist")
+          expected_name=$(/usr/libexec/PlistBuddy -c "Print :provisioningProfiles:$BUNDLE_ID" ExportOptions.plist)
+          if [ "$actual_name" != "$expected_name" ]; then
+            echo "::error::Profile is named '$actual_name' but ExportOptions.plist expects '$expected_name'"
+            failed=1
+          fi
+
+          app_id=$(plutil -extract Entitlements.application-identifier raw -o - "$plist" 2>/dev/null || true)
+          if [ "$app_id" != "$TEAM_ID.$BUNDLE_ID" ]; then
+            echo "::error::Profile is for '$app_id', expected '$TEAM_ID.$BUNDLE_ID'"
+            failed=1
+          fi
+
+          # Every entitlement the app requests must be granted by the profile;
+          # the profile carrying extras is fine. Skipped while the app has no
+          # entitlements file.
+          if [ -f "$ENTITLEMENTS" ]; then
+            requested=$(plutil -convert xml1 -o - "$ENTITLEMENTS" | keys_of)
+            granted=$(plutil -extract Entitlements xml1 -o - "$plist" | keys_of)
+            missing=$(comm -23 <(echo "$requested") <(echo "$granted"))
+            if [ -n "$missing" ]; then
+              echo "::error::Profile is missing entitlements: $(echo "$missing" | tr '\n' ' ')"
+              failed=1
+            fi
+          fi
+
+          if [ "$failed" -ne 0 ]; then
+            echo "::error::Recreate the App Store profile for $BUNDLE_ID named '$expected_name' in the Apple Developer portal, then update the secret: openssl base64 -A -in Kept_App_Store.mobileprovision | gh secret set IOS_PROFILE_APP_BASE64"
+            exit 1
+          fi
+          echo "ok: profile '$actual_name' (expires $expires)"
+
+      - name: Set up the Xcode runner
+        uses: ./.github/actions/ios-setup
+
+      # The app links the KMP shared framework, so build and stage it for the
+      # Release/device archive (mirrors the debug/simulator steps in mobile-ios.yml).
+      - name: Build shared iOS framework (release, device)
+        working-directory: mobile
+        run: ./gradlew shared:linkReleaseFrameworkIosArm64
+
+      - name: Stage shared framework for Xcode
+        working-directory: mobile
+        run: |
+          SDK_NAME=$(xcrun --sdk iphoneos --show-sdk-version)
+          DEST="shared/build/xcode-frameworks/Release/iphoneos${SDK_NAME}"
+          mkdir -p "$DEST"
+          cp -R shared/build/bin/iosArm64/releaseFramework/shared.framework "$DEST/"
+
+      - name: Determine version
+        id: version
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          REF_NAME: ${{ github.ref_name }}
+          INPUT_VERSION: ${{ inputs.version }}
+        run: |
+          if [ "$EVENT_NAME" = "release" ]; then
+            RAW="$REF_NAME"
+          else
+            RAW="$INPUT_VERSION"
+          fi
+          if ! echo "$RAW" | grep -Eq '^v?[0-9]+(\.[0-9]+){1,2}$'; then
+            echo "::error::Version '$RAW' is not of the form 1.2.3 or v1.2.3."
+            exit 1
+          fi
+          # CFBundleShortVersionString must be a numeric x.y.z — strip a leading v.
+          echo "marketing=${RAW#v}" >> "$GITHUB_OUTPUT"
+
+      - name: Generate Xcode project
+        working-directory: mobile/iosApp
+        run: xcodegen generate
+
+      - name: Set up App Store Connect API key
+        id: asc_key
+        env:
+          API_KEY_BASE64: ${{ secrets.APP_STORE_CONNECT_API_KEY_BASE64 }}
+          KEY_ID: ${{ secrets.APP_STORE_CONNECT_KEY_ID }}
+        run: |
+          mkdir -p ~/.appstoreconnect/private_keys
+          # xcodebuild cloud signing and `altool` both auto-discover the key at
+          # ~/.appstoreconnect/private_keys/AuthKey_<KEY_ID>.p8
+          echo "$API_KEY_BASE64" | openssl base64 -d \
+            > ~/.appstoreconnect/private_keys/AuthKey_"$KEY_ID".p8
+
+      - name: Inject team ID into ExportOptions.plist
+        working-directory: mobile/iosApp
+        env:
+          TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          /usr/libexec/PlistBuddy -c "Add :teamID string $TEAM_ID" ExportOptions.plist \
+            || /usr/libexec/PlistBuddy -c "Set :teamID $TEAM_ID" ExportOptions.plist
+
+      - name: Archive
+        working-directory: mobile/iosApp
+        env:
+          KEY_ID: ${{ secrets.APP_STORE_CONNECT_KEY_ID }}
+          ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
+          TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          MARKETING_VERSION: ${{ steps.version.outputs.marketing }}
+          BUILD_NUMBER: ${{ github.run_number }}
+        # -allowProvisioningUpdates + the API key = cloud signing: Xcode creates
+        # and manages the development cert and profile for the archive itself.
+        # CODE_SIGNING_ALLOWED=YES overrides the project default (NO) used by the
+        # unsigned PR/simulator build. The build number is the monotonic CI run
+        # number, so every upload is unique within a marketing version.
+        run: |
+          xcodebuild archive \
+            -project Kept.xcodeproj \
+            -scheme Kept \
+            -configuration Release \
+            -destination 'generic/platform=iOS' \
+            -archivePath "$RUNNER_TEMP/Kept.xcarchive" \
+            -allowProvisioningUpdates \
+            -authenticationKeyPath ~/.appstoreconnect/private_keys/AuthKey_"$KEY_ID".p8 \
+            -authenticationKeyID "$KEY_ID" \
+            -authenticationKeyIssuerID "$ISSUER_ID" \
+            CODE_SIGNING_ALLOWED=YES \
+            CODE_SIGN_STYLE=Automatic \
+            DEVELOPMENT_TEAM="$TEAM_ID" \
+            MARKETING_VERSION="$MARKETING_VERSION" \
+            CURRENT_PROJECT_VERSION="$BUILD_NUMBER"
+
+      - name: Revoke the cloud-signing development certificates
+        # Cloud signing mints a fresh "Apple Development: Created via API" cert
+        # on every run (the ephemeral runner never holds a previous cert's
+        # private key). Apple caps development certs per team, so after ~10
+        # releases Archive fails with "Your account has reached the maximum
+        # number of certificates". Export re-signs with the distribution cert
+        # from secrets, so the cert is dead weight once Archive is done —
+        # revoke them all, including this run's, even when Archive failed.
+        # Skipped only when the API key was never set up.
+        if: always() && steps.asc_key.conclusion == 'success'
+        env:
+          ASC_KEY_ID: ${{ secrets.APP_STORE_CONNECT_KEY_ID }}
+          ASC_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
+        run: |
+          ASC_PRIVATE_KEY_PATH=~/.appstoreconnect/private_keys/AuthKey_"$ASC_KEY_ID".p8 \
+            node mobile/scripts/ios/revoke-ci-certs.mjs --apply
+
+      - name: Import distribution certificate and profile
+        env:
+          DIST_CERT_P12_BASE64: ${{ secrets.IOS_DIST_CERT_P12_BASE64 }}
+          DIST_CERT_PASSWORD: ${{ secrets.IOS_DIST_CERT_PASSWORD }}
+          PROFILE_APP_BASE64: ${{ secrets.IOS_PROFILE_APP_BASE64 }}
+        # Manual export signing needs our Apple Distribution identity in a
+        # keychain and the App Store profile installed where xcodebuild looks.
+        # A throwaway keychain keeps the private key off the persistent runner.
+        run: |
+          set -euo pipefail
+          KEYCHAIN="$RUNNER_TEMP/signing.keychain-db"
+          KEYCHAIN_PWD="$(openssl rand -base64 24)"
+          security create-keychain -p "$KEYCHAIN_PWD" "$KEYCHAIN"
+          security set-keychain-settings -lut 3600 "$KEYCHAIN"
+          security unlock-keychain -p "$KEYCHAIN_PWD" "$KEYCHAIN"
+
+          CERT="$RUNNER_TEMP/dist.p12"
+          echo "$DIST_CERT_P12_BASE64" | base64 -d > "$CERT"
+          security import "$CERT" -k "$KEYCHAIN" -P "$DIST_CERT_PASSWORD" \
+            -T /usr/bin/codesign -T /usr/bin/security
+          rm -f "$CERT"
+          # Let codesign use the imported key without an interactive prompt, and
+          # add our keychain to the search list (keeping the existing ones).
+          security set-key-partition-list -S apple-tool:,apple: -s -k "$KEYCHAIN_PWD" "$KEYCHAIN" >/dev/null
+          # shellcheck disable=SC2046 # the existing keychains are a plain word list
+          security list-keychains -d user -s "$KEYCHAIN" $(security list-keychains -d user | sed 's/"//g')
+
+          TMP="$(mktemp "$RUNNER_TEMP"/prof.XXXXXX)"
+          echo "$PROFILE_APP_BASE64" | base64 -d > "$TMP"
+          UUID="$(security cms -D -i "$TMP" | plutil -extract UUID raw -o - -)"
+          mkdir -p "$HOME/Library/MobileDevice/Provisioning Profiles"
+          cp "$TMP" "$HOME/Library/MobileDevice/Provisioning Profiles/$UUID.mobileprovision"
+          echo "installed profile $UUID"
+
+          security find-identity -v -p codesigning "$KEYCHAIN"
+
+      - name: Export IPA
+        working-directory: mobile/iosApp
+        # Manual signing: export re-signs using the Apple Distribution identity
+        # imported above and the profile named in ExportOptions.plist. No
+        # -allowProvisioningUpdates / API key here — that path used the flaky
+        # cloud-managed distribution certificate.
+        run: |
+          xcodebuild -exportArchive \
+            -archivePath "$RUNNER_TEMP/Kept.xcarchive" \
+            -exportOptionsPlist ExportOptions.plist \
+            -exportPath "$RUNNER_TEMP/export"
+
+      - name: Verify distribution signature
+        # Fail fast and clearly if export did not produce a distribution-signed
+        # app (altool would otherwise reject it ~40s later with a vaguer error).
+        run: |
+          set -euo pipefail
+          set -- "$RUNNER_TEMP"/export/*.ipa
+          IPA="$1"
+          [ -f "$IPA" ] || { echo "::error::Export produced no IPA"; exit 1; }
+          unzip -q -o "$IPA" -d "$RUNNER_TEMP/verify"
+          set -- "$RUNNER_TEMP"/verify/Payload/*.app
+          APP="$1"
+          AUTH=$(codesign -dvv "$APP" 2>&1 | grep '^Authority=' | head -n1 || true)
+          echo "$AUTH"
+          case "$AUTH" in
+            *"Apple Distribution"*) echo "OK: distribution-signed" ;;
+            *) echo "::error::Exported app is not distribution-signed: ${AUTH:-<none>}"; exit 1 ;;
+          esac
+
+      - name: Upload to TestFlight
+        env:
+          KEY_ID: ${{ secrets.APP_STORE_CONNECT_KEY_ID }}
+          ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
+        # altool can print "UPLOAD FAILED" (e.g. an icon with an alpha channel,
+        # or an invalid signature) and still exit 0, which silently produces a
+        # green run with no build in App Store Connect. Validate first, then
+        # upload, and fail the step on a non-zero exit OR any error text.
+        run: |
+          set -o pipefail
+          set -- "$RUNNER_TEMP"/export/*.ipa
+          IPA="$1"
+          [ -f "$IPA" ] || { echo "::error::Export produced no IPA"; exit 1; }
+          echo "IPA: $IPA"
+
+          run_altool() {
+            local action="$1" log="$2"
+            if ! xcrun altool "$action" -f "$IPA" -t ios \
+                  --apiKey "$KEY_ID" --apiIssuer "$ISSUER_ID" 2>&1 | tee "$log"; then
+              echo "::error::altool $action exited non-zero"
+              return 1
+            fi
+            # Drop altool's benign success lines ("No errors uploading
+            # archive at ...") first — otherwise the "errors uploading"
+            # pattern below matches them and fails a successful upload.
+            if grep -viE 'No errors (uploading|validating)' "$log" \
+                 | grep -qiE 'UPLOAD FAILED|VALIDATE FAILED|VALIDATION_ERROR|errors? (uploading|validating)|not (properly )?signed|alpha channel|Failed to (upload|validate)'; then
+              echo "::error::altool $action reported errors (see log above)"
+              return 1
+            fi
+          }
+
+          echo "Validating $IPA"
+          run_altool --validate-app "$RUNNER_TEMP/altool-validate.log"
+          echo "Uploading $IPA"
+          run_altool --upload-app "$RUNNER_TEMP/altool-upload.log"
+          echo "Upload accepted by App Store Connect."
+
+      - name: Upload IPA artifact
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: release-ipa
+          path: ${{ runner.temp }}/export/*.ipa

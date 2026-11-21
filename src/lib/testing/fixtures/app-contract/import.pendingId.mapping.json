@@ -1,0 +1,320 @@
+{
+  "data": {
+    "pendingId": "SrtPXYVxukg_KVkxaTp6rW6PxVBSD0Lz",
+    "fileName": "overlap-b.csv",
+    "format": "csv",
+    "account": {
+      "id": "abf4ce0f-0eb2-4dbe-886d-8370faf6e15c",
+      "name": "Example Wallet",
+      "currency": "CHF"
+    },
+    "detected": [
+      {
+        "index": 0,
+        "name": "Date",
+        "samples": [
+          "2024-08-02",
+          "2024-08-03",
+          "2024-08-04"
+        ]
+      },
+      {
+        "index": 1,
+        "name": "Counterparty",
+        "samples": [
+          "Sample Cafe",
+          "Demo Utilities GmbH",
+          "Example Employer AG"
+        ]
+      },
+      {
+        "index": 2,
+        "name": "Description",
+        "samples": [
+          "Coffee",
+          "Invoice",
+          "Salary"
+        ]
+      },
+      {
+        "index": 3,
+        "name": "Amount",
+        "samples": [
+          "-4.50",
+          "-80.00",
+          "4000.00"
+        ]
+      },
+      {
+        "index": 4,
+        "name": "Currency",
+        "samples": [
+          "CHF"
+        ]
+      }
+    ],
+    "sampleRows": [
+      [
+        "Date",
+        "Counterparty",
+        "Description",
+        "Amount",
+        "Currency"
+      ],
+      [
+        "2024-08-02",
+        "Sample Cafe",
+        "Coffee",
+        "-4.50",
+        "CHF"
+      ],
+      [
+        "2024-08-02",
+        "Sample Cafe",
+        "Coffee",
+        "-4.50",
+        "CHF"
+      ],
+      [
+        "2024-08-03",
+        "Demo Utilities GmbH",
+        "Invoice",
+        "-80.00",
+        "CHF"
+      ],
+      [
+        "2024-08-04",
+        "Example Employer AG",
+        "Salary",
+        "4000.00",
+        "CHF"
+      ],
+      [
+        "2024-08-05",
+        "Sample Shop",
+        "Headphones",
+        "-59.00",
+        "CHF"
+      ]
+    ],
+    "preview": [
+      {
+        "rowNumber": 2,
+        "raw": [
+          "2024-08-02",
+          "Sample Cafe",
+          "Coffee",
+          "-4.50",
+          "CHF"
+        ],
+        "transaction": {
+          "externalId": "hash:fe5c4e1f58cc3050b39625c884847665727837bcf03bddaeec4fe0cb0244f388#1",
+          "bookingDate": "2024-08-02",
+          "valueDate": null,
+          "amount": -450,
+          "currency": "CHF",
+          "originalAmount": null,
+          "originalCurrency": null,
+          "counterpartyName": null,
+          "counterpartyIban": null,
+          "description": "Coffee",
+          "reference": null,
+          "referenceType": null,
+          "reversal": false
+        }
+      },
+      {
+        "rowNumber": 3,
+        "raw": [
+          "2024-08-02",
+          "Sample Cafe",
+          "Coffee",
+          "-4.50",
+          "CHF"
+        ],
+        "transaction": {
+          "externalId": "hash:fe5c4e1f58cc3050b39625c884847665727837bcf03bddaeec4fe0cb0244f388#2",
+          "bookingDate": "2024-08-02",
+          "valueDate": null,
+          "amount": -450,
+          "currency": "CHF",
+          "originalAmount": null,
+          "originalCurrency": null,
+          "counterpartyName": null,
+          "counterpartyIban": null,
+          "description": "Coffee",
+          "reference": null,
+          "referenceType": null,
+          "reversal": false
+        }
+      },
+      {
+        "rowNumber": 4,
+        "raw": [
+          "2024-08-03",
+          "Demo Utilities GmbH",
+          "Invoice",
+          "-80.00",
+          "CHF"
+        ],
+        "transaction": {
+          "externalId": "hash:f77e7c23f7fe96c3fe3e8016a5075633c5b851324cf35e7ea57d12e88229ed0f#1",
+          "bookingDate": "2024-08-03",
+          "valueDate": null,
+          "amount": -8000,
+          "currency": "CHF",
+          "originalAmount": null,
+          "originalCurrency": null,
+          "counterpartyName": null,
+          "counterpartyIban": null,
+          "description": "Invoice",
+          "reference": null,
+          "referenceType": null,
+          "reversal": false
+        }
+      },
+      {
+        "rowNumber": 5,
+        "raw": [
+          "2024-08-04",
+          "Example Employer AG",
+          "Salary",
+          "4000.00",
+          "CHF"
+        ],
+        "transaction": {
+          "externalId": "hash:bd5b59fe9a23ce9f37b1b276557270ab52678257f0bb0a95fde215433ef5c0ef#1",
+          "bookingDate": "2024-08-04",
+          "valueDate": null,
+          "amount": 400000,
+          "currency": "CHF",
+          "originalAmount": null,
+          "originalCurrency": null,
+          "counterpartyName": null,
+          "counterpartyIban": null,
+          "description": "Salary",
+          "reference": null,
+          "referenceType": null,
+          "reversal": false
+        }
+      },
+      {
+        "rowNumber": 6,
+        "raw": [
+          "2024-08-05",
+          "Sample Shop",
+          "Headphones",
+          "-59.00",
+          "CHF"
+        ],
+        "transaction": {
+          "externalId": "hash:1afd2582e7b328e8e5c41b29c5c5de069be1cc8d10bf4c28f4b314a4017ae6f3#1",
+          "bookingDate": "2024-08-05",
+          "valueDate": null,
+          "amount": -5900,
+          "currency": "CHF",
+          "originalAmount": null,
+          "originalCurrency": null,
+          "counterpartyName": null,
+          "counterpartyIban": null,
+          "description": "Headphones",
+          "reference": null,
+          "referenceType": null,
+          "reversal": false
+        }
+      }
+    ],
+    "profile": {
+      "delimiter": "auto",
+      "encoding": "auto",
+      "headerRow": 1,
+      "skipFooterRows": 0,
+      "dateFormat": "YYYY-MM-DD",
+      "twoDigitYearPivot": 70,
+      "decimalSeparator": ".",
+      "thousandsSeparator": "",
+      "amountMode": "single",
+      "invertSign": false,
+      "indicatorCreditValues": [
+        "CRDT",
+        "Credit",
+        "CR",
+        "C"
+      ],
+      "indicatorDebitValues": [
+        "DBIT",
+        "Debit",
+        "DR",
+        "D"
+      ],
+      "defaultCurrency": "CHF",
+      "columns": {
+        "bookingDate": "Date",
+        "amount": "Amount",
+        "description": [
+          "Description"
+        ]
+      }
+    },
+    "draft": {
+      "delimiter": "auto",
+      "encoding": "auto",
+      "headerRow": 1,
+      "dateFormat": "YYYY-MM-DD",
+      "decimalSeparator": ".",
+      "thousandsSeparator": "",
+      "amountMode": "single",
+      "defaultCurrency": "CHF",
+      "columns": {
+        "bookingDate": "Date",
+        "amount": "Amount",
+        "description": "Description"
+      }
+    },
+    "saved": false,
+    "savedName": null,
+    "rowCount": 6,
+    "dataRowCount": 5,
+    "errors": [],
+    "otherProfiles": [
+      {
+        "accountId": "4723c0bd-5915-4bb4-bf8a-e4c4e6c71ab3",
+        "accountName": "Example Credit Card",
+        "name": "Example export",
+        "profile": {
+          "delimiter": "auto",
+          "encoding": "auto",
+          "headerRow": 1,
+          "skipFooterRows": 0,
+          "dateFormat": "YYYY-MM-DD",
+          "twoDigitYearPivot": 70,
+          "decimalSeparator": ".",
+          "thousandsSeparator": "",
+          "amountMode": "single",
+          "invertSign": false,
+          "indicatorCreditValues": [
+            "CRDT",
+            "Credit",
+            "CR",
+            "C"
+          ],
+          "indicatorDebitValues": [
+            "DBIT",
+            "Debit",
+            "DR",
+            "D"
+          ],
+          "columns": {
+            "bookingDate": "Date",
+            "amount": "Amount",
+            "currency": "Currency",
+            "counterpartyName": "Counterparty",
+            "description": [
+              "Description"
+            ]
+          }
+        }
+      }
+    ]
+  }
+}

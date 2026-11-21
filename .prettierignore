@@ -7,3 +7,5 @@ bun.lock
 static
 src/lib/components/ui
 .claude/worktrees
+mobile
+src/lib/testing/fixtures/app-contract

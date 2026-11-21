@@ -346,6 +346,14 @@ you tick (optionally limited to some categories), can expire, and can be revoked
 `ORIGIN` to the public URL so the `url` fields in responses are correct. See
 [docs/external-api.md](docs/external-api.md) for the endpoints, fields and examples.
 
+### Android and iOS apps
+
+Kept has native apps for Android and iOS that talk to your own server: enter its address on first
+start, then sign in with your Kept account. They do what the web does and can remind you of bills
+that are due, without a push service. See [mobile/README.md](mobile/README.md) for what they
+cover, how to build them and how they are released, and [docs/app-api.md](docs/app-api.md) for the
+API they use.
+
 ### Paperless-ngx
 
 Paperless-ngx 2.16 or newer (2.18+ recommended). In Paperless create a dedicated user with view

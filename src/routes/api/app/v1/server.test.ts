@@ -253,11 +253,17 @@ describe("app API: pages", () => {
     }
   });
 
-  it("keeps admin pages for admins", async () => {
-    const member = await createTestUser();
+  it("does not bridge the pages that manage credentials, integrations or the instance", async () => {
     const admin = await createTestUser({ role: "admin" });
-    expect((await page(member, "admin/users")).status).toBe(403);
-    expect((await page(admin, "admin/users")).status).toBe(200);
+    for (const path of [
+      "settings/security",
+      "settings/api-tokens",
+      "settings/paperless",
+      "admin/users",
+      "admin/backup",
+    ]) {
+      expect((await page(admin, path)).status, path).toBe(404);
+    }
   });
 
   it("uploads a file as base64 into the form", async () => {

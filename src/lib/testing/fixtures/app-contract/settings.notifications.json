@@ -1,0 +1,45 @@
+{
+  "data": {
+    "settings": {
+      "billDueEnabled": true,
+      "billDueDays": 5,
+      "billOverdueEnabled": true,
+      "budgetEnabled": true,
+      "budgetPercent": 90,
+      "staleImportEnabled": false,
+      "staleImportDays": 21
+    },
+    "channels": [
+      {
+        "kind": "ntfy",
+        "enabled": true,
+        "fields": {
+          "serverUrl": "https://ntfy.example.org",
+          "topic": "kept-example"
+        },
+        "hasSecret": true,
+        "needsReentry": false,
+        "lastSuccessAt": 1795292416008,
+        "lastError": null,
+        "lastErrorAt": null
+      },
+      {
+        "kind": "webhook",
+        "enabled": true,
+        "fields": {
+          "url": "https://hooks.example.org/kept"
+        },
+        "hasSecret": true,
+        "needsReentry": false,
+        "lastSuccessAt": null,
+        "lastError": "http_500",
+        "lastErrorAt": 1795292416009
+      }
+    ],
+    "emailBlocked": "smtp",
+    "kinds": [
+      "ntfy",
+      "webhook"
+    ]
+  }
+}
