@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="review_title">Year in review</string>
+    <string name="review_previous_year">Previous year</string>
+    <string name="review_next_year">Next year</string>
+    <string name="review_partial">%1$d so far, up to %2$s.</string>
+    <string name="review_full">January to December %1$d.</string>
+    <string name="review_note">Amounts are shown per currency and never converted. Transfers between your own accounts are left out when the counterparty IBAN matches one of your accounts. Refunds reduce the category they belong to.</string>
+    <plurals name="review_excluded">
+        <item quantity="one">%1$d transfer left out in %2$d.</item>
+        <item quantity="other">%1$d transfers left out in %2$d.</item>
+    </plurals>
+    <string name="review_empty_title">No transactions in %1$d</string>
+    <string name="review_empty_text">Import statements for this year to see where your money went.</string>
+    <string name="review_import">Import a statement</string>
+    <string name="review_income">Income</string>
+    <string name="review_expenses">Expenses</string>
+    <string name="review_net">Net saved</string>
+    <string name="review_savings_rate">Savings rate</string>
+    <string name="review_net_worth">Net worth change</string>
+    <string name="review_not_available">n/a</string>
+    <string name="review_flow_title">Where the money went</string>
+    <string name="review_flow_text">Income by category, then expenses by category. The smaller categories are grouped as Other.</string>
+    <string name="review_flow_income">Income by category</string>
+    <string name="review_flow_spent">Spent and saved</string>
+    <string name="review_months_title">Month by month</string>
+    <string name="review_changes_title">Biggest changes</string>
+    <string name="review_changes_text">Compared with %1$d.</string>
+    <string name="review_changes_none">No %1$s transactions in %2$d to compare with.</string>
+    <string name="review_change_income">Income</string>
+    <string name="review_change_expense">Expense</string>
+    <string name="review_change_new">new</string>
+    <string name="review_change_line">%1$s · %2$s</string>
+    <string name="review_counterparties_title">Top counterparties by spend</string>
+    <string name="review_counterparties_none">No expenses with a counterparty name.</string>
+    <plurals name="review_payments">
+        <item quantity="one">%1$d payment</item>
+        <item quantity="other">%1$d payments</item>
+    </plurals>
+    <string name="review_largest_expenses">Largest expenses</string>
+    <string name="review_largest_income">Largest income</string>
+    <string name="review_none">None.</string>
+    <string name="review_no_counterparty">No counterparty</string>
+</resources>
