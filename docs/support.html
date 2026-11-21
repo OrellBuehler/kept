@@ -1,0 +1,369 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Support · Kept</title>
+    <meta
+      name="description"
+      content="Help for the Kept apps: where to ask, and answers to the common problems with connecting, signing in and reminders."
+    />
+    <meta
+      name="theme-color"
+      content="#0b0d12"
+      media="(prefers-color-scheme: dark)"
+    />
+    <meta
+      name="theme-color"
+      content="#f8f9fb"
+      media="(prefers-color-scheme: light)"
+    />
+    <link rel="icon" href="assets/favicon.svg" type="image/svg+xml" />
+    <link rel="apple-touch-icon" href="assets/apple-touch-icon.png" />
+    <link
+      rel="preload"
+      href="assets/inter.woff2"
+      as="font"
+      type="font/woff2"
+      crossorigin
+    />
+    <script>
+      try {
+        const t = localStorage.getItem("kept-theme");
+        if (t) document.documentElement.dataset.theme = t;
+      } catch {
+        /* storage unavailable: follow the system theme */
+      }
+    </script>
+    <link rel="stylesheet" href="pages.css" />
+  </head>
+  <body>
+    <svg width="0" height="0" style="position: absolute" aria-hidden="true">
+      <defs>
+        <symbol id="lockup" viewBox="0 0 740 256">
+          <g fill="currentColor">
+            <rect x="36" y="36" width="36" height="184" />
+            <rect x="160" y="36" width="64" height="24" />
+            <rect x="124" y="76" width="64" height="24" />
+            <rect x="88" y="116" width="64" height="24" />
+            <rect x="124" y="156" width="64" height="24" />
+            <rect x="160" y="196" width="64" height="24" />
+          </g>
+          <g
+            transform="translate(300 10)"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="22"
+            stroke-linejoin="round"
+          >
+            <path d="M11 20 V170" />
+            <path d="M11 125 L63 73" />
+            <path d="M30 106 L67 170" />
+            <path d="M98 120 H198 A50 50 0 1 0 183.36 155.36" />
+            <path d="M230 70 V235" />
+            <circle cx="280" cy="120" r="50" />
+            <path d="M372 30 V145 A25 25 0 0 0 397 170 H402" />
+            <path d="M350 70 H400" />
+          </g>
+        </symbol>
+        <symbol id="i-github" viewBox="0 0 24 24" fill="currentColor">
+          <path
+            d="M12 .5a11.5 11.5 0 0 0-3.64 22.41c.58.1.79-.25.79-.56v-2c-3.2.7-3.88-1.37-3.88-1.37-.52-1.33-1.28-1.69-1.28-1.69-1.05-.71.08-.7.08-.7 1.16.08 1.77 1.19 1.77 1.19 1.03 1.77 2.7 1.26 3.36.96.1-.75.4-1.26.73-1.55-2.55-.29-5.24-1.28-5.24-5.68 0-1.26.45-2.28 1.19-3.09-.12-.29-.52-1.46.11-3.05 0 0 .97-.31 3.17 1.18a11 11 0 0 1 5.77 0c2.2-1.49 3.17-1.18 3.17-1.18.63 1.59.23 2.76.11 3.05.74.81 1.19 1.83 1.19 3.09 0 4.41-2.7 5.38-5.26 5.67.41.36.78 1.06.78 2.14v3.17c0 .31.21.67.8.56A11.5 11.5 0 0 0 12 .5Z"
+          />
+        </symbol>
+        <symbol
+          id="i-sun"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="2"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+        >
+          <circle cx="12" cy="12" r="4" />
+          <path
+            d="M12 2v2M12 20v2m-7.07-14.07 1.41 1.41m11.32 11.32 1.41 1.41M2 12h2m16 0h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41"
+          />
+        </symbol>
+        <symbol
+          id="i-moon"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="2"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+        >
+          <path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z" />
+        </symbol>
+      </defs>
+    </svg>
+
+    <a class="skip" href="#content">Skip to the text</a>
+
+    <header class="nav">
+      <div class="wrap">
+        <a class="logo" href="./" aria-label="Kept home">
+          <svg viewBox="0 0 740 256" aria-hidden="true">
+            <use href="#lockup" />
+          </svg>
+        </a>
+        <nav class="nav-links" aria-label="Pages">
+          <a href="./">Home</a>
+          <a href="privacy.html">Privacy</a>
+          <a href="support.html" aria-current="page">Support</a>
+        </nav>
+        <div class="nav-actions">
+          <button
+            class="icon-btn"
+            id="theme"
+            type="button"
+            aria-label="Toggle dark mode"
+            hidden
+          >
+            <svg class="moon" aria-hidden="true"><use href="#i-moon" /></svg>
+            <svg class="sun" aria-hidden="true"><use href="#i-sun" /></svg>
+          </button>
+          <a class="btn" href="https://github.com/OrellBuehler/kept">
+            <svg aria-hidden="true"><use href="#i-github" /></svg
+            ><span>GitHub</span>
+          </a>
+        </div>
+      </div>
+    </header>
+
+    <main class="doc" id="content">
+      <span class="kicker">Kept apps</span>
+      <h1>Support</h1>
+      <p class="meta">
+        Where to ask, and answers to the problems people run into first.
+      </p>
+
+      <div class="summary">
+        <p>
+          <strong>Found a bug or have a question?</strong> Open an issue at
+          <a href="https://github.com/OrellBuehler/kept/issues"
+            >github.com/OrellBuehler/kept/issues</a
+          >. Say which phone and system version you use, the app version (shown
+          at the bottom of Settings), the Kept version your server runs, and
+          what you did before the problem appeared. Issues are public, so leave
+          out real account numbers, amounts and names, and blur screenshots.
+        </p>
+      </div>
+
+      <h2>Where to find answers</h2>
+      <ul>
+        <li>
+          <a href="https://github.com/OrellBuehler/kept#readme"
+            >The Kept documentation</a
+          >
+          covers installing and running the server.
+        </li>
+        <li>
+          <a
+            href="https://github.com/OrellBuehler/kept/blob/main/mobile/README.md"
+            >The apps' readme</a
+          >
+          explains what the Android and iPhone apps do, how sign-in and
+          reminders work, and how they are built and released.
+        </li>
+        <li>
+          <a href="https://github.com/OrellBuehler/kept/issues"
+            >The issue tracker</a
+          >
+          is the place for questions and bug reports. Search it first, your
+          question may already have an answer.
+        </li>
+        <li>
+          <a href="https://github.com/OrellBuehler/kept/releases"
+            >The releases page</a
+          >
+          has the Android APK of the releases that include the apps.
+        </li>
+      </ul>
+
+      <h2>Connecting and signing in</h2>
+      <details>
+        <summary>"No Kept server answers at this address"</summary>
+        <p>The app could not find a Kept server where you pointed it. Check:</p>
+        <ul>
+          <li>
+            The address. Type it as you would in a browser, for example
+            <code>kept.example.org</code>. Without a prefix the app uses https.
+            For a server in your home network use the full address, such as
+            <code>http://192.168.1.5:3000</code>.
+          </li>
+          <li>
+            https or http. If the server only speaks http, say so in the
+            address. If it speaks https, do not add <code>http://</code>.
+          </li>
+          <li>
+            The version. The server must be Kept 0.6 or newer, the first version
+            with the app interface.
+          </li>
+          <li>
+            The reverse proxy. If one sits in front of Kept, it must pass
+            <code>/api/app/v1</code> through to the server, not only the pages
+            of the website.
+          </li>
+          <li>
+            The network. Your phone has to reach the server: a home address
+            works only at home or over a VPN.
+          </li>
+        </ul>
+      </details>
+      <details>
+        <summary>The app warns that the connection is not encrypted</summary>
+        <p>
+          You entered an address starting with <code>http://</code>. That is
+          fine inside a home network you trust, but anyone on the network path
+          could read what is sent, including your password. Put Kept behind
+          https and use that address instead.
+        </p>
+      </details>
+      <details>
+        <summary>I cannot sign in with a passkey</summary>
+        <p>
+          The apps do not support passkeys. Sign in with your password and the
+          code from your authenticator app. If your account has only passkeys,
+          use a recovery code instead. You can create an authenticator and
+          recovery codes on the website under Settings, Security.
+        </p>
+      </details>
+      <details>
+        <summary>I was signed out unexpectedly</summary>
+        <p>A session ends when:</p>
+        <ul>
+          <li>you change your password on the web, or sign out there;</li>
+          <li>it has not been used for 30 days (every use extends it);</li>
+          <li>an administrator ends it;</li>
+          <li>
+            you restore a phone from a backup or move to a new one. The session
+            is kept on the device only, so sign in again.
+          </li>
+        </ul>
+        <p>
+          Signing in again does not lose anything: your data is on the server.
+        </p>
+      </details>
+      <details>
+        <summary>Why does a page open in the browser?</summary>
+        <p>
+          Security settings (two-step verification and passkeys), API tokens,
+          Paperless and the administrator pages are not in the apps. They open
+          on your server's website in the browser, where you sign in as usual.
+        </p>
+      </details>
+
+      <h2>Bills and files</h2>
+      <details>
+        <summary>A photo of a bill is refused as too large</summary>
+        <p>
+          Kept stores a bill as a PDF of at most 20 MB. A photo or scan is
+          turned into a PDF on the phone, and the app tries smaller versions of
+          it before it gives up. If it is still refused, take the photo again
+          from a little further away or in a lower resolution (on iPhone you can
+          also use the scanner). A PDF you pick from your files is not resized:
+          shrink it first.
+        </p>
+      </details>
+
+      <h2>Reminders</h2>
+      <details>
+        <summary>Reminders do not arrive</summary>
+        <ol>
+          <li>
+            Switch them on in the app under Settings, Reminders, and choose what
+            to be reminded about.
+          </li>
+          <li>
+            Allow notifications for Kept in the system settings. The app tells
+            you when they are switched off.
+          </li>
+          <li>
+            Know that there is no push service. The app asks your server in the
+            background, roughly every six hours, and only when the system allows
+            it. Battery optimisation on Android, and Low Power Mode or
+            switched-off Background App Refresh on iPhone, can hold the check
+            back for a long time. Exempt Kept from battery optimisation if
+            reminders are late.
+          </li>
+          <li>
+            Open the app: it checks every time it starts. Reminders for a bill's
+            due date are scheduled ahead, so they arrive even while the server
+            cannot be reached.
+          </li>
+        </ol>
+      </details>
+
+      <h2>Your data on the phone</h2>
+      <details>
+        <summary>How do I remove everything from the device?</summary>
+        <p>
+          In Settings choose Disconnect from this server. It signs you out,
+          removes the server address and your reminder settings and cancels
+          scheduled reminders. A document you opened (kept in the app's cache
+          until the system clears it) stays until you delete the app, or clear
+          its storage in the system settings on Android. Nothing is deleted on
+          the server.
+        </p>
+        <p>
+          What the apps store is listed in the
+          <a href="privacy.html">privacy policy</a>.
+        </p>
+      </details>
+
+      <h2>Security problems</h2>
+      <p>
+        If you found a security problem in Kept, please do not open a public
+        issue. Report it privately with
+        <a href="https://github.com/OrellBuehler/kept/security/advisories/new"
+          >GitHub's private vulnerability report</a
+        >
+        for the repository.
+      </p>
+
+      <h2>Still stuck?</h2>
+      <p>
+        Open an issue on
+        <a href="https://github.com/OrellBuehler/kept/issues">GitHub</a>. Kept
+        is open source, so you can also read how it works in the
+        <a href="https://github.com/OrellBuehler/kept">repository</a>.
+      </p>
+    </main>
+
+    <footer>
+      <div class="wrap">
+        <a class="logo" href="./" aria-label="Kept home"
+          ><svg viewBox="0 0 740 256" style="height: 18px" aria-hidden="true">
+            <use href="#lockup" /></svg
+        ></a>
+        <nav aria-label="Footer">
+          <a href="./">Home</a>
+          <a href="privacy.html">Privacy</a>
+          <a href="https://github.com/OrellBuehler/kept">Source</a>
+          <a href="https://github.com/OrellBuehler/kept/issues">Issues</a>
+        </nav>
+        <span>© 2026 Orell Bühler</span>
+      </div>
+    </footer>
+
+    <script>
+      const theme = document.getElementById("theme");
+      theme.hidden = false;
+      theme.addEventListener("click", () => {
+        const root = document.documentElement;
+        const dark =
+          root.dataset.theme === "dark" ||
+          (!root.dataset.theme &&
+            matchMedia("(prefers-color-scheme: dark)").matches);
+        root.dataset.theme = dark ? "light" : "dark";
+        try {
+          localStorage.setItem("kept-theme", root.dataset.theme);
+        } catch {
+          /* storage unavailable: theme lasts for this visit only */
+        }
+      });
+    </script>
+  </body>
+</html>

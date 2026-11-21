@@ -1,0 +1,371 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Privacy policy · Kept</title>
+    <meta
+      name="description"
+      content="Kept collects no data. The apps talk only to the server you enter. This page explains what is stored where."
+    />
+    <meta
+      name="theme-color"
+      content="#0b0d12"
+      media="(prefers-color-scheme: dark)"
+    />
+    <meta
+      name="theme-color"
+      content="#f8f9fb"
+      media="(prefers-color-scheme: light)"
+    />
+    <link rel="icon" href="assets/favicon.svg" type="image/svg+xml" />
+    <link rel="apple-touch-icon" href="assets/apple-touch-icon.png" />
+    <link
+      rel="preload"
+      href="assets/inter.woff2"
+      as="font"
+      type="font/woff2"
+      crossorigin
+    />
+    <script>
+      try {
+        const t = localStorage.getItem("kept-theme");
+        if (t) document.documentElement.dataset.theme = t;
+      } catch {
+        /* storage unavailable: follow the system theme */
+      }
+    </script>
+    <link rel="stylesheet" href="pages.css" />
+  </head>
+  <body>
+    <svg width="0" height="0" style="position: absolute" aria-hidden="true">
+      <defs>
+        <symbol id="lockup" viewBox="0 0 740 256">
+          <g fill="currentColor">
+            <rect x="36" y="36" width="36" height="184" />
+            <rect x="160" y="36" width="64" height="24" />
+            <rect x="124" y="76" width="64" height="24" />
+            <rect x="88" y="116" width="64" height="24" />
+            <rect x="124" y="156" width="64" height="24" />
+            <rect x="160" y="196" width="64" height="24" />
+          </g>
+          <g
+            transform="translate(300 10)"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="22"
+            stroke-linejoin="round"
+          >
+            <path d="M11 20 V170" />
+            <path d="M11 125 L63 73" />
+            <path d="M30 106 L67 170" />
+            <path d="M98 120 H198 A50 50 0 1 0 183.36 155.36" />
+            <path d="M230 70 V235" />
+            <circle cx="280" cy="120" r="50" />
+            <path d="M372 30 V145 A25 25 0 0 0 397 170 H402" />
+            <path d="M350 70 H400" />
+          </g>
+        </symbol>
+        <symbol id="i-github" viewBox="0 0 24 24" fill="currentColor">
+          <path
+            d="M12 .5a11.5 11.5 0 0 0-3.64 22.41c.58.1.79-.25.79-.56v-2c-3.2.7-3.88-1.37-3.88-1.37-.52-1.33-1.28-1.69-1.28-1.69-1.05-.71.08-.7.08-.7 1.16.08 1.77 1.19 1.77 1.19 1.03 1.77 2.7 1.26 3.36.96.1-.75.4-1.26.73-1.55-2.55-.29-5.24-1.28-5.24-5.68 0-1.26.45-2.28 1.19-3.09-.12-.29-.52-1.46.11-3.05 0 0 .97-.31 3.17 1.18a11 11 0 0 1 5.77 0c2.2-1.49 3.17-1.18 3.17-1.18.63 1.59.23 2.76.11 3.05.74.81 1.19 1.83 1.19 3.09 0 4.41-2.7 5.38-5.26 5.67.41.36.78 1.06.78 2.14v3.17c0 .31.21.67.8.56A11.5 11.5 0 0 0 12 .5Z"
+          />
+        </symbol>
+        <symbol
+          id="i-sun"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="2"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+        >
+          <circle cx="12" cy="12" r="4" />
+          <path
+            d="M12 2v2M12 20v2m-7.07-14.07 1.41 1.41m11.32 11.32 1.41 1.41M2 12h2m16 0h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41"
+          />
+        </symbol>
+        <symbol
+          id="i-moon"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="2"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+        >
+          <path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z" />
+        </symbol>
+      </defs>
+    </svg>
+
+    <a class="skip" href="#content">Skip to the text</a>
+
+    <header class="nav">
+      <div class="wrap">
+        <a class="logo" href="./" aria-label="Kept home">
+          <svg viewBox="0 0 740 256" aria-hidden="true">
+            <use href="#lockup" />
+          </svg>
+        </a>
+        <nav class="nav-links" aria-label="Pages">
+          <a href="./">Home</a>
+          <a href="privacy.html" aria-current="page">Privacy</a>
+          <a href="support.html">Support</a>
+        </nav>
+        <div class="nav-actions">
+          <button
+            class="icon-btn"
+            id="theme"
+            type="button"
+            aria-label="Toggle dark mode"
+            hidden
+          >
+            <svg class="moon" aria-hidden="true"><use href="#i-moon" /></svg>
+            <svg class="sun" aria-hidden="true"><use href="#i-sun" /></svg>
+          </button>
+          <a class="btn" href="https://github.com/OrellBuehler/kept">
+            <svg aria-hidden="true"><use href="#i-github" /></svg
+            ><span>GitHub</span>
+          </a>
+        </div>
+      </div>
+    </header>
+
+    <main class="doc" id="content">
+      <span class="kicker">Kept apps and website</span>
+      <h1>Privacy policy</h1>
+      <p class="meta">Last updated: 21 November 2026</p>
+
+      <div class="summary">
+        <p>
+          <strong>In short:</strong> the developer collects nothing. There is no
+          Kept account with the developer, no analytics, no advertising and no
+          tracking. The apps talk only to the Kept server whose address you
+          enter, which you or someone you trust runs. Your financial data lives
+          on that server, not with the developer.
+        </p>
+      </div>
+
+      <h2>Who is responsible</h2>
+      <p>
+        Kept is developed by Orell Bühler, Switzerland. For questions about this
+        policy, open an issue at
+        <a href="https://github.com/OrellBuehler/kept/issues"
+          >github.com/OrellBuehler/kept</a
+        >. For anything private, such as a security problem, use
+        <a href="https://github.com/OrellBuehler/kept/security/advisories/new"
+          >GitHub's private vulnerability report</a
+        >
+        for the repository instead of a public issue.
+      </p>
+
+      <h2>What the developer receives</h2>
+      <p>
+        Nothing. The developer runs no server for Kept. The apps contain no
+        analytics, advertising, tracking or crash reporting tools and do not
+        contact the developer. Nobody can see your accounts, bills, balances or
+        documents except whoever operates your server.
+      </p>
+
+      <h2>Where your data is</h2>
+      <p>
+        The apps connect only to the Kept server whose address you enter when
+        you first open them. That server is yours, or run by someone you trust,
+        and its operator holds your financial data. This policy cannot speak for
+        a server that someone else runs for you: ask its operator what they keep
+        and who can see it.
+      </p>
+      <p>
+        Everything an app shows is fetched from that server when you open a
+        screen. The apps keep no database of your accounts or transactions on
+        the device.
+      </p>
+
+      <h2>What the apps store on your device</h2>
+      <ul>
+        <li>The address of your server.</li>
+        <li>The name of the signed-in user.</li>
+        <li>
+          The session token that keeps you signed in. On Android it is encrypted
+          with a key held in the Android Keystore. On iPhone it is in the
+          Keychain, readable only on this device.
+        </li>
+        <li>
+          Your reminder settings and the list of reminders already shown, so
+          that none is shown twice.
+        </li>
+      </ul>
+      <p>
+        When you open a document, such as a bill PDF or a report, the app
+        downloads it into its cache or temporary folder so that it can be shown
+        or handed to another app. The system may clear those folders at any
+        time.
+      </p>
+      <p>
+        On Android these settings are excluded from the system's cloud backup.
+        On iPhone the server address, user name and reminder settings can be
+        part of a backup of the device that you make yourself; the session token
+        cannot.
+      </p>
+
+      <h2>Permissions and what they are for</h2>
+      <ul>
+        <li>
+          <strong>Network access:</strong> to reach your server. Nothing else is
+          contacted.
+        </li>
+        <li>
+          <strong>Notifications:</strong> only if you switch reminders on. They
+          are local notifications created on the device. There is no push
+          service, and nothing is sent to Apple or Google to deliver them. A
+          reminder names the creditor and the amount of a bill, so what shows on
+          a locked screen follows your system's notification settings.
+        </li>
+        <li>
+          <strong>Camera:</strong> only when you choose to photograph or scan a
+          bill. The image is turned into a PDF on the device and uploaded to
+          your own server. On iPhone the app asks for camera access for the
+          scanner. On Android the app does not hold the camera permission: it
+          asks the system camera app to take the photo, saves it in its private
+          cache folder and deletes it once it has been read.
+        </li>
+        <li>
+          <strong>Photos and files:</strong> only through the system pickers,
+          and only the items you pick. The apps cannot browse your photo library
+          or your files.
+        </li>
+        <li>
+          <strong>Background refresh:</strong> if reminders are on, the app asks
+          your server in the background what is due, roughly every six hours
+          when the system allows it, and notifies on the device.
+        </li>
+      </ul>
+
+      <h2>Connections</h2>
+      <p>
+        The apps use https unless you type an address that starts with
+        <code>http://</code>. That is possible for a server inside a home
+        network, and the apps show a warning when you do. Over plain http anyone
+        on the network path can read what is sent, including your password. Use
+        https wherever you can.
+      </p>
+
+      <h2>Signing out and removing data</h2>
+      <ul>
+        <li>
+          <strong>Sign out</strong> ends the session on your server (when it can
+          be reached) and removes the session token and the user name from the
+          device. You stay connected to the server and can sign in again.
+        </li>
+        <li>
+          <strong>Disconnect from this server</strong> also removes the server
+          address, your reminder settings and the list of shown reminders, and
+          cancels reminders scheduled ahead. A document you opened stays in the
+          cache until the system clears it.
+        </li>
+        <li>
+          <strong>Deleting the app</strong> removes everything it stored on the
+          device.
+        </li>
+      </ul>
+      <p>
+        None of this deletes anything on your server. Your data there stays
+        until you remove it in Kept.
+      </p>
+
+      <h2>App Store, Google Play and TestFlight</h2>
+      <p>
+        Apple and Google may collect information when you download or use apps
+        from their stores, for example installation numbers or crash reports, if
+        you agreed to share these with developers on your device. This is
+        covered by the
+        <a href="https://www.apple.com/legal/privacy/">Apple Privacy Policy</a>
+        and the
+        <a href="https://policies.google.com/privacy">Google Privacy Policy</a>.
+        If you send feedback through TestFlight, Apple passes on your comment,
+        screenshot, device details and the email address of your TestFlight
+        account to the developer.
+      </p>
+
+      <h2>The Kept server software</h2>
+      <p>
+        The server is software you run yourself. It sends nothing to the
+        developer. Its optional integrations contact only the services the
+        operator configures: Paperless-ngx, a public price service for market
+        data (off until a user switches it on), notification channels such as
+        ntfy, a webhook or email, and S3 storage for files. What those services
+        receive is governed by their own policies and by how the operator has
+        set them up.
+      </p>
+
+      <h2>This website</h2>
+      <p>
+        This website is hosted on GitHub Pages. It sets no cookies and loads
+        nothing from other companies: the fonts and images are served from the
+        same place as the pages. It stores your choice of light or dark theme in
+        your browser's local storage, which stays in your browser and is never
+        sent anywhere. GitHub may log technical data such as your IP address to
+        operate the service; see the
+        <a
+          href="https://docs.github.com/en/site-policy/privacy-policies/github-general-privacy-statement"
+          >GitHub Privacy Statement</a
+        >.
+      </p>
+
+      <h2>Children</h2>
+      <p>Kept collects no personal data from anyone, including children.</p>
+
+      <h2>Your rights</h2>
+      <p>
+        Because the developer holds no data about you, there is nothing to hand
+        over, correct or delete on the developer's side. Your data is on your
+        server and on your device, and you control it there.
+      </p>
+
+      <h2>Changes</h2>
+      <p>
+        If this policy changes, the new version is published on this page with a
+        new date. The history of this page is public in the
+        <a
+          href="https://github.com/OrellBuehler/kept/commits/main/docs/privacy.html"
+          >project repository</a
+        >.
+      </p>
+    </main>
+
+    <footer>
+      <div class="wrap">
+        <a class="logo" href="./" aria-label="Kept home"
+          ><svg viewBox="0 0 740 256" style="height: 18px" aria-hidden="true">
+            <use href="#lockup" /></svg
+        ></a>
+        <nav aria-label="Footer">
+          <a href="./">Home</a>
+          <a href="support.html">Support</a>
+          <a href="https://github.com/OrellBuehler/kept">Source</a>
+          <a href="https://github.com/OrellBuehler/kept/issues">Issues</a>
+        </nav>
+        <span>© 2026 Orell Bühler</span>
+      </div>
+    </footer>
+
+    <script>
+      const theme = document.getElementById("theme");
+      theme.hidden = false;
+      theme.addEventListener("click", () => {
+        const root = document.documentElement;
+        const dark =
+          root.dataset.theme === "dark" ||
+          (!root.dataset.theme &&
+            matchMedia("(prefers-color-scheme: dark)").matches);
+        root.dataset.theme = dark ? "light" : "dark";
+        try {
+          localStorage.setItem("kept-theme", root.dataset.theme);
+        } catch {
+          /* storage unavailable: theme lasts for this visit only */
+        }
+      });
+    </script>
+  </body>
+</html>
