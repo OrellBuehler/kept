@@ -21,6 +21,9 @@
         android:usesCleartextTraffic="true"
         tools:targetApi="33">
 
+        <!-- The launcher activity has to be exported; it has no other intent filter and reads
+             only a bill id (an opaque string) from the intent that starts it. -->
+        <!-- nosemgrep: java.android.security.exported_activity.exported_activity -->
         <activity
             android:name=".MainActivity"
             android:exported="true"

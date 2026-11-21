@@ -7,7 +7,7 @@ import ch.orellbuehler.kept.FormBody
 import ch.orellbuehler.kept.KeptErrorKind
 import ch.orellbuehler.kept.KeptException
 import ch.orellbuehler.kept.KeptSdk
-import ch.orellbuehler.kept.data.PageRedirect
+import ch.orellbuehler.kept.model.PageRedirect
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.Flow

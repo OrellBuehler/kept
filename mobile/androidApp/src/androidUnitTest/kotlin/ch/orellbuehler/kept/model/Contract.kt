@@ -1,4 +1,4 @@
-package ch.orellbuehler.kept.data
+package ch.orellbuehler.kept.model
 
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.jsonObject

@@ -1,4 +1,4 @@
-package ch.orellbuehler.kept.data
+package ch.orellbuehler.kept.model
 
 import kotlin.test.Test
 import kotlin.test.assertEquals

@@ -1,4 +1,4 @@
-package ch.orellbuehler.kept.data
+package ch.orellbuehler.kept.model
 
 import ch.orellbuehler.kept.KeptErrorKind
 import ch.orellbuehler.kept.KeptException
