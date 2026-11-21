@@ -1,6 +1,6 @@
-import { error, json } from "@sveltejs/kit";
+import { json } from "@sveltejs/kit";
 import { z } from "zod";
-import { readAppBody } from "$lib/server/app-api/http";
+import { jsonMessage, readAppBody } from "$lib/server/app-api/http";
 import {
   RateLimitedError,
   authenticate,
@@ -9,6 +9,7 @@ import {
 import { loginSchema } from "$lib/server/auth/schemas";
 import { getTwoFactorStatus } from "$lib/server/auth/two-factor";
 import { getPendingLogin } from "$lib/server/auth/challenges";
+import { tooManyRequests } from "$lib/server/external-api/gate";
 import type { RequestHandler } from "./$types";
 
 const bodySchema = z.object({
@@ -24,6 +25,7 @@ const bodySchema = z.object({
  */
 export const POST: RequestHandler = async ({ request, getClientAddress }) => {
   const body = await readAppBody(request, bodySchema);
+  if (body instanceof Response) return body;
   let result;
   try {
     result = await authenticate(
@@ -32,10 +34,12 @@ export const POST: RequestHandler = async ({ request, getClientAddress }) => {
       clientKey(getClientAddress),
     );
   } catch (err) {
-    if (err instanceof RateLimitedError) error(429, err.message);
+    if (err instanceof RateLimitedError) {
+      return tooManyRequests(err.retryAfterMinutes * 60_000, err.message);
+    }
     throw err;
   }
-  if (!result) error(401, "Invalid username or password.");
+  if (!result) return jsonMessage("Invalid username or password.", 401);
 
   if ("secondFactorRequired" in result) {
     const pending = await getPendingLogin(result.token);

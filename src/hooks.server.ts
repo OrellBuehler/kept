@@ -81,8 +81,11 @@ export const handleError: HandleServerError = (input) => {
   const { error, event } = input;
   const status = input.kind === "unknown" ? 500 : input.error.status;
   const errorId = crypto.randomUUID();
+  const bridged = event.locals.appRoute
+    ? ` bridged=${event.locals.appRoute}`
+    : "";
   console.error(
-    `unhandled error ${errorId} status=${status} route=${event.route.id ?? "none"}`,
+    `unhandled error ${errorId} status=${status} route=${event.route.id ?? "none"}${bridged}`,
     describeError(error),
   );
   return { message: "An unexpected error occurred.", errorId };

@@ -23,8 +23,10 @@ curl -sS -H "Authorization: Bearer $TOKEN" "$KEPT/api/app/v1/session"
   is not a session.
 - The session is the same kind the web uses: 30 days, extended while it is used, ended by
   `auth/logout`, by a password change or by an administrator.
-- Sign-in shares the web's rate limits. Rejected session tokens from one address are answered
-  with `429` and a `Retry-After` header after 20 failures in 15 minutes.
+- Sign-in shares the web's rate limits (`429` with a `Retry-After` header). A bearer that cannot
+  be a session token (wrong length or characters) counts against its address: after 20 of them
+  in 15 minutes that address is answered `429` with `Retry-After`. A well-formed token that
+  matches no session (ended, expired or unknown) is just `401`, however often it is sent.
 - Responses carry `Cache-Control: no-store`, and errors are always `{ "message": "…" }`.
 
 | Endpoint             | Auth    | Purpose                                                                                                                                |

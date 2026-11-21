@@ -15,6 +15,8 @@ declare global {
       session: SessionInfo | null;
       /** Set only on `/api/external/v1/` requests that carried a valid bearer token. */
       apiToken: ApiTokenAuth | null;
+      /** The registry path (`bills/[id]`) of the page or endpoint the app API bridge runs, for the error log. */
+      appRoute?: string;
     }
   }
 }

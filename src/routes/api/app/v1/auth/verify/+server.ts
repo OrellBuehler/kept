@@ -1,6 +1,6 @@
-import { error, json } from "@sveltejs/kit";
+import { json } from "@sveltejs/kit";
 import { z } from "zod";
-import { readAppBody } from "$lib/server/app-api/http";
+import { jsonMessage, readAppBody } from "$lib/server/app-api/http";
 import { getPendingLogin } from "$lib/server/auth/challenges";
 import {
   RateLimitedError,
@@ -9,6 +9,7 @@ import {
 } from "$lib/server/auth/login";
 import { secondFactorSchema } from "$lib/server/auth/schemas";
 import { AuthError } from "$lib/server/auth/types";
+import { tooManyRequests } from "$lib/server/external-api/gate";
 import type { RequestHandler } from "./$types";
 
 const bodySchema = z.object({
@@ -19,6 +20,7 @@ const bodySchema = z.object({
 /** Second sign-in step: an authenticator or recovery code for the `pendingToken` of `auth/login`. */
 export const POST: RequestHandler = async ({ request, getClientAddress }) => {
   const body = await readAppBody(request, bodySchema);
+  if (body instanceof Response) return body;
   let result;
   try {
     result = await completeSecondFactor(
@@ -27,17 +29,19 @@ export const POST: RequestHandler = async ({ request, getClientAddress }) => {
       clientKey(getClientAddress),
     );
   } catch (err) {
-    if (err instanceof RateLimitedError) error(429, err.message);
+    if (err instanceof RateLimitedError) {
+      return tooManyRequests(err.retryAfterMinutes * 60_000, err.message);
+    }
     if (err instanceof AuthError && err.code === "pending_expired") {
-      error(410, err.message);
+      return jsonMessage(err.message, 410);
     }
     throw err;
   }
   if (!result) {
     if (!(await getPendingLogin(body.pendingToken))) {
-      error(410, "Your sign-in expired. Start again.");
+      return jsonMessage("Your sign-in expired. Start again.", 410);
     }
-    error(400, "That code is not valid.");
+    return jsonMessage("That code is not valid.", 400);
   }
   return json({
     status: "ok",

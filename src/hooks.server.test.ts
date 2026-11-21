@@ -4,7 +4,19 @@ import { useTestDB } from "$lib/testing/db";
 import { FakeCookies, createTestEvent } from "$lib/testing/event";
 import { API_SCOPES } from "$lib/api-tokens";
 import { revokeApiToken } from "$lib/server/auth/api-tokens";
-import { SESSION_COOKIE } from "$lib/server/auth/sessions";
+import { loginRateLimiter } from "$lib/server/auth/rate-limit";
+import {
+  SESSION_COOKIE,
+  SESSION_LIFETIME_MS,
+  createSession,
+  invalidateSession,
+} from "$lib/server/auth/sessions";
+import {
+  runLoad,
+  type PageModule,
+  type Route,
+} from "$lib/server/app-api/bridge";
+import { POST as loginPost } from "./routes/api/app/v1/auth/login/+server";
 import {
   API_AUTH_FAILURES_PER_IP,
   API_REQUESTS_PER_MINUTE,
@@ -484,17 +496,177 @@ describe("handle: app API", () => {
     expect(event.locals.user).toBeNull();
   });
 
-  it("answers floods of rejected sessions from one address with 429", async () => {
+  it("answers floods of malformed bearers from one address with 429", async () => {
     appAuthFailureLimiter.reset();
     await createTestUser();
     const headers = { authorization: "Bearer not-a-session" };
     for (let i = 0; i < APP_AUTH_FAILURES_PER_IP; i++) {
-      expect((await app("/api/app/v1/session", headers)).res.status).toBe(401);
+      const { res } = await app("/api/app/v1/session", headers);
+      expect(res.status).toBe(401);
+      expect(res.headers.get("cache-control")).toBe("no-store");
     }
-    const { res } = await app("/api/app/v1/session", headers);
+    const { res, resolved } = await app("/api/app/v1/session", headers);
     expect(res.status).toBe(429);
+    expect(resolved()).toBe(false);
     expect(Number(res.headers.get("retry-after"))).toBeGreaterThan(0);
+    expect(res.headers.get("cache-control")).toBe("no-store");
+    expect(await res.json()).toMatchObject({ message: expect.any(String) });
     appAuthFailureLimiter.reset();
+  });
+
+  it("answers 401 with no-store, also without a bearer token", async () => {
+    const { res } = await app("/api/app/v1/session");
+    expect(res.status).toBe(401);
+    expect(res.headers.get("cache-control")).toBe("no-store");
+  });
+
+  it("never rate limits well-formed tokens that match no session", async () => {
+    appAuthFailureLimiter.reset();
+    const user = await createTestUser();
+    const ended = await createSession(user.id);
+    await invalidateSession(ended.session.id);
+    const expired = await createSession(
+      user.id,
+      Date.now() - SESSION_LIFETIME_MS - 1000,
+    );
+    const unknown = Buffer.from(
+      crypto.getRandomValues(new Uint8Array(32)),
+    ).toString("base64url");
+    for (const token of [ended.token, expired.token, unknown]) {
+      for (let i = 0; i < APP_AUTH_FAILURES_PER_IP * 2; i++) {
+        const { res, resolved } = await app("/api/app/v1/session", {
+          authorization: `Bearer ${token}`,
+        });
+        expect(res.status).toBe(401);
+        expect(resolved()).toBe(false);
+        expect(res.headers.get("cache-control")).toBe("no-store");
+      }
+    }
+    const { token } = await loginTestUser(user);
+    const { res } = await app("/api/app/v1/session", {
+      authorization: `Bearer ${token}`,
+    });
+    expect(res.status).toBe(200);
+  });
+
+  it("lets many concurrent valid requests through", async () => {
+    appAuthFailureLimiter.reset();
+    const user = await createTestUser();
+    const { token } = await loginTestUser(user);
+    const results = await Promise.all(
+      Array.from({ length: APP_AUTH_FAILURES_PER_IP * 3 }, () =>
+        app("/api/app/v1/session", { authorization: `Bearer ${token}` }),
+      ),
+    );
+    expect(results.map((r) => r.res.status)).toEqual(results.map(() => 200));
+  });
+
+  it("serves public paths without a user, whatever credentials come with them", async () => {
+    const user = await createTestUser();
+    const { token } = await loginTestUser(user);
+    for (const p of ["/server", "/auth/login", "/%73erver"]) {
+      const { res, event } = await app(
+        `/api/app/v1${p}`,
+        { authorization: `Bearer ${token}` },
+        { [SESSION_COOKIE]: token },
+      );
+      expect(res.status, p).toBe(200);
+      expect(event.locals.user, p).toBeNull();
+      expect(event.locals.session, p).toBeNull();
+    }
+  });
+
+  it("answers a wrong password with its JSON message, whatever the Accept header", async () => {
+    loginRateLimiter.reset();
+    const user = await createTestUser({ username: "alice" });
+    for (const accept of [undefined, "text/html", "application/json"]) {
+      const event = createTestEvent({
+        url: "http://localhost/api/app/v1/auth/login",
+        body: JSON.stringify({ username: "alice", password: "wrong-password" }),
+        headers: {
+          "content-type": "application/json",
+          ...(accept ? { accept } : {}),
+        },
+      });
+      const res = await handle({
+        event: event as never,
+        resolve: ((e: never) => loginPost(e)) as never,
+      });
+      expect(res.status).toBe(401);
+      expect(await res.json()).toEqual({
+        message: "Invalid username or password.",
+      });
+    }
+    expect(user.username).toBe("alice");
+    loginRateLimiter.reset();
+  });
+
+  it("a bridged handler's unexpected error becomes a clean JSON 500 naming the page pattern in the log", async () => {
+    const log = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      const user = await createTestUser();
+      const { token } = await loginTestUser(user);
+      const failing: Route<PageModule> = {
+        api: "bills/[id]",
+        routeId: "/(app)/bills/[id]",
+        web: "/bills/[id]",
+        module: async () => ({
+          load: () => {
+            throw new Error("secret detail SELECT * FROM bills");
+          },
+        }),
+      };
+      for (const accept of [undefined, "text/html", "application/json"]) {
+        const event = createTestEvent({
+          url: "http://localhost/api/app/v1/pages/bills/b1d2c3?month=2026-01",
+          params: { path: "bills/b1d2c3" },
+          headers: {
+            authorization: `Bearer ${token}`,
+            ...(accept ? { accept } : {}),
+          },
+        });
+        event.route.id = "/api/app/v1/pages/[...path]";
+        // SvelteKit's part: an error out of the handler goes to handleError and is rendered by Accept.
+        const resolve = async (e: typeof event) => {
+          try {
+            return await runLoad(e as never, {
+              route: failing,
+              params: { id: "b1d2c3" },
+            });
+          } catch (err) {
+            const shown = handleError({
+              kind: "unknown",
+              error: err,
+              event: e,
+            } as never) as { message: string };
+            return new Response(`<html>${shown.message}</html>`, {
+              status: 500,
+              headers: { "content-type": "text/html" },
+            });
+          }
+        };
+        const res = await handle({
+          event: event as never,
+          resolve: resolve as never,
+        });
+        expect(res.status).toBe(500);
+        expect(res.headers.get("content-type")).toContain("application/json");
+        expect(await res.json()).toEqual({
+          message: "An unexpected error occurred.",
+        });
+      }
+      expect(log).toHaveBeenCalledTimes(3);
+      for (const [line, detail] of log.mock.calls) {
+        expect(String(line)).toContain(
+          "route=/api/app/v1/pages/[...path] bridged=bills/[id]",
+        );
+        expect(String(line)).not.toContain("b1d2c3");
+        expect(String(line)).not.toContain("month");
+        expect(String(detail)).not.toContain("SELECT");
+      }
+    } finally {
+      log.mockRestore();
+    }
   });
 });
 

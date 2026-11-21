@@ -11,7 +11,10 @@ import {
   unauthorized,
 } from "$lib/server/external-api/gate";
 
-/** Rejected session tokens per client address per WINDOW_MS before that address is told to back off. */
+/** Session tokens as `generateToken` makes them: 32 random bytes, base64url. */
+const SESSION_TOKEN = /^[A-Za-z0-9_-]{43}$/;
+
+/** Bearers that cannot be a session token, per client address per WINDOW_MS, before that address is told to back off. */
 export const APP_AUTH_FAILURES_PER_IP = 20;
 
 export const appAuthFailureLimiter = new LoginRateLimiter(
@@ -42,25 +45,26 @@ export async function handleAppApi(
   }
 
   const presented = bearerToken(event.request.headers.get("authorization"));
-  if (!presented) return unauthorized("Sign in to continue.");
+  if (!presented) return noStore(unauthorized("Sign in to continue."));
 
-  const ip = clientKey(event.getClientAddress);
-  const attempt = appAuthFailureLimiter.acquire(ip, ip);
-  if (!attempt.allowed) {
-    return tooManyRequests(
-      attempt.retryAfterMs,
-      "Too many rejected sessions, try again later.",
-    );
+  if (!SESSION_TOKEN.test(presented)) {
+    const ip = clientKey(event.getClientAddress);
+    const attempt = appAuthFailureLimiter.acquire(ip, ip);
+    if (!attempt.allowed) {
+      return noStore(
+        tooManyRequests(
+          attempt.retryAfterMs,
+          "Too many rejected sessions, try again later.",
+        ),
+      );
+    }
+    return noStore(unauthorized("The session token is not valid."));
   }
-  let validated;
-  try {
-    validated = await validateSessionToken(presented);
-  } catch (err) {
-    attempt.release();
-    throw err;
+
+  const validated = await validateSessionToken(presented);
+  if (!validated) {
+    return noStore(unauthorized("The session has ended. Sign in again."));
   }
-  if (!validated) return unauthorized("The session has ended. Sign in again.");
-  attempt.release();
 
   event.locals.user = validated.user;
   event.locals.session = validated.session;

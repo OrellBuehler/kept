@@ -1,7 +1,9 @@
 import { describe, expect, it } from "vitest";
 import {
   isApiPath,
+  isAppApiPath,
   isExternalApiPath,
+  isPublicAppApiPath,
   isPublicPath,
   safeRedirectTo,
 } from "./routing";
@@ -100,5 +102,79 @@ describe("isExternalApiPath", () => {
   it("is not public: the hook authenticates it separately", () => {
     expect(isPublicPath("/api/external/v1/me")).toBe(false);
     expect(isApiPath("/api/external/v1/me")).toBe(true);
+  });
+});
+
+describe("isAppApiPath", () => {
+  it("matches the prefix and everything under it, in any spelling", () => {
+    for (const p of [
+      "/api/app/v1",
+      "/api/app/v1/",
+      "/api/app/v1/session",
+      "/api/app/v1/server/",
+      "/api/app/v1//server",
+      "/api/%61pp/v1/pages/bills",
+      "/api/app/%76%31/session",
+      "/api/app/v1/%E0%A4%A",
+    ]) {
+      expect(isAppApiPath(p), p).toBe(true);
+    }
+  });
+
+  it("does not match lookalikes or other APIs", () => {
+    for (const p of [
+      "/",
+      "/api",
+      "/api/app",
+      "/api/app/v2/session",
+      "/api/app/v10/server",
+      "/api/application/x",
+      "/api/appx/v1/session",
+      "/api/external/v1/me",
+      "/x/api/app/v1",
+      "/api/%E0%A4%A",
+    ]) {
+      expect(isAppApiPath(p), p).toBe(false);
+    }
+  });
+});
+
+describe("isPublicAppApiPath", () => {
+  it("is true for discovery and the two sign-in steps only", () => {
+    for (const p of [
+      "/api/app/v1/server",
+      "/api/app/v1/auth/login",
+      "/api/app/v1/auth/verify",
+      "/api/app/v1/%73erver",
+      "/api/%61pp/v1/%73erver",
+    ]) {
+      expect(isPublicAppApiPath(p), p).toBe(true);
+    }
+  });
+
+  it("is false for every other spelling and path", () => {
+    for (const p of [
+      "/api/app/v1",
+      "/api/app/v1/",
+      "/api/app/v1/session",
+      "/api/app/v1/auth/logout",
+      "/api/app/v1/server/",
+      "/api/app/v1//server",
+      "/api/app/v1/Server",
+      "/api/app/v1/server;x",
+      "/api/app/v1/auth%2Flogin",
+      "/api/app/v1/%2573erver",
+      "/api/app/v1/server/extra",
+      "/api/app/v1/%E0%A4%A",
+      "/api/app/v10/server",
+      "/server",
+    ]) {
+      expect(isPublicAppApiPath(p), p).toBe(false);
+    }
+  });
+
+  it("is not a public path of the web", () => {
+    expect(isPublicPath("/api/app/v1/server")).toBe(false);
+    expect(isApiPath("/api/app/v1/server")).toBe(true);
   });
 });

@@ -40,6 +40,9 @@ export function matchRoute<M>(
   path: string,
 ): Match<M> | null {
   const segments = path.split("/").filter((s) => s !== "");
+  if (segments.some((s) => s === "." || s === ".." || s.includes("\0"))) {
+    return null;
+  }
   let best: (Match<M> & { literals: number }) | null = null;
   for (const route of routes) {
     const pattern = route.api.split("/").filter((s) => s !== "");
@@ -171,6 +174,7 @@ export async function runLoad(
   event: RequestEvent,
   match: Match<PageModule>,
 ): Promise<Response> {
+  event.locals.appRoute = match.route.api;
   const mod = await match.route.module();
   if (!mod.load) return respond({ data: {} });
   const url = webUrl(event, match.route.web, match.params);
@@ -188,8 +192,14 @@ export async function runLoad(
   }
 }
 
-/** With the image's `BODY_SIZE_LIMIT` (25M) the server refuses more before this is reached. */
+/**
+ * Ceiling for a form's JSON body. The server's `BODY_SIZE_LIMIT` (25M in the
+ * image, 512K by default) refuses larger requests first; this only holds when
+ * an operator raises that limit past it.
+ */
 const MAX_ACTION_BODY_CHARS = 40_000_000;
+const MAX_FORM_KEYS = 200;
+const MAX_LIST_ITEMS = 1000;
 
 const fileSchema = z.object({
   $file: z.object({
@@ -216,6 +226,10 @@ async function readForm(request: Request): Promise<FormData | Response> {
   if (!/^application\/json\s*(;|$)/i.test(contentType)) {
     return message("Content-Type must be application/json.", 415);
   }
+  const declared = Number(request.headers.get("content-length") ?? "0");
+  if (declared > MAX_ACTION_BODY_CHARS) {
+    return message("Request body too large.", 413);
+  }
   const text = await request.text();
   if (text.length > MAX_ACTION_BODY_CHARS) {
     return message("Request body too large.", 413);
@@ -235,7 +249,14 @@ async function readForm(request: Request): Promise<FormData | Response> {
       400,
     );
   }
-  for (const [key, value] of Object.entries(parsed.data)) {
+  const entries = Object.entries(parsed.data);
+  if (
+    entries.length > MAX_FORM_KEYS ||
+    entries.some(([, v]) => Array.isArray(v) && v.length > MAX_LIST_ITEMS)
+  ) {
+    return message("The form has too many fields or values.", 400);
+  }
+  for (const [key, value] of entries) {
     if (value === null) continue;
     if (typeof value === "string") form.append(key, value);
     else if (Array.isArray(value)) for (const v of value) form.append(key, v);
@@ -272,6 +293,7 @@ export async function runAction(
   event: RequestEvent,
   match: Match<PageModule>,
 ): Promise<Response> {
+  event.locals.appRoute = match.route.api;
   const name = event.url.searchParams.get(ACTION_PARAM) ?? "default";
   const mod = await match.route.module();
   const action = Object.hasOwn(mod.actions ?? {}, name)
@@ -313,6 +335,7 @@ export async function runEndpoint(
   match: Match<EndpointModule>,
   method: "GET" | "POST",
 ): Promise<Response> {
+  event.locals.appRoute = match.route.api;
   const mod = await match.route.module();
   const handler = mod[method];
   if (!handler) return message("Method not allowed", 405);

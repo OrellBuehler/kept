@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { API_SCOPES, type ApiScope } from "$lib/api-tokens";
 import { listUsers } from "$lib/server/auth/users";
 import { createTestUser } from "$lib/testing/auth";
+import { endpoints, pages } from "./api/app/v1/registry";
 import { useTestDB } from "$lib/testing/db";
 import {
   createTestEvent,
@@ -487,6 +488,9 @@ const matrix: Record<string, Entry> = {
       "actions.deleteCredit": (m, e) => m.actions.deleteCredit(e),
       "actions.tag": (m, e) => m.actions.tag(e),
       "actions.untag": (m, e) => m.actions.untag(e),
+      "actions.setDeduction": (m, e) => m.actions.setDeduction(e),
+      "actions.excludeDeduction": (m, e) => m.actions.excludeDeduction(e),
+      "actions.includeDeduction": (m, e) => m.actions.includeDeduction(e),
       "actions.undoDeductionMoves": (m, e) => m.actions.undoDeductionMoves(e),
       "actions.dismissDeductionMoves": (m, e) =>
         m.actions.dismissDeductionMoves(e),
@@ -496,6 +500,7 @@ const matrix: Record<string, Entry> = {
     access: "user",
     handlers: {
       load: (m, e) => m.load(e),
+      "actions.reviewInbox": (m, e) => m.actions.reviewInbox(e),
       "actions.upload": (m, e) => m.actions.upload(e),
     },
   },
@@ -578,6 +583,52 @@ describe("route inventory", () => {
       }
     }
   });
+});
+
+describe("app API bridge", () => {
+  const files = (routes: readonly { routeId: string }[], file: string) =>
+    routes.map((r) => ({
+      id: r.routeId,
+      file: `/src/routes${r.routeId}/${file}`,
+    }));
+
+  const bridged = [
+    ...files(pages, "+page.server.ts"),
+    ...files(endpoints, "+server.ts"),
+  ];
+
+  it.each(bridged)("$file is a user route in the matrix", async ({ file }) => {
+    expect(file in matrix, file).toBe(true);
+    expect(matrix[file].access, file).toBe("user");
+    expect(file in loaders, file).toBe(true);
+  });
+
+  it.each(files(pages, "+page.server.ts"))(
+    "$file lists every load and action the bridge can run",
+    async ({ file }) => {
+      const mod = await loaders[file]();
+      const exported = [
+        ...(typeof mod.load === "function" ? ["load"] : []),
+        ...Object.keys(mod.actions ?? {}).map((a) => `actions.${a}`),
+      ];
+      expect(Object.keys(matrix[file].handlers ?? {})).toEqual(
+        expect.arrayContaining(exported),
+      );
+    },
+  );
+
+  it.each(files(endpoints, "+server.ts"))(
+    "$file lists every GET and POST handler the bridge can run",
+    async ({ file }) => {
+      const mod = (await loaders[file]()) as unknown as Record<string, unknown>;
+      const exported = ["GET", "POST"].filter(
+        (m) => typeof mod[m] === "function",
+      );
+      expect(Object.keys(matrix[file].handlers ?? {})).toEqual(
+        expect.arrayContaining(exported),
+      );
+    },
+  );
 });
 
 const protectedCases = Object.entries(matrix)

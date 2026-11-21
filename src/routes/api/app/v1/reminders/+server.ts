@@ -1,4 +1,5 @@
-import { error, json } from "@sveltejs/kit";
+import { json } from "@sveltejs/kit";
+import { jsonMessage } from "$lib/server/app-api/http";
 import { reminderQuerySchema, reminders } from "$lib/server/app-api/reminders";
 import { requireUser } from "$lib/server/auth/guards";
 import type { RequestHandler } from "./$types";
@@ -11,7 +12,10 @@ export const GET: RequestHandler = async ({ locals, url }) => {
   );
   if (!parsed.success) {
     const issue = parsed.error.issues[0];
-    error(400, `Invalid ${issue?.path.join(".")}: ${issue?.message}`);
+    return jsonMessage(
+      `Invalid ${issue?.path.join(".")}: ${issue?.message}`,
+      400,
+    );
   }
   return json(await reminders(user.id, parsed.data));
 };

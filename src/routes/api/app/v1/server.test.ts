@@ -1,17 +1,28 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { minor } from "$lib/money";
-import { loginRateLimiter } from "$lib/server/auth/rate-limit";
+import {
+  loginRateLimiter,
+  passwordChangeLimiter,
+  secondFactorLimiter,
+} from "$lib/server/auth/rate-limit";
 import { validateSessionToken } from "$lib/server/auth/sessions";
 import { listBudgets } from "$lib/server/categories/budgets";
 import { createCategory } from "$lib/server/categories/categories";
 import { createTestUser, enableTotp, loginTestUser } from "$lib/testing/auth";
+import { EXAMPLE_IBAN } from "$lib/testing/fixtures/bill-identifiers";
+import { SIMPLE_CSV_PROFILE, uploadFixture } from "$lib/testing/imports";
+import { seedAccount } from "$lib/testing/ledger";
+import { useTestStore } from "$lib/testing/store";
 import { seedBill } from "$lib/testing/bills";
 import { useTestDB } from "$lib/testing/db";
 import { createTestEvent } from "$lib/testing/event";
 import { POST as login } from "./auth/login/+server";
 import { POST as logout } from "./auth/logout/+server";
 import { POST as verify } from "./auth/verify/+server";
-import { GET as endpointGet } from "./endpoints/[...path]/+server";
+import {
+  GET as endpointGet,
+  POST as endpointPost,
+} from "./endpoints/[...path]/+server";
 import { GET as pageGet, POST as pagePost } from "./pages/[...path]/+server";
 import { GET as remindersGet } from "./reminders/+server";
 import { GET as serverGet } from "./server/+server";
@@ -22,10 +33,14 @@ type Handler = (event: never) => Response | Promise<Response>;
 
 const json = { "content-type": "application/json" };
 
-async function call(
+async function callRaw(
   handler: Handler,
   opts: Parameters<typeof createTestEvent>[0] & { json?: unknown } = {},
-): Promise<{ status: number; body: Record<string, unknown> }> {
+): Promise<{
+  status: number;
+  body: Record<string, unknown>;
+  headers: Headers;
+}> {
   const { json: payload, ...rest } = opts;
   const event = createTestEvent(
     payload === undefined
@@ -38,10 +53,22 @@ async function call(
   } catch (err) {
     const e = err as { status?: number; body?: { message: string } };
     if (typeof e.status !== "number") throw err;
-    return { status: e.status, body: e.body ?? {} };
+    return { status: e.status, body: e.body ?? {}, headers: new Headers() };
   }
   const text = await res.text();
-  return { status: res.status, body: text ? JSON.parse(text) : {} };
+  return {
+    status: res.status,
+    body: text ? JSON.parse(text) : {},
+    headers: res.headers,
+  };
+}
+
+async function call(
+  handler: Handler,
+  opts: Parameters<typeof createTestEvent>[0] & { json?: unknown } = {},
+): Promise<{ status: number; body: Record<string, unknown> }> {
+  const { status, body } = await callRaw(handler, opts);
+  return { status, body };
 }
 
 const page = (
@@ -166,6 +193,52 @@ describe("app API: sign-in", () => {
       preferences: { defaultCurrency: "CHF" },
     });
     expect(res.body.today).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+  });
+});
+
+describe("app API: sign-in limits", () => {
+  useTestDB();
+  afterEach(() => {
+    loginRateLimiter.reset();
+    secondFactorLimiter.reset();
+  });
+
+  it("answers 429 with Retry-After and a JSON message after repeated wrong passwords", async () => {
+    await createTestUser({ username: "alice" });
+    const wrong = { username: "alice", password: "wrong-password-here" };
+    for (let i = 0; i < 5; i++) {
+      expect((await call(login as Handler, { json: wrong })).status).toBe(401);
+    }
+    const res = await callRaw(login as Handler, { json: wrong });
+    expect(res.status).toBe(429);
+    expect(Number(res.headers.get("retry-after"))).toBeGreaterThan(0);
+    expect(typeof res.body.message).toBe("string");
+  });
+
+  it("answers 429 with Retry-After for repeated wrong codes", async () => {
+    const user = await createTestUser({ username: "alice" });
+    await enableTotp(user);
+    const wrongCode = async () => {
+      const first = await call(login as Handler, {
+        json: { username: "alice", password: user.password },
+      });
+      return callRaw(verify as Handler, {
+        json: { pendingToken: first.body.pendingToken, code: "000000" },
+      });
+    };
+    let res = await wrongCode();
+    for (let i = 0; i < 10 && res.status !== 429; i++) res = await wrongCode();
+    expect(res.status).toBe(429);
+    expect(Number(res.headers.get("retry-after"))).toBeGreaterThan(0);
+    expect(typeof res.body.message).toBe("string");
+  });
+
+  it("refuses an oversized declared body with 413 before reading it", async () => {
+    const res = await call(login as Handler, {
+      body: "{}",
+      headers: { ...json, "content-length": "10001" },
+    });
+    expect(res.status).toBe(413);
   });
 });
 
@@ -298,6 +371,85 @@ describe("app API: pages", () => {
   });
 });
 
+describe("app API: bridge details", () => {
+  useTestDB();
+  useTestStore();
+  afterEach(() => passwordChangeLimiter.reset());
+
+  it("accepts a bridged POST to the import mapping preview", async () => {
+    const user = await createTestUser();
+    const account = await seedAccount(user.id, { iban: EXAMPLE_IBAN });
+    const id = await uploadFixture(user.id, account.id, "csv/overlap-a.csv");
+    const res = await call(endpointPost as Handler, {
+      user,
+      params: { path: `imports/${id}/preview` },
+      url: `http://localhost/api/app/v1/endpoints/imports/${id}/preview`,
+      json: { profile: SIMPLE_CSV_PROFILE },
+    });
+    expect(res.status).toBe(200);
+    expect(res.body).toMatchObject({ pendingId: id, errors: [], rowCount: 6 });
+    const other = await createTestUser();
+    const denied = await call(endpointPost as Handler, {
+      user: other,
+      params: { path: `imports/${id}/preview` },
+      url: `http://localhost/api/app/v1/endpoints/imports/${id}/preview`,
+      json: { profile: SIMPLE_CSV_PROFILE },
+    });
+    expect(denied.status).toBe(404);
+  });
+
+  it("changing the password keeps the caller's session and ends the others", async () => {
+    const user = await createTestUser();
+    const here = await loginTestUser(user);
+    const elsewhere = await loginTestUser(user);
+    const res = await call(pagePost as Handler, {
+      user,
+      session: here.session,
+      params: { path: "settings/account" },
+      url: "http://localhost/api/app/v1/pages/settings/account?_action=changePassword",
+      method: "POST",
+      json: {
+        currentPassword: user.password,
+        newPassword: "a-new-long-password-123",
+      },
+    });
+    expect(res.status).toBe(200);
+    expect(res.body).toMatchObject({ ok: true, data: { success: true } });
+    expect((await validateSessionToken(here.token))?.user.id).toBe(user.id);
+    expect(await validateSessionToken(elsewhere.token)).toBeNull();
+  });
+
+  it("route parameters with an encoded slash, a NUL or a double-encoded slash reach no row", async () => {
+    const user = await createTestUser();
+    const other = await createTestUser();
+    const mine = await seedBill(user.id);
+    const theirs = await seedBill(other.id);
+    for (const path of [
+      `bills/${theirs.id}/x`,
+      `bills/${theirs.id}\0`,
+      `bills/${theirs.id}\0${mine.id}`,
+      `bills/${theirs.id}%2F${mine.id}`,
+      `bills/${mine.id}%2F`,
+      `bills/${mine.id}\0`,
+      `bills/..%2F${theirs.id}`,
+    ]) {
+      for (const asUser of [user, other]) {
+        const res = await page(asUser, path);
+        expect(res.status, path).toBe(404);
+        expect(typeof res.body.message, path).toBe("string");
+      }
+    }
+    for (const path of [`bills/${theirs.id}\0`, `bills/${theirs.id}%2F`]) {
+      const res = await call(endpointGet as Handler, {
+        user: other,
+        params: { path: `${path}/document` },
+        url: "http://localhost/api/app/v1/endpoints/x",
+      });
+      expect(res.status, path).toBe(404);
+    }
+  });
+});
+
 describe("app API: reminders", () => {
   useTestDB();
 
@@ -334,6 +486,13 @@ describe("app API: reminders", () => {
     const res = await get(user, "");
     expect(res.body.events).toEqual([]);
     expect((res.body.bills as unknown[]).length).toBe(1);
+  });
+
+  it("answers a refused query as JSON", async () => {
+    const user = await createTestUser();
+    const res = await get(user, "billDueDays=abc");
+    expect(res.status).toBe(400);
+    expect(res.body.message).toMatch(/billDueDays/);
   });
 
   it("refuses values out of range", async () => {
