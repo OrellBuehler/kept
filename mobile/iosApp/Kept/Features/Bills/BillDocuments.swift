@@ -241,7 +241,9 @@ struct BillScannerView: UIViewControllerRepresentable {
 
     func updateUIViewController(_ uiViewController: VNDocumentCameraViewController, context: Context) {}
 
-    final class Coordinator: NSObject, VNDocumentCameraViewControllerDelegate {
+    /// The delegate is called on the main thread; the conformance says so to the compiler.
+    @MainActor
+    final class Coordinator: NSObject, @preconcurrency VNDocumentCameraViewControllerDelegate {
         let onFinish: (Data) -> Void
         let onCancel: () -> Void
 
@@ -250,7 +252,7 @@ struct BillScannerView: UIViewControllerRepresentable {
             self.onCancel = onCancel
         }
 
-        nonisolated func documentCameraViewController(
+        func documentCameraViewController(
             _ controller: VNDocumentCameraViewController,
             didFinishWith scan: VNDocumentCameraScan
         ) {
@@ -258,26 +260,18 @@ struct BillScannerView: UIViewControllerRepresentable {
             for index in 0 ..< scan.pageCount {
                 pages.append(scan.imageOfPage(at: index))
             }
-            let images = pages
-            MainActor.assumeIsolated {
-                let pdf = BillDocumentPDF.make(from: images)
-                self.onFinish(pdf)
-            }
+            onFinish(BillDocumentPDF.make(from: pages))
         }
 
-        nonisolated func documentCameraViewControllerDidCancel(_ controller: VNDocumentCameraViewController) {
-            MainActor.assumeIsolated {
-                self.onCancel()
-            }
+        func documentCameraViewControllerDidCancel(_ controller: VNDocumentCameraViewController) {
+            onCancel()
         }
 
-        nonisolated func documentCameraViewController(
+        func documentCameraViewController(
             _ controller: VNDocumentCameraViewController,
             didFailWithError error: Error
         ) {
-            MainActor.assumeIsolated {
-                self.onCancel()
-            }
+            onCancel()
         }
     }
 }
