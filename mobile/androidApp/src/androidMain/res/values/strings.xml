@@ -14,7 +14,6 @@
     <string name="retry">Try again</string>
     <string name="more_actions">More actions</string>
     <string name="none">None</string>
-    <string name="coming_soon">Not available yet</string>
     <string name="error_title">Something went wrong</string>
     <string name="error_offline_title">The server cannot be reached</string>
 
