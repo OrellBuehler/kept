@@ -76,6 +76,9 @@ targets:
         PRODUCT_BUNDLE_IDENTIFIER: ch.orellbuehler.kept.tests
         GENERATE_INFOPLIST_FILE: 'YES'
         TEST_HOST: '$(BUILT_PRODUCTS_DIR)/Kept.app/Kept'
+        # `@testable import Kept` pulls in the shared framework's module.
+        FRAMEWORK_SEARCH_PATHS:
+          - '$(SRCROOT)/../shared/build/xcode-frameworks/$(CONFIGURATION)/$(SDK_NAME)'
         BUNDLE_LOADER: '$(TEST_HOST)'
     dependencies:
       - target: Kept
