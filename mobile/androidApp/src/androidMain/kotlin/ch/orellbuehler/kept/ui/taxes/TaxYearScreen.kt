@@ -165,7 +165,7 @@ fun TaxYearScreen(
                         text = { Text(stringResource(R.string.taxes_pdf_report)) },
                         onClick = {
                             menu = false
-                            nav.openInBrowser("reports/tax?year=$year")
+                            nav.open(Routes.REPORTS)
                         },
                     )
                 }

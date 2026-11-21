@@ -84,7 +84,7 @@
     <string name="preferences_cash_liquid">Count cash in investment accounts as liquid</string>
     <string name="preferences_cash_liquid_text">Securities never count as liquid cash. Pension and pillar 3a accounts are always left out.</string>
     <string name="preferences_save">Save preferences</string>
-    <string name="preferences_saved">Preferences saved. Format, currency and blurred amounts apply to the other screens after you return to the overview.</string>
+    <string name="preferences_saved">Preferences saved.</string>
 
     <!-- Notifications -->
     <string name="notification_settings_title">Notifications</string>

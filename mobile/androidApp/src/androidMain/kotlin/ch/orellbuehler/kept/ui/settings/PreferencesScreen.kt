@@ -28,7 +28,9 @@ import ch.orellbuehler.kept.KeptSdk
 import ch.orellbuehler.kept.R
 import ch.orellbuehler.kept.model.PreferencesPage
 import ch.orellbuehler.kept.model.load
+import ch.orellbuehler.kept.ui.common.LocalRefreshSession
 import ch.orellbuehler.kept.ui.common.PageViewModel
+import ch.orellbuehler.kept.ui.common.UiEvent
 import ch.orellbuehler.kept.ui.common.keptViewModel
 import ch.orellbuehler.kept.ui.components.Choice
 import ch.orellbuehler.kept.ui.components.ChoiceField
@@ -60,12 +62,14 @@ fun PreferencesScreen(nav: Navigator) {
     val busy by vm.busy.collectAsStateWithLifecycle()
     val errors by vm.formErrors.collectAsStateWithLifecycle()
     val saved = stringResource(R.string.preferences_saved)
+    val refreshSession = LocalRefreshSession.current
     PageScaffold(
         title = stringResource(R.string.preferences_title),
         state = state,
         onRefresh = vm::refresh,
         onBack = nav::back,
         events = vm.events,
+        onEvent = { if (it is UiEvent.Saved) refreshSession() },
     ) { page, padding ->
         val initial = PreferencesFormValues.of(page.preferences)
         var ibanDisplay by rememberSaveable { mutableStateOf(initial.ibanDisplay) }

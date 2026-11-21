@@ -11,6 +11,7 @@ import ch.orellbuehler.kept.ui.auth.LoginScreen
 import ch.orellbuehler.kept.ui.auth.ServerScreen
 import ch.orellbuehler.kept.ui.common.Formats
 import ch.orellbuehler.kept.ui.common.LocalFormats
+import ch.orellbuehler.kept.ui.common.LocalRefreshSession
 import ch.orellbuehler.kept.ui.common.LocalSdk
 import ch.orellbuehler.kept.ui.common.LocalSession
 import ch.orellbuehler.kept.ui.nav.MainScreen
@@ -26,7 +27,12 @@ fun KeptApp(
     val locale = session?.preferences?.locale ?: "en-GB"
     val formats = remember(locale) { Formats(locale) }
     KeptTheme {
-        CompositionLocalProvider(LocalSdk provides sdk, LocalSession provides session, LocalFormats provides formats) {
+        CompositionLocalProvider(
+            LocalSdk provides sdk,
+            LocalSession provides session,
+            LocalFormats provides formats,
+            LocalRefreshSession provides app::refreshSession,
+        ) {
             when (val current = state) {
                 SessionState.NoServer -> ServerScreen()
                 is SessionState.SignedOut -> LoginScreen(serverUrl = current.serverUrl, expired = current.expired)

@@ -15,6 +15,9 @@ val LocalSession = staticCompositionLocalOf<SessionInfo?> { null }
 
 val LocalFormats = staticCompositionLocalOf { Formats("en-GB") }
 
+/** Fetches the session again: call it after something it carries changed (the preferences). */
+val LocalRefreshSession = staticCompositionLocalOf<() -> Unit> { {} }
+
 /** A view model that needs the SDK: `val vm = keptViewModel { BillsViewModel(it) }`. Pass [key] when the screen has an id. */
 @Composable
 inline fun <reified VM : ViewModel> keptViewModel(
