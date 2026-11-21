@@ -218,6 +218,8 @@ jobs:
     timeout-minutes: 5
     steps:
       - name: Require Android jobs to have passed
+        # No checkout here, so the workflow's default directory does not exist.
+        working-directory: ${{ github.workspace }}
         env:
           RESULTS: ${{ toJSON(needs.*.result) }}
         run: |
