@@ -139,7 +139,7 @@ final class BillsContractTests: XCTestCase {
         XCTAssertEqual(BillText.maskIban(plain), "ABCD \(dots) \(dots) \(dots) \u{2022}RST U")
         XCTAssertEqual(BillText.groupReference(String(repeating: "7", count: 27)), "77 77777 77777 77777 77777 77777")
         XCTAssertEqual(BillText.groupReference(" abc "), "abc")
-        XCTAssertEqual(BillText.normalizeIban("21 00000 00003"), "2100000000003")
+        XCTAssertEqual(BillText.normalizeIban("21 00000 00003"), "210000000003")
     }
 
     func testDueHints() {
