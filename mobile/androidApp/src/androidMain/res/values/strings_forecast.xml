@@ -1,0 +1,52 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="forecast_title">Forecast</string>
+    <string name="forecast_subtitle">Expected balances until %1$s, per account and currency.</string>
+    <string name="forecast_horizon">%1$d days</string>
+    <string name="forecast_add_planned">Add planned item</string>
+    <string name="forecast_empty_title">No accounts to forecast</string>
+    <string name="forecast_empty_text">Add an account and its bills, then the forecast shows how your balance develops.</string>
+    <string name="forecast_go_accounts">Go to accounts</string>
+    <string name="forecast_low_title">Low balance ahead</string>
+    <string name="forecast_low_negative">%1$s goes below zero on %2$s, to %3$s.</string>
+    <string name="forecast_low_limit">%1$s falls below its limit of %2$s on %3$s, to %4$s.</string>
+    <string name="forecast_balance_now">%1$s now, %2$s on %3$s</string>
+    <string name="forecast_lowest">Lowest %1$s on %2$s</string>
+    <string name="forecast_no_balance">No balance data yet. The chart shows the change from zero.</string>
+    <string name="forecast_settings_for">Forecast settings for %1$s</string>
+    <string name="forecast_unassigned_title">Not assigned to an account</string>
+    <string name="forecast_unassigned_text">These items are not in any chart. Set a paying account on the bill or a default payment account in the account settings.</string>
+    <plurals name="forecast_unassigned_row">
+        <item quantity="one">%1$s: %2$d item, %3$s out, %4$s in</item>
+        <item quantity="other">%1$s: %2$d items, %3$s out, %4$s in</item>
+    </plurals>
+    <string name="forecast_upcoming_title">Upcoming items</string>
+    <string name="forecast_upcoming_text">Open bills and planned items in the next %1$d days. Overdue bills count on today.</string>
+    <plurals name="forecast_unprojected">
+        <item quantity="one">%1$d unpaid bill is left out because it has no due date or no amount.</item>
+        <item quantity="other">%1$d unpaid bills are left out because they have no due date or no amount.</item>
+    </plurals>
+    <string name="forecast_upcoming_empty">Nothing expected in this period.</string>
+    <string name="forecast_source_bill">Bill</string>
+    <string name="forecast_source_planned">Planned</string>
+    <string name="forecast_account_fallback">Account</string>
+    <string name="forecast_no_account">No account</string>
+    <string name="forecast_planned_title">Planned items</string>
+    <string name="forecast_planned_text">One-off income and expenses you add yourself.</string>
+    <string name="forecast_planned_empty">None yet. Add a salary or a tax installment to see its effect.</string>
+    <string name="forecast_planned_edit_title">Edit planned item</string>
+    <string name="forecast_planned_hint">A one-off expected income or expense, such as a salary or a tax installment. It is added to the forecast on its date.</string>
+    <string name="forecast_field_description">Description</string>
+    <string name="forecast_field_date">Date</string>
+    <string name="forecast_field_type">Type</string>
+    <string name="forecast_type_expense">Expense</string>
+    <string name="forecast_type_income">Income</string>
+    <string name="forecast_field_account">Account</string>
+    <string name="forecast_field_amount">Amount</string>
+    <string name="forecast_field_currency">Currency</string>
+    <string name="forecast_delete_title">Delete %1$s?</string>
+    <string name="forecast_delete_text">Your accounts and bills are not affected.</string>
+    <string name="forecast_settings_hint">Choose when to warn about a low balance and whether bills without a paying account are projected on this account.</string>
+    <string name="forecast_settings_threshold">Warn below (%1$s)</string>
+    <string name="forecast_settings_default">Default payment account for %1$s. Bills and planned items without an account are projected here.</string>
+</resources>

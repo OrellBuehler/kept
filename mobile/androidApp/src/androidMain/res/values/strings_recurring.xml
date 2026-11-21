@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="recurring_title">Recurring</string>
+    <string name="recurring_intro">Subscriptions, rent, salary and other payments that repeat. Detected from your transactions.</string>
+    <string name="recurring_empty_title">No recurring payments found</string>
+    <string name="recurring_empty_text">Import a few months of transactions. Payments to the same counterparty at a regular interval show up here.</string>
+    <string name="recurring_totals_text">Confirmed recurring payments</string>
+    <string name="recurring_monthly">Monthly</string>
+    <string name="recurring_annual">Annual</string>
+    <string name="recurring_income_annual">Recurring income, annual</string>
+    <string name="recurring_review_title">To review</string>
+    <string name="recurring_review_text">Confirm the ones that are real; dismissed ones are not suggested again.</string>
+    <string name="recurring_confirmed_title">Confirmed</string>
+    <string name="recurring_dismissed_title">Dismissed</string>
+    <string name="recurring_cadence_weekly">Weekly</string>
+    <string name="recurring_cadence_monthly">Monthly</string>
+    <string name="recurring_cadence_quarterly">Quarterly</string>
+    <string name="recurring_cadence_yearly">Yearly</string>
+    <string name="recurring_price_changed">Price changed %1$s to %2$s</string>
+    <string name="recurring_overdue">Overdue</string>
+    <string name="recurring_details">Last seen %1$s, next expected %2$s</string>
+    <plurals name="recurring_payments">
+        <item quantity="one">%1$d payment</item>
+        <item quantity="other">%1$d payments</item>
+    </plurals>
+    <string name="recurring_per_year">%1$s per year</string>
+    <string name="recurring_confirm">Confirm</string>
+    <string name="recurring_dismiss">Dismiss</string>
+    <string name="recurring_restore">Restore</string>
+    <string name="recurring_edit_title">Edit recurring payment</string>
+    <string name="recurring_edit_text">Your changes are kept when the transactions are scanned again.</string>
+    <string name="recurring_field_name">Name</string>
+    <string name="recurring_field_repeats">Repeats</string>
+    <string name="recurring_field_amount">Amount</string>
+</resources>

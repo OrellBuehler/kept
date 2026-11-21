@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="budgets_previous_month">Previous month</string>
+    <string name="budgets_next_month">Next month</string>
+    <string name="budgets_this_month">This month</string>
+    <string name="budgets_add">Add budget</string>
+    <string name="budgets_basis_share">My share</string>
+    <string name="budgets_basis_total">Total</string>
+    <string name="budgets_basis_label">Count shared accounts</string>
+    <string name="budgets_basis_share_text">Spending on shared accounts is counted at your ownership share.</string>
+    <string name="budgets_basis_total_text">Spending on shared accounts is counted in full.</string>
+    <string name="budgets_no_categories_title">Create a category first</string>
+    <string name="budgets_no_categories_text">Budgets are set per expense category. Add categories in the settings, then give each transaction a category.</string>
+    <string name="budgets_manage_categories">Manage categories</string>
+    <string name="budgets_empty_title">No budgets or spending in %1$s</string>
+    <string name="budgets_empty_text">Add a monthly budget for a category to see how much of it is spent.</string>
+    <string name="budgets_no_budgets">No budgets in this currency.</string>
+    <string name="budgets_of">%1$s of %2$s</string>
+    <string name="budgets_left">%1$s left</string>
+    <string name="budgets_over_by">Over by %1$s</string>
+    <string name="budgets_unbudgeted">Spent without a budget</string>
+    <string name="budgets_edit_title">Edit budget</string>
+    <string name="budgets_form_hint">A monthly spending limit for a category, in one currency. It includes the category\'s subcategories.</string>
+    <string name="budgets_category">Category</string>
+    <string name="budgets_currency">Currency</string>
+    <string name="budgets_amount">Monthly amount</string>
+    <string name="budgets_delete_title">Delete the budget for %1$s?</string>
+    <string name="budgets_delete_text">Your transactions are not affected.</string>
+</resources>
