@@ -118,11 +118,13 @@ final class ImportsContractTests: XCTestCase {
         XCTAssertEqual(ImportText.formatLabel("camt053"), "camt.053")
         XCTAssertEqual(ImportText.plural(1, "warning"), "1 warning")
         XCTAssertEqual(ImportText.plural(2, "warning"), "2 warnings")
-        let groups = ["CH93", "0076", "2011", "6238", "5295", "7"]
+        // Not an account number: the helper only groups and masks characters.
+        let groups = ["ABCD", "EFGH", "IJKL", "MNOP", "QRST", "U"]
         let compact = groups.joined()
         XCTAssertEqual(ImportText.iban(compact, display: "full"), groups.joined(separator: " "))
         XCTAssertNil(ImportText.iban(compact, display: "hidden"))
-        let masked = ["CH93", "\u{2022}\u{2022}\u{2022}\u{2022}", "\u{2022}\u{2022}\u{2022}\u{2022}", "\u{2022}\u{2022}\u{2022}\u{2022}", "\u{2022}295", "7"]
+        let dots = "\u{2022}\u{2022}\u{2022}\u{2022}"
+        let masked = ["ABCD", dots, dots, dots, "\u{2022}RST", "U"]
         XCTAssertEqual(ImportText.iban(compact, display: "masked"), masked.joined(separator: " "))
         XCTAssertEqual(ImportText.contentType(forFileName: "A.CSV"), "text/csv")
         XCTAssertEqual(ImportText.bytes(512), "512 B")

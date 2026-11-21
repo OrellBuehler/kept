@@ -8,7 +8,7 @@ import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 class ReportsLogicTest {
-    private val sample = "AB12" + "0".repeat(17)
+    private val sample = "ABCDEFGHIJKLMNOPQRSTU"
 
     private val accounts =
         listOf(
@@ -64,8 +64,8 @@ class ReportsLogicTest {
 
     @Test
     fun ibansFollowTheDisplayPreference() {
-        assertEquals("AB12" + " 0000".repeat(4) + " 0", ibanLabel(sample.lowercase(), "full"))
-        assertEquals("AB12 •••• •••• •••• •000 0", ibanLabel(sample, "masked"))
+        assertEquals("ABCD EFGH IJKL MNOP QRST U", ibanLabel(sample.lowercase(), "full"))
+        assertEquals("ABCD •••• •••• •••• •RST U", ibanLabel(sample, "masked"))
         assertNull(ibanLabel(sample, "hidden"))
         assertNull(ibanLabel(null, "full"))
         assertNull(ibanLabel("", "full"))
