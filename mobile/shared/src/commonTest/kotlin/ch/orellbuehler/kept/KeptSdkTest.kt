@@ -312,6 +312,8 @@ class KeptSdkTest {
     fun logoutAndDisconnectForget() =
         runTest {
             val sdk = signedIn { json("""{"ok":true}""") }
+            sdk.reminders.settings = ReminderSettings(enabled = true)
+            sdk.reminders.markShown(listOf("a"))
             sdk.logout()
             assertEquals("/api/app/v1/auth/logout", requests.last().url.encodedPath)
             assertEquals(SessionState.SignedOut("https://kept.example.org"), sdk.state.value)

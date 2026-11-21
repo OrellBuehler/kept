@@ -1564,6 +1564,118 @@
         font-size: 15px;
       }
 
+      /* ---------- apps ---------- */
+
+      #apps {
+        scroll-margin-top: 72px;
+      }
+
+      .steps-mini {
+        border: 1.5px dashed
+          color-mix(in oklab, var(--brand) 45%, var(--border));
+        border-radius: 14px;
+        padding: 16px;
+        display: grid;
+        gap: 10px;
+        background: color-mix(in oklab, var(--brand) 4%, transparent);
+      }
+
+      .note {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        padding: 12px 14px;
+        border-radius: 14px;
+        border: 1px solid var(--border);
+        background: var(--card);
+        font-size: 13px;
+        opacity: 0;
+        transform: translateY(12px);
+        transition:
+          opacity 0.5s,
+          transform 0.5s cubic-bezier(0.2, 0.8, 0.2, 1);
+      }
+
+      .in .note {
+        opacity: 1;
+        transform: none;
+      }
+
+      .in .note:nth-child(2) {
+        transition-delay: 0.15s;
+      }
+
+      .in .note:nth-child(3) {
+        transition-delay: 0.3s;
+      }
+
+      .note .grow {
+        flex: 1;
+        min-width: 0;
+      }
+
+      .note strong {
+        display: block;
+        font-weight: 620;
+      }
+
+      .note small {
+        display: block;
+        font-size: 12px;
+        color: var(--muted-fg);
+      }
+
+      .note .when {
+        font-size: 11px;
+        color: var(--muted-fg);
+      }
+
+      .notes {
+        display: grid;
+        gap: 10px;
+      }
+
+      .pills {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+      }
+
+      .pills .pill {
+        font-size: 12.5px;
+        padding: 4px 11px;
+      }
+
+      .avail {
+        display: grid;
+        gap: 10px;
+      }
+
+      .avail-row {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+        padding: 10px 12px;
+        border-radius: 10px;
+        border: 1px solid var(--border);
+        background: var(--card);
+        font-size: 14px;
+        font-weight: 600;
+      }
+
+      .avail-row small {
+        display: block;
+        font-size: 12px;
+        font-weight: 400;
+        color: var(--muted-fg);
+      }
+
+      .avail .btn {
+        justify-self: start;
+        margin-top: 4px;
+      }
+
       /* ---------- privacy ---------- */
 
       .vault {
@@ -2484,6 +2596,30 @@
             d="M4 14a1 1 0 0 1-.78-1.63l9.9-10.2a.5.5 0 0 1 .86.46l-1.92 6.02A1 1 0 0 0 13 10h7a1 1 0 0 1 .78 1.63l-9.9 10.2a.5.5 0 0 1-.86-.46l1.92-6.02A1 1 0 0 0 11 14Z"
           />
         </symbol>
+        <symbol
+          id="i-phone"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="2"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+        >
+          <rect x="5" y="2" width="14" height="20" rx="2" />
+          <path d="M12 18h.01" />
+        </symbol>
+        <symbol
+          id="i-bell"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="2"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+        >
+          <path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9" />
+          <path d="M10.3 21a1.94 1.94 0 0 0 3.4 0" />
+        </symbol>
       </defs>
     </svg>
 
@@ -2497,6 +2633,7 @@
         <nav class="nav-links" aria-label="Sections">
           <a href="#features">Features</a>
           <a href="#how">How it works</a>
+          <a href="#apps">Apps</a>
           <a href="#privacy">Privacy</a>
           <a href="#install">Self-host</a>
           <a href="#faq">FAQ</a>
@@ -3182,6 +3319,151 @@
         </div>
       </section>
 
+      <section id="apps" style="padding-top: 0">
+        <div class="wrap">
+          <div class="section-head center reveal">
+            <span class="kicker">Android and iPhone</span>
+            <h2>Your server, in your pocket.</h2>
+            <p>
+              Native apps for Android and iPhone that talk to your own Kept
+              server and to nothing else. They are new, and this is where they
+              stand.
+            </p>
+          </div>
+
+          <div class="bento">
+            <article class="tile half reveal">
+              <span class="ico"
+                ><svg aria-hidden="true"><use href="#i-phone" /></svg
+              ></span>
+              <h3>Your server, nobody else's</h3>
+              <p>
+                Enter the address of your server and sign in with your Kept
+                account: your password, plus the authenticator or recovery code
+                if you use two-step verification. There is no account with
+                anyone else and no service in between.
+              </p>
+              <div class="viz">
+                <div class="steps-mini">
+                  <div class="file">
+                    <span class="ext">1</span
+                    ><span class="mono">kept.example.org</span>
+                  </div>
+                  <div class="file">
+                    <span class="ext" style="--c: var(--accent-2)">2</span
+                    ><span>Password and authenticator code</span>
+                  </div>
+                  <div class="file">
+                    <span class="ext" style="--c: var(--success)">3</span
+                    ><span>Session kept on this device only</span>
+                  </div>
+                </div>
+              </div>
+            </article>
+
+            <article class="tile half reveal" style="--d: 0.08s">
+              <span class="ico"
+                ><svg aria-hidden="true"><use href="#i-bell" /></svg
+              ></span>
+              <h3>Reminders without a push service</h3>
+              <p>
+                Bills that are due or overdue, budgets that are used up and
+                accounts without a recent import. The app asks your server in
+                the background, roughly every six hours when the system allows
+                it, and notifies on the device. Nothing goes through Apple or
+                Google.
+              </p>
+              <div class="viz">
+                <div class="notes" aria-hidden="true">
+                  <div class="note">
+                    <span class="chip"
+                      ><svg><use href="#i-receipt" /></svg
+                    ></span>
+                    <span class="grow"
+                      ><strong>Bill due in 3 days</strong
+                      ><small>Example Supplier AG · CHF 123.45</small></span
+                    ><span class="when mono">09:00</span>
+                  </div>
+                  <div class="note">
+                    <span class="chip"
+                      ><svg><use href="#i-pie" /></svg
+                    ></span>
+                    <span class="grow"
+                      ><strong>Budget used up</strong
+                      ><small>Dining out · 212 of 200</small></span
+                    ><span class="when mono">09:00</span>
+                  </div>
+                  <div class="note">
+                    <span class="chip"
+                      ><svg><use href="#i-upload" /></svg
+                    ></span>
+                    <span class="grow"
+                      ><strong>No recent import</strong
+                      ><small>Savings · 14 days</small></span
+                    ><span class="when mono">09:00</span>
+                  </div>
+                </div>
+              </div>
+            </article>
+
+            <article class="tile wide reveal">
+              <span class="ico"
+                ><svg aria-hidden="true"><use href="#i-home" /></svg
+              ></span>
+              <h3>What the web does</h3>
+              <p>
+                The apps work on the same data as the web. Add a bill from a
+                photo, a scan or a PDF and match its payment. Security settings,
+                API tokens, Paperless and administration open in the browser
+                instead.
+              </p>
+              <div class="viz">
+                <ul class="pills">
+                  <li class="pill">Overview</li>
+                  <li class="pill">Accounts and transactions</li>
+                  <li class="pill">Bills</li>
+                  <li class="pill">Budgets</li>
+                  <li class="pill">Forecast</li>
+                  <li class="pill">Recurring payments</li>
+                  <li class="pill">Year in review</li>
+                  <li class="pill">Investments</li>
+                  <li class="pill">Pillar 3a</li>
+                  <li class="pill">Taxes</li>
+                  <li class="pill">Reports</li>
+                  <li class="pill">Imports</li>
+                </ul>
+              </div>
+            </article>
+
+            <article class="tile reveal" style="--d: 0.08s">
+              <span class="ico"
+                ><svg aria-hidden="true"><use href="#i-box" /></svg
+              ></span>
+              <h3>Availability</h3>
+              <p>
+                Not in the app stores yet. Kept 0.6 or newer on the server is
+                required.
+              </p>
+              <div class="viz avail">
+                <div class="avail-row">
+                  <span>Android<small>APK on the GitHub releases</small></span
+                  ><span class="pill ok">Download</span>
+                </div>
+                <div class="avail-row">
+                  <span>iPhone<small>In TestFlight testing</small></span
+                  ><span class="pill">Testing</span>
+                </div>
+                <a
+                  class="btn btn-sm"
+                  href="https://github.com/OrellBuehler/kept/releases"
+                  >Releases on GitHub</a
+                >
+              </div>
+            </article>
+          </div>
+        </div>
+      </section>
+
       <section id="privacy" style="padding-top: 0">
         <div class="wrap">
           <div class="vault reveal">
@@ -3359,6 +3641,16 @@
               </p>
             </details>
             <details class="reveal">
+              <summary>Is there an app for my phone?</summary>
+              <p>
+                Yes, native apps for Android and iPhone. They connect to your
+                own server, sign in with your Kept account and do what the web
+                does. They are new: the Android APK is attached to the GitHub
+                releases that include the apps, the iPhone app is in TestFlight
+                testing, and there are no store listings yet.
+              </p>
+            </details>
+            <details class="reveal">
               <summary>What does it cost?</summary>
               <p>
                 Nothing. Kept is licensed under PolyForm Noncommercial 1.0.0 —
@@ -3412,6 +3704,8 @@
             >Documentation</a
           >
           <a href="https://github.com/OrellBuehler/kept/issues">Issues</a>
+          <a href="privacy.html">Privacy</a>
+          <a href="support.html">Support</a>
           <a href="https://github.com/OrellBuehler/kept/blob/main/LICENSE"
             >PolyForm Noncommercial 1.0.0</a
           >

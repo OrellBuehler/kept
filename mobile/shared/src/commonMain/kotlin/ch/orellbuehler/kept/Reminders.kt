@@ -129,6 +129,7 @@ class Reminders internal constructor(
 
     internal fun forget() {
         prefs.set(KEY_SHOWN, null)
+        prefs.set(KEY_SETTINGS, null)
     }
 
     private fun shownKeys(): LinkedHashSet<String> =
