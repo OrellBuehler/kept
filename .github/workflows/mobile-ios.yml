@@ -1,0 +1,163 @@
+name: Mobile iOS
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - "mobile/**"
+      - "src/lib/testing/fixtures/app-contract/**"
+      - ".github/workflows/mobile-ios.yml"
+      - ".github/actions/ios-setup/**"
+  push:
+    branches: [main]
+    paths:
+      - "mobile/**"
+      - "src/lib/testing/fixtures/app-contract/**"
+      - ".github/workflows/mobile-ios.yml"
+      - ".github/actions/ios-setup/**"
+  workflow_dispatch:
+
+concurrency:
+  group: mobile-ios-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  contents: read
+
+jobs:
+  # Fast compile signal: framework + simulator app build only. It reports as soon as
+  # the app compiles, before the slower Kotlin/Native tests in `ios-tests`, which
+  # only starts once this has passed (a broken compile therefore never spends macOS
+  # minutes on tests).
+  ios-build:
+    # GitHub's arm64 Xcode 27 image (macOS 27, Xcode 27.0 / Swift 6.4 by
+    # default). It also carries the not-yet-released Xcode 27.1/27.2 previews
+    # alongside the 27.0 GM, which is why the ios-setup action pins and
+    # verifies the Xcode version.
+    runs-on: xcode-27
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      - name: Set up the Xcode runner
+        uses: ./.github/actions/ios-setup
+
+      - name: Build shared iOS framework
+        working-directory: mobile
+        run: ./gradlew shared:linkDebugFrameworkIosSimulatorArm64
+
+      - name: Stage shared framework for Xcode
+        working-directory: mobile
+        run: |
+          SDK_NAME=$(xcrun --sdk iphonesimulator --show-sdk-version)
+          DEST="shared/build/xcode-frameworks/Debug/iphonesimulator${SDK_NAME}"
+          mkdir -p "$DEST"
+          cp -R shared/build/bin/iosSimulatorArm64/debugFramework/shared.framework "$DEST/"
+
+      - name: Generate Xcode project
+        working-directory: mobile/iosApp
+        run: xcodegen generate
+
+      - name: Build iOS app
+        working-directory: mobile/iosApp
+        run: |
+          # The staged shared.framework is the arm64 simulator slice and the
+          # runner is arm64, so build arm64-only — otherwise the generic
+          # Simulator destination also builds x86_64 and can't find a slice.
+          xcodebuild build \
+            -project Kept.xcodeproj \
+            -scheme Kept \
+            -destination 'generic/platform=iOS Simulator' \
+            -configuration Debug \
+            CODE_SIGNING_ALLOWED=NO \
+            ARCHS=arm64
+
+  # Kotlin/Native tests of the shared module. They otherwise only ever run on the JVM
+  # via the Android job; this is the one place the Kotlin/Native binary the app
+  # actually links gets exercised, where Double formatting, the timezone database and
+  # Instant.parse can all behave differently.
+  ios-tests:
+    needs: ios-build
+    # Same runner as ios-build, see the comment there.
+    runs-on: xcode-27
+    timeout-minutes: 60
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      - name: Set up the Xcode runner
+        uses: ./.github/actions/ios-setup
+
+      - name: Run shared Kotlin/Native tests
+        working-directory: mobile
+        run: ./gradlew shared:iosSimulatorArm64Test
+
+      - name: Build shared iOS framework
+        working-directory: mobile
+        run: ./gradlew shared:linkDebugFrameworkIosSimulatorArm64
+
+      - name: Stage shared framework for Xcode
+        working-directory: mobile
+        run: |
+          SDK_NAME=$(xcrun --sdk iphonesimulator --show-sdk-version)
+          DEST="shared/build/xcode-frameworks/Debug/iphonesimulator${SDK_NAME}"
+          mkdir -p "$DEST"
+          cp -R shared/build/bin/iosSimulatorArm64/debugFramework/shared.framework "$DEST/"
+
+      - name: Generate Xcode project
+        working-directory: mobile/iosApp
+        run: xcodegen generate
+
+      # The app's unit tests: every page model decodes the page fixtures.
+      # Runs against whichever iPhone simulator the installed Xcode ships, since the
+      # name changes with every Xcode release.
+      - name: Run iOS unit tests
+        working-directory: mobile/iosApp
+        run: |
+          DEVICE_ID=$(xcrun simctl list devices available --json | jq -r '
+            [.devices | to_entries[]
+             | select(.key | test("iOS"))
+             | .value[]
+             | select(.name | startswith("iPhone"))
+             | .udid] | last')
+          if [ -z "$DEVICE_ID" ] || [ "$DEVICE_ID" = "null" ]; then
+            echo "No iPhone simulator available" >&2
+            exit 1
+          fi
+          xcodebuild test \
+            -project Kept.xcodeproj \
+            -scheme Kept \
+            -destination "id=$DEVICE_ID" \
+            -configuration Debug \
+            -parallel-testing-enabled NO \
+            -resultBundlePath "$RUNNER_TEMP/TestResults.xcresult" \
+            CODE_SIGNING_ALLOWED=NO \
+            ARCHS=arm64
+
+      - name: Upload test results
+        if: failure()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: ios-test-results
+          path: ${{ runner.temp }}/TestResults.xcresult
+          retention-days: 7
+
+  # Always-reporting required check: a failed or cancelled job fails the gate.
+  ios-gate:
+    if: always()
+    permissions: {}
+    needs: [ios-build, ios-tests]
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Require iOS jobs to have passed
+        env:
+          RESULTS: ${{ toJSON(needs.*.result) }}
+        run: |
+          echo "$RESULTS"
+          if echo "$RESULTS" | grep -qE 'failure|cancelled'; then
+            exit 1
+          fi

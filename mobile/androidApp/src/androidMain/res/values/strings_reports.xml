@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="reports_title">Reports</string>
+    <string name="reports_intro">Generate PDF reports to keep or share. Reports reflect the data at the moment you download them.</string>
+    <string name="reports_download">Download PDF</string>
+    <string name="reports_working">Generating the PDF…</string>
+    <string name="reports_open_title">Open report</string>
+    <string name="reports_share_title">Share report</string>
+    <string name="reports_last_title">Last report</string>
+    <string name="reports_open">Open</string>
+    <string name="reports_share">Share</string>
+    <string name="reports_no_viewer">No app on this device can open a PDF.</string>
+    <string name="reports_failed">The report could not be created: %1$s</string>
+    <string name="reports_statement_title">Account statement</string>
+    <string name="reports_statement_text">Opening and closing balance and every transaction of one account in a period.</string>
+    <string name="reports_no_accounts_title">No accounts yet</string>
+    <string name="reports_no_accounts_text">Add an account to generate a statement for it.</string>
+    <string name="reports_go_accounts">Go to accounts</string>
+    <string name="reports_account">Account</string>
+    <string name="reports_choose_account">Choose an account</string>
+    <string name="reports_archived_suffix">archived</string>
+    <string name="reports_show_archived">Show archived accounts</string>
+    <string name="reports_from">From</string>
+    <string name="reports_to">To</string>
+    <string name="reports_range_invalid">The end date must not be before the start date.</string>
+    <string name="reports_bills_title">Bills</string>
+    <string name="reports_bills_text">All bills with their status, amounts and due dates.</string>
+    <string name="reports_net_worth_title">Net worth</string>
+    <string name="reports_net_worth_text">Current balances per account and net worth over time, per currency.</string>
+    <string name="reports_net_worth_shared">Shared accounts are counted in full, or at your share.</string>
+    <string name="reports_download_total">Download PDF (total)</string>
+    <string name="reports_download_share">Download PDF (my share)</string>
+    <string name="reports_tax_title">Tax report</string>
+    <string name="reports_tax_text">Tax payments and the amounts the tax office counted, for one tax year.</string>
+    <string name="reports_tax_deductions_title">Tax deductions</string>
+    <string name="reports_tax_deductions_text">The deductible items of one tax year.</string>
+    <string name="reports_year">Tax year</string>
+    <string name="reports_year_invalid">Enter a year between 1900 and 2200.</string>
+</resources>

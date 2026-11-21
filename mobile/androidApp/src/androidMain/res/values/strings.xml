@@ -1,0 +1,103 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Shared strings. A feature keeps its own in res/values/strings_<feature>.xml. -->
+    <string name="app_name">Kept</string>
+    <string name="back">Back</string>
+    <string name="close">Close</string>
+    <string name="clear">Clear</string>
+    <string name="ok">OK</string>
+    <string name="cancel">Cancel</string>
+    <string name="save">Save</string>
+    <string name="add">Add</string>
+    <string name="edit">Edit</string>
+    <string name="delete">Delete</string>
+    <string name="retry">Try again</string>
+    <string name="more_actions">More actions</string>
+    <string name="none">None</string>
+    <string name="error_title">Something went wrong</string>
+    <string name="error_offline_title">The server cannot be reached</string>
+
+    <!-- Navigation -->
+    <string name="nav_overview">Overview</string>
+    <string name="nav_accounts">Accounts</string>
+    <string name="nav_bills">Bills</string>
+    <string name="nav_budgets">Budgets</string>
+    <string name="nav_more">More</string>
+
+    <string name="more_forecast">Forecast</string>
+    <string name="more_recurring">Recurring</string>
+    <string name="more_review">Year in review</string>
+    <string name="more_reports">Reports</string>
+    <string name="more_investments">Investments</string>
+    <string name="more_pillar3a">Pillar 3a</string>
+    <string name="more_taxes">Taxes</string>
+    <string name="more_import">Import</string>
+    <string name="more_settings">Settings</string>
+
+    <!-- Server and sign-in -->
+    <string name="server_title">Connect to your server</string>
+    <string name="server_text">Kept runs on a server you host. Enter its address to continue.</string>
+    <string name="server_address">Server address</string>
+    <string name="server_address_placeholder">kept.example.org</string>
+    <string name="server_connect">Connect</string>
+    <string name="server_setup_required">This server has no user yet. Open it in a browser to finish the setup, then come back.</string>
+    <string name="server_insecure">This connection is not encrypted. Use it only inside a network you trust.</string>
+    <string name="login_title">Sign in</string>
+    <string name="login_username">Username</string>
+    <string name="login_password">Password</string>
+    <string name="login_submit">Sign in</string>
+    <string name="login_change_server">Use another server</string>
+    <string name="login_expired">Your session has ended. Sign in again.</string>
+    <string name="code_title">Two-step verification</string>
+    <string name="code_text">Enter the code from your authenticator app, or a recovery code.</string>
+    <string name="code_text_recovery">This account signs in with a passkey, which the app cannot use. Enter one of your recovery codes.</string>
+    <string name="code_label">Code</string>
+    <string name="code_submit">Verify</string>
+    <string name="code_cancel">Start again</string>
+
+    <!-- Settings -->
+    <string name="settings_title">Settings</string>
+    <string name="settings_signed_in_as">Signed in as %1$s</string>
+    <string name="settings_server">Server</string>
+    <string name="settings_server_version">Kept %1$s</string>
+    <string name="settings_kept">Kept</string>
+    <string name="settings_categories">Categories and rules</string>
+    <string name="settings_preferences">Preferences</string>
+    <string name="settings_notifications">Server notifications</string>
+    <string name="settings_account">Password</string>
+    <string name="settings_market_data">Market data</string>
+    <string name="settings_browser">In the browser</string>
+    <string name="settings_security">Two-step verification and passkeys</string>
+    <string name="settings_api_tokens">API tokens</string>
+    <string name="settings_paperless">Paperless</string>
+    <string name="settings_admin_users">Users</string>
+    <string name="settings_admin_backup">Backup</string>
+    <string name="settings_sign_out">Sign out</string>
+    <string name="settings_sign_out_text">You stay connected to this server and can sign in again.</string>
+    <string name="settings_forget_server">Disconnect from this server</string>
+    <string name="settings_forget_server_text">Signs you out and removes the server address and all settings from this device. Nothing is deleted on the server.</string>
+    <string name="settings_forget_server_confirm">Disconnect</string>
+    <string name="settings_app_version">App version %1$s</string>
+
+    <!-- Reminders -->
+    <string name="reminders_title">Reminders</string>
+    <string name="reminders_enable">Reminders on this device</string>
+    <string name="reminders_enable_text">The app checks your server in the background and notifies you. Nothing is sent to a third party.</string>
+    <string name="reminders_denied">Notifications are switched off for Kept in the system settings.</string>
+    <string name="reminders_open_settings">Open system settings</string>
+    <string name="reminders_bill_due">Bills due soon</string>
+    <string name="reminders_bill_due_days">Days before the due date</string>
+    <string name="reminders_bill_overdue">Overdue bills</string>
+    <string name="reminders_budget">Budgets</string>
+    <string name="reminders_budget_percent">When used to (percent)</string>
+    <string name="reminders_stale_import">Accounts without a recent import</string>
+    <string name="reminders_stale_days">After days without an import</string>
+    <string name="reminders_hour">Time of day</string>
+    <string name="reminders_channel">Reminders</string>
+    <string name="reminders_channel_text">Bills, budgets and imports that need attention</string>
+    <string name="reminder_due_today_title">Bill due today</string>
+    <string name="reminder_due_soon_title">Bill due soon</string>
+    <string name="reminder_due_today_body">%1$s is due today.</string>
+    <string name="reminder_due_in_body">%1$s is due on %2$s.</string>
+    <string name="reminder_bill_fallback">A bill</string>
+</resources>

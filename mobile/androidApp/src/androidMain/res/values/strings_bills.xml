@@ -1,0 +1,177 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- List -->
+    <string name="bills_add">Add bill</string>
+    <string name="bills_all">All bills</string>
+    <string name="bills_bill">Bill</string>
+    <string name="bills_unnamed_creditor">Unnamed creditor</string>
+    <string name="bills_number">No. %1$s</string>
+    <string name="bills_due">Due %1$s</string>
+    <string name="bills_no_due_date">No due date</string>
+    <string name="bills_open_amount">Open amount</string>
+    <string name="bills_remaining">%1$s remaining</string>
+    <string name="bills_refund_expected">Refund expected</string>
+    <string name="bills_due_today">Due today</string>
+    <string name="bills_due_tomorrow">Due tomorrow</string>
+    <plurals name="bills_days_overdue">
+        <item quantity="one">%1$d day overdue</item>
+        <item quantity="other">%1$d days overdue</item>
+    </plurals>
+    <plurals name="bills_due_in_days">
+        <item quantity="one">Due in %1$d day</item>
+        <item quantity="other">Due in %1$d days</item>
+    </plurals>
+    <string name="bills_group_overdue">Overdue</string>
+    <string name="bills_group_due_soon">Due soon</string>
+    <string name="bills_group_refund">Awaiting refund</string>
+    <string name="bills_empty_title">No bills yet</string>
+    <string name="bills_empty_text">Upload a QR-bill PDF or add a bill manually. Kept matches payments to bills for you.</string>
+    <string name="bills_no_match_title">No bills match</string>
+    <string name="bills_no_match_text">No bills match these filters. Try different words or clear the filter.</string>
+    <string name="bills_clear_filter">Clear filter</string>
+    <string name="bills_search_placeholder">Creditor, number, reference, amount</string>
+    <string name="bills_filter_status">Status</string>
+    <string name="bills_filter_all">All</string>
+    <string name="bills_filter_open">Open</string>
+    <string name="bills_filter_overdue">Overdue</string>
+    <string name="bills_filter_paid">Paid</string>
+    <string name="bills_filter_refund">Awaiting refund</string>
+    <string name="bills_filter_cancelled">Cancelled</string>
+    <string name="bills_previous">Previous</string>
+    <string name="bills_next">Next</string>
+    <string name="bills_page_range">%1$d–%2$d of %3$d</string>
+    <string name="bills_page_of">Page %1$d of %2$d</string>
+
+    <!-- Status -->
+    <string name="bills_status_open">Open</string>
+    <string name="bills_status_partially_paid">Partially paid</string>
+    <string name="bills_status_paid">Paid</string>
+    <string name="bills_status_overpaid">Overpaid</string>
+    <string name="bills_status_credit_due">Credit due</string>
+    <string name="bills_status_cancelled">Cancelled</string>
+    <string name="bills_kind_invoice">Invoice</string>
+    <string name="bills_kind_credit_note">Credit note</string>
+
+    <!-- Matching -->
+    <plurals name="bills_auto_match">
+        <item quantity="one">%1$d payment matches a bill\'s reference exactly.</item>
+        <item quantity="other">%1$d payments match a bill\'s reference exactly.</item>
+    </plurals>
+    <plurals name="bills_matched">
+        <item quantity="one">%1$d payment matched.</item>
+        <item quantity="other">%1$d payments matched.</item>
+    </plurals>
+    <string name="bills_match_now">Match now</string>
+    <string name="bills_matching_failed">Automatic matching could not run, so payment suggestions are missing. Pull down to try again.</string>
+    <string name="bills_matching_truncated">Only the most recent transactions were checked for matches. Older payments can still be matched from the bill\'s page.</string>
+    <string name="bills_suggestions">Suggestions to confirm</string>
+    <string name="bills_rule_reference">Reference</string>
+    <string name="bills_rule_iban_amount">IBAN + amount</string>
+    <string name="bills_several_matches">Several matches</string>
+    <string name="bills_refund">Refund</string>
+    <string name="bills_applies">applies %1$s</string>
+    <string name="bills_confirm">Confirm</string>
+    <string name="bills_dismiss">Dismiss</string>
+    <string name="bills_transaction">Transaction</string>
+
+    <!-- Bill -->
+    <string name="bills_amount">Amount</string>
+    <string name="bills_settled">Settled</string>
+    <string name="bills_remaining_label">Remaining</string>
+    <string name="bills_cancel_bill">Cancel bill</string>
+    <string name="bills_uncancel">Uncancel</string>
+    <string name="bills_reread">Re-read document</string>
+    <string name="bills_delete_title">Delete this bill?</string>
+    <string name="bills_delete_text">The bill and its matched payments are removed. The transactions themselves stay in your accounts. An uploaded document is deleted with it.</string>
+    <string name="bills_edit_title">Edit bill</string>
+    <string name="bills_review_hint">Values read from the document again. Nothing is saved until you press Save. Fields the document did not provide keep their current values.</string>
+    <string name="bills_slip_title">Payment details</string>
+    <string name="bills_iban">IBAN</string>
+    <string name="bills_reference">Reference</string>
+    <string name="bills_amount_to_pay">Amount to pay</string>
+    <string name="bills_message">Message</string>
+    <string name="bills_copy">Copy %1$s</string>
+    <string name="bills_copied">Copied</string>
+    <string name="bills_details">Details</string>
+    <string name="bills_issued">Issued</string>
+    <string name="bills_pays_from">Pays from</string>
+    <string name="bills_tax_year">Tax year</string>
+    <string name="bills_notes">Notes</string>
+    <string name="bills_open_source">Open source document</string>
+    <string name="bills_document">Document</string>
+    <string name="bills_no_document">No document attached yet.</string>
+    <string name="bills_open_document">Open</string>
+    <string name="bills_attach_file">Attach a file</string>
+    <string name="bills_replace_file">Replace the file</string>
+    <string name="bills_uploading">Uploading…</string>
+    <string name="bills_no_app">No app on this phone can open this file.</string>
+    <string name="bills_open_failed">The document could not be opened.</string>
+    <string name="bills_payments">Payments</string>
+    <string name="bills_no_payments">No payments matched to this bill yet.</string>
+    <string name="bills_dismissed">Dismissed suggestions</string>
+    <string name="bills_restore">Restore</string>
+    <string name="bills_origin_auto">auto</string>
+    <string name="bills_origin_manual">manual</string>
+    <string name="bills_remove_payment">Remove this payment from the bill</string>
+    <string name="bills_remove_payment_title">Remove this payment?</string>
+    <string name="bills_remove_payment_text">The payment is taken off this bill. The transaction stays in your account.</string>
+    <string name="bills_remove">Remove</string>
+    <string name="bills_match_title">Match a payment manually</string>
+    <string name="bills_match_text">Pick a transaction and choose how much of it pays this bill. A negative amount records a refund.</string>
+    <string name="bills_collapsed_paid">This bill is fully paid.</string>
+    <string name="bills_collapsed_cancelled">This bill is cancelled.</string>
+    <string name="bills_show_anyway">Show anyway</string>
+    <string name="bills_candidates_search">Counterparty, description, reference, amount</string>
+    <string name="bills_candidates_none">No unmatched %1$s transactions to offer for this bill.</string>
+    <string name="bills_candidates_none_query">No transactions match \"%1$s\".</string>
+    <string name="bills_unallocated">%1$s unallocated</string>
+    <string name="bills_allocate_title">Match payment</string>
+    <string name="bills_allocate">Match</string>
+    <string name="bills_amount_to_apply">Amount to apply</string>
+    <string name="bills_refund_amount">Refund amount, negative</string>
+    <string name="bills_refund_hint">A negative amount records money coming back for this bill.</string>
+
+    <!-- New bill and upload -->
+    <string name="bills_new_title">Add bill</string>
+    <string name="bills_new_upload_title">Upload the bill</string>
+    <string name="bills_new_upload_text">Kept reads the QR code of a Swiss QR-bill and fills the form for you. Nothing is saved until you check the values and press Save.</string>
+    <string name="bills_new_reading">Reading the bill…</string>
+    <string name="bills_choose_file">Choose a PDF or image</string>
+    <string name="bills_take_photo">Take a photo</string>
+    <string name="bills_enter_manually">Enter manually</string>
+    <string name="bills_new_ebill_hint">eBill: download the invoice PDF in your e-banking and choose it here. A photo is sent as a one-page PDF.</string>
+    <string name="bills_new_from_qr">Read from the QR code</string>
+    <string name="bills_new_from_qr_text">Check the values below, then save the bill.</string>
+    <string name="bills_new_from_text">Read from the text</string>
+    <string name="bills_new_from_text_text">Guessed from the text. Please check every field.</string>
+    <string name="bills_new_nothing">Nothing could be read</string>
+    <string name="bills_new_nothing_text">The document has no QR code or recognisable text. Enter the details yourself; the document is kept with the bill.</string>
+    <string name="bills_new_save">Save bill</string>
+    <string name="bills_new_attached">The uploaded document is attached when you save.</string>
+    <string name="bills_upload_too_large">The file is larger than 20 MB.</string>
+    <string name="bills_upload_not_supported">Choose a PDF or an image.</string>
+    <string name="bills_upload_unreadable">The file could not be read.</string>
+
+    <!-- Form -->
+    <string name="bills_form_kind">Type</string>
+    <string name="bills_form_locked">Locked: payments are already matched to this bill.</string>
+    <string name="bills_form_invoice_number">Invoice number (optional)</string>
+    <string name="bills_form_creditor">Creditor name</string>
+    <string name="bills_form_iban">Creditor IBAN (optional)</string>
+    <string name="bills_form_amount">Amount (optional)</string>
+    <string name="bills_form_amount_hint">Empty for an open amount.</string>
+    <string name="bills_form_currency">Currency</string>
+    <string name="bills_form_issue_date">Issue date (optional)</string>
+    <string name="bills_form_due_date">Due date (optional)</string>
+    <string name="bills_form_reference_type">Reference type</string>
+    <string name="bills_reftype_auto">Detect automatically</string>
+    <string name="bills_reftype_qrr">QR reference (QRR)</string>
+    <string name="bills_reftype_scor">Creditor reference (SCOR)</string>
+    <string name="bills_reftype_non">No reference (NON)</string>
+    <string name="bills_form_reference">Reference (optional)</string>
+    <string name="bills_form_message">Message (optional)</string>
+    <string name="bills_form_account">Expected paying account (optional)</string>
+    <string name="bills_form_tax_year">Tax year (optional)</string>
+    <string name="bills_form_tax_year_placeholder">YYYY</string>
+    <string name="bills_form_notes">Notes (optional)</string>
+</resources>

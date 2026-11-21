@@ -1,0 +1,189 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Categories -->
+    <string name="categories_title">Categories</string>
+    <string name="categories_section">Categories</string>
+    <string name="categories_section_text">Label transactions as expenses or income, optionally one level of subcategories. Set a category on any transaction in an account.</string>
+    <string name="categories_add">Add category</string>
+    <string name="categories_empty_title">No categories yet</string>
+    <string name="categories_empty_text">Create your own, for example \"Groceries\" or \"Salary\".</string>
+    <string name="categories_income">Income</string>
+    <string name="categories_expense">Expense</string>
+    <plurals name="categories_transactions">
+        <item quantity="one">%1$d transaction</item>
+        <item quantity="other">%1$d transactions</item>
+    </plurals>
+    <string name="categories_delete_title">Delete %1$s?</string>
+    <string name="categories_delete_text">Its transactions become uncategorized and its rules and budgets are deleted. Subcategories stay as top-level categories.</string>
+    <string name="categories_add_title">Add category</string>
+    <string name="categories_edit_title">Edit category</string>
+    <string name="categories_name">Name</string>
+    <string name="categories_name_example">Groceries</string>
+    <string name="categories_type">Type</string>
+    <string name="categories_parent">Parent (optional)</string>
+    <string name="categories_colour">Colour</string>
+    <string name="categories_icon">Icon</string>
+    <string name="categories_icon_default">Default</string>
+    <string name="categories_rules">Rules</string>
+    <string name="categories_rules_text">Rules categorize new transactions when you import them. The first matching rule wins, lowest priority number first. A category you set by hand is never changed by a rule.</string>
+    <string name="categories_apply">Run on uncategorized</string>
+    <string name="categories_add_rule">Add rule</string>
+    <string name="categories_rules_need_category">Add a category first, then create rules for it.</string>
+    <string name="categories_rules_empty">No rules yet.</string>
+    <plurals name="categories_applied">
+        <item quantity="one">Categorized %1$d of %2$d uncategorized transaction.</item>
+        <item quantity="other">Categorized %1$d of %2$d uncategorized transactions.</item>
+    </plurals>
+    <string name="categories_cond_counterparty">counterparty contains \"%1$s\"</string>
+    <string name="categories_cond_description">description contains \"%1$s\"</string>
+    <string name="categories_cond_iban">IBAN is %1$s</string>
+    <string name="categories_cond_in">money in</string>
+    <string name="categories_cond_out">money out</string>
+    <string name="categories_and">" and "</string>
+    <string name="categories_rule_if">If %1$s</string>
+    <string name="categories_rule_then">then %1$s · priority %2$d</string>
+    <string name="categories_delete_rule_title">Delete this rule?</string>
+    <string name="categories_delete_rule_text">Transactions already categorized by it keep their category.</string>
+    <string name="categories_add_rule_title">Add rule</string>
+    <string name="categories_edit_rule_title">Edit rule</string>
+    <string name="categories_rule_text">A transaction gets the category when it matches every condition you set. Text matching ignores upper and lower case.</string>
+    <string name="categories_rule_counterparty">Counterparty contains</string>
+    <string name="categories_rule_description">Description contains</string>
+    <string name="categories_rule_iban">Counterparty IBAN equals</string>
+    <string name="categories_rule_direction">Direction</string>
+    <string name="categories_direction_any">Any</string>
+    <string name="categories_direction_out">Money out (expense)</string>
+    <string name="categories_direction_in">Money in (income)</string>
+    <string name="categories_rule_category">Category</string>
+    <string name="categories_rule_priority">Priority</string>
+    <string name="categories_rule_priority_hint">Lower runs first.</string>
+
+    <!-- Preferences -->
+    <string name="preferences_title">Preferences</string>
+    <string name="preferences_privacy">Privacy</string>
+    <string name="preferences_privacy_text">Control how sensitive details are shown on screen.</string>
+    <string name="preferences_iban">IBAN display</string>
+    <string name="preferences_iban_full">Full</string>
+    <string name="preferences_iban_full_text">Show the whole IBAN.</string>
+    <string name="preferences_iban_masked">Masked</string>
+    <string name="preferences_iban_masked_text">Show only the country code, check digits and last four characters.</string>
+    <string name="preferences_iban_hidden">Hidden</string>
+    <string name="preferences_iban_hidden_text">Never show IBANs.</string>
+    <string name="preferences_iban_note">Masked and hidden only change what is displayed on screen. Your stored data and imports are not affected.</string>
+    <string name="preferences_blur">Blur amounts</string>
+    <string name="preferences_blur_text">Amounts are replaced by dots in the app.</string>
+    <string name="preferences_display">Display</string>
+    <string name="preferences_display_text">Numbers and dates in the app. PDF reports keep their own format.</string>
+    <string name="preferences_locale">Number and date format</string>
+    <string name="preferences_example">Example: %1$s</string>
+    <string name="preferences_currency">Default currency</string>
+    <string name="preferences_currency_text">Pre-filled when you add an account, bill or budget.</string>
+    <string name="preferences_page_size">Transactions per page</string>
+    <string name="preferences_liquidity">Liquidity</string>
+    <string name="preferences_liquidity_text">What counts towards liquid cash on the dashboard.</string>
+    <string name="preferences_cash_liquid">Count cash in investment accounts as liquid</string>
+    <string name="preferences_cash_liquid_text">Securities never count as liquid cash. Pension and pillar 3a accounts are always left out.</string>
+    <string name="preferences_save">Save preferences</string>
+    <string name="preferences_saved">Preferences saved.</string>
+
+    <!-- Notifications -->
+    <string name="notification_settings_title">Notifications</string>
+    <string name="notification_settings_triggers">Triggers</string>
+    <string name="notification_settings_triggers_text">Kept checks hourly and sends one message with everything new. Each event is only reported once. Messages go to your channels below and may contain amounts and names.</string>
+    <string name="notification_settings_bill_due">Bill due soon</string>
+    <string name="notification_settings_bill_due_days">Days before the due date</string>
+    <string name="notification_settings_bill_overdue">Bill overdue</string>
+    <string name="notification_settings_budget">Monthly budget reached</string>
+    <string name="notification_settings_budget_percent">Percent of the budget</string>
+    <string name="notification_settings_stale">Account not imported for a while</string>
+    <string name="notification_settings_stale_days">Days without an import</string>
+    <string name="notification_settings_save_triggers">Save triggers</string>
+    <string name="notification_settings_triggers_saved">Triggers saved.</string>
+    <string name="notification_settings_saved">Saved.</string>
+    <string name="notification_settings_removed">Removed.</string>
+    <string name="notification_settings_webhook">Webhook</string>
+    <string name="notification_settings_email">Email</string>
+    <string name="notification_settings_ntfy_text">Messages are published to this topic. Add an access token if the topic is protected.</string>
+    <string name="notification_settings_webhook_text">Kept POSTs JSON (source, title, message, sentAt). With a secret, the request carries an x-kept-signature header: sha256= and the HMAC-SHA256 of the body.</string>
+    <string name="notification_settings_email_text">Sent through the SMTP server your administrator configured.</string>
+    <string name="notification_settings_needs_reentry">Needs re-entry</string>
+    <string name="notification_settings_enabled">Enabled</string>
+    <string name="notification_settings_paused">Paused</string>
+    <string name="notification_settings_reentry_text">The saved settings can no longer be read, probably because the server\'s secret key changed. Nothing is sent through this channel until you enter the settings again and save, or remove the channel.</string>
+    <string name="notification_settings_email_admins">Email notifications are limited to administrators.</string>
+    <string name="notification_settings_email_smtp">The administrator has not configured an SMTP server.</string>
+    <string name="notification_settings_email_unavailable">Email is not available: the administrator has not configured an SMTP server.</string>
+    <string name="notification_settings_server">Server</string>
+    <string name="notification_settings_topic">Topic</string>
+    <string name="notification_settings_token">Access token (optional)</string>
+    <string name="notification_settings_url">URL</string>
+    <string name="notification_settings_secret">Signing secret (optional)</string>
+    <string name="notification_settings_to">Send to</string>
+    <string name="notification_settings_secret_stored">A secret is stored. Leave blank to keep it.</string>
+    <string name="notification_settings_secret_new">Stored encrypted, never shown again.</string>
+    <string name="notification_settings_remove_secret">Remove the saved secret instead of entering it again</string>
+    <string name="notification_settings_add">Add channel</string>
+    <string name="notification_settings_save_changes">Save changes</string>
+    <string name="notification_settings_save_again">Save again</string>
+    <string name="notification_settings_send_test">Send test</string>
+    <string name="notification_settings_test_sent">Test message sent.</string>
+    <string name="notification_settings_test_failed">The test message could not be sent.</string>
+    <string name="notification_settings_remove">Remove</string>
+    <string name="notification_settings_remove_title">Remove %1$s?</string>
+    <string name="notification_settings_remove_text">Nothing is sent through this channel any more. The saved settings and secret are deleted.</string>
+    <string name="notification_settings_last_delivery">Last delivery: %1$s</string>
+    <string name="notification_settings_never">Never</string>
+    <string name="notification_settings_last_error">Last error: %1$s (%2$s)</string>
+
+    <!-- Account -->
+    <string name="account_settings_title">Account settings</string>
+    <string name="account_settings_profile">Profile</string>
+    <string name="account_settings_username">Username</string>
+    <string name="account_settings_display_name">Display name</string>
+    <string name="account_settings_not_set">Not set</string>
+    <string name="account_settings_role">Role</string>
+    <string name="account_settings_admin">Admin</string>
+    <string name="account_settings_member">Member</string>
+    <string name="account_settings_password">Change password</string>
+    <string name="account_settings_password_text">Other devices are signed out when you change your password.</string>
+    <string name="account_settings_current">Current password</string>
+    <string name="account_settings_new">New password</string>
+    <string name="account_settings_new_hint">At least %1$d characters.</string>
+    <string name="account_settings_too_short">Password must be at least %1$d characters.</string>
+    <string name="account_settings_confirm">Confirm new password</string>
+    <string name="account_settings_mismatch">Passwords do not match.</string>
+    <string name="account_settings_change">Change password</string>
+    <string name="account_settings_changed">Password changed.</string>
+
+    <!-- Market data -->
+    <string name="market_data_title">Market data</string>
+    <string name="market_data_text">Kept can fetch daily closing prices for your securities and the exchange rates between their currency and your account\'s currency. It is off until you turn it on. Without it, you enter prices by hand.</string>
+    <string name="market_data_enable">Fetch prices from Yahoo Finance</string>
+    <string name="market_data_no_provider">No market data provider is available in this installation.</string>
+    <string name="market_data_leaves">What leaves your server when this is on:</string>
+    <string name="market_data_leaves_symbols">The ticker symbols of your securities and currency pairs, with a date range.</string>
+    <string name="market_data_leaves_lookup">The text you type when you look up a security by ISIN or name.</string>
+    <string name="market_data_leaves_ip">Yahoo Finance also sees your server\'s IP address, as with any web request.</string>
+    <string name="market_data_never">Quantities, amounts, trades, account names, transactions and balances are never sent. Prices are fetched about every six hours.</string>
+    <string name="market_data_saved">Market data settings saved.</string>
+    <string name="market_data_refresh">Refresh</string>
+    <string name="market_data_refresh_text">Fetch prices and rates now instead of waiting for the next scheduled run.</string>
+    <string name="market_data_last_run">Last run</string>
+    <string name="market_data_never_run">Never</string>
+    <string name="market_data_last_error">Last error</string>
+    <string name="market_data_refresh_now">Refresh now</string>
+    <string name="market_data_turn_on">Turn on market data above first.</string>
+    <plurals name="market_data_securities">
+        <item quantity="one">%1$d security</item>
+        <item quantity="other">%1$d securities</item>
+    </plurals>
+    <plurals name="market_data_pairs">
+        <item quantity="one">%1$d currency pair</item>
+        <item quantity="other">%1$d currency pairs</item>
+    </plurals>
+    <string name="market_data_updated">Updated %1$s and %2$s (%3$d prices, %4$d rates).</string>
+    <plurals name="market_data_failed">
+        <item quantity="one">%1$d request failed, see Last error.</item>
+        <item quantity="other">%1$d requests failed, see Last error.</item>
+    </plurals>
+</resources>

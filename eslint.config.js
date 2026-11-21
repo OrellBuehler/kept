@@ -23,6 +23,7 @@ export default ts.config(
       "coverage/",
       "drizzle/",
       "eslint-rules/fixtures/",
+      "mobile/",
       "src/lib/components/ui/",
     ],
   },

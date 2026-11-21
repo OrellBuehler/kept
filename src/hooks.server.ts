@@ -29,9 +29,11 @@ import {
 } from "$lib/server/auth/sessions";
 import {
   isApiPath,
+  isAppApiPath,
   isExternalApiPath,
   isPublicPath,
 } from "$lib/server/auth/routing";
+import { handleAppApi } from "$lib/server/app-api/gate";
 import { handleExternalApi } from "$lib/server/external-api/gate";
 import { sweepOrphanedLinks } from "$lib/server/external-api/links";
 import { describeError } from "$lib/server/errors";
@@ -79,8 +81,11 @@ export const handleError: HandleServerError = (input) => {
   const { error, event } = input;
   const status = input.kind === "unknown" ? 500 : input.error.status;
   const errorId = crypto.randomUUID();
+  const bridged = event.locals.appRoute
+    ? ` bridged=${event.locals.appRoute}`
+    : "";
   console.error(
-    `unhandled error ${errorId} status=${status} route=${event.route.id ?? "none"}`,
+    `unhandled error ${errorId} status=${status} route=${event.route.id ?? "none"}${bridged}`,
     describeError(error),
   );
   return { message: "An unexpected error occurred.", errorId };
@@ -99,6 +104,9 @@ async function handleRequest({
   warnIfProxied(event.request.headers);
   if (isExternalApiPath(event.url.pathname)) {
     return handleExternalApi(event, resolve);
+  }
+  if (isAppApiPath(event.url.pathname)) {
+    return handleAppApi(event, resolve);
   }
   event.locals.user = null;
   event.locals.session = null;

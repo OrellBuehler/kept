@@ -1,0 +1,156 @@
+{
+  "data": {
+    "pendingId": "EeXFp6E4hjaBVP1-OKNILJN5EQjb1g4E",
+    "account": {
+      "id": "fac3616a-1a96-4171-ac3d-50b72d0d3cfb",
+      "name": "Example Checking",
+      "currency": "CHF",
+      "iban": "CH9300762011623852957"
+    },
+    "format": "camt053",
+    "fileName": "overlap-b.xml",
+    "balanceWarnings": [],
+    "statement": {
+      "accountIban": "CH9300762011623852957",
+      "currency": "CHF",
+      "fromDate": "2024-07-05",
+      "toDate": "2024-07-15",
+      "openingBalance": {
+        "amount": 108000,
+        "currency": "CHF",
+        "date": "2024-07-05"
+      },
+      "closingBalance": {
+        "amount": 118750,
+        "currency": "CHF",
+        "date": "2024-07-15"
+      }
+    },
+    "rows": [
+      {
+        "index": 1,
+        "status": "duplicate",
+        "matchedBy": "id",
+        "mirrorId": null,
+        "tx": {
+          "bookingDate": "2024-07-06",
+          "valueDate": "2024-07-06",
+          "amount": -3550,
+          "currency": "CHF",
+          "originalAmount": null,
+          "originalCurrency": null,
+          "counterpartyName": "Sample Insurance AG",
+          "counterpartyIban": null,
+          "description": "Sample Insurance AG payment",
+          "reference": null,
+          "referenceType": null,
+          "reversal": false,
+          "externalId": "acsr:OV-03"
+        }
+      },
+      {
+        "index": 2,
+        "status": "duplicate",
+        "matchedBy": "id",
+        "mirrorId": null,
+        "tx": {
+          "bookingDate": "2024-07-07",
+          "valueDate": "2024-07-07",
+          "amount": -1200,
+          "currency": "CHF",
+          "originalAmount": null,
+          "originalCurrency": null,
+          "counterpartyName": "Example Transit Ltd",
+          "counterpartyIban": null,
+          "description": "Example Transit Ltd payment",
+          "reference": null,
+          "referenceType": null,
+          "reversal": false,
+          "externalId": "hash:3ddb33fd327cc6cf9865d97e7642bdbf1189fe450456a530ffd5207898ab2cf0",
+          "legacyExternalIds": [
+            "hash:831940af95fa8b0bde3879b4f360cc541bf8e4a55cd610307e08c6b67d36e11d"
+          ]
+        }
+      },
+      {
+        "index": 3,
+        "status": "duplicate",
+        "matchedBy": "id",
+        "mirrorId": null,
+        "tx": {
+          "bookingDate": "2024-07-09",
+          "valueDate": "2024-07-09",
+          "amount": 20000,
+          "currency": "CHF",
+          "originalAmount": null,
+          "originalCurrency": null,
+          "counterpartyName": "Jane Example",
+          "counterpartyIban": null,
+          "description": "Jane Example payment",
+          "reference": null,
+          "referenceType": null,
+          "reversal": false,
+          "externalId": "acsr:OV-04"
+        }
+      },
+      {
+        "index": 4,
+        "status": "new",
+        "matchedBy": null,
+        "mirrorId": null,
+        "tx": {
+          "bookingDate": "2024-07-12",
+          "valueDate": "2024-07-12",
+          "amount": -6000,
+          "currency": "CHF",
+          "originalAmount": null,
+          "originalCurrency": null,
+          "counterpartyName": "Example Energy Ltd",
+          "counterpartyIban": null,
+          "description": "Example Energy Ltd payment",
+          "reference": null,
+          "referenceType": null,
+          "reversal": false,
+          "externalId": "acsr:OV-05"
+        }
+      },
+      {
+        "index": 5,
+        "status": "new",
+        "matchedBy": null,
+        "mirrorId": null,
+        "tx": {
+          "bookingDate": "2024-07-14",
+          "valueDate": "2024-07-14",
+          "amount": 1500,
+          "currency": "CHF",
+          "originalAmount": null,
+          "originalCurrency": null,
+          "counterpartyName": "Jane Example",
+          "counterpartyIban": null,
+          "description": "Jane Example payment",
+          "reference": null,
+          "referenceType": null,
+          "reversal": false,
+          "externalId": "acsr:OV-06"
+        }
+      }
+    ],
+    "counts": {
+      "new": 2,
+      "replacesMirror": 0,
+      "duplicate": 3,
+      "total": 5
+    },
+    "warnings": [],
+    "errors": [],
+    "alreadyImportedAt": null,
+    "filter": "all",
+    "page": 1,
+    "pageSize": 100,
+    "pageCount": 1,
+    "filteredTotal": 5,
+    "needsMapping": false,
+    "canConfirm": true
+  }
+}

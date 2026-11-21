@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- windowBackground matches the Compose scheme background so the cold-start
+         window doesn't flash a colour the app never uses. values-night carries
+         the dark counterpart. -->
+    <style name="Theme.Kept" parent="android:Theme.Material.Light.NoActionBar">
+        <item name="android:windowBackground">@color/window_background</item>
+    </style>
+</resources>

@@ -1,0 +1,26 @@
+{
+  "data": {
+    "years": [
+      {
+        "year": 2025,
+        "authority": "Example Tax Office",
+        "currency": "CHF",
+        "balance": {
+          "paidByMe": 710000,
+          "creditedByOffice": 529000,
+          "difference": 181000,
+          "assessedTotal": 550000,
+          "remaining": 21000,
+          "remainingByMe": -160000,
+          "outcome": "due",
+          "amountDue": 21000,
+          "refundExpected": 0
+        },
+        "discrepancies": 5,
+        "reconciled": false
+      }
+    ],
+    "defaultYear": 2025,
+    "defaultCurrency": "CHF"
+  }
+}

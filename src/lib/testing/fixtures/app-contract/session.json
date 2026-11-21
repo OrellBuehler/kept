@@ -1,0 +1,20 @@
+{
+  "user": {
+    "id": "a19c4f65-cf24-458f-afef-8a9f4be965ba",
+    "username": "alice",
+    "displayName": "Alice Example",
+    "role": "admin"
+  },
+  "today": "2026-11-21",
+  "overdueBills": 1,
+  "preferences": {
+    "ibanDisplay": "masked",
+    "blurAmounts": true,
+    "locale": "de-CH",
+    "defaultCurrency": "CHF",
+    "pageSize": 25,
+    "investmentCashLiquid": true
+  },
+  "twoFactor": true,
+  "sessionExpiresAt": "2026-12-21T20:20:16.021Z"
+}

@@ -1,0 +1,12 @@
+{
+  "data": {
+    "preferences": {
+      "ibanDisplay": "masked",
+      "blurAmounts": true,
+      "locale": "de-CH",
+      "defaultCurrency": "CHF",
+      "pageSize": 25,
+      "investmentCashLiquid": true
+    }
+  }
+}

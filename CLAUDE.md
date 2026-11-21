@@ -64,6 +64,7 @@ src/lib/server/imports/          upload → preview → confirm flow, history/un
 src/lib/server/ledger/           institutions, accounts, transactions, snapshots, balances
 src/lib/server/bills/            bills, documents, QR-bill/PDF extraction, bill ↔ payment matching
 src/lib/server/dashboard/        aggregate queries for the dashboard
+src/lib/server/app-api/          the mobile apps' API (/api/app/v1): bearer session gate, bridge to page loads and actions, reminders
 src/lib/server/events.ts         generic in-process events (integrations subscribe; core emits)
 src/lib/server/integrations/     optional adapters (paperless/) — the core never imports these
 src/lib/server/reports/          pdfmake document builders
@@ -71,6 +72,7 @@ src/lib/{money,iban,references}.ts  client-safe helpers for amounts, IBANs, QRR/
 drizzle/{sqlite,postgres}/       generated migrations, one folder per dialect (never edit by hand)
 src/routes/                      UI + API (`src/routes/api/`)
 src/lib/testing/fixtures/        synthetic sample files for importer tests
+mobile/                          Android and iOS apps (Kotlin Multiplatform); see mobile/CLAUDE.md
 ```
 
 ## Invariants
@@ -120,6 +122,13 @@ src/lib/testing/fixtures/        synthetic sample files for importer tests
   selects PostgreSQL (see `db/config.ts`). `bun run test:pg` runs the whole suite on PostgreSQL
   (`KEPT_TEST_DATABASE_URL=postgres://…` to a server of its own; each test file gets a database cloned
   from a migrated template), and CI runs it on every push. Tests that only make sense on SQLite say why.
+- **Page data and action fields are an API.** The mobile apps reach every page in
+  `src/routes/api/app/v1/registry.ts` through `/api/app/v1/pages/` (`docs/app-api.md`): the JSON shape of
+  its `load` result and the field names of its form actions are what released apps depend on. Change them
+  additively only (add fields, never remove, rename or retype one). `contract.test.ts` compares every page
+  with the fixtures in `src/lib/testing/fixtures/app-contract/`; after an additive change regenerate them with
+  `UPDATE_APP_CONTRACT=1 bun run test src/routes/api/app/v1/contract.test.ts`. A new page the apps should
+  reach is added to the registry and the contract test.
 - **No swallowed errors.** No empty `catch`, no `catch { return null }` without logging and a
   user-visible outcome.
 - Never log transaction descriptions, counterparties, IBANs or amounts.
