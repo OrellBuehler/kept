@@ -49,7 +49,7 @@ async function accountFacts(userId: string): Promise<AccountFact[]> {
   });
 }
 
-async function gatherFacts(
+export async function gatherFacts(
   userId: string,
   settings: TriggerSettings,
   now: Date,

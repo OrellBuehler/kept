@@ -28,14 +28,17 @@ export const apiAuthFailureLimiter = new LoginRateLimiter(
 
 const CHALLENGE = 'Bearer realm="kept"';
 
-function unauthorized(message: string): Response {
+export function unauthorized(message: string): Response {
   return json(
     { message },
     { status: 401, headers: { "www-authenticate": CHALLENGE } },
   );
 }
 
-function tooManyRequests(retryAfterMs: number, message: string): Response {
+export function tooManyRequests(
+  retryAfterMs: number,
+  message: string,
+): Response {
   return json(
     { message },
     {
@@ -58,7 +61,7 @@ export function bearerToken(header: string | null): string | null {
  * Error responses SvelteKit renders itself (router 404, 405, unhandled errors)
  * negotiate on `Accept` and may be HTML; the external API always answers JSON.
  */
-async function asJsonError(response: Response): Promise<Response> {
+export async function asJsonError(response: Response): Promise<Response> {
   if (response.status < 400) return response;
   if (response.headers.get("content-type")?.includes("application/json")) {
     return response;
@@ -78,7 +81,7 @@ async function asJsonError(response: Response): Promise<Response> {
   return json({ message }, { status: response.status, headers });
 }
 
-function noStore(response: Response): Response {
+export function noStore(response: Response): Response {
   try {
     response.headers.set("cache-control", "no-store");
     return response;

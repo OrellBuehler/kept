@@ -47,6 +47,43 @@ interface Entry {
 
 const matrix: Record<string, Entry> = {
   "/src/routes/api/health/+server.ts": { access: "public" },
+  // The apps' API: a session token as bearer token (the hook), then the same
+  // guards as the pages it bridges to. Sign-in and discovery are public.
+  "/src/routes/api/app/v1/server/+server.ts": { access: "public" },
+  "/src/routes/api/app/v1/auth/login/+server.ts": { access: "public" },
+  "/src/routes/api/app/v1/auth/verify/+server.ts": { access: "public" },
+  "/src/routes/api/app/v1/auth/logout/+server.ts": {
+    access: "user",
+    handlers: {
+      POST: (m, e) => (m as never as { POST: (e: never) => unknown }).POST(e),
+    },
+  },
+  "/src/routes/api/app/v1/session/+server.ts": {
+    access: "user",
+    handlers: {
+      GET: (m, e) => (m as never as { GET: (e: never) => unknown }).GET(e),
+    },
+  },
+  "/src/routes/api/app/v1/reminders/+server.ts": {
+    access: "user",
+    handlers: {
+      GET: (m, e) => (m as never as { GET: (e: never) => unknown }).GET(e),
+    },
+  },
+  "/src/routes/api/app/v1/pages/[...path]/+server.ts": {
+    access: "user",
+    handlers: {
+      GET: (m, e) => (m as never as { GET: (e: never) => unknown }).GET(e),
+      POST: (m, e) => (m as never as { POST: (e: never) => unknown }).POST(e),
+    },
+  },
+  "/src/routes/api/app/v1/endpoints/[...path]/+server.ts": {
+    access: "user",
+    handlers: {
+      GET: (m, e) => (m as never as { GET: (e: never) => unknown }).GET(e),
+      POST: (m, e) => (m as never as { POST: (e: never) => unknown }).POST(e),
+    },
+  },
   "/src/routes/api/public/paperless/[token]/+server.ts": { access: "public" },
   "/src/routes/api/external/v1/me/+server.ts": {
     access: "token",

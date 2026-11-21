@@ -29,9 +29,11 @@ import {
 } from "$lib/server/auth/sessions";
 import {
   isApiPath,
+  isAppApiPath,
   isExternalApiPath,
   isPublicPath,
 } from "$lib/server/auth/routing";
+import { handleAppApi } from "$lib/server/app-api/gate";
 import { handleExternalApi } from "$lib/server/external-api/gate";
 import { sweepOrphanedLinks } from "$lib/server/external-api/links";
 import { describeError } from "$lib/server/errors";
@@ -99,6 +101,9 @@ async function handleRequest({
   warnIfProxied(event.request.headers);
   if (isExternalApiPath(event.url.pathname)) {
     return handleExternalApi(event, resolve);
+  }
+  if (isAppApiPath(event.url.pathname)) {
+    return handleAppApi(event, resolve);
   }
   event.locals.user = null;
   event.locals.session = null;

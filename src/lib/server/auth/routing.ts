@@ -21,14 +21,38 @@ export const EXTERNAL_API_PREFIX = "/api/external/v1";
  * the prefix is treated as a session route.
  */
 export function isExternalApiPath(pathname: string): boolean {
-  let path = pathname;
+  return underPrefix(pathname, EXTERNAL_API_PREFIX);
+}
+
+export const APP_API_PREFIX = "/api/app/v1";
+
+/** The API of the mobile apps: a session token as bearer token, never a cookie. Decoded like `isExternalApiPath`. */
+export function isAppApiPath(pathname: string): boolean {
+  return underPrefix(pathname, APP_API_PREFIX);
+}
+
+function decodePath(pathname: string): string {
   try {
-    path = decodeURI(pathname);
+    return decodeURI(pathname);
   } catch (err) {
     if (!(err instanceof URIError)) throw err;
+    return pathname;
   }
+}
+
+function underPrefix(pathname: string, prefix: string): boolean {
+  const path = decodePath(pathname);
+  return path === prefix || path.startsWith(`${prefix}/`);
+}
+
+const APP_API_PUBLIC = new Set(["/server", "/auth/login", "/auth/verify"]);
+
+/** Paths under the app API that answer without a session: server discovery and the two sign-in steps. */
+export function isPublicAppApiPath(pathname: string): boolean {
+  const path = decodePath(pathname);
   return (
-    path === EXTERNAL_API_PREFIX || path.startsWith(`${EXTERNAL_API_PREFIX}/`)
+    path.startsWith(`${APP_API_PREFIX}/`) &&
+    APP_API_PUBLIC.has(path.slice(APP_API_PREFIX.length))
   );
 }
 

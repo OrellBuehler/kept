@@ -12,6 +12,10 @@ import {
   apiTokenLimiter,
 } from "$lib/server/external-api/gate";
 import { seedToken } from "$lib/testing/external-api";
+import {
+  APP_AUTH_FAILURES_PER_IP,
+  appAuthFailureLimiter,
+} from "$lib/server/app-api/gate";
 import { handle, handleError } from "./hooks.server";
 
 async function run(path: string, cookies: Record<string, string> = {}) {
@@ -378,6 +382,119 @@ describe("handle: external API", () => {
     expect(res.status).toBe(404);
     expect(res.headers.get("content-type")).toContain("application/json");
     expect(await res.json()).toEqual({ message: "Not found" });
+  });
+});
+
+describe("handle: app API", () => {
+  useTestDB();
+
+  async function app(
+    path: string,
+    headers: Record<string, string> = {},
+    cookies: Record<string, string> = {},
+  ) {
+    const event = createTestEvent({
+      url: `http://localhost${path}`,
+      headers,
+      cookies,
+    });
+    let resolved = false;
+    const resolve = async () => {
+      resolved = true;
+      return new Response("ok", { status: 200 });
+    };
+    const res = await handle({
+      event: event as never,
+      resolve: resolve as never,
+    });
+    return { res, event, resolved: () => resolved };
+  }
+
+  it("lets server discovery and the sign-in steps through without a session", async () => {
+    await createTestUser();
+    for (const p of ["/server", "/auth/login", "/auth/verify"]) {
+      const { res, resolved, event } = await app(`/api/app/v1${p}`);
+      expect(res.status, p).toBe(200);
+      expect(resolved(), p).toBe(true);
+      expect(event.locals.user, p).toBeNull();
+      expect(res.headers.get("cache-control"), p).toBe("no-store");
+    }
+  });
+
+  it("answers 401 JSON without a bearer token, also before any user exists", async () => {
+    const { res, resolved } = await app("/api/app/v1/session");
+    expect(res.status).toBe(401);
+    expect(resolved()).toBe(false);
+    expect(await res.json()).toEqual({ message: "Sign in to continue." });
+  });
+
+  it("accepts a session token as bearer token", async () => {
+    const user = await createTestUser();
+    const { token } = await loginTestUser(user);
+    const { res, event } = await app("/api/app/v1/session", {
+      authorization: `Bearer ${token}`,
+    });
+    expect(res.status).toBe(200);
+    expect(event.locals.user).toMatchObject({ id: user.id });
+    expect(event.locals.session).not.toBeNull();
+    expect(event.locals.apiToken).toBeNull();
+  });
+
+  it("does not honour a session cookie on the prefix, in any spelling", async () => {
+    const user = await createTestUser();
+    const { token } = await loginTestUser(user);
+    for (const p of [
+      "/api/app/v1/session",
+      "/api/%61pp/v1/pages/bills",
+      "/api/app/v1/auth/logout",
+      "/api/app/v1/auth/login/extra",
+    ]) {
+      const { res, resolved, event } = await app(
+        p,
+        {},
+        { [SESSION_COOKIE]: token },
+      );
+      expect(res.status, p).toBe(401);
+      expect(resolved(), p).toBe(false);
+      expect(event.locals.user, p).toBeNull();
+    }
+  });
+
+  it("an API token is not a session, and a session token is no API token", async () => {
+    const user = await createTestUser();
+    const { token: apiToken } = await seedToken(user.id, [...API_SCOPES]);
+    const { token } = await loginTestUser(user);
+    const asSession = await app("/api/app/v1/session", {
+      authorization: `Bearer ${apiToken}`,
+    });
+    expect(asSession.res.status).toBe(401);
+    const asApiToken = await app("/api/external/v1/me", {
+      authorization: `Bearer ${token}`,
+    });
+    expect(asApiToken.res.status).toBe(401);
+  });
+
+  it("a bearer session token counts nowhere else", async () => {
+    const user = await createTestUser();
+    const { token } = await loginTestUser(user);
+    const { res, event } = await app("/bills", {
+      authorization: `Bearer ${token}`,
+    });
+    expect(res.status).toBe(303);
+    expect(event.locals.user).toBeNull();
+  });
+
+  it("answers floods of rejected sessions from one address with 429", async () => {
+    appAuthFailureLimiter.reset();
+    await createTestUser();
+    const headers = { authorization: "Bearer not-a-session" };
+    for (let i = 0; i < APP_AUTH_FAILURES_PER_IP; i++) {
+      expect((await app("/api/app/v1/session", headers)).res.status).toBe(401);
+    }
+    const { res } = await app("/api/app/v1/session", headers);
+    expect(res.status).toBe(429);
+    expect(Number(res.headers.get("retry-after"))).toBeGreaterThan(0);
+    appAuthFailureLimiter.reset();
   });
 });
 
