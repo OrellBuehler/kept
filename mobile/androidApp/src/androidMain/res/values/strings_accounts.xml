@@ -1,0 +1,432 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Account types -->
+    <string name="accounts_type_current">Current</string>
+    <string name="accounts_type_savings">Savings</string>
+    <string name="accounts_type_credit_card">Credit card</string>
+    <string name="accounts_type_investment">Investment</string>
+    <string name="accounts_type_pension">Pension</string>
+    <string name="accounts_type_pillar_3a">Pillar 3a</string>
+    <string name="accounts_type_cash">Cash</string>
+    <string name="accounts_type_other">Other</string>
+
+    <!-- Account list -->
+    <string name="accounts_welcome_title">Welcome to Kept</string>
+    <string name="accounts_welcome_text">Kept keeps your accounts, transactions and bills in one place that you host yourself. Add an institution and an account, then import your statements.</string>
+    <string name="accounts_add_account">Add account</string>
+    <string name="accounts_add_institution">Add institution</string>
+    <string name="accounts_edit_institution">Edit institution</string>
+    <string name="accounts_total">Total %1$s</string>
+    <string name="accounts_my_share">My share</string>
+    <string name="accounts_totals_note">Sum of active accounts per currency at full amounts. Currencies are not converted.</string>
+    <string name="accounts_show_archived">Show archived (%1$d)</string>
+    <string name="accounts_all_archived">All accounts are archived. Turn on "Show archived" to see them.</string>
+    <string name="accounts_other">Other</string>
+    <string name="accounts_group_all_archived">All accounts of this institution are archived.</string>
+    <string name="accounts_group_empty">No accounts yet.</string>
+    <string name="accounts_institution_actions">Actions for %1$s</string>
+    <string name="accounts_delete_institution">Delete %1$s?</string>
+    <string name="accounts_delete_institution_text">Only institutions without accounts can be deleted. Move or delete its accounts first.</string>
+    <string name="accounts_last_booking">Last booking %1$s</string>
+    <string name="accounts_no_transactions">No transactions yet</string>
+    <string name="accounts_last_import">Last import %1$s</string>
+    <string name="accounts_shared_badge">Shared · %1$s</string>
+    <string name="accounts_notice_free">%1$s · %2$s/%3$s free</string>
+    <string name="accounts_period_month_lower">month</string>
+    <string name="accounts_period_year_lower">year</string>
+    <string name="accounts_archived">Archived</string>
+    <plurals name="accounts_days_ago">
+        <item quantity="one">%1$d day ago</item>
+        <item quantity="other">%1$d days ago</item>
+    </plurals>
+    <plurals name="accounts_months_ago">
+        <item quantity="one">%1$d month ago</item>
+        <item quantity="other">%1$d months ago</item>
+    </plurals>
+    <plurals name="accounts_years_ago">
+        <item quantity="one">%1$d year ago</item>
+        <item quantity="other">%1$d years ago</item>
+    </plurals>
+    <plurals name="accounts_notice">
+        <item quantity="one">%1$d month\'s notice</item>
+        <item quantity="other">%1$d months\' notice</item>
+    </plurals>
+
+    <!-- Account and institution forms -->
+    <string name="accounts_edit_account">Edit account</string>
+    <string name="accounts_field_name">Name</string>
+    <string name="accounts_field_name_placeholder">Everyday account</string>
+    <string name="accounts_field_institution">Institution</string>
+    <string name="accounts_field_type">Type</string>
+    <string name="accounts_field_currency">Currency</string>
+    <string name="accounts_field_currency_hint">3-letter ISO code, e.g. CHF.</string>
+    <string name="accounts_field_currency_3a">Pillar 3a accounts are held in CHF.</string>
+    <string name="accounts_field_currency_locked">Locked: this account already has transactions, balances, trades, portfolio values or an opening balance.</string>
+    <string name="accounts_field_iban">IBAN (optional)</string>
+    <string name="accounts_field_iban_placeholder">Spaces are fine</string>
+    <string name="accounts_field_contract">Contract number (optional)</string>
+    <string name="accounts_field_deposit_iban">Deposit IBAN (QR-IBAN)</string>
+    <string name="accounts_field_deposit_iban_hint">The IBAN you pay contributions into. Spaces are fine.</string>
+    <string name="accounts_field_opening_balance">Opening balance</string>
+    <string name="accounts_field_opening_balance_hint">Negative for debt, e.g. -120.50.</string>
+    <string name="accounts_field_opening_date">Opening date (balance applies from this day)</string>
+    <string name="accounts_field_share">My share (%)</string>
+    <string name="accounts_field_share_hint">Your ownership share if you co-own this account, e.g. 50 or 33.33. Leave at 100 otherwise. Imported amounts stay at 100%.</string>
+    <string name="accounts_field_shared_with">Shared with (optional)</string>
+    <string name="accounts_field_shared_with_hint">A label only, e.g. a first name.</string>
+    <string name="accounts_withdrawal">Withdrawal</string>
+    <string name="accounts_field_notice">Notice period (months)</string>
+    <string name="accounts_field_notice_hint">Leave empty if you can withdraw at any time.</string>
+    <string name="accounts_field_free_withdrawal">Free withdrawal</string>
+    <string name="accounts_field_free_withdrawal_hint">Amount you can withdraw per month or year without notice or fees.</string>
+    <string name="accounts_field_free_period">Per</string>
+    <string name="accounts_period_month">Month</string>
+    <string name="accounts_period_year">Year</string>
+    <string name="accounts_statements">Statements</string>
+    <string name="accounts_fill_from_transfers">Fill from transfers in my other accounts</string>
+    <string name="accounts_fill_from_transfers_text">For accounts without statement exports. Kept creates the counter-transaction when an imported account shows a transfer to or from this IBAN.</string>
+    <string name="accounts_trades_move_cash">Trades move cash</string>
+    <string name="accounts_trades_move_cash_text">A buy lowers the cash balance and a sell raises it by the trade amount. Use it when you have no broker statements, so cash and holdings are not counted twice.</string>
+    <string name="accounts_stop_filling">Stop filling this account?</string>
+    <string name="accounts_stop_filling_text_unknown">The transactions Kept created from transfers in your other accounts are deleted, and the balance is recalculated. Imported and manual transactions stay. Turn the setting on again to recreate them.</string>
+    <plurals name="accounts_stop_filling_text">
+        <item quantity="one">The transaction Kept created from transfers in your other accounts is deleted, and the balance is recalculated. Imported and manual transactions stay. Turn the setting on again to recreate it.</item>
+        <item quantity="other">The %1$d transactions Kept created from transfers in your other accounts are deleted, and the balance is recalculated. Imported and manual transactions stay. Turn the setting on again to recreate them.</item>
+    </plurals>
+    <string name="accounts_stop_filling_confirm">Delete mirrors and save</string>
+    <string name="accounts_institution_placeholder">Example Bank</string>
+    <string name="accounts_field_bic">BIC (optional)</string>
+    <string name="accounts_field_bic_hint">8 or 11 characters.</string>
+    <string name="accounts_field_colour">Colour</string>
+    <string name="accounts_logo_browser">To change the logo, edit this institution in the browser.</string>
+
+    <!-- Account header and menu -->
+    <string name="accounts_import_statement">Import statement</string>
+    <string name="accounts_import_history">Import history</string>
+    <string name="accounts_open_in_browser">Open in browser</string>
+    <string name="accounts_archive">Archive</string>
+    <string name="accounts_unarchive">Unarchive</string>
+    <string name="accounts_copy_iban">Copy IBAN</string>
+    <string name="accounts_iban_copied">IBAN copied</string>
+    <string name="accounts_total_label">Total</string>
+    <string name="accounts_current_balance">Current balance</string>
+    <string name="accounts_cash">Cash</string>
+    <string name="accounts_holdings">Holdings</string>
+    <string name="accounts_portfolios">Portfolios</string>
+    <string name="accounts_estimated">Estimated: no exchange rate for some holdings.</string>
+    <string name="accounts_delete_account">Delete %1$s?</string>
+    <string name="accounts_delete_account_text">All transactions, balance snapshots and portfolios of this account are deleted permanently, including imported ones. This cannot be undone. Archive the account instead to hide it and keep its history.</string>
+    <string name="accounts_delete_account_action">Delete account</string>
+    <string name="accounts_type_to_confirm">Type %1$s to confirm</string>
+
+    <!-- Filling from transfers, needs amount -->
+    <string name="accounts_fill_title">Fill this account from transfers?</string>
+    <plurals name="accounts_fill_text">
+        <item quantity="one">Found %1$d transfer to this account in your other accounts. Fill it in?</item>
+        <item quantity="other">Found %1$d transfers to this account in your other accounts. Fill them in?</item>
+    </plurals>
+    <string name="accounts_fill_action">Fill them in</string>
+    <string name="accounts_filled_title">Filled from transfers</string>
+    <string name="accounts_filled_nothing">Nothing to fill in.</string>
+    <plurals name="accounts_filled_linked">
+        <item quantity="one">%1$d transfer linked</item>
+        <item quantity="other">%1$d transfers linked</item>
+    </plurals>
+    <plurals name="accounts_filled_mirrored">
+        <item quantity="one">%1$d transaction filled in</item>
+        <item quantity="other">%1$d transactions filled in</item>
+    </plurals>
+    <plurals name="accounts_filled_needs_amount">
+        <item quantity="one">%1$d transfer needs an amount</item>
+        <item quantity="other">%1$d transfers need an amount</item>
+    </plurals>
+    <string name="accounts_needs_title">Needs amount</string>
+    <plurals name="accounts_needs_text">
+        <item quantity="one">%1$d transfer in another currency. Enter the amount this account booked and Kept creates the transaction.</item>
+        <item quantity="other">%1$d transfers in another currency. Enter the amount this account booked and Kept creates the transaction.</item>
+    </plurals>
+    <string name="accounts_needs_from">From %1$s on %2$s</string>
+    <string name="accounts_needs_to">To %1$s on %2$s</string>
+    <string name="accounts_needs_paid">Paid</string>
+    <string name="accounts_needs_received">Received</string>
+    <string name="accounts_needs_link_text">This account has a transaction on %1$s that may be the other side. Link it instead of entering an amount.</string>
+    <string name="accounts_needs_link">Link instead</string>
+    <string name="accounts_needs_amount_received">Amount received</string>
+    <string name="accounts_needs_amount_paid">Amount paid</string>
+
+    <!-- Transactions -->
+    <string name="accounts_transactions">Transactions</string>
+    <plurals name="accounts_transactions_count">
+        <item quantity="one">%1$d transaction</item>
+        <item quantity="other">%1$d transactions</item>
+    </plurals>
+    <plurals name="accounts_transactions_match">
+        <item quantity="one">%1$d transaction matches the filters</item>
+        <item quantity="other">%1$d transactions match the filters</item>
+    </plurals>
+    <string name="accounts_search_placeholder">Counterparty, description, note</string>
+    <string name="accounts_filters">Filters</string>
+    <string name="accounts_filter_from">From</string>
+    <string name="accounts_filter_to">To</string>
+    <string name="accounts_filter_min">Min amount</string>
+    <string name="accounts_filter_max">Max amount</string>
+    <string name="accounts_apply">Apply</string>
+    <string name="accounts_clear_filters">Clear filters</string>
+    <string name="accounts_no_match_title">No matching transactions</string>
+    <string name="accounts_no_match_text">Nothing matches these filters. Try a wider range or clear them.</string>
+    <string name="accounts_no_transactions_title">No transactions yet</string>
+    <string name="accounts_no_transactions_text">Import a statement, or add a transaction by hand.</string>
+    <string name="accounts_no_description">No description</string>
+    <string name="accounts_has_note">Has a note</string>
+    <string name="accounts_source_manual">manual</string>
+    <string name="accounts_source_imported">imported</string>
+    <string name="accounts_source_mirrored">mirrored</string>
+    <string name="accounts_transfer_to">To %1$s</string>
+    <string name="accounts_transfer_from">From %1$s</string>
+    <string name="accounts_needs_amount_pill">needs amount</string>
+    <string name="accounts_no_counterpart">no bank counterpart</string>
+    <string name="accounts_previous">Previous</string>
+    <string name="accounts_next">Next</string>
+    <string name="accounts_range">%1$d–%2$d of %3$d</string>
+    <string name="accounts_page_of">Page %1$d of %2$d</string>
+    <string name="accounts_add_transaction">Add transaction</string>
+    <string name="accounts_edit_transaction">Edit transaction</string>
+    <string name="accounts_booking_date">Booking date</string>
+    <string name="accounts_value_date_optional">Value date (optional)</string>
+    <string name="accounts_direction_out">Out</string>
+    <string name="accounts_direction_in">In</string>
+    <string name="accounts_amount">Amount</string>
+    <string name="accounts_counterparty_optional">Counterparty (optional)</string>
+    <string name="accounts_counterparty_iban_optional">Counterparty IBAN (optional)</string>
+    <string name="accounts_description_optional">Description (optional)</string>
+    <string name="accounts_reference_optional">Reference (optional)</string>
+    <string name="accounts_note_optional">Note (optional)</string>
+
+    <!-- Transaction detail -->
+    <string name="accounts_transaction">Transaction</string>
+    <string name="accounts_reversal">reversal</string>
+    <string name="accounts_value_date">Value date</string>
+    <string name="accounts_counterparty">Counterparty</string>
+    <string name="accounts_description">Description</string>
+    <string name="accounts_reference">Reference</string>
+    <string name="accounts_original_amount">Original amount</string>
+    <string name="accounts_note">Note</string>
+    <string name="accounts_show">Show</string>
+    <string name="accounts_hide">Hide</string>
+    <string name="accounts_mirror_text">Kept created this transaction from a transfer in %1$s. Only the note can be changed. It follows the source and is replaced when you import a statement that contains it.</string>
+    <string name="accounts_no_counterpart_text">An imported statement covers this date, but none of its rows matches this transaction. Check it against your bank.</string>
+    <string name="accounts_imported_text">Imported transactions can only have their note changed. Delete the import to remove them.</string>
+    <string name="accounts_edit_note">Edit note</string>
+    <string name="accounts_category">Category</string>
+    <string name="accounts_category_search">Search categories</string>
+    <string name="accounts_uncategorised">Uncategorised</string>
+    <string name="accounts_tax_year">Tax payment for year</string>
+    <string name="accounts_tax_year_hint">Counts this transaction as paid to the tax office. Leave empty if it is not a tax payment.</string>
+    <string name="accounts_deduction_year">Deduct in year</string>
+    <string name="accounts_deduction_year_hint">Counts this transaction in the tax deductions of that year instead of its booking year. Leave empty to use the booking year.</string>
+    <string name="accounts_year_placeholder">2025</string>
+    <string name="accounts_open_tax">Open tax %1$d</string>
+    <string name="accounts_delete_transaction">Delete transaction</string>
+    <string name="accounts_remove_mirror">Remove mirror</string>
+    <string name="accounts_delete_transaction_title">Delete this transaction?</string>
+    <string name="accounts_delete_transaction_text">This manual transaction will be removed and the balance recalculated.</string>
+    <string name="accounts_remove_mirror_title">Remove this mirror?</string>
+    <string name="accounts_remove_mirror_text">Kept stops mirroring this transfer and removes the transaction, so the balance is recalculated. It is not created again.</string>
+
+    <!-- Transfer of a transaction -->
+    <string name="accounts_transfer">Transfer</string>
+    <string name="accounts_transfer_needs_amount_text">The other account is in another currency. Enter the amount it booked in the needs amount list on that account.</string>
+    <string name="accounts_transfer_mirrored_here">Kept created this transaction from the transfer on that account.</string>
+    <string name="accounts_transfer_mirrored_there">Kept created the other side on that account.</string>
+    <string name="accounts_transfer_manual">Linked by hand. It does not count as income or expense.</string>
+    <string name="accounts_transfer_paired">Matched with a transaction on that account. It does not count as income or expense.</string>
+    <string name="accounts_unlink_transfer">Unlink transfer</string>
+    <string name="accounts_unlink_title">Unlink this transfer?</string>
+    <string name="accounts_unlink_text">The two transactions count as income or expense again until you link them.</string>
+    <string name="accounts_mirror_no_source">This mirrored transaction has no source any more.</string>
+    <string name="accounts_transfer_none">Not linked. If this is a payment between two of your accounts, link it to the other side so it does not count as income or expense.</string>
+    <string name="accounts_link_transfer">Link as transfer…</string>
+    <string name="accounts_pick_other_side">Pick the other side</string>
+    <string name="accounts_looking_for_matches">Looking for matches…</string>
+    <string name="accounts_no_candidates">No transaction in your other accounts is within ten days with the opposite sign and is not already linked.</string>
+    <string name="accounts_same_day">same day</string>
+    <plurals name="accounts_days_apart">
+        <item quantity="one">%1$d day apart</item>
+        <item quantity="other">%1$d days apart</item>
+    </plurals>
+    <string name="accounts_same_amount">same amount</string>
+
+    <!-- Balance snapshots -->
+    <string name="accounts_snapshots">Balance snapshots</string>
+    <string name="accounts_snapshots_text">Use balance snapshots for accounts you don\'t import, e.g. pension accounts.</string>
+    <string name="accounts_snapshots_holdings">Snapshots record the cash balance of this account. The value of your holdings is added on top, so leave it out.</string>
+    <string name="accounts_snapshots_portfolios">Once portfolio values exist, this account is worth its portfolios alone, so balance snapshots do not affect its value. Snapshots still shape the history before the first portfolio value.</string>
+    <string name="accounts_snapshots_empty_title">No balance snapshots</string>
+    <string name="accounts_snapshots_empty_text">Record the balance on a given day to track this account over time.</string>
+    <string name="accounts_add_snapshot">Add snapshot</string>
+    <string name="accounts_snapshot_text">The balance at the end of the chosen day.</string>
+    <string name="accounts_snapshot_amount_hint">Use a minus sign for a negative balance.</string>
+    <string name="accounts_date">Date</string>
+    <string name="accounts_balance">Balance</string>
+    <string name="accounts_delete_snapshot">Delete snapshot from %1$s</string>
+    <string name="accounts_delete_snapshot_title">Delete this snapshot?</string>
+    <string name="accounts_delete_snapshot_text">The balance recorded on %1$s will be removed. Your transactions are not affected.</string>
+
+    <!-- Holdings and trades -->
+    <string name="accounts_holdings_text">What you hold, valued at the latest price. The account total is the cash balance plus these holdings.</string>
+    <string name="accounts_holdings_snapshot_warning">Balance snapshots now count as the cash balance only. A snapshot that recorded the total value, holdings included, counts them twice: remove it or replace it with the cash balance.</string>
+    <string name="accounts_positions">Positions</string>
+    <string name="accounts_trades">Trades</string>
+    <string name="accounts_add_trade">Add trade</string>
+    <string name="accounts_edit_trade">Edit trade</string>
+    <string name="accounts_delete_trade">Delete trade</string>
+    <string name="accounts_no_holdings_title">No holdings</string>
+    <string name="accounts_no_holdings_text">Record your buys and sells to see what this account holds and what it is worth.</string>
+    <string name="accounts_no_trades_title">No trades</string>
+    <string name="accounts_no_trades_text">Trades do not create cash transactions. Your imported statements already contain the cash side.</string>
+    <string name="accounts_estimated_pill">estimated</string>
+    <string name="accounts_position_line">%1$s × %2$s %3$s</string>
+    <string name="accounts_position_price">%1$s · %2$s</string>
+    <string name="accounts_price_manual">manual</string>
+    <string name="accounts_price_fetched">fetched</string>
+    <string name="accounts_price_last_trade">last trade</string>
+    <string name="accounts_cost">Cost</string>
+    <string name="accounts_fees_incl">incl. fees</string>
+    <string name="accounts_split_ratio">split %1$s</string>
+    <string name="accounts_side_buy">Buy</string>
+    <string name="accounts_side_sell">Sell</string>
+    <string name="accounts_side_split">Split</string>
+    <string name="accounts_side">Side</string>
+    <string name="accounts_security">Security</string>
+    <string name="accounts_security_hint">Need another security? Create it under Investments.</string>
+    <string name="accounts_add_security">Add a security</string>
+    <string name="accounts_no_securities">Add the security you traded first, under Investments.</string>
+    <string name="accounts_trade_text">A trade changes the holdings, not the cash. Kept does not create a cash transaction for it: import your statements or add the cash movement by hand.</string>
+    <string name="accounts_trade_split_text">A split changes the number of shares you hold, not what you paid. The cost basis stays the same and the cost per share is divided.</string>
+    <string name="accounts_split_new">New shares</string>
+    <string name="accounts_split_old">Old shares</string>
+    <string name="accounts_split_hint">Whole numbers: 2 : 1 for a 2-for-1 split, 1 : 3 for a 1-for-3 reverse split. Applies from this date.</string>
+    <string name="accounts_quantity">Quantity</string>
+    <string name="accounts_quantity_hint">Units, up to 8 decimals.</string>
+    <string name="accounts_price_per_unit">Price per unit (%1$s)</string>
+    <string name="accounts_price_hint">In the security\'s currency.</string>
+    <string name="accounts_fees_optional">Fees (optional)</string>
+    <string name="accounts_trade_amount_hint">Cash paid or received including fees. Filled in from quantity, price and fees until you change it.</string>
+    <string name="accounts_trade_amount_hint_fx">Cash paid or received including fees, in your account\'s currency, as on your statement.</string>
+    <string name="accounts_delete_trade_title">Delete this trade?</string>
+    <string name="accounts_delete_trade_text">The trade of %1$s on %2$s will be removed and the holdings recalculated. Your transactions are not affected.</string>
+
+    <!-- Pillar 3a portfolios -->
+    <string name="accounts_portfolios_text">Each portfolio is valued by hand from your provider\'s statement. Their values are added to the cash balance of this account.</string>
+    <string name="accounts_update_values">Update values</string>
+    <string name="accounts_add_portfolio">Add portfolio</string>
+    <string name="accounts_edit_portfolio">Edit portfolio</string>
+    <string name="accounts_no_portfolios_title">No portfolios</string>
+    <string name="accounts_no_portfolios_text">Add each portfolio of this contract with its payment reference, then record its value from time to time.</string>
+    <string name="accounts_closed">Closed</string>
+    <string name="accounts_closed_on">Closed %1$s</string>
+    <string name="accounts_portfolio_number">No. %1$s</string>
+    <string name="accounts_as_of">as of %1$s</string>
+    <string name="accounts_no_value_yet">No value yet</string>
+    <string name="accounts_copy_reference">Copy reference of %1$s</string>
+    <string name="accounts_reference_copied">Reference copied</string>
+    <string name="accounts_portfolio_actions">Actions for %1$s</string>
+    <string name="accounts_value_history">Value history</string>
+    <string name="accounts_value_history_text">Value history, newest first.</string>
+    <string name="accounts_no_values">No values entered yet.</string>
+    <string name="accounts_delete_value">Delete value from %1$s</string>
+    <string name="accounts_delete_value_title">Delete this value?</string>
+    <string name="accounts_delete_value_text">The value recorded on %1$s will be removed.</string>
+    <string name="accounts_reopen">Reopen</string>
+    <string name="accounts_close">Close</string>
+    <string name="accounts_deposit_details">Deposit details</string>
+    <string name="accounts_deposit_details_text">Use these to pay into a portfolio: the IBAN, plus the portfolio\'s own reference above.</string>
+    <string name="accounts_qr_iban">QR-IBAN</string>
+    <string name="accounts_iban_hidden">Hidden by your IBAN display setting</string>
+    <string name="accounts_portfolio_text">Each portfolio is its own pension relationship with its own payment reference.</string>
+    <string name="accounts_portfolio_name_placeholder">Portfolio 1</string>
+    <string name="accounts_portfolio_strategy">Strategy (optional)</string>
+    <string name="accounts_portfolio_number_optional">Number (optional)</string>
+    <string name="accounts_portfolio_number_hint">The provider\'s portfolio or relationship number.</string>
+    <string name="accounts_portfolio_reference">Payment reference (optional)</string>
+    <string name="accounts_portfolio_reference_qr">Payment reference (QR reference)</string>
+    <string name="accounts_portfolio_reference_hint">Payments carrying this reference are detected as contributions. Spaces are fine.</string>
+    <string name="accounts_portfolio_reference_placeholder">27 digits or RF…</string>
+    <string name="accounts_portfolio_reference_qr_placeholder">27 digits</string>
+    <string name="accounts_portfolio_opened">Opened on (optional)</string>
+    <string name="accounts_portfolio_sort">Sort order (optional)</string>
+    <string name="accounts_portfolio_sort_hint">Lower numbers come first.</string>
+    <string name="accounts_values_text">Enter the current value of your portfolios as shown by your provider. Leave a portfolio blank to skip it.</string>
+    <string name="accounts_save_values">Save values</string>
+    <string name="accounts_close_portfolio">Close %1$s</string>
+    <string name="accounts_close_portfolio_action">Close portfolio</string>
+    <string name="accounts_close_portfolio_text">A withdrawal dissolves the whole portfolio. From the closing date on it no longer counts towards your balance. Enter its final value first if you want it kept in the history.</string>
+    <string name="accounts_closed_on_label">Closed on</string>
+    <string name="accounts_close_reason">Reason</string>
+    <string name="accounts_close_age">Retirement (age benefit)</string>
+    <string name="accounts_close_wef">Home ownership (WEF)</string>
+    <string name="accounts_close_self_employment">Start of self-employment</string>
+    <string name="accounts_close_emigration">Emigration</string>
+    <string name="accounts_close_transfer">Transfer to another provider</string>
+    <string name="accounts_close_disability">Full disability</string>
+    <string name="accounts_close_death">Death</string>
+    <string name="accounts_close_other">Other</string>
+    <string name="accounts_delete_portfolio_title">Delete %1$s?</string>
+    <string name="accounts_delete_portfolio_text">This is only possible while the portfolio has no values and no contributions. Close it instead to keep its history.</string>
+
+    <!-- Import history -->
+    <string name="accounts_import_transactions">Import</string>
+    <string name="accounts_imports_empty_title">No imports yet</string>
+    <string name="accounts_imports_empty_text">Statements you import into %1$s are listed here, and you can undo them.</string>
+    <string name="accounts_no_period">No period</string>
+    <string name="accounts_import_counts">New: %1$d · Duplicates: %2$d</string>
+    <string name="accounts_undo">Undo</string>
+    <string name="accounts_undo_title">Undo this import?</string>
+    <plurals name="accounts_undo_text">
+        <item quantity="one">Removes the %1$d transaction this import added. Transactions also contained in later imports are removed too because they were first added by this import.</item>
+        <item quantity="other">Removes the %1$d transactions this import added. Transactions also contained in later imports are removed too because they were first added by this import.</item>
+    </plurals>
+    <string name="accounts_undo_lost">Your edits on these transactions are lost too</string>
+    <string name="accounts_undo_confirm">Undo import</string>
+    <string name="accounts_format_excel">Excel</string>
+    <plurals name="accounts_import_undone">
+        <item quantity="one">Import undone. %1$d transaction removed.</item>
+        <item quantity="other">Import undone. %1$d transactions removed.</item>
+    </plurals>
+    <plurals name="accounts_import_warnings">
+        <item quantity="one">%1$d warning</item>
+        <item quantity="other">%1$d warnings</item>
+    </plurals>
+    <plurals name="accounts_impact_categorized">
+        <item quantity="one">%1$d categorized transaction</item>
+        <item quantity="other">%1$d categorized transactions</item>
+    </plurals>
+    <plurals name="accounts_impact_notes">
+        <item quantity="one">%1$d note</item>
+        <item quantity="other">%1$d notes</item>
+    </plurals>
+    <plurals name="accounts_impact_tax_years">
+        <item quantity="one">%1$d tax year assignment</item>
+        <item quantity="other">%1$d tax year assignments</item>
+    </plurals>
+    <plurals name="accounts_impact_deduction_years">
+        <item quantity="one">%1$d deduction year assignment</item>
+        <item quantity="other">%1$d deduction year assignments</item>
+    </plurals>
+    <plurals name="accounts_impact_bills">
+        <item quantity="one">%1$d transaction matched to bills</item>
+        <item quantity="other">%1$d transactions matched to bills</item>
+    </plurals>
+    <plurals name="accounts_impact_pillar3a">
+        <item quantity="one">%1$d pillar 3a annotation</item>
+        <item quantity="other">%1$d pillar 3a annotations</item>
+    </plurals>
+    <plurals name="accounts_impact_links">
+        <item quantity="one">%1$d transfer link</item>
+        <item quantity="other">%1$d transfer links</item>
+    </plurals>
+    <plurals name="accounts_impact_mirrors">
+        <item quantity="one">%1$d mirrored transfer row</item>
+        <item quantity="other">%1$d mirrored transfer rows</item>
+    </plurals>
+</resources>
