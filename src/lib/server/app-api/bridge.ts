@@ -150,6 +150,22 @@ function respond(body: unknown, status = 200): Response {
 const message = (text: string, status: number) =>
   respond({ message: text }, status);
 
+/**
+ * A page may return a promise as a top-level value (SvelteKit streams those to
+ * the browser); JSON has no later, so the answer waits for them.
+ */
+export async function settled(data: unknown): Promise<unknown> {
+  if (data === null || typeof data !== "object" || Array.isArray(data)) {
+    return data;
+  }
+  const entries = await Promise.all(
+    Object.entries(data).map(
+      async ([key, value]) => [key, await value] as const,
+    ),
+  );
+  return Object.fromEntries(entries);
+}
+
 /** Runs a page's `load` and answers `{ data }`, or `{ redirect }` when the page sends the browser elsewhere. */
 export async function runLoad(
   event: RequestEvent,
@@ -162,7 +178,7 @@ export async function runLoad(
     const data = await mod.load(
       bridgedEvent(event, match, new Request(url), url),
     );
-    return respond({ data: data ?? {} });
+    return respond({ data: await settled(data ?? {}) });
   } catch (err) {
     if (isRedirect(err)) return respond({ redirect: err.location });
     if (isHttpError(err) && err.status < 500) {

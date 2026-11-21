@@ -131,7 +131,10 @@ private struct RemindersSection: View {
         } footer: {
             Text("The app checks your server in the background and notifies you. Nothing is sent to a third party.")
         }
-        .task { denied = preferences.enabled && !(await ReminderScheduler.authorized(request: false)) }
+        .task {
+            let allowed = await ReminderScheduler.authorized(request: false)
+            denied = preferences.enabled && !allowed
+        }
     }
 
     private var enabled: Binding<Bool> {
@@ -142,7 +145,8 @@ private struct RemindersSection: View {
                 save()
                 Task {
                     if on {
-                        denied = !(await ReminderScheduler.authorized(request: true))
+                        let allowed = await ReminderScheduler.authorized(request: true)
+                        denied = !allowed
                     }
                     await ReminderScheduler.sync()
                 }

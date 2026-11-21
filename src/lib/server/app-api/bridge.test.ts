@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { matchRoute, toJson, type Route } from "./bridge";
+import { matchRoute, settled, toJson, type Route } from "./bridge";
 
 const route = (api: string): Route<object> => ({
   api,
@@ -45,5 +45,18 @@ describe("toJson", () => {
         }),
       ),
     ).toEqual({ at: "2026-01-02T03:04:05.000Z", map: { a: 1 }, set: ["x"] });
+  });
+});
+
+describe("settled", () => {
+  it("waits for promises a page returns as top-level values", async () => {
+    expect(
+      await settled({ now: 1, later: Promise.resolve({ tags: ["a"] }) }),
+    ).toEqual({ now: 1, later: { tags: ["a"] } });
+  });
+
+  it("leaves everything else as it is", async () => {
+    expect(await settled([1, 2])).toEqual([1, 2]);
+    expect(await settled(null)).toBeNull();
   });
 });
