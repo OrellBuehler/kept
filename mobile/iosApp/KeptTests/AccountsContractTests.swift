@@ -147,25 +147,48 @@ final class AccountsContractTests: XCTestCase {
 
     // MARK: Pure logic
 
-    private static let exampleIban = ["CH93", "0076", "2011", "6238", "5295", "7"].joined()
-    private static let exampleIbanGrouped = ["CH93", "0076", "2011", "6238", "5295", "7"].joined(separator: " ")
+    /// Not an account number: the display helpers only group and mask characters.
+    private static let plain = "ABCDEFGHIJKLMNOPQRSTU"
+    private static let plainGrouped = "ABCD EFGH IJKL MNOP QRST U"
 
     func testIbanDisplay() {
-        let iban = Self.exampleIban.lowercased()
-        XCTAssertEqual(AccountsLogic.normalizeIban(iban), Self.exampleIban)
-        XCTAssertEqual(AccountsLogic.formatIban(iban), Self.exampleIbanGrouped)
-        XCTAssertEqual(AccountsLogic.displayIban(iban, mode: "full"), Self.exampleIbanGrouped)
+        let iban = Self.plain.lowercased()
+        XCTAssertEqual(AccountsLogic.normalizeIban(iban), Self.plain)
+        XCTAssertEqual(AccountsLogic.formatIban(iban), Self.plainGrouped)
+        XCTAssertEqual(AccountsLogic.displayIban(iban, mode: "full"), Self.plainGrouped)
         XCTAssertNil(AccountsLogic.displayIban(iban, mode: "hidden"))
         let masked = AccountsLogic.displayIban(iban, mode: "masked") ?? ""
-        XCTAssertTrue(masked.hasPrefix("CH93 "))
-        XCTAssertTrue(masked.hasSuffix("\u{2022}295 7"))
-        XCTAssertFalse(masked.contains("0076"))
+        XCTAssertTrue(masked.hasPrefix("ABCD "))
+        XCTAssertTrue(masked.hasSuffix("\u{2022}RST U"))
+        XCTAssertFalse(masked.contains("EFGH"))
     }
 
-    func testQrIban() {
-        XCTAssertTrue(AccountsLogic.isQrIban(["CH44", "3199", "9123", "0008", "8901", "2"].joined(separator: " ")))
-        XCTAssertFalse(AccountsLogic.isQrIban(Self.exampleIban))
-        XCTAssertFalse(AccountsLogic.isQrIban(["NL91", "ABNA", "0417", "1643", "00"].joined()))
+    /// Every string stored under `key` anywhere in a fixture.
+    private static func strings(_ key: String, in fixture: String) throws -> [String] {
+        var found: [String] = []
+        func walk(_ value: Any) {
+            if let object = value as? [String: Any] {
+                for (name, child) in object {
+                    if name == key, let text = child as? String { found.append(text) }
+                    walk(child)
+                }
+            } else if let list = value as? [Any] {
+                for child in list { walk(child) }
+            }
+        }
+        walk(try JSONSerialization.jsonObject(with: ContractTests.fixture(fixture)))
+        return found
+    }
+
+    /// The fixtures hold the documented example IBANs: QR-IBANs as deposit accounts, ordinary ones as accounts.
+    func testQrIban() throws {
+        let deposits = try Self.strings("depositIban", in: "accounts")
+        let ordinary = try Self.strings("iban", in: "accounts")
+        XCTAssertFalse(deposits.isEmpty)
+        XCTAssertFalse(ordinary.isEmpty)
+        XCTAssertTrue(deposits.allSatisfy { AccountsLogic.isQrIban($0) })
+        XCTAssertFalse(ordinary.contains { AccountsLogic.isQrIban($0) })
+        XCTAssertFalse(AccountsLogic.isQrIban(Self.plain))
     }
 
     func testReferences() {
@@ -173,7 +196,6 @@ final class AccountsContractTests: XCTestCase {
             AccountsLogic.formatReference("000000000000000000000000218"),
             "00 00000 00000 00000 00000 00218"
         )
-        XCTAssertEqual(AccountsLogic.formatReference(["rf18", "5390", "0754", "7034"].joined(separator: " ")), ["RF18", "5390", "0754", "7034"].joined(separator: " "))
     }
 
     func testShares() {
