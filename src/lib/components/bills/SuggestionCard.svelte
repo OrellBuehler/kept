@@ -24,6 +24,8 @@
     dismissAction,
     showBill = true,
     includeBillId = true,
+    focused = false,
+    onfocusmatches,
   }: {
     suggestion: SuggestionView;
     confirmAction: string;
@@ -32,6 +34,10 @@
     showBill?: boolean;
     /** The overview actions need the bill id; the bill page actions do not. */
     includeBillId?: boolean;
+    /** The list is narrowed to the matches that compete with this one. */
+    focused?: boolean;
+    /** Given where the competing matches are in the same list: narrows the list to them, or back. */
+    onfocusmatches?: () => void;
   } = $props();
 
   let confirming = $state(false);
@@ -42,6 +48,42 @@
   const refund = $derived(suggestion.amount < 0);
   const tx = $derived(suggestion.transaction);
   const bill = $derived(suggestion.bill);
+  const competing = $derived(suggestion.otherBills + suggestion.otherPayments);
+  const plural = (n: number, one: string, many: string) =>
+    n === 1 ? one : `${n} ${many}`;
+  const reasons = $derived.by(() => {
+    const out: string[] = [];
+    if (suggestion.ibanMismatch) {
+      out.push(
+        "The reference matches, but the payment went to a different account than the bill names.",
+      );
+    }
+    if (suggestion.otherBills > 0) {
+      out.push(
+        `This payment also fits ${plural(suggestion.otherBills, "another bill", "other bills")}. Confirm it for the one it paid.`,
+      );
+    }
+    if (suggestion.otherPayments > 0) {
+      out.push(
+        `${plural(suggestion.otherPayments, "Another payment", "other payments")} also ${suggestion.otherPayments === 1 ? "fits" : "fit"} this bill. Confirm each one that paid it, such as instalments.`,
+      );
+    }
+    if (out.length === 0) {
+      out.push(
+        "You dismissed a competing match, so this one needs your confirmation.",
+      );
+    }
+    return out;
+  });
+  const ambiguousLabel = $derived(
+    competing > 0
+      ? "Several matches"
+      : suggestion.ibanMismatch
+        ? "Different account"
+        : "Check before confirming",
+  );
+  const ambiguousClass =
+    "border-transparent bg-amber-100 text-amber-900 dark:bg-amber-400/15 dark:text-amber-300";
   const known = ["amount", "billId", "transactionId"];
   const messages = $derived(Object.values(errors).flat());
 </script>
@@ -52,12 +94,30 @@
       {suggestion.rule === "reference" ? "Reference" : "IBAN + amount"}
     </Badge>
     {#if suggestion.ambiguous}
-      <Badge
-        variant="outline"
-        class="border-transparent bg-amber-100 text-amber-900 dark:bg-amber-400/15 dark:text-amber-300"
-      >
-        <TriangleAlertIcon /> Several matches
-      </Badge>
+      {#if onfocusmatches && competing > 0}
+        <button
+          type="button"
+          class="focus-visible:ring-ring/50 rounded-full outline-none focus-visible:ring-[3px]"
+          aria-pressed={focused}
+          onclick={onfocusmatches}
+        >
+          <Badge
+            variant="outline"
+            class={cn(ambiguousClass, "cursor-pointer underline-offset-2")}
+          >
+            <TriangleAlertIcon />
+            {ambiguousLabel}
+            <span class="font-normal underline">
+              {focused ? "show all" : "show them"}
+            </span>
+          </Badge>
+        </button>
+      {:else}
+        <Badge variant="outline" class={ambiguousClass}>
+          <TriangleAlertIcon />
+          {ambiguousLabel}
+        </Badge>
+      {/if}
     {/if}
     {#if refund}
       <Badge
@@ -68,6 +128,10 @@
       </Badge>
     {/if}
   </div>
+
+  {#if suggestion.ambiguous}
+    <p class="text-muted-foreground text-xs">{reasons.join(" ")}</p>
+  {/if}
 
   <div
     class={cn(

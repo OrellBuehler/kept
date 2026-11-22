@@ -27,6 +27,31 @@
   let matching = $state(false);
   let matchErrors = $state<NonNullable<FormErrors>>({});
 
+  // "Several matches" on a suggestion narrows the list to the ones that compete with it:
+  // the same bill or the same payment. Confirming or dismissing down to one ends it.
+  let focus = $state<{ billId: string; transactionId: string } | null>(null);
+  const competing = $derived(
+    focus === null
+      ? []
+      : data.suggestions.filter(
+          (s) =>
+            s.billId === focus?.billId ||
+            s.transactionId === focus?.transactionId,
+        ),
+  );
+  const narrowed = $derived(competing.length > 1);
+  const shownSuggestions = $derived(narrowed ? competing : data.suggestions);
+  function focusOn(s: { billId: string; transactionId: string }) {
+    focus = { billId: s.billId, transactionId: s.transactionId };
+  }
+  function showAll() {
+    focus = null;
+  }
+  // Nothing left to compare: forget the group, so it cannot narrow the list again by itself.
+  $effect(() => {
+    if (focus !== null && !narrowed) focus = null;
+  });
+
   const statusOptions = [
     { value: "all", label: "All" },
     { value: "open", label: "Open" },
@@ -148,12 +173,30 @@
           ({data.suggestions.length})
         </span>
       </h2>
+      {#if narrowed}
+        <p
+          class="text-muted-foreground flex flex-wrap items-center gap-2 text-sm"
+        >
+          Showing the {shownSuggestions.length} matches that compete for the same
+          bill or payment.
+          <Button
+            variant="link"
+            size="sm"
+            class="h-auto p-0 underline"
+            onclick={showAll}
+          >
+            Show all {data.suggestions.length}
+          </Button>
+        </p>
+      {/if}
       <ul class="divide-y rounded-lg border">
-        {#each data.suggestions as suggestion (suggestion.billId + suggestion.transactionId)}
+        {#each shownSuggestions as suggestion (suggestion.billId + suggestion.transactionId)}
           <SuggestionCard
             {suggestion}
             confirmAction="?/confirmSuggestion"
             dismissAction="?/dismissSuggestion"
+            focused={narrowed}
+            onfocusmatches={() => (narrowed ? showAll() : focusOn(suggestion))}
           />
         {/each}
       </ul>

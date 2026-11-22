@@ -65,6 +65,17 @@ export interface SuggestionView {
   /** Signed in the bill's direction (negative for refunds of an overpayment). */
   amount: Minor;
   ambiguous: boolean;
+  /**
+   * Why it is ambiguous, for the user to judge: how many other bills this
+   * payment is suggested for, how many other payments are suggested for this
+   * bill (dismissed pairs are not counted, pairs a restricted credential
+   * cannot see are), and whether the reference matches but the payment went to
+   * another account than the bill names. All empty on an ambiguous suggestion
+   * means the pair it competed with was dismissed.
+   */
+  otherBills: number;
+  otherPayments: number;
+  ibanMismatch: boolean;
   /** True when it may be confirmed without asking (exact reference, unambiguous). */
   auto: boolean;
   bill: {
@@ -186,14 +197,19 @@ async function compute(userId: string, onlyBillId?: string): Promise<Computed> {
     ).map((d) => pairKey(d.billId, d.transactionId)),
   );
 
-  const found = suggestMatches(
+  const shown = suggestMatches(
     matchBills,
     txRows.map(toMatchTransaction),
     allocations,
-  ).filter(
-    (s) =>
-      (onlyBillId === undefined || s.billId === onlyBillId) &&
-      !dismissed.has(pairKey(s.billId, s.transactionId)),
+  ).filter((s) => !dismissed.has(pairKey(s.billId, s.transactionId)));
+  const perBill = new Map<string, number>();
+  const perPayment = new Map<string, number>();
+  for (const s of shown) {
+    perBill.set(s.billId, (perBill.get(s.billId) ?? 0) + 1);
+    perPayment.set(s.transactionId, (perPayment.get(s.transactionId) ?? 0) + 1);
+  }
+  const found = shown.filter(
+    (s) => onlyBillId === undefined || s.billId === onlyBillId,
   );
   if (found.length === 0) return { suggestions: [], truncated };
 
@@ -227,6 +243,10 @@ async function compute(userId: string, onlyBillId?: string): Promise<Computed> {
         confidence: s.confidence,
         amount: s.amount,
         ambiguous: s.ambiguous,
+        otherBills: (perPayment.get(s.transactionId) ?? 1) - 1,
+        otherPayments: (perBill.get(s.billId) ?? 1) - 1,
+        // The engine demotes a reference match to "high" for exactly this reason.
+        ibanMismatch: s.rule === "reference" && s.confidence === "high",
         auto: isAuto(s, remainingByBill.get(s.billId) ?? null),
         bill: {
           id: bill.id,
