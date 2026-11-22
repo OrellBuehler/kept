@@ -70,7 +70,7 @@
     }
     if (out.length === 0) {
       out.push(
-        "A competing match was dismissed earlier, so Kept leaves this one to you.",
+        "You dismissed a competing match, so this one needs your confirmation.",
       );
     }
     return out;

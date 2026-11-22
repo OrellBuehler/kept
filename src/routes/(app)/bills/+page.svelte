@@ -47,6 +47,10 @@
   function showAll() {
     focus = null;
   }
+  // Nothing left to compare: forget the group, so it cannot narrow the list again by itself.
+  $effect(() => {
+    if (focus !== null && !narrowed) focus = null;
+  });
 
   const statusOptions = [
     { value: "all", label: "All" },
@@ -175,7 +179,12 @@
         >
           Showing the {shownSuggestions.length} matches that compete for the same
           bill or payment.
-          <Button variant="link" size="sm" class="h-auto p-0" onclick={showAll}>
+          <Button
+            variant="link"
+            size="sm"
+            class="h-auto p-0 underline"
+            onclick={showAll}
+          >
             Show all {data.suggestions.length}
           </Button>
         </p>

@@ -34,9 +34,9 @@
     })),
   );
 
-  // The axis follows the values, not zero. AreaChart's default baseline of 0 would then lie
-  // far below the plot and the fill would run down over whatever follows the chart, so the
-  // chart gets no baseline (`yBaseline={null}`) and the area ends at the bottom of the axis.
+  // The axis follows the values and often does not include zero. AreaChart's default baseline
+  // of 0 would then lie far outside the plot and the fill would run over whatever follows the
+  // chart, so the area only goes to zero when zero is on the axis, and to its bottom otherwise.
   const domain = $derived.by((): [number, number] => {
     const values = rows.map((r) => r.value);
     const min = Math.min(...values);
@@ -44,6 +44,8 @@
     const pad = (max - min || Math.abs(max) || 1) * 0.15;
     return [min - pad, max + pad];
   });
+
+  const baseline = $derived(domain[0] <= 0 && domain[1] >= 0 ? 0 : null);
 
   const compact = $derived(
     new Intl.NumberFormat(prefs.locale, {
@@ -95,7 +97,7 @@
     x="date"
     y="value"
     yDomain={domain}
-    yBaseline={null}
+    yBaseline={baseline}
     series={[{ key: "value", label: config.value.label, color }]}
     padding={{ left: 64, bottom: 24, top: 8, right: 8 }}
     props={{
