@@ -1,4 +1,5 @@
 import { json, type RequestEvent } from "@sveltejs/kit";
+import { runAsActor } from "$lib/server/audit/context";
 import { verifyApiToken } from "$lib/server/auth/api-tokens";
 import { clientKey } from "$lib/server/auth/login";
 import { LoginRateLimiter, WINDOW_MS } from "$lib/server/auth/rate-limit";
@@ -151,5 +152,9 @@ export async function handleExternalApi(
   }
 
   event.locals.apiToken = verified.token;
-  return noStore(await asJsonError(await resolve(event)));
+  const { id: tokenId, userId, name: label } = verified.token;
+  const actor = { kind: "api", userId, tokenId, label } as const;
+  return noStore(
+    await runAsActor(actor, async () => asJsonError(await resolve(event))),
+  );
 }

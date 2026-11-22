@@ -72,6 +72,8 @@ export interface ApiTokenInfo {
 export interface ApiTokenAuth {
   id: string;
   userId: string;
+  /** The token's name when it was verified: a display snapshot for the change log. */
+  name: string;
   scopes: ApiScope[];
   categoryIds: string[] | null;
 }
@@ -267,6 +269,7 @@ export async function verifyApiToken(
     token: {
       id: row.id,
       userId: row.userId,
+      name: row.name,
       scopes: row.scopes,
       categoryIds: row.categoryIds,
     },

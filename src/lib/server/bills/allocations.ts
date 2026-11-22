@@ -12,6 +12,8 @@ import {
   first,
   transaction,
 } from "$lib/server/db";
+import { recordChange } from "$lib/server/audit/record";
+import { allocationSnapshot } from "$lib/server/audit/snapshots";
 import { emitBillChanged } from "$lib/server/events";
 import { LedgerError } from "$lib/server/ledger/errors";
 import { parseMoneyInput } from "$lib/server/ledger/schemas";
@@ -20,6 +22,7 @@ import {
   lockTransactionRowInTx,
 } from "$lib/server/ledger/transactions";
 import {
+  billSummary,
   billsLock,
   getBill,
   getBillInTx,
@@ -82,7 +85,7 @@ export type AllocationTx = Pick<DB, "select" | "insert" | "delete" | "update">;
  * manual payment's edit (under the ledger lock) checks the allocations after
  * taking the same lock, so the two cannot both pass on stale reads.
  */
-async function lockedTransactionRowInTx(
+export async function lockedTransactionRowInTx(
   tx: AllocationTx,
   userId: string,
   transactionId: string,
@@ -109,6 +112,7 @@ async function allocateAtomically(
     const amount = amountFor(bill);
     const row = await lockedTransactionRowInTx(tx, userId, transactionId);
     const allocated = await allocateRow(tx, userId, bill, row, amount, origin);
+    await recordAllocation(userId, bill, allocated.id, row.id, amount, origin);
     afterCommit(() => emitBillChanged(userId, billId));
     return allocated;
     // The checks read every other allocation; under PostgreSQL two concurrent
@@ -153,16 +157,42 @@ export async function allocateInTx(
 ): Promise<{ id: string }> {
   const bill = await getBillInTx(tx, userId, billId);
   const row = await lockedTransactionRowInTx(tx, userId, transactionId);
-  return await allocateRow(tx, userId, bill, row, amount, origin);
+  const allocated = await allocateRow(tx, userId, bill, row, amount, origin);
+  await recordAllocation(userId, bill, allocated.id, row.id, amount, origin);
+  return allocated;
 }
 
-async function allocateRow(
+/** The change log entry of a new allocation; an automatic match is told apart from a manual one. */
+async function recordAllocation(
+  userId: string,
+  bill: BillView,
+  id: string,
+  transactionId: string,
+  amount: Minor,
+  origin: AllocationOrigin,
+): Promise<void> {
+  await recordChange({
+    userId,
+    action: origin === "auto" ? "allocation.auto_match" : "allocation.create",
+    entityId: id,
+    summary: billSummary(bill),
+    after: allocationSnapshot({
+      billId: bill.id,
+      transactionId,
+      amount,
+      origin,
+    }),
+  });
+}
+
+export async function allocateRow(
   tx: AllocationTx,
   userId: string,
   bill: BillView,
   row: AllocationTransaction,
   amount: Minor,
   origin: AllocationOrigin,
+  restore?: { id: string },
 ): Promise<{ id: string }> {
   const billId = bill.id;
   const transactionId = row.id;
@@ -212,7 +242,7 @@ async function allocateRow(
     eq(matchDismissals.billId, billId),
     eq(matchDismissals.transactionId, transactionId),
   );
-  if (origin === "auto") {
+  if (origin === "auto" && !restore) {
     // A dismissal may have landed after the plan was computed; it wins.
     const dismissed = await first(
       tx
@@ -229,13 +259,21 @@ async function allocateRow(
       );
     }
   } else {
-    // Allocating a pair that was dismissed means the user changed their mind.
+    // Allocating a pair that was dismissed means the user changed their mind;
+    // so does putting back an allocation whose removal dismissed the pair.
     await tx.delete(matchDismissals).where(dismissal);
   }
   return (await first(
     tx
       .insert(billAllocations)
-      .values({ userId, billId, transactionId, amount, origin })
+      .values({
+        ...(restore ? { id: restore.id } : {}),
+        userId,
+        billId,
+        transactionId,
+        amount,
+        origin,
+      })
       .returning({ id: billAllocations.id }),
   ))!;
 }

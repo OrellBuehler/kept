@@ -1,7 +1,16 @@
 import { and, asc, count, eq, ne } from "drizzle-orm";
 import type { CategoryKind } from "$lib/category-types";
+import { recordChange, recordUpdate } from "$lib/server/audit/record";
 import {
+  categoryFields,
+  ruleFields,
+  transactionSummary,
+} from "$lib/server/audit/snapshots";
+import {
+  budgets,
   categories,
+  categoryRules,
+  deductionMappings,
   first,
   getDB,
   isUniqueViolation,
@@ -104,7 +113,7 @@ const nameTaken = () =>
  * categories, so two concurrent changes could each pass them and together break
  * them: A under B while B goes under C. The lock makes them take turns.
  */
-const categoryTreeLock = (userId: string) => `categories:${userId}`;
+export const categoryTreeLock = (userId: string) => `categories:${userId}`;
 
 /** Runs inside the transaction of createCategory / updateCategory. */
 async function assertNameFree(
@@ -133,7 +142,7 @@ async function assertNameFree(
  * The in-transaction name check is the friendly path; the unique index on
  * (user, name) is the backstop when two writes race, and maps to the same error.
  */
-function mapNameViolation(err: unknown): never {
+export function mapNameViolation(err: unknown): never {
   if (isUniqueViolation(err)) throw nameTaken();
   throw err;
 }
@@ -237,18 +246,55 @@ export async function createCategory(
       async (tx) => {
         await assertNameFree(tx, userId, input.name);
         await assertParent(tx, userId, input);
-        return (await first(
+        const created = (await first(
           tx
             .insert(categories)
             .values({ userId, ...input })
             .returning(columns),
         ))!;
+        await recordChange({
+          userId,
+          action: "category.create",
+          entityId: created.id,
+          summary: created.name,
+          after: categoryFields(created),
+        });
+        return created;
       },
       { lock: categoryTreeLock(userId) },
     );
   } catch (err) {
     mapNameViolation(err);
   }
+}
+
+/**
+ * Validates and applies an update inside a transaction that holds
+ * `categoryTreeLock(userId)`. Does not write the change log: the callers
+ * (an edit, and the revert of one) each write their own entry.
+ */
+export async function updateCategoryInTx(
+  tx: Pick<DB, "select" | "update">,
+  userId: string,
+  id: string,
+  input: CategoryInput,
+): Promise<{ before: CategoryView; after: CategoryView }> {
+  const before = await first(
+    tx
+      .select(columns)
+      .from(categories)
+      .where(and(eq(categories.userId, userId), eq(categories.id, id)))
+      .limit(1),
+  );
+  if (!before) throw notFound("Category");
+  await assertNameFree(tx, userId, input.name, id);
+  await assertParent(tx, userId, input, id);
+  await assertKindMatchesChildren(tx, userId, id, input.kind);
+  await tx
+    .update(categories)
+    .set(input)
+    .where(and(eq(categories.userId, userId), eq(categories.id, id)));
+  return { before, after: { id, ...input } };
 }
 
 export async function updateCategory(
@@ -259,21 +305,22 @@ export async function updateCategory(
   try {
     await transaction(
       async (tx) => {
-        const found = await first(
-          tx
-            .select({ id: categories.id })
-            .from(categories)
-            .where(and(eq(categories.userId, userId), eq(categories.id, id)))
-            .limit(1),
+        const { before, after } = await updateCategoryInTx(
+          tx,
+          userId,
+          id,
+          input,
         );
-        if (!found) throw notFound("Category");
-        await assertNameFree(tx, userId, input.name, id);
-        await assertParent(tx, userId, input, id);
-        await assertKindMatchesChildren(tx, userId, id, input.kind);
-        await tx
-          .update(categories)
-          .set(input)
-          .where(and(eq(categories.userId, userId), eq(categories.id, id)));
+        await recordUpdate(
+          {
+            userId,
+            action: "category.update",
+            entityId: id,
+            summary: after.name,
+          },
+          categoryFields(before),
+          categoryFields(after),
+        );
       },
       { lock: categoryTreeLock(userId) },
     );
@@ -291,13 +338,87 @@ export async function deleteCategory(
   userId: string,
   id: string,
 ): Promise<void> {
-  await getCategory(userId, id);
   // Under the tree lock: a category being moved under this one must not race the delete.
   await transaction(
     async (tx) => {
+      const row = await first(
+        tx
+          .select()
+          .from(categories)
+          .where(and(eq(categories.userId, userId), eq(categories.id, id)))
+          .limit(1),
+      );
+      if (!row) throw notFound("Category");
+      // What the delete takes along or detaches, so the change log can bring it back.
+      const children = await tx
+        .select({ id: categories.id })
+        .from(categories)
+        .where(and(eq(categories.userId, userId), eq(categories.parentId, id)))
+        .orderBy(asc(categories.id));
+      const categorized = await tx
+        .select({ id: transactions.id })
+        .from(transactions)
+        .where(
+          and(eq(transactions.userId, userId), eq(transactions.categoryId, id)),
+        )
+        .orderBy(asc(transactions.id));
+      const rules = await tx
+        .select()
+        .from(categoryRules)
+        .where(
+          and(
+            eq(categoryRules.userId, userId),
+            eq(categoryRules.categoryId, id),
+          ),
+        )
+        .orderBy(asc(categoryRules.seq), asc(categoryRules.id));
+      const budgetRows = await tx
+        .select()
+        .from(budgets)
+        .where(and(eq(budgets.userId, userId), eq(budgets.categoryId, id)))
+        .orderBy(asc(budgets.id));
+      const mappings = await tx
+        .select()
+        .from(deductionMappings)
+        .where(
+          and(
+            eq(deductionMappings.userId, userId),
+            eq(deductionMappings.categoryId, id),
+          ),
+        )
+        .orderBy(asc(deductionMappings.id));
       await tx
         .delete(categories)
         .where(and(eq(categories.userId, userId), eq(categories.id, id)));
+      await recordChange({
+        userId,
+        action: "category.delete",
+        entityId: id,
+        summary: row.name,
+        before: {
+          ...categoryFields(row),
+          createdAt: row.createdAt.getTime(),
+          childIds: children.map((c) => c.id),
+          transactionIds: categorized.map((t) => t.id),
+          rules: rules.map((r) => ({
+            id: r.id,
+            ...ruleFields(r),
+            seq: r.seq,
+            createdAt: r.createdAt.getTime(),
+          })),
+          budgets: budgetRows.map((b) => ({
+            id: b.id,
+            currency: b.currency,
+            amount: b.amount,
+            createdAt: b.createdAt.getTime(),
+          })),
+          deductionMappings: mappings.map((m) => ({
+            id: m.id,
+            deductionType: m.deductionType,
+            createdAt: m.createdAt.getTime(),
+          })),
+        },
+      });
     },
     { lock: categoryTreeLock(userId) },
   );
@@ -312,7 +433,12 @@ export async function assignCategory(
   await transaction(async (tx) => {
     const found = await first(
       tx
-        .select({ id: transactions.id })
+        .select({
+          id: transactions.id,
+          categoryId: transactions.categoryId,
+          counterpartyName: transactions.counterpartyName,
+          description: transactions.description,
+        })
         .from(transactions)
         .where(
           and(
@@ -344,5 +470,15 @@ export async function assignCategory(
           eq(transactions.id, transactionId),
         ),
       );
+    await recordUpdate(
+      {
+        userId,
+        action: "transaction.update",
+        entityId: transactionId,
+        summary: transactionSummary(found),
+      },
+      { categoryId: found.categoryId },
+      { categoryId },
+    );
   });
 }

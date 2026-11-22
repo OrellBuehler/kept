@@ -1508,3 +1508,52 @@ export const externalLinks = table(
     index("external_links_entity_idx").on(t.entityType, t.entityId),
   ],
 );
+
+export const ACTOR_KINDS = ["web", "app", "api", "mcp", "system"] as const;
+export type ActorKind = (typeof ACTOR_KINDS)[number];
+
+/**
+ * Change log: what changed in the user's data, who did it (web session, mobile
+ * app, API token, mcp connection or the system) and enough of the before and
+ * after state to show a diff and to undo it. `userId` owns the data. The actor
+ * token is not a foreign key and `actorLabel` is a display snapshot, so entries
+ * stay readable after the token is deleted. `before` / `after` hold only
+ * values (minor units, `YYYY-MM-DD` strings, epoch milliseconds), never
+ * secrets. An entry is never rewritten except to mark it reverted; a revert
+ * writes an entry of its own with `revertOfEntryId`.
+ */
+export const changeLog = table(
+  "change_log",
+  {
+    id: id(),
+    userId: userId(),
+    /** Insertion order, newest last (see `nextSeq`); the listing key. */
+    seq: seq(),
+    actorKind: text("actor_kind", { enum: ACTOR_KINDS }).notNull(),
+    actorTokenId: text("actor_token_id"),
+    actorLabel: text("actor_label"),
+    /** `<entity>.<verb>`, such as `bill.update`. */
+    action: text("action").notNull(),
+    entityType: text("entity_type").notNull(),
+    entityId: text("entity_id").notNull(),
+    /** A short label of the entity, such as a creditor name. Never an amount. */
+    summary: text("summary"),
+    before: json<unknown>("before"),
+    after: json<unknown>("after"),
+    revertedAt: instant("reverted_at"),
+    revertedByEntryId: text("reverted_by_entry_id"),
+    revertOfEntryId: text("revert_of_entry_id"),
+    ...timestamps(),
+  },
+  (t) => [
+    index("change_log_user_seq_idx").on(t.userId, t.seq),
+    index("change_log_user_actor_idx").on(t.userId, t.actorKind, t.seq),
+    index("change_log_user_token_idx").on(t.userId, t.actorTokenId, t.seq),
+    index("change_log_user_entity_idx").on(
+      t.userId,
+      t.entityType,
+      t.entityId,
+      t.seq,
+    ),
+  ],
+);

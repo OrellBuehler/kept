@@ -33,6 +33,7 @@ import {
   isExternalApiPath,
   isPublicPath,
 } from "$lib/server/auth/routing";
+import { runAsActor } from "$lib/server/audit/context";
 import { handleAppApi } from "$lib/server/app-api/gate";
 import { handleExternalApi } from "$lib/server/external-api/gate";
 import { sweepOrphanedLinks } from "$lib/server/external-api/links";
@@ -130,7 +131,11 @@ async function handleRequest({
   }
 
   const { pathname, search } = event.url;
-  if (event.locals.user || isPublicPath(pathname)) return resolve(event);
+  if (event.locals.user) {
+    const actor = { kind: "web", userId: event.locals.user.id } as const;
+    return runAsActor(actor, () => resolve(event));
+  }
+  if (isPublicPath(pathname)) return resolve(event);
 
   if ((await countUsers()) === 0)
     return redirectResponse("/setup", staleCookie);

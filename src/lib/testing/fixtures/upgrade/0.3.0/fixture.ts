@@ -116,6 +116,7 @@ export const archivedAccounts: Record<string, number> = {
 export const newTables = [
   "admin_audit_log",
   "api_tokens",
+  "change_log",
   "deduction_year_migration",
   "external_links",
   "fx_rates",

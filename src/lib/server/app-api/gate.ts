@@ -1,4 +1,5 @@
 import type { RequestEvent } from "@sveltejs/kit";
+import { runAsActor } from "$lib/server/audit/context";
 import { clientKey } from "$lib/server/auth/login";
 import { LoginRateLimiter, WINDOW_MS } from "$lib/server/auth/rate-limit";
 import { isPublicAppApiPath } from "$lib/server/auth/routing";
@@ -68,5 +69,8 @@ export async function handleAppApi(
 
   event.locals.user = validated.user;
   event.locals.session = validated.session;
-  return noStore(await asJsonError(await resolve(event)));
+  const actor = { kind: "app", userId: validated.user.id } as const;
+  return noStore(
+    await runAsActor(actor, async () => asJsonError(await resolve(event))),
+  );
 }
