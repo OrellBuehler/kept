@@ -1,50 +1,50 @@
 {
   "data": {
     "bill": {
-      "id": "d3a438f1-0b6d-4cf1-963a-7cab2fb9d2f2",
+      "id": "c4d7ba00-cfa6-44b1-b1a9-0cef22f7cd0a",
       "kind": "invoice",
       "creditorName": "Example Dental Clinic",
       "creditorIban": null,
       "amount": 60000,
       "currency": "CHF",
-      "issueDate": "2026-10-28",
-      "dueDate": "2026-11-27",
+      "issueDate": "2026-10-27",
+      "dueDate": "2026-11-26",
       "reference": null,
       "referenceType": null,
       "message": null,
       "invoiceNumber": null,
       "cancelled": false,
       "documentId": null,
-      "expectedAccountId": "2fb59d2c-369e-4a53-81b6-60e4d99e6a25",
+      "expectedAccountId": "fac3616a-1a96-4171-ac3d-50b72d0d3cfb",
       "notes": null,
       "taxYear": null,
       "externalSource": null,
       "externalRef": null,
       "externalUrl": null,
       "extraction": null,
-      "createdAt": 1795354912505,
-      "updatedAt": 1795354912505,
+      "createdAt": 1795292415960,
+      "updatedAt": 1795292415960,
       "status": "partially_paid",
       "settled": 25000,
       "remaining": 35000,
       "overdue": false,
       "dueInDays": 5,
-      "lastPaymentDate": "2026-11-18",
+      "lastPaymentDate": "2026-11-17",
       "allocationCount": 1
     },
     "links": [],
     "allocations": [
       {
-        "id": "b69d0165-8f4b-441f-a005-0394c58ff6f6",
-        "billId": "d3a438f1-0b6d-4cf1-963a-7cab2fb9d2f2",
+        "id": "29c18f77-999a-44b2-bc6a-f3f9ab829292",
+        "billId": "c4d7ba00-cfa6-44b1-b1a9-0cef22f7cd0a",
         "amount": 25000,
         "origin": "user",
-        "createdAt": 1795354912507,
+        "createdAt": 1795292415961,
         "transaction": {
-          "id": "96114b78-39be-4ead-8fc5-fd9e8842ee57",
-          "accountId": "2fb59d2c-369e-4a53-81b6-60e4d99e6a25",
+          "id": "1cc8c99f-4ff4-4e98-8746-7d748b6816a6",
+          "accountId": "fac3616a-1a96-4171-ac3d-50b72d0d3cfb",
           "accountName": "Example Checking",
-          "bookingDate": "2026-11-18",
+          "bookingDate": "2026-11-17",
           "amount": -25000,
           "currency": "CHF",
           "counterpartyName": "Example Dental Clinic",
@@ -58,10 +58,10 @@
     "candidates": {
       "items": [
         {
-          "id": "e4b184e4-2193-490f-a156-e76913dad727",
-          "accountId": "2fb59d2c-369e-4a53-81b6-60e4d99e6a25",
+          "id": "941b427a-f78f-4052-a9c7-4c8e11f9405b",
+          "accountId": "fac3616a-1a96-4171-ac3d-50b72d0d3cfb",
           "accountName": "Example Checking",
-          "bookingDate": "2026-11-21",
+          "bookingDate": "2026-11-20",
           "amount": -3480,
           "currency": "CHF",
           "counterpartyName": "Example Grocer",
@@ -71,10 +71,10 @@
           "suggestedAmount": 3480
         },
         {
-          "id": "c7e29151-6d0d-4342-8665-ae58f48eee80",
-          "accountId": "2fb59d2c-369e-4a53-81b6-60e4d99e6a25",
+          "id": "07919a54-c8ad-461e-bc3b-fabd4dca133b",
+          "accountId": "fac3616a-1a96-4171-ac3d-50b72d0d3cfb",
           "accountName": "Example Checking",
-          "bookingDate": "2026-11-21",
+          "bookingDate": "2026-11-20",
           "amount": -194975,
           "currency": "CHF",
           "counterpartyName": "Example Supplier AG",
@@ -84,10 +84,10 @@
           "suggestedAmount": 35000
         },
         {
-          "id": "176531e0-1b42-401e-b2a9-b838c0cab7fb",
-          "accountId": "2fb59d2c-369e-4a53-81b6-60e4d99e6a25",
+          "id": "cdcb972f-85c7-4ac5-9bad-141ffab9d4e0",
+          "accountId": "fac3616a-1a96-4171-ac3d-50b72d0d3cfb",
           "accountName": "Example Checking",
-          "bookingDate": "2026-11-19",
+          "bookingDate": "2026-11-18",
           "amount": -194975,
           "currency": "CHF",
           "counterpartyName": "Example Supplier AG",
@@ -97,10 +97,10 @@
           "suggestedAmount": 35000
         },
         {
-          "id": "724e783f-0fa5-4326-8ee7-d7aefd957736",
-          "accountId": "2fb59d2c-369e-4a53-81b6-60e4d99e6a25",
+          "id": "b4d2e0f0-e274-46e2-9a06-d8d37bcdd6e0",
+          "accountId": "fac3616a-1a96-4171-ac3d-50b72d0d3cfb",
           "accountName": "Example Checking",
-          "bookingDate": "2026-11-18",
+          "bookingDate": "2026-11-17",
           "amount": -2740,
           "currency": "CHF",
           "counterpartyName": "Example Bistro",
@@ -110,10 +110,10 @@
           "suggestedAmount": 2740
         },
         {
-          "id": "8e0dd087-4e5f-47b2-bf13-188065cf7add",
-          "accountId": "2fb59d2c-369e-4a53-81b6-60e4d99e6a25",
+          "id": "6c075a84-c16c-4587-a6ff-badf49f7115a",
+          "accountId": "fac3616a-1a96-4171-ac3d-50b72d0d3cfb",
           "accountName": "Example Checking",
-          "bookingDate": "2026-11-17",
+          "bookingDate": "2026-11-16",
           "amount": -25000,
           "currency": "CHF",
           "counterpartyName": "Example Pension Fund",
@@ -123,10 +123,10 @@
           "suggestedAmount": 25000
         },
         {
-          "id": "f6c23d31-9dcd-4913-821e-e344cec8a520",
-          "accountId": "2fb59d2c-369e-4a53-81b6-60e4d99e6a25",
+          "id": "fe85a7a1-9534-46d3-945e-7598144429c1",
+          "accountId": "fac3616a-1a96-4171-ac3d-50b72d0d3cfb",
           "accountName": "Example Checking",
-          "bookingDate": "2026-11-16",
+          "bookingDate": "2026-11-15",
           "amount": -20000,
           "currency": "CHF",
           "counterpartyName": "Example Euro Account",
@@ -136,10 +136,10 @@
           "suggestedAmount": 20000
         },
         {
-          "id": "1b21baa0-5e49-477f-b604-190e76566976",
-          "accountId": "2fb59d2c-369e-4a53-81b6-60e4d99e6a25",
+          "id": "0a95a0bf-5dd1-4d9f-995c-2f2a64a83e90",
+          "accountId": "fac3616a-1a96-4171-ac3d-50b72d0d3cfb",
           "accountName": "Example Checking",
-          "bookingDate": "2026-11-14",
+          "bookingDate": "2026-11-13",
           "amount": -1850,
           "currency": "CHF",
           "counterpartyName": null,
@@ -149,10 +149,10 @@
           "suggestedAmount": 1850
         },
         {
-          "id": "e9c53cdf-8d80-4b1f-a8c8-144b99b60d6e",
-          "accountId": "7be74003-351a-440b-af8b-d81133316c65",
+          "id": "3844694e-4408-4e4e-9eaf-a0e05f1b270b",
+          "accountId": "4723c0bd-5915-4bb4-bf8a-e4c4e6c71ab3",
           "accountName": "Example Credit Card",
-          "bookingDate": "2026-11-13",
+          "bookingDate": "2026-11-12",
           "amount": -4500,
           "currency": "CHF",
           "counterpartyName": "Example Online Shop",
@@ -162,10 +162,10 @@
           "suggestedAmount": 4500
         },
         {
-          "id": "31e3bb96-c8de-47c4-ad02-3af57c457be1",
-          "accountId": "f2c92e3d-a111-4693-acf4-b220f8fa8495",
+          "id": "889c054e-352a-402d-8895-218b620568bc",
+          "accountId": "789bf03b-84f9-44f1-bec9-0dcb3b0c55c2",
           "accountName": "Example Joint Account",
-          "bookingDate": "2026-11-11",
+          "bookingDate": "2026-11-10",
           "amount": -12000,
           "currency": "CHF",
           "counterpartyName": "Example Grocer",
@@ -175,10 +175,10 @@
           "suggestedAmount": 12000
         },
         {
-          "id": "cd1cc2f1-ce3f-4667-9d52-b9e8421bd4b0",
-          "accountId": "7be74003-351a-440b-af8b-d81133316c65",
+          "id": "1a6c79a5-fc5a-4462-b14c-fc99d19049ed",
+          "accountId": "4723c0bd-5915-4bb4-bf8a-e4c4e6c71ab3",
           "accountName": "Example Credit Card",
-          "bookingDate": "2026-11-10",
+          "bookingDate": "2026-11-09",
           "amount": -31000,
           "currency": "CHF",
           "counterpartyName": "Example Airline",
@@ -188,10 +188,10 @@
           "suggestedAmount": 31000
         },
         {
-          "id": "382a6ae4-09b3-40b0-b99b-2a1db70df37b",
-          "accountId": "2fb59d2c-369e-4a53-81b6-60e4d99e6a25",
+          "id": "1119de0a-1f32-4ebc-b02f-b0f2cea688fd",
+          "accountId": "fac3616a-1a96-4171-ac3d-50b72d0d3cfb",
           "accountName": "Example Checking",
-          "bookingDate": "2026-11-08",
+          "bookingDate": "2026-11-07",
           "amount": -30000,
           "currency": "CHF",
           "counterpartyName": "Example Joint Account",
@@ -201,21 +201,8 @@
           "suggestedAmount": 30000
         },
         {
-          "id": "fa516f51-e926-4583-a8e0-e63514416aa7",
-          "accountId": "2fb59d2c-369e-4a53-81b6-60e4d99e6a25",
-          "accountName": "Example Checking",
-          "bookingDate": "2026-11-02",
-          "amount": -50000,
-          "currency": "CHF",
-          "counterpartyName": "Example Savings",
-          "description": "Move to savings",
-          "reference": null,
-          "unallocated": -50000,
-          "suggestedAmount": 35000
-        },
-        {
-          "id": "f44df8f9-0566-4829-9f4b-6b61c644be5e",
-          "accountId": "2fb59d2c-369e-4a53-81b6-60e4d99e6a25",
+          "id": "d6760baa-f2ea-4b71-9e4c-249528933d21",
+          "accountId": "fac3616a-1a96-4171-ac3d-50b72d0d3cfb",
           "accountName": "Example Checking",
           "bookingDate": "2026-11-01",
           "amount": -180000,
@@ -227,8 +214,21 @@
           "suggestedAmount": 35000
         },
         {
-          "id": "ad69048b-1cd7-4c1d-a163-b9ce85b1ec2f",
-          "accountId": "2fb59d2c-369e-4a53-81b6-60e4d99e6a25",
+          "id": "6a92f70b-0689-4250-9640-8c0a4712149b",
+          "accountId": "fac3616a-1a96-4171-ac3d-50b72d0d3cfb",
+          "accountName": "Example Checking",
+          "bookingDate": "2026-11-01",
+          "amount": -50000,
+          "currency": "CHF",
+          "counterpartyName": "Example Savings",
+          "description": "Move to savings",
+          "reference": null,
+          "unallocated": -50000,
+          "suggestedAmount": 35000
+        },
+        {
+          "id": "73a5edad-ef99-491e-a953-a263a21be0c7",
+          "accountId": "fac3616a-1a96-4171-ac3d-50b72d0d3cfb",
           "accountName": "Example Checking",
           "bookingDate": "2026-10-27",
           "amount": -4820,
@@ -240,8 +240,8 @@
           "suggestedAmount": 4820
         },
         {
-          "id": "91b3b589-650b-45e7-aefb-ce2e8f250dd0",
-          "accountId": "2fb59d2c-369e-4a53-81b6-60e4d99e6a25",
+          "id": "3a9421fc-c043-4a6f-b6ec-7abfe9f4a850",
+          "accountId": "fac3616a-1a96-4171-ac3d-50b72d0d3cfb",
           "accountName": "Example Checking",
           "bookingDate": "2026-10-23",
           "amount": -2390,
@@ -253,8 +253,8 @@
           "suggestedAmount": 2390
         },
         {
-          "id": "e5ee3bb2-401c-4f68-85f9-470ff8d25b58",
-          "accountId": "2fb59d2c-369e-4a53-81b6-60e4d99e6a25",
+          "id": "7f322db7-17d3-437a-a2f7-9e2cc30a1180",
+          "accountId": "fac3616a-1a96-4171-ac3d-50b72d0d3cfb",
           "accountName": "Example Checking",
           "bookingDate": "2026-10-22",
           "amount": -7250,
@@ -266,8 +266,8 @@
           "suggestedAmount": 7250
         },
         {
-          "id": "a4b00ac2-1016-47b9-92ab-4f6deb5496ad",
-          "accountId": "2fb59d2c-369e-4a53-81b6-60e4d99e6a25",
+          "id": "472f6513-b82d-424d-b90a-d757c407506e",
+          "accountId": "fac3616a-1a96-4171-ac3d-50b72d0d3cfb",
           "accountName": "Example Checking",
           "bookingDate": "2026-10-20",
           "amount": -7830,
@@ -279,8 +279,8 @@
           "suggestedAmount": 7830
         },
         {
-          "id": "a3faad9e-f31d-4641-ae45-ca98deab328f",
-          "accountId": "2fb59d2c-369e-4a53-81b6-60e4d99e6a25",
+          "id": "72770e6e-91f7-48ce-a55c-9d00d621e12d",
+          "accountId": "fac3616a-1a96-4171-ac3d-50b72d0d3cfb",
           "accountName": "Example Checking",
           "bookingDate": "2026-10-18",
           "amount": -4230,
@@ -292,8 +292,8 @@
           "suggestedAmount": 4230
         },
         {
-          "id": "73925256-c133-43e4-baaa-98d6b8332e44",
-          "accountId": "2fb59d2c-369e-4a53-81b6-60e4d99e6a25",
+          "id": "13eccdc6-2bd6-4059-8679-507fc35031de",
+          "accountId": "fac3616a-1a96-4171-ac3d-50b72d0d3cfb",
           "accountName": "Example Checking",
           "bookingDate": "2026-10-15",
           "amount": -8600,
@@ -305,8 +305,8 @@
           "suggestedAmount": 8600
         },
         {
-          "id": "d79df89e-e926-45e2-8a7b-91deb7443da8",
-          "accountId": "2fb59d2c-369e-4a53-81b6-60e4d99e6a25",
+          "id": "cef98595-c728-46bd-9d0e-ad8098b75aa1",
+          "accountId": "fac3616a-1a96-4171-ac3d-50b72d0d3cfb",
           "accountName": "Example Checking",
           "bookingDate": "2026-10-12",
           "amount": -6800,
@@ -326,47 +326,47 @@
     "candidateQuery": "",
     "accounts": [
       {
-        "id": "2fb59d2c-369e-4a53-81b6-60e4d99e6a25",
+        "id": "fac3616a-1a96-4171-ac3d-50b72d0d3cfb",
         "name": "Example Checking",
         "currency": "CHF"
       },
       {
-        "id": "cd3805e2-5b8f-4a3b-857d-229780268ae6",
+        "id": "b0da608d-0c75-4473-954f-999f8a577658",
         "name": "Example Savings",
         "currency": "CHF"
       },
       {
-        "id": "7be74003-351a-440b-af8b-d81133316c65",
+        "id": "4723c0bd-5915-4bb4-bf8a-e4c4e6c71ab3",
         "name": "Example Credit Card",
         "currency": "CHF"
       },
       {
-        "id": "188c5ede-b793-4422-bc91-0df887f1bc24",
+        "id": "46d68a57-3f39-40a8-b5c2-2c6908edecbb",
         "name": "Example Brokerage",
         "currency": "CHF"
       },
       {
-        "id": "19212ed6-a6ca-40bd-91ea-885157c8519f",
+        "id": "d436a836-7204-4373-ad12-082d0d7aa5d8",
         "name": "Example Pillar 3a",
         "currency": "CHF"
       },
       {
-        "id": "1144e5e1-3cb4-404b-b1dd-c40e29218be8",
+        "id": "a0c71505-621d-4c92-846f-59b9fc558340",
         "name": "Example Pension Fund",
         "currency": "CHF"
       },
       {
-        "id": "a82126a7-72c1-4365-b099-c1cdffe745e3",
+        "id": "5e3f3af3-8d32-4036-b403-b20a5eef538c",
         "name": "Example Euro Account",
         "currency": "EUR"
       },
       {
-        "id": "f2c92e3d-a111-4693-acf4-b220f8fa8495",
+        "id": "789bf03b-84f9-44f1-bec9-0dcb3b0c55c2",
         "name": "Example Joint Account",
         "currency": "CHF"
       },
       {
-        "id": "41b48e3d-7f4d-423d-b0d5-a834346d6536",
+        "id": "abf4ce0f-0eb2-4dbe-886d-8370faf6e15c",
         "name": "Example Wallet",
         "currency": "CHF"
       }

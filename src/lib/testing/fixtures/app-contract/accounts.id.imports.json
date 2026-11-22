@@ -1,7 +1,7 @@
 {
   "data": {
     "account": {
-      "id": "2fb59d2c-369e-4a53-81b6-60e4d99e6a25",
+      "id": "fac3616a-1a96-4171-ac3d-50b72d0d3cfb",
       "name": "Example Checking",
       "type": "current",
       "currency": "CHF",
@@ -20,7 +20,7 @@
       "shareBps": 10000,
       "sharedWith": null,
       "institution": {
-        "id": "c87fa9ba-dce5-4f35-9390-109e84b2fe81",
+        "id": "1fd13a15-292d-4b4a-aba8-e6d033b536bb",
         "name": "Example Bank",
         "color": "#1a73e8",
         "logoVersion": "fa25202f7fd431e3"
@@ -29,13 +29,13 @@
       "cashBalance": 112860,
       "holdings": null,
       "shareBalance": 112860,
-      "lastBookingDate": "2026-11-21",
-      "lastImportAt": 1795354912260
+      "lastBookingDate": "2026-11-20",
+      "lastImportAt": 1795292415888
     },
     "imports": [
       {
-        "id": "74e87236-e254-4776-ac98-e10e4d7eeb0a",
-        "accountId": "2fb59d2c-369e-4a53-81b6-60e4d99e6a25",
+        "id": "0f54f833-89bc-4859-8790-d8d17d8f84cf",
+        "accountId": "fac3616a-1a96-4171-ac3d-50b72d0d3cfb",
         "accountName": "Example Checking",
         "currency": "CHF",
         "format": "camt053",
@@ -53,11 +53,11 @@
           "The file's opening balance (CHF 75.00 on 2025-01-01) does not match the ledger balance at the end of the previous day (CHF 1,232.50). This usually means a gap between imports or missing transactions.",
           "After this import the ledger balance on 2025-01-31 would be CHF 1,232.50, but the file's closing balance is CHF 75.00. This usually means a gap between imports or missing transactions."
         ],
-        "createdAt": 1795354912260
+        "createdAt": 1795292415888
       },
       {
-        "id": "8080e1a9-a530-4bdd-9d5d-5631291165e6",
-        "accountId": "2fb59d2c-369e-4a53-81b6-60e4d99e6a25",
+        "id": "d392ae18-cf07-4c3e-a26d-7740dfaf7c1b",
+        "accountId": "fac3616a-1a96-4171-ac3d-50b72d0d3cfb",
         "accountName": "Example Checking",
         "currency": "CHF",
         "format": "camt053",
@@ -71,11 +71,11 @@
         "newCount": 5,
         "duplicateCount": 0,
         "warnings": [],
-        "createdAt": 1795354912224
+        "createdAt": 1795292415882
       }
     ],
     "impacts": {
-      "74e87236-e254-4776-ac98-e10e4d7eeb0a": {
+      "0f54f833-89bc-4859-8790-d8d17d8f84cf": {
         "transactions": 0,
         "categorized": 0,
         "notes": 0,
@@ -86,7 +86,7 @@
         "transferLinks": 0,
         "mirrors": 0
       },
-      "8080e1a9-a530-4bdd-9d5d-5631291165e6": {
+      "d392ae18-cf07-4c3e-a26d-7740dfaf7c1b": {
         "transactions": 5,
         "categorized": 3,
         "notes": 0,

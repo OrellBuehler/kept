@@ -1,7 +1,7 @@
 {
   "data": {
     "account": {
-      "id": "188c5ede-b793-4422-bc91-0df887f1bc24",
+      "id": "46d68a57-3f39-40a8-b5c2-2c6908edecbb",
       "name": "Example Brokerage",
       "type": "investment",
       "currency": "CHF",
@@ -9,7 +9,7 @@
       "contractNumber": null,
       "depositIban": null,
       "openingBalance": 2000000,
-      "openingDate": "2026-05-06",
+      "openingDate": "2026-05-05",
       "noticeMonths": null,
       "freeWithdrawal": null,
       "freeWithdrawalPeriod": null,
@@ -20,7 +20,7 @@
       "shareBps": 10000,
       "sharedWith": null,
       "institution": {
-        "id": "fdf5f8cc-a1f7-4eaf-b6c8-168bffd9f361",
+        "id": "98b8538b-76c4-4eaf-86b7-febbeaf40536",
         "name": "Example Broker",
         "color": null,
         "logoVersion": null
@@ -33,7 +33,7 @@
         "estimated": false
       },
       "shareBalance": 2023320,
-      "lastBookingDate": "2026-08-04",
+      "lastBookingDate": "2026-08-03",
       "lastImportAt": null
     },
     "balance": 2023320,
@@ -44,12 +44,12 @@
       "total": 2023320,
       "positions": [
         {
-          "securityId": "2c7978db-e30c-43fb-b257-a0796e24b3b3",
+          "securityId": "f4d754a4-0ad5-4283-9a35-59b8059c0f09",
           "name": "Example Stock Corp",
           "currency": "USD",
           "quantity": 2000000000,
           "price": 5400000000,
-          "priceDate": "2026-11-17",
+          "priceDate": "2026-11-16",
           "priceSource": "manual",
           "fxRate": 87000000,
           "value": 93960,
@@ -58,12 +58,12 @@
           "estimated": false
         },
         {
-          "securityId": "5bfa1f54-4cd1-4486-ab00-5102cf716fa8",
+          "securityId": "bf2bedf0-1e28-48e9-b134-faf297f3289e",
           "name": "Example World ETF",
           "currency": "CHF",
           "quantity": 2400000000,
           "price": 5840000000,
-          "priceDate": "2026-11-19",
+          "priceDate": "2026-11-18",
           "priceSource": "provider",
           "fxRate": 100000000,
           "value": 140160,
@@ -80,12 +80,12 @@
     "portfolioValues": {},
     "trades": [
       {
-        "id": "d15325eb-6d4e-4fd6-9bda-548c5bee8446",
-        "accountId": "188c5ede-b793-4422-bc91-0df887f1bc24",
-        "securityId": "5bfa1f54-4cd1-4486-ab00-5102cf716fa8",
+        "id": "6b2f10d6-a239-4e8e-98c6-463fb5e26b62",
+        "accountId": "46d68a57-3f39-40a8-b5c2-2c6908edecbb",
+        "securityId": "bf2bedf0-1e28-48e9-b134-faf297f3289e",
         "securityName": "Example World ETF",
         "securityCurrency": "CHF",
-        "date": "2026-11-02",
+        "date": "2026-11-01",
         "side": "sell",
         "quantity": 600000000,
         "splitNew": null,
@@ -96,12 +96,12 @@
         "note": null
       },
       {
-        "id": "19d75b50-5730-4419-91b1-1e88593105d4",
-        "accountId": "188c5ede-b793-4422-bc91-0df887f1bc24",
-        "securityId": "5bfa1f54-4cd1-4486-ab00-5102cf716fa8",
+        "id": "1e9bd897-66fd-4ac9-a192-eeca684d8fec",
+        "accountId": "46d68a57-3f39-40a8-b5c2-2c6908edecbb",
+        "securityId": "bf2bedf0-1e28-48e9-b134-faf297f3289e",
         "securityName": "Example World ETF",
         "securityCurrency": "CHF",
-        "date": "2026-09-23",
+        "date": "2026-09-22",
         "side": "split",
         "quantity": 200000000,
         "splitNew": 2,
@@ -112,12 +112,12 @@
         "note": "2:1 split"
       },
       {
-        "id": "f8cc3b49-d759-47e1-a372-3f45ce2f876d",
-        "accountId": "188c5ede-b793-4422-bc91-0df887f1bc24",
-        "securityId": "2c7978db-e30c-43fb-b257-a0796e24b3b3",
+        "id": "9ca1ea7a-a0de-4394-9370-6c822548cd7b",
+        "accountId": "46d68a57-3f39-40a8-b5c2-2c6908edecbb",
+        "securityId": "f4d754a4-0ad5-4283-9a35-59b8059c0f09",
         "securityName": "Example Stock Corp",
         "securityCurrency": "USD",
-        "date": "2026-08-24",
+        "date": "2026-08-23",
         "side": "buy",
         "quantity": 2000000000,
         "splitNew": null,
@@ -128,12 +128,12 @@
         "note": null
       },
       {
-        "id": "33585e64-ac27-470c-9a0f-c0dc0307efb5",
-        "accountId": "188c5ede-b793-4422-bc91-0df887f1bc24",
-        "securityId": "5bfa1f54-4cd1-4486-ab00-5102cf716fa8",
+        "id": "e575e73e-b1f4-488d-accb-45b8048275e2",
+        "accountId": "46d68a57-3f39-40a8-b5c2-2c6908edecbb",
+        "securityId": "bf2bedf0-1e28-48e9-b134-faf297f3289e",
         "securityName": "Example World ETF",
         "securityCurrency": "CHF",
-        "date": "2026-08-14",
+        "date": "2026-08-13",
         "side": "buy",
         "quantity": 500000000,
         "splitNew": null,
@@ -144,12 +144,12 @@
         "note": null
       },
       {
-        "id": "c3014d0d-0bdf-4de4-8c82-725f70a4a3a9",
-        "accountId": "188c5ede-b793-4422-bc91-0df887f1bc24",
-        "securityId": "5bfa1f54-4cd1-4486-ab00-5102cf716fa8",
+        "id": "e64a7bab-60be-4ae5-af18-5f0c2781127e",
+        "accountId": "46d68a57-3f39-40a8-b5c2-2c6908edecbb",
+        "securityId": "bf2bedf0-1e28-48e9-b134-faf297f3289e",
         "securityName": "Example World ETF",
         "securityCurrency": "CHF",
-        "date": "2026-06-25",
+        "date": "2026-06-24",
         "side": "buy",
         "quantity": 1000000000,
         "splitNew": null,
@@ -162,7 +162,7 @@
     ],
     "securities": [
       {
-        "id": "bee97ca2-13bd-459b-b285-0bb0e3d76d5e",
+        "id": "75997bd2-c5bb-4349-9ded-7f3d4dd89c4b",
         "name": "Example Bond Fund",
         "kind": "bond",
         "isin": "EX0000000021",
@@ -170,7 +170,7 @@
         "currency": "CHF"
       },
       {
-        "id": "2c7978db-e30c-43fb-b257-a0796e24b3b3",
+        "id": "f4d754a4-0ad5-4283-9a35-59b8059c0f09",
         "name": "Example Stock Corp",
         "kind": "stock",
         "isin": null,
@@ -178,7 +178,7 @@
         "currency": "USD"
       },
       {
-        "id": "5bfa1f54-4cd1-4486-ab00-5102cf716fa8",
+        "id": "bf2bedf0-1e28-48e9-b134-faf297f3289e",
         "name": "Example World ETF",
         "kind": "etf",
         "isin": "EX0000000013",
@@ -188,23 +188,23 @@
     ],
     "institutions": [
       {
-        "id": "c87fa9ba-dce5-4f35-9390-109e84b2fe81",
+        "id": "1fd13a15-292d-4b4a-aba8-e6d033b536bb",
         "name": "Example Bank"
       },
       {
-        "id": "fdf5f8cc-a1f7-4eaf-b6c8-168bffd9f361",
+        "id": "98b8538b-76c4-4eaf-86b7-febbeaf40536",
         "name": "Example Broker"
       }
     ],
     "transactions": {
       "items": [
         {
-          "id": "fecc01d3-b9b6-4a18-b384-5ce3bdb45982",
-          "accountId": "188c5ede-b793-4422-bc91-0df887f1bc24",
+          "id": "a43832be-09b6-4b26-9b6e-9ed1a641a1e6",
+          "accountId": "46d68a57-3f39-40a8-b5c2-2c6908edecbb",
           "importId": null,
           "source": "manual",
-          "externalId": "manual:c2ebed30-70c6-4f89-899c-b8fc52e38a0e",
-          "bookingDate": "2026-08-04",
+          "externalId": "manual:5106a0c8-2e3f-4181-8cbc-4965758b359b",
+          "bookingDate": "2026-08-03",
           "valueDate": null,
           "amount": -1250,
           "currency": "CHF",
@@ -220,7 +220,7 @@
           "categoryId": null,
           "taxYear": null,
           "deductionYear": null,
-          "createdAt": 1795354912639,
+          "createdAt": 1795292415974,
           "mirrorOf": null,
           "transfer": null
         }
@@ -240,7 +240,7 @@
     },
     "categories": [
       {
-        "id": "ad42563d-19c0-4424-8789-e8f54c420975",
+        "id": "f8016c0c-c467-43d4-a2cb-1e584ee7f1ce",
         "name": "Donations",
         "parentId": null,
         "kind": "expense",
@@ -248,7 +248,7 @@
         "icon": "gift"
       },
       {
-        "id": "305b578c-be0c-4215-83be-60bf1e397b61",
+        "id": "a7bc1111-6e4d-4c4d-820f-46129f5c3ba9",
         "name": "Food",
         "parentId": null,
         "kind": "expense",
@@ -256,23 +256,23 @@
         "icon": "utensils"
       },
       {
-        "id": "1127efd4-a5b2-446f-b3dd-48dbcd4a1392",
+        "id": "a2f4c14c-36c0-4a5d-bd53-367852e63cbc",
         "name": "Groceries",
-        "parentId": "305b578c-be0c-4215-83be-60bf1e397b61",
+        "parentId": "a7bc1111-6e4d-4c4d-820f-46129f5c3ba9",
         "kind": "expense",
         "color": "#ef6c00",
         "icon": "shopping-cart"
       },
       {
-        "id": "22c45a3e-fbd7-4fd8-955a-2fca14de7c00",
+        "id": "90250d12-2447-4be1-8ae5-e28c3e5e4a64",
         "name": "Restaurants",
-        "parentId": "305b578c-be0c-4215-83be-60bf1e397b61",
+        "parentId": "a7bc1111-6e4d-4c4d-820f-46129f5c3ba9",
         "kind": "expense",
         "color": null,
         "icon": null
       },
       {
-        "id": "9448e9a4-3f24-4682-8401-00db16c80ca3",
+        "id": "9fe003f7-a76b-448f-a802-2effc6e9f88f",
         "name": "Gifts received",
         "parentId": null,
         "kind": "income",
@@ -280,7 +280,7 @@
         "icon": "gift"
       },
       {
-        "id": "34ab8a24-5242-45f3-88c3-cbb34596eccf",
+        "id": "ebbdce98-3c02-42b8-943c-4024dab25b2e",
         "name": "Health",
         "parentId": null,
         "kind": "expense",
@@ -288,15 +288,15 @@
         "icon": "heart-pulse"
       },
       {
-        "id": "14cea9ff-c4c7-4e32-84d3-280540642844",
+        "id": "b2363bc4-ed98-4712-9497-12cd4bbbf62c",
         "name": "Pharmacy",
-        "parentId": "34ab8a24-5242-45f3-88c3-cbb34596eccf",
+        "parentId": "ebbdce98-3c02-42b8-943c-4024dab25b2e",
         "kind": "expense",
         "color": "#ad1457",
         "icon": "heart-pulse"
       },
       {
-        "id": "99882159-314e-4d82-8fd8-fb5295b13636",
+        "id": "59627596-bc0f-48c1-ba8b-b7c86e7679d5",
         "name": "Housing",
         "parentId": null,
         "kind": "expense",
@@ -304,7 +304,7 @@
         "icon": "house"
       },
       {
-        "id": "379f7f82-a8b9-4c17-b1e7-6a851c29d8c1",
+        "id": "ed587f32-c0e7-4514-8d42-43d369bed898",
         "name": "Insurance",
         "parentId": null,
         "kind": "expense",
@@ -312,7 +312,7 @@
         "icon": "shield"
       },
       {
-        "id": "60599f00-f65a-4f19-8faa-35ed5ffbbc45",
+        "id": "665559ec-48cd-4672-a049-5dd7269946a7",
         "name": "Salary",
         "parentId": null,
         "kind": "income",
@@ -320,7 +320,7 @@
         "icon": "wallet"
       },
       {
-        "id": "53da868f-4e4a-4caa-9298-2990790f1169",
+        "id": "8e22ae36-8dc7-4a8b-8512-b2184c8c83b0",
         "name": "Subscriptions",
         "parentId": null,
         "kind": "expense",
@@ -328,7 +328,7 @@
         "icon": null
       },
       {
-        "id": "fa8064dd-1540-48b2-882e-8b8505486fdf",
+        "id": "65a11245-3a6e-4881-96cd-bd66131b1b24",
         "name": "Transport",
         "parentId": null,
         "kind": "expense",

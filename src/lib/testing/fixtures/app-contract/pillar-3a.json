@@ -29,7 +29,7 @@
           "buyIn": 0,
           "gap": 150000,
           "overLimit": 0,
-          "closedBy": "4cb2ebe2-b94d-4a77-b9b8-bd632e4414d3",
+          "closedBy": "e9004ed8-7943-4df3-b604-b844bc1d2b40",
           "buyInEligible": false
         }
       ],
@@ -40,13 +40,13 @@
           "unconfirmed": false,
           "ordinary": 575800,
           "gap": 150000,
-          "closedBy": "4cb2ebe2-b94d-4a77-b9b8-bd632e4414d3"
+          "closedBy": "e9004ed8-7943-4df3-b604-b844bc1d2b40"
         }
       ],
       "portfolios": [
         {
-          "portfolioId": "e4069ad3-2d8e-4bf9-b5dc-8b95cc527f6b",
-          "accountId": "19212ed6-a6ca-40bd-91ea-885157c8519f",
+          "portfolioId": "e9f137c2-c693-4f19-bd33-910b88e790a0",
+          "accountId": "1a564118-6659-4918-b51c-0916c67288c1",
           "accountName": "Example Pillar 3a",
           "archived": false,
           "name": "Example Portfolio A",
@@ -57,11 +57,13 @@
           "latestValue": 846000,
           "latestValueDate": "2026-11-18",
           "contributed": 1025800,
-          "gain": -179800
+          "gain": -179800,
+          "reportedGain": 96000,
+          "returnBps": 1244
         },
         {
-          "portfolioId": "c91e99d8-26bb-4c5f-872d-110b197a1ef9",
-          "accountId": "19212ed6-a6ca-40bd-91ea-885157c8519f",
+          "portfolioId": "6b393632-aab2-4cf6-836a-d3ca602f10e4",
+          "accountId": "1a564118-6659-4918-b51c-0916c67288c1",
           "accountName": "Example Pillar 3a",
           "archived": false,
           "name": "Example Portfolio B",
@@ -72,7 +74,9 @@
           "latestValue": 300000,
           "latestValueDate": "2026-09-23",
           "contributed": 0,
-          "gain": 300000
+          "gain": 300000,
+          "reportedGain": null,
+          "returnBps": null
         }
       ],
       "totals": {
@@ -84,9 +88,9 @@
       "ageBenefitDrawn": false,
       "orphanAnnotations": [
         {
-          "id": "04c104f2-0b32-45d2-8a95-9e011823c12e",
-          "transactionId": "34d75a5f-6c8d-4791-83b7-03b3ca8e1ac5",
-          "portfolioId": "e4069ad3-2d8e-4bf9-b5dc-8b95cc527f6b",
+          "id": "3055974c-1204-48df-8430-75184f52ea28",
+          "transactionId": "1cc78a2f-a482-42a8-8098-3071060976b0",
+          "portfolioId": "e9f137c2-c693-4f19-bd33-910b88e790a0",
           "portfolioName": "Example Portfolio A",
           "date": "2026-01-10",
           "kind": "ordinary",
@@ -97,14 +101,14 @@
     },
     "contributions": [
       {
-        "key": "tx:d538b3f9-bb5c-4dc8-9f16-baa9b150f6b3",
-        "id": "4cb2ebe2-b94d-4a77-b9b8-bd632e4414d3",
-        "transactionId": "d538b3f9-bb5c-4dc8-9f16-baa9b150f6b3",
+        "key": "tx:b301f855-568c-4cc1-a103-762feaf915c0",
+        "id": "e9004ed8-7943-4df3-b604-b844bc1d2b40",
+        "transactionId": "b301f855-568c-4cc1-a103-762feaf915c0",
         "source": "detected",
-        "portfolioId": "e4069ad3-2d8e-4bf9-b5dc-8b95cc527f6b",
+        "portfolioId": "e9f137c2-c693-4f19-bd33-910b88e790a0",
         "portfolioName": "Example Portfolio A",
-        "accountId": "19212ed6-a6ca-40bd-91ea-885157c8519f",
-        "paidFromAccountId": "2fb59d2c-369e-4a53-81b6-60e4d99e6a25",
+        "accountId": "1a564118-6659-4918-b51c-0916c67288c1",
+        "paidFromAccountId": "b2fed639-2d20-4ed6-860a-342e8fc70346",
         "bookingDate": "2026-01-20",
         "date": "2026-01-20",
         "year": 2026,
@@ -118,14 +122,14 @@
         "lateDecemberWarning": null
       },
       {
-        "key": "tx:edffb4d2-438b-48b5-8839-27d2339ce85b",
-        "id": "31f662df-d0aa-4e63-bf8b-6a8e869ebebf",
-        "transactionId": "edffb4d2-438b-48b5-8839-27d2339ce85b",
+        "key": "tx:a2192827-674f-4042-aa7c-9fe729c07b22",
+        "id": "a084c42a-fe26-43c7-8a5a-641792763e36",
+        "transactionId": "a2192827-674f-4042-aa7c-9fe729c07b22",
         "source": "detected",
-        "portfolioId": "e4069ad3-2d8e-4bf9-b5dc-8b95cc527f6b",
+        "portfolioId": "e9f137c2-c693-4f19-bd33-910b88e790a0",
         "portfolioName": "Example Portfolio A",
-        "accountId": "19212ed6-a6ca-40bd-91ea-885157c8519f",
-        "paidFromAccountId": "2fb59d2c-369e-4a53-81b6-60e4d99e6a25",
+        "accountId": "1a564118-6659-4918-b51c-0916c67288c1",
+        "paidFromAccountId": "b2fed639-2d20-4ed6-860a-342e8fc70346",
         "bookingDate": "2026-01-15",
         "date": "2026-01-15",
         "year": 2026,
@@ -137,14 +141,14 @@
         "lateDecemberWarning": null
       },
       {
-        "key": "tx:da2c1709-4467-4968-b0ee-100b84ccc974",
+        "key": "tx:4f71a1ee-24c4-484b-a12d-703eb00a8dcd",
         "id": null,
-        "transactionId": "da2c1709-4467-4968-b0ee-100b84ccc974",
+        "transactionId": "4f71a1ee-24c4-484b-a12d-703eb00a8dcd",
         "source": "detected",
-        "portfolioId": "e4069ad3-2d8e-4bf9-b5dc-8b95cc527f6b",
+        "portfolioId": "e9f137c2-c693-4f19-bd33-910b88e790a0",
         "portfolioName": "Example Portfolio A",
-        "accountId": "19212ed6-a6ca-40bd-91ea-885157c8519f",
-        "paidFromAccountId": "2fb59d2c-369e-4a53-81b6-60e4d99e6a25",
+        "accountId": "1a564118-6659-4918-b51c-0916c67288c1",
+        "paidFromAccountId": "b2fed639-2d20-4ed6-860a-342e8fc70346",
         "bookingDate": "2025-12-23",
         "date": "2025-12-23",
         "year": 2025,
@@ -156,13 +160,13 @@
         "lateDecemberWarning": "Booked after 20 December: the provider may credit it in January, which changes the tax year."
       },
       {
-        "key": "c:686ca6c2-4155-4ccb-8649-b3f93db0272c",
-        "id": "686ca6c2-4155-4ccb-8649-b3f93db0272c",
+        "key": "c:95aad55e-29aa-4e5c-b7f6-20f72d63e7df",
+        "id": "95aad55e-29aa-4e5c-b7f6-20f72d63e7df",
         "transactionId": null,
         "source": "manual",
-        "portfolioId": "e4069ad3-2d8e-4bf9-b5dc-8b95cc527f6b",
+        "portfolioId": "e9f137c2-c693-4f19-bd33-910b88e790a0",
         "portfolioName": "Example Portfolio A",
-        "accountId": "19212ed6-a6ca-40bd-91ea-885157c8519f",
+        "accountId": "1a564118-6659-4918-b51c-0916c67288c1",
         "paidFromAccountId": null,
         "bookingDate": null,
         "date": "2025-12-10",
@@ -175,9 +179,28 @@
         "lateDecemberWarning": null
       }
     ],
+    "performance": [
+      {
+        "portfolioId": "e9f137c2-c693-4f19-bd33-910b88e790a0",
+        "points": [
+          {
+            "date": "2026-09-23",
+            "amount": 820000,
+            "gain": 70000,
+            "gainBps": 912
+          },
+          {
+            "date": "2026-11-18",
+            "amount": 846000,
+            "gain": 96000,
+            "gainBps": 1244
+          }
+        ]
+      }
+    ],
     "accounts": [
       {
-        "id": "19212ed6-a6ca-40bd-91ea-885157c8519f",
+        "id": "1a564118-6659-4918-b51c-0916c67288c1",
         "name": "Example Pillar 3a",
         "archived": false
       }

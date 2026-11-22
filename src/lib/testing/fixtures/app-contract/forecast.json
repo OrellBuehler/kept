@@ -1,6 +1,6 @@
 {
   "data": {
-    "today": "2026-11-22",
+    "today": "2026-11-21",
     "days": 60,
     "horizons": [
       30,
@@ -8,12 +8,12 @@
       90
     ],
     "forecast": {
-      "from": "2026-11-22",
-      "to": "2027-01-21",
+      "from": "2026-11-21",
+      "to": "2027-01-20",
       "days": 60,
       "accounts": [
         {
-          "accountId": "2fb59d2c-369e-4a53-81b6-60e4d99e6a25",
+          "accountId": "fac3616a-1a96-4171-ac3d-50b72d0d3cfb",
           "name": "Example Checking",
           "currency": "CHF",
           "hasBalance": true,
@@ -22,6 +22,10 @@
           "threshold": 100000,
           "points": [
             {
+              "date": "2026-11-21",
+              "balance": 104310
+            },
+            {
               "date": "2026-11-22",
               "balance": 104310
             },
@@ -39,7 +43,7 @@
             },
             {
               "date": "2026-11-26",
-              "balance": 104310
+              "balance": 69310
             },
             {
               "date": "2026-11-27",
@@ -67,7 +71,7 @@
             },
             {
               "date": "2026-12-03",
-              "balance": 69310
+              "balance": -125665
             },
             {
               "date": "2026-12-04",
@@ -119,7 +123,7 @@
             },
             {
               "date": "2026-12-16",
-              "balance": -125665
+              "balance": -215665
             },
             {
               "date": "2026-12-17",
@@ -179,7 +183,7 @@
             },
             {
               "date": "2026-12-31",
-              "balance": -215665
+              "balance": -185665
             },
             {
               "date": "2027-01-01",
@@ -260,26 +264,22 @@
             {
               "date": "2027-01-20",
               "balance": -185665
-            },
-            {
-              "date": "2027-01-21",
-              "balance": -185665
             }
           ],
           "lowest": {
-            "date": "2026-12-17",
+            "date": "2026-12-16",
             "balance": -215665
           },
           "warning": {
-            "date": "2026-11-27",
+            "date": "2026-11-26",
             "balance": 69310,
             "limit": 100000,
             "negative": false
           },
-          "negativeDate": "2026-12-04"
+          "negativeDate": "2026-12-03"
         },
         {
-          "accountId": "cd3805e2-5b8f-4a3b-857d-229780268ae6",
+          "accountId": "b0da608d-0c75-4473-954f-999f8a577658",
           "name": "Example Savings",
           "currency": "CHF",
           "hasBalance": true,
@@ -288,6 +288,10 @@
           "threshold": null,
           "points": [
             {
+              "date": "2026-11-21",
+              "balance": 1251000
+            },
+            {
               "date": "2026-11-22",
               "balance": 1251000
             },
@@ -526,21 +530,17 @@
             {
               "date": "2027-01-20",
               "balance": 1251000
-            },
-            {
-              "date": "2027-01-21",
-              "balance": 1251000
             }
           ],
           "lowest": {
-            "date": "2026-11-22",
+            "date": "2026-11-21",
             "balance": 1251000
           },
           "warning": null,
           "negativeDate": null
         },
         {
-          "accountId": "7be74003-351a-440b-af8b-d81133316c65",
+          "accountId": "4723c0bd-5915-4bb4-bf8a-e4c4e6c71ab3",
           "name": "Example Credit Card",
           "currency": "CHF",
           "hasBalance": true,
@@ -549,6 +549,10 @@
           "threshold": null,
           "points": [
             {
+              "date": "2026-11-21",
+              "balance": 359650
+            },
+            {
               "date": "2026-11-22",
               "balance": 359650
             },
@@ -787,21 +791,17 @@
             {
               "date": "2027-01-20",
               "balance": 359650
-            },
-            {
-              "date": "2027-01-21",
-              "balance": 359650
             }
           ],
           "lowest": {
-            "date": "2026-11-22",
+            "date": "2026-11-21",
             "balance": 359650
           },
           "warning": null,
           "negativeDate": null
         },
         {
-          "accountId": "188c5ede-b793-4422-bc91-0df887f1bc24",
+          "accountId": "46d68a57-3f39-40a8-b5c2-2c6908edecbb",
           "name": "Example Brokerage",
           "currency": "CHF",
           "hasBalance": true,
@@ -810,6 +810,10 @@
           "threshold": null,
           "points": [
             {
+              "date": "2026-11-21",
+              "balance": 1789200
+            },
+            {
               "date": "2026-11-22",
               "balance": 1789200
             },
@@ -1048,21 +1052,17 @@
             {
               "date": "2027-01-20",
               "balance": 1789200
-            },
-            {
-              "date": "2027-01-21",
-              "balance": 1789200
             }
           ],
           "lowest": {
-            "date": "2026-11-22",
+            "date": "2026-11-21",
             "balance": 1789200
           },
           "warning": null,
           "negativeDate": null
         },
         {
-          "accountId": "19212ed6-a6ca-40bd-91ea-885157c8519f",
+          "accountId": "d436a836-7204-4373-ad12-082d0d7aa5d8",
           "name": "Example Pillar 3a",
           "currency": "CHF",
           "hasBalance": true,
@@ -1071,6 +1071,10 @@
           "threshold": null,
           "points": [
             {
+              "date": "2026-11-21",
+              "balance": 0
+            },
+            {
               "date": "2026-11-22",
               "balance": 0
             },
@@ -1309,21 +1313,17 @@
             {
               "date": "2027-01-20",
               "balance": 0
-            },
-            {
-              "date": "2027-01-21",
-              "balance": 0
             }
           ],
           "lowest": {
-            "date": "2026-11-22",
+            "date": "2026-11-21",
             "balance": 0
           },
           "warning": null,
           "negativeDate": null
         },
         {
-          "accountId": "1144e5e1-3cb4-404b-b1dd-c40e29218be8",
+          "accountId": "a0c71505-621d-4c92-846f-59b9fc558340",
           "name": "Example Pension Fund",
           "currency": "CHF",
           "hasBalance": true,
@@ -1332,6 +1332,10 @@
           "threshold": null,
           "points": [
             {
+              "date": "2026-11-21",
+              "balance": 4625000
+            },
+            {
               "date": "2026-11-22",
               "balance": 4625000
             },
@@ -1570,21 +1574,17 @@
             {
               "date": "2027-01-20",
               "balance": 4625000
-            },
-            {
-              "date": "2027-01-21",
-              "balance": 4625000
             }
           ],
           "lowest": {
-            "date": "2026-11-22",
+            "date": "2026-11-21",
             "balance": 4625000
           },
           "warning": null,
           "negativeDate": null
         },
         {
-          "accountId": "a82126a7-72c1-4365-b099-c1cdffe745e3",
+          "accountId": "5e3f3af3-8d32-4036-b403-b20a5eef538c",
           "name": "Example Euro Account",
           "currency": "EUR",
           "hasBalance": true,
@@ -1593,6 +1593,10 @@
           "threshold": null,
           "points": [
             {
+              "date": "2026-11-21",
+              "balance": 118650
+            },
+            {
               "date": "2026-11-22",
               "balance": 118650
             },
@@ -1831,21 +1835,17 @@
             {
               "date": "2027-01-20",
               "balance": 118650
-            },
-            {
-              "date": "2027-01-21",
-              "balance": 118650
             }
           ],
           "lowest": {
-            "date": "2026-11-22",
+            "date": "2026-11-21",
             "balance": 118650
           },
           "warning": null,
           "negativeDate": null
         },
         {
-          "accountId": "f2c92e3d-a111-4693-acf4-b220f8fa8495",
+          "accountId": "789bf03b-84f9-44f1-bec9-0dcb3b0c55c2",
           "name": "Example Joint Account",
           "currency": "CHF",
           "hasBalance": true,
@@ -1854,6 +1854,10 @@
           "threshold": null,
           "points": [
             {
+              "date": "2026-11-21",
+              "balance": 318000
+            },
+            {
               "date": "2026-11-22",
               "balance": 318000
             },
@@ -2092,21 +2096,17 @@
             {
               "date": "2027-01-20",
               "balance": 318000
-            },
-            {
-              "date": "2027-01-21",
-              "balance": 318000
             }
           ],
           "lowest": {
-            "date": "2026-11-22",
+            "date": "2026-11-21",
             "balance": 318000
           },
           "warning": null,
           "negativeDate": null
         },
         {
-          "accountId": "41b48e3d-7f4d-423d-b0d5-a834346d6536",
+          "accountId": "abf4ce0f-0eb2-4dbe-886d-8370faf6e15c",
           "name": "Example Wallet",
           "currency": "CHF",
           "hasBalance": false,
@@ -2115,6 +2115,10 @@
           "threshold": null,
           "points": [
             {
+              "date": "2026-11-21",
+              "balance": 0
+            },
+            {
               "date": "2026-11-22",
               "balance": 0
             },
@@ -2152,7 +2156,7 @@
             },
             {
               "date": "2026-12-01",
-              "balance": 0
+              "balance": -45000
             },
             {
               "date": "2026-12-02",
@@ -2353,14 +2357,10 @@
             {
               "date": "2027-01-20",
               "balance": -45000
-            },
-            {
-              "date": "2027-01-21",
-              "balance": -45000
             }
           ],
           "lowest": {
-            "date": "2026-12-02",
+            "date": "2026-12-01",
             "balance": -45000
           },
           "warning": null,
@@ -2369,67 +2369,67 @@
       ],
       "items": [
         {
-          "date": "2026-11-22",
+          "date": "2026-11-21",
           "amount": -8550,
           "currency": "CHF",
-          "accountId": "2fb59d2c-369e-4a53-81b6-60e4d99e6a25",
+          "accountId": "fac3616a-1a96-4171-ac3d-50b72d0d3cfb",
           "source": "bill",
           "label": "Example Utilities GmbH",
-          "ref": "ff9fff0e-fab8-4cef-8107-2296756aa624"
+          "ref": "d165c4dd-e4c3-4c1e-bba6-38d5c36683fe"
         },
         {
-          "date": "2026-11-27",
+          "date": "2026-11-26",
           "amount": -35000,
           "currency": "CHF",
-          "accountId": "2fb59d2c-369e-4a53-81b6-60e4d99e6a25",
+          "accountId": "fac3616a-1a96-4171-ac3d-50b72d0d3cfb",
           "source": "bill",
           "label": "Example Dental Clinic",
-          "ref": "d3a438f1-0b6d-4cf1-963a-7cab2fb9d2f2"
+          "ref": "c4d7ba00-cfa6-44b1-b1a9-0cef22f7cd0a"
         },
         {
-          "date": "2026-12-02",
+          "date": "2026-12-01",
           "amount": -45000,
           "currency": "CHF",
-          "accountId": "41b48e3d-7f4d-423d-b0d5-a834346d6536",
+          "accountId": "abf4ce0f-0eb2-4dbe-886d-8370faf6e15c",
           "source": "planned",
           "label": "Car service",
-          "ref": "bdc7e554-d233-4b56-aec5-2454888fee62"
+          "ref": "f4ba3f62-4d7f-43df-883d-af88209bbd7b"
         },
         {
-          "date": "2026-12-04",
+          "date": "2026-12-03",
           "amount": -194975,
           "currency": "CHF",
-          "accountId": "2fb59d2c-369e-4a53-81b6-60e4d99e6a25",
+          "accountId": "fac3616a-1a96-4171-ac3d-50b72d0d3cfb",
           "source": "bill",
           "label": "Example Supplier AG",
-          "ref": "fac6836c-77b9-4d02-b8c4-605280d01827"
+          "ref": "d14bc2a5-606c-48ba-a724-a17b8a51b941"
         },
         {
-          "date": "2026-12-17",
+          "date": "2026-12-16",
           "amount": -90000,
           "currency": "CHF",
-          "accountId": "2fb59d2c-369e-4a53-81b6-60e4d99e6a25",
+          "accountId": "fac3616a-1a96-4171-ac3d-50b72d0d3cfb",
           "source": "planned",
           "label": "Holiday booking",
-          "ref": "6f67df9d-da44-4975-a82a-5326d0bf9c71"
+          "ref": "c3d57099-e5c8-4c36-820d-2fd9faf8805d"
         },
         {
-          "date": "2026-12-25",
+          "date": "2026-12-24",
           "amount": -12000,
           "currency": "USD",
           "accountId": null,
           "source": "planned",
           "label": "Conference fee",
-          "ref": "ef51f945-8e26-49eb-91a9-9313624391ff"
+          "ref": "0ee41a2c-a6d3-43ce-bc2b-c4dff876ad08"
         },
         {
-          "date": "2027-01-01",
+          "date": "2026-12-31",
           "amount": 30000,
           "currency": "CHF",
-          "accountId": "2fb59d2c-369e-4a53-81b6-60e4d99e6a25",
+          "accountId": "fac3616a-1a96-4171-ac3d-50b72d0d3cfb",
           "source": "planned",
           "label": "Tax refund",
-          "ref": "909e8e21-3178-47f1-a310-1cc4e1fdcd04"
+          "ref": "c2b36c00-bc2c-4fee-974c-5fb821f9f378"
         }
       ],
       "unassigned": [
@@ -2440,7 +2440,7 @@
           "count": 1
         }
       ],
-      "today": "2026-11-22",
+      "today": "2026-11-21",
       "unprojectedBills": {
         "noDueDate": 0,
         "noAmount": 0
@@ -2448,33 +2448,33 @@
     },
     "planned": [
       {
-        "id": "bdc7e554-d233-4b56-aec5-2454888fee62",
-        "accountId": "41b48e3d-7f4d-423d-b0d5-a834346d6536",
-        "date": "2026-12-02",
+        "id": "f4ba3f62-4d7f-43df-883d-af88209bbd7b",
+        "accountId": "abf4ce0f-0eb2-4dbe-886d-8370faf6e15c",
+        "date": "2026-12-01",
         "amount": -45000,
         "currency": "CHF",
         "label": "Car service"
       },
       {
-        "id": "6f67df9d-da44-4975-a82a-5326d0bf9c71",
-        "accountId": "2fb59d2c-369e-4a53-81b6-60e4d99e6a25",
-        "date": "2026-12-17",
+        "id": "c3d57099-e5c8-4c36-820d-2fd9faf8805d",
+        "accountId": "fac3616a-1a96-4171-ac3d-50b72d0d3cfb",
+        "date": "2026-12-16",
         "amount": -90000,
         "currency": "CHF",
         "label": "Holiday booking"
       },
       {
-        "id": "ef51f945-8e26-49eb-91a9-9313624391ff",
+        "id": "0ee41a2c-a6d3-43ce-bc2b-c4dff876ad08",
         "accountId": null,
-        "date": "2026-12-25",
+        "date": "2026-12-24",
         "amount": -12000,
         "currency": "USD",
         "label": "Conference fee"
       },
       {
-        "id": "909e8e21-3178-47f1-a310-1cc4e1fdcd04",
+        "id": "c2b36c00-bc2c-4fee-974c-5fb821f9f378",
         "accountId": null,
-        "date": "2027-01-01",
+        "date": "2026-12-31",
         "amount": 30000,
         "currency": "CHF",
         "label": "Tax refund"
@@ -2482,12 +2482,12 @@
     ],
     "settings": [
       {
-        "accountId": "2fb59d2c-369e-4a53-81b6-60e4d99e6a25",
+        "accountId": "fac3616a-1a96-4171-ac3d-50b72d0d3cfb",
         "threshold": 100000,
         "defaultPayment": true
       },
       {
-        "accountId": "41b48e3d-7f4d-423d-b0d5-a834346d6536",
+        "accountId": "abf4ce0f-0eb2-4dbe-886d-8370faf6e15c",
         "threshold": null,
         "defaultPayment": false
       }

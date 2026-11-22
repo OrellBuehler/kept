@@ -2,7 +2,7 @@
   "data": {
     "institutions": [
       {
-        "id": "c87fa9ba-dce5-4f35-9390-109e84b2fe81",
+        "id": "1fd13a15-292d-4b4a-aba8-e6d033b536bb",
         "name": "Example Bank",
         "bic": "EXAMCHZZ",
         "color": "#1a73e8",
@@ -10,7 +10,7 @@
         "accountCount": 5
       },
       {
-        "id": "fdf5f8cc-a1f7-4eaf-b6c8-168bffd9f361",
+        "id": "98b8538b-76c4-4eaf-86b7-febbeaf40536",
         "name": "Example Broker",
         "bic": null,
         "color": null,
@@ -20,7 +20,7 @@
     ],
     "accounts": [
       {
-        "id": "2fb59d2c-369e-4a53-81b6-60e4d99e6a25",
+        "id": "fac3616a-1a96-4171-ac3d-50b72d0d3cfb",
         "name": "Example Checking",
         "type": "current",
         "currency": "CHF",
@@ -39,7 +39,7 @@
         "shareBps": 10000,
         "sharedWith": null,
         "institution": {
-          "id": "c87fa9ba-dce5-4f35-9390-109e84b2fe81",
+          "id": "1fd13a15-292d-4b4a-aba8-e6d033b536bb",
           "name": "Example Bank",
           "color": "#1a73e8",
           "logoVersion": "fa25202f7fd431e3"
@@ -48,11 +48,11 @@
         "cashBalance": 112860,
         "holdings": null,
         "shareBalance": 112860,
-        "lastBookingDate": "2026-11-21",
-        "lastImportAt": 1795354912260
+        "lastBookingDate": "2026-11-20",
+        "lastImportAt": 1795292415888
       },
       {
-        "id": "cd3805e2-5b8f-4a3b-857d-229780268ae6",
+        "id": "b0da608d-0c75-4473-954f-999f8a577658",
         "name": "Example Savings",
         "type": "savings",
         "currency": "CHF",
@@ -60,7 +60,7 @@
         "contractNumber": null,
         "depositIban": null,
         "openingBalance": 1200000,
-        "openingDate": "2026-07-25",
+        "openingDate": "2026-07-24",
         "noticeMonths": 3,
         "freeWithdrawal": 500000,
         "freeWithdrawalPeriod": "year",
@@ -71,7 +71,7 @@
         "shareBps": 10000,
         "sharedWith": null,
         "institution": {
-          "id": "c87fa9ba-dce5-4f35-9390-109e84b2fe81",
+          "id": "1fd13a15-292d-4b4a-aba8-e6d033b536bb",
           "name": "Example Bank",
           "color": "#1a73e8",
           "logoVersion": "fa25202f7fd431e3"
@@ -80,11 +80,11 @@
         "cashBalance": 1251000,
         "holdings": null,
         "shareBalance": 1251000,
-        "lastBookingDate": "2026-11-02",
+        "lastBookingDate": "2026-11-01",
         "lastImportAt": null
       },
       {
-        "id": "7be74003-351a-440b-af8b-d81133316c65",
+        "id": "4723c0bd-5915-4bb4-bf8a-e4c4e6c71ab3",
         "name": "Example Credit Card",
         "type": "credit_card",
         "currency": "CHF",
@@ -103,7 +103,7 @@
         "shareBps": 10000,
         "sharedWith": null,
         "institution": {
-          "id": "c87fa9ba-dce5-4f35-9390-109e84b2fe81",
+          "id": "1fd13a15-292d-4b4a-aba8-e6d033b536bb",
           "name": "Example Bank",
           "color": "#1a73e8",
           "logoVersion": "fa25202f7fd431e3"
@@ -112,11 +112,11 @@
         "cashBalance": 359650,
         "holdings": null,
         "shareBalance": 359650,
-        "lastBookingDate": "2026-11-14",
-        "lastImportAt": 1795354912284
+        "lastBookingDate": "2026-11-13",
+        "lastImportAt": 1795292415900
       },
       {
-        "id": "188c5ede-b793-4422-bc91-0df887f1bc24",
+        "id": "46d68a57-3f39-40a8-b5c2-2c6908edecbb",
         "name": "Example Brokerage",
         "type": "investment",
         "currency": "CHF",
@@ -124,7 +124,7 @@
         "contractNumber": null,
         "depositIban": null,
         "openingBalance": 2000000,
-        "openingDate": "2026-05-06",
+        "openingDate": "2026-05-05",
         "noticeMonths": null,
         "freeWithdrawal": null,
         "freeWithdrawalPeriod": null,
@@ -135,7 +135,7 @@
         "shareBps": 10000,
         "sharedWith": null,
         "institution": {
-          "id": "fdf5f8cc-a1f7-4eaf-b6c8-168bffd9f361",
+          "id": "98b8538b-76c4-4eaf-86b7-febbeaf40536",
           "name": "Example Broker",
           "color": null,
           "logoVersion": null
@@ -148,11 +148,11 @@
           "estimated": false
         },
         "shareBalance": 2023320,
-        "lastBookingDate": "2026-08-04",
+        "lastBookingDate": "2026-08-03",
         "lastImportAt": null
       },
       {
-        "id": "19212ed6-a6ca-40bd-91ea-885157c8519f",
+        "id": "d436a836-7204-4373-ad12-082d0d7aa5d8",
         "name": "Example Pillar 3a",
         "type": "pillar_3a",
         "currency": "CHF",
@@ -171,7 +171,7 @@
         "shareBps": 10000,
         "sharedWith": null,
         "institution": {
-          "id": "fdf5f8cc-a1f7-4eaf-b6c8-168bffd9f361",
+          "id": "98b8538b-76c4-4eaf-86b7-febbeaf40536",
           "name": "Example Broker",
           "color": null,
           "logoVersion": null
@@ -184,7 +184,7 @@
         "lastImportAt": null
       },
       {
-        "id": "1144e5e1-3cb4-404b-b1dd-c40e29218be8",
+        "id": "a0c71505-621d-4c92-846f-59b9fc558340",
         "name": "Example Pension Fund",
         "type": "pension",
         "currency": "CHF",
@@ -192,7 +192,7 @@
         "contractNumber": null,
         "depositIban": null,
         "openingBalance": 4500000,
-        "openingDate": "2026-05-06",
+        "openingDate": "2026-05-05",
         "noticeMonths": null,
         "freeWithdrawal": null,
         "freeWithdrawalPeriod": null,
@@ -211,7 +211,7 @@
         "lastImportAt": null
       },
       {
-        "id": "a82126a7-72c1-4365-b099-c1cdffe745e3",
+        "id": "5e3f3af3-8d32-4036-b403-b20a5eef538c",
         "name": "Example Euro Account",
         "type": "current",
         "currency": "EUR",
@@ -230,7 +230,7 @@
         "shareBps": 10000,
         "sharedWith": null,
         "institution": {
-          "id": "c87fa9ba-dce5-4f35-9390-109e84b2fe81",
+          "id": "1fd13a15-292d-4b4a-aba8-e6d033b536bb",
           "name": "Example Bank",
           "color": "#1a73e8",
           "logoVersion": "fa25202f7fd431e3"
@@ -239,11 +239,11 @@
         "cashBalance": 118650,
         "holdings": null,
         "shareBalance": 118650,
-        "lastBookingDate": "2026-11-17",
+        "lastBookingDate": "2026-11-16",
         "lastImportAt": null
       },
       {
-        "id": "f2c92e3d-a111-4693-acf4-b220f8fa8495",
+        "id": "789bf03b-84f9-44f1-bec9-0dcb3b0c55c2",
         "name": "Example Joint Account",
         "type": "current",
         "currency": "CHF",
@@ -262,7 +262,7 @@
         "shareBps": 5000,
         "sharedWith": "Alice Example",
         "institution": {
-          "id": "c87fa9ba-dce5-4f35-9390-109e84b2fe81",
+          "id": "1fd13a15-292d-4b4a-aba8-e6d033b536bb",
           "name": "Example Bank",
           "color": "#1a73e8",
           "logoVersion": "fa25202f7fd431e3"
@@ -271,11 +271,11 @@
         "cashBalance": 318000,
         "holdings": null,
         "shareBalance": 159000,
-        "lastBookingDate": "2026-11-11",
+        "lastBookingDate": "2026-11-10",
         "lastImportAt": null
       },
       {
-        "id": "41b48e3d-7f4d-423d-b0d5-a834346d6536",
+        "id": "abf4ce0f-0eb2-4dbe-886d-8370faf6e15c",
         "name": "Example Wallet",
         "type": "cash",
         "currency": "CHF",
@@ -302,7 +302,7 @@
         "lastImportAt": null
       },
       {
-        "id": "c8adf5da-b77b-4b7b-9d38-6a26b54ba5e7",
+        "id": "9903d314-508d-44b1-9052-6a298bc99e0f",
         "name": "Example Old Account",
         "type": "other",
         "currency": "CHF",
@@ -325,7 +325,7 @@
         "cashBalance": 1000,
         "holdings": null,
         "shareBalance": 1000,
-        "lastBookingDate": "2026-01-26",
+        "lastBookingDate": "2026-01-25",
         "lastImportAt": null
       }
     ]
