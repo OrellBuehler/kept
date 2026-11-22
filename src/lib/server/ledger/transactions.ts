@@ -25,6 +25,7 @@ import {
   takeOverMirror,
 } from "$lib/server/transfers/replace";
 import { resyncSource } from "$lib/server/transfers/sync";
+import { announceBills, billsAllocatedIn } from "./allocated-bills";
 import { LedgerError, notFound } from "./errors";
 import type {
   TransactionFilters,
@@ -448,9 +449,13 @@ export async function deleteTransaction(
 async function removeRow(userId: string, id: string): Promise<void> {
   await transaction(
     async (tx) => {
-      await tx
-        .delete(transactions)
-        .where(and(eq(transactions.userId, userId), eq(transactions.id, id)));
+      const where = and(
+        eq(transactions.userId, userId),
+        eq(transactions.id, id),
+      );
+      const billIds = await billsAllocatedIn(tx, userId, where);
+      await tx.delete(transactions).where(where);
+      announceBills(userId, billIds);
     },
     { lock: ledgerLock(userId) },
   );

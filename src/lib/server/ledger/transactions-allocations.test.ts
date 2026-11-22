@@ -1,10 +1,17 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { eq } from "drizzle-orm";
 import { minor } from "$lib/money";
 import { createTestUser } from "$lib/testing/auth";
 import { seedBill } from "$lib/testing/bills";
 import { useTestDB } from "$lib/testing/db";
-import { seedAccount } from "$lib/testing/ledger";
+import {
+  seedAccount,
+  seedImport,
+  seedImportedTransaction,
+} from "$lib/testing/ledger";
+import { clearEventListeners, onBillChanged } from "$lib/server/events";
+import { undoImport } from "$lib/server/imports/history";
+import { deleteAccount } from "./accounts";
 import { allocate, listBillAllocations } from "$lib/server/bills/allocations";
 import { billView } from "$lib/server/bills/status";
 import { billAllocations, getDB } from "$lib/server/db";
@@ -167,5 +174,49 @@ describe("editing a manual payment that is allocated to a bill", () => {
     expect((await billView(user.id, bill.id, { today: TODAY })).status).toBe(
       "open",
     );
+  });
+});
+
+describe("announcing bills that lose their payment", () => {
+  const announced = async (run: () => Promise<unknown>) => {
+    const seen: string[] = [];
+    clearEventListeners();
+    onBillChanged((_userId, billId) => {
+      seen.push(billId);
+    });
+    await run();
+    await vi.waitFor(() => expect(seen.length).toBeGreaterThan(0));
+    clearEventListeners();
+    return seen;
+  };
+
+  it("deleting a payment announces its bill", async () => {
+    const { user, bill, payment } = await setup();
+    expect(
+      await announced(() => deleteTransaction(user.id, payment.id)),
+    ).toEqual([bill.id]);
+  });
+
+  it("deleting the account announces its bills", async () => {
+    const { user, account, bill } = await setup();
+    expect(await announced(() => deleteAccount(user.id, account.id))).toEqual([
+      bill.id,
+    ]);
+  });
+
+  it("undoing an import announces its bills", async () => {
+    const user = await createTestUser();
+    const account = await seedAccount(user.id);
+    const bill = await seedBill(user.id);
+    const imp = await seedImport(user.id, account.id);
+    const row = await seedImportedTransaction(user.id, account.id, {
+      importId: imp.id,
+      amount: minor(-10000),
+    });
+    await allocate(user.id, bill.id, row.id, minor(10000), "user");
+    expect(await announced(() => undoImport(user.id, imp.id))).toEqual([
+      bill.id,
+    ]);
+    expect(await listBillAllocations(user.id, bill.id)).toEqual([]);
   });
 });
