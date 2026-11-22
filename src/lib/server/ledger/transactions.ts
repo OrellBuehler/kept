@@ -1,6 +1,20 @@
 import { ledgerLock } from "$lib/server/ledger/lock";
-import { and, count, desc, eq, gte, inArray, lte, or, sql } from "drizzle-orm";
+import {
+  and,
+  asc,
+  count,
+  desc,
+  eq,
+  gte,
+  inArray,
+  lte,
+  or,
+  sql,
+} from "drizzle-orm";
 import type { RowSource } from "$lib/ledger-types";
+import { recordChange, recordUpdate } from "$lib/server/audit/record";
+import { transactionSummary } from "$lib/server/audit/snapshots";
+import type { Snapshot } from "$lib/server/audit/types";
 import type { Minor } from "$lib/money";
 import {
   accounts,
@@ -153,6 +167,38 @@ async function ownedAccountInTx(
   const account = await first(ownedAccountQuery(tx, userId, accountId));
   if (!account) throw notFound("Account");
   return account;
+}
+
+/** The fields of a transaction the change log shows for a manual edit. */
+const EDITABLE_FIELDS = [
+  "bookingDate",
+  "valueDate",
+  "amount",
+  "counterpartyName",
+  "counterpartyIban",
+  "description",
+  "reference",
+  "note",
+] as const;
+
+function editableFields(
+  row: Pick<Row, (typeof EDITABLE_FIELDS)[number]>,
+): Snapshot {
+  return Object.fromEntries(EDITABLE_FIELDS.map((f) => [f, row[f]]));
+}
+
+/** A whole row for the change log of a create or delete. */
+function rowSnapshot(row: Row): Snapshot {
+  return {
+    accountId: row.accountId,
+    source: row.source,
+    currency: row.currency,
+    ...editableFields(row),
+    categoryId: row.categoryId,
+    taxYear: row.taxYear,
+    deductionYear: row.deductionYear,
+    createdAt: row.createdAt,
+  };
 }
 
 function assertNotBeforeOpening(
@@ -370,6 +416,18 @@ export async function createManualTransaction(
       ).get(created.id);
       if (mirrorId !== undefined)
         await takeOverMirror(tx, userId, mirrorId, created.id);
+      await recordChange({
+        userId,
+        action: "transaction.create",
+        entityId: created.id,
+        summary: transactionSummary(input),
+        after: {
+          accountId,
+          source: "manual",
+          currency,
+          ...editableFields(input),
+        },
+      });
       await linkAfterWrite(
         tx,
         userId,
@@ -393,7 +451,20 @@ export async function updateTransaction(
   const current = await getTransaction(userId, id);
   const where = and(eq(transactions.userId, userId), eq(transactions.id, id));
   if (current.source !== "manual") {
-    await getDB().update(transactions).set({ note: input.note }).where(where);
+    await transaction(async (tx) => {
+      const previous = await getTransactionRowInTx(tx, userId, id);
+      await tx.update(transactions).set({ note: input.note }).where(where);
+      await recordUpdate(
+        {
+          userId,
+          action: "transaction.update",
+          entityId: id,
+          summary: transactionSummary(previous),
+        },
+        { note: previous.note },
+        { note: input.note },
+      );
+    });
   } else {
     if (!("bookingDate" in input)) {
       throw new LedgerError("invalid", "Missing transaction fields.");
@@ -412,6 +483,16 @@ export async function updateTransaction(
           input.bookingDate,
         );
         await tx.update(transactions).set(input).where(where);
+        await recordUpdate(
+          {
+            userId,
+            action: "transaction.update",
+            entityId: id,
+            summary: transactionSummary(input),
+          },
+          editableFields(previous),
+          editableFields(input),
+        );
         // A mirror follows its source's amount, dates and text.
         await resyncSource(tx, userId, id, previous.counterpartyIban);
       },
@@ -449,12 +530,37 @@ export async function deleteTransaction(
 async function removeRow(userId: string, id: string): Promise<void> {
   await transaction(
     async (tx) => {
-      const where = and(
-        eq(transactions.userId, userId),
-        eq(transactions.id, id),
+      const before = await getTransactionRowInTx(tx, userId, id);
+      // The delete takes the payment's allocations along.
+      const allocations = await tx
+        .select({
+          billId: billAllocations.billId,
+          amount: billAllocations.amount,
+          origin: billAllocations.origin,
+        })
+        .from(billAllocations)
+        .where(
+          and(
+            eq(billAllocations.userId, userId),
+            eq(billAllocations.transactionId, id),
+          ),
+        )
+        .orderBy(asc(billAllocations.billId));
+      const billIds = await billsAllocatedIn(
+        tx,
+        userId,
+        and(eq(transactions.userId, userId), eq(transactions.id, id)),
       );
-      const billIds = await billsAllocatedIn(tx, userId, where);
-      await tx.delete(transactions).where(where);
+      await tx
+        .delete(transactions)
+        .where(and(eq(transactions.userId, userId), eq(transactions.id, id)));
+      await recordChange({
+        userId,
+        action: "transaction.delete",
+        entityId: id,
+        summary: transactionSummary(before),
+        before: { ...rowSnapshot(before), allocations },
+      });
       announceBills(userId, billIds);
     },
     { lock: ledgerLock(userId) },

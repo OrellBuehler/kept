@@ -687,6 +687,7 @@ describe("token authorization", () => {
       const apiToken = {
         id: "t",
         userId: user.id,
+        name: "test token",
         scopes: API_SCOPES.filter((s) => s !== scope),
         categoryIds: null,
       };

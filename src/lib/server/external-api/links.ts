@@ -14,6 +14,8 @@ import {
   transaction,
   transactions,
 } from "$lib/server/db";
+import { recordChange, recordUpdate } from "$lib/server/audit/record";
+import { pick } from "$lib/server/audit/snapshots";
 import { hasControlOrSpace, normalizeLinkUrl } from "$lib/external-links";
 import { ApiError, iso, notFoundError } from "./http";
 
@@ -202,6 +204,16 @@ export async function createLink(
           .set({ label: body.label })
           .where(eq(externalLinks.id, existing.id))
           .returning();
+        await recordUpdate(
+          {
+            userId,
+            action: "external_link.create",
+            entityId: existing.id,
+            summary: body.label,
+          },
+          { label: existing.label },
+          { label: body.label },
+        );
         return { link: toDto(row!), created: false };
       }
       const count = (
@@ -220,6 +232,17 @@ export async function createLink(
         .insert(externalLinks)
         .values({ userId, entityType, entityId, ...body })
         .returning();
+      await recordChange({
+        userId,
+        action: "external_link.create",
+        entityId: row!.id,
+        summary: row!.label,
+        after: {
+          ...pick(row!, ["source", "label", "url"] as const),
+          linkedType: entityType,
+          linkedId: entityId,
+        },
+      });
       return { link: toDto(row!), created: true };
     },
     { lock: `external-links:${userId}` },
@@ -256,9 +279,26 @@ export async function deleteLink(
   ) {
     throw notFoundError("Link");
   }
-  await getDB()
-    .delete(externalLinks)
-    .where(and(eq(externalLinks.userId, userId), eq(externalLinks.id, linkId)));
+  await transaction(async (tx) => {
+    const deleted = await tx
+      .delete(externalLinks)
+      .where(
+        and(eq(externalLinks.userId, userId), eq(externalLinks.id, linkId)),
+      )
+      .returning({ id: externalLinks.id });
+    if (deleted.length === 0) return;
+    await recordChange({
+      userId,
+      action: "external_link.delete",
+      entityId: linkId,
+      summary: link.label,
+      before: {
+        ...pick(link, ["source", "label", "url"] as const),
+        linkedType: link.entityType,
+        linkedId: link.entityId,
+      },
+    });
+  });
 }
 
 /** Removes links whose bill or transaction no longer exists. Reads never show them; this only frees the rows. */
