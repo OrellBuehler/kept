@@ -86,9 +86,15 @@ function underPrefix(pathname: string, prefix: string): boolean {
   return path === prefix || path.startsWith(`${prefix}/`);
 }
 
-const APP_API_PUBLIC = new Set(["/server", "/auth/login", "/auth/verify"]);
+const APP_API_PUBLIC = new Set([
+  "/server",
+  "/auth/login",
+  "/auth/verify",
+  "/auth/browser",
+  "/auth/browser/token",
+]);
 
-/** Paths under the app API that answer without a session: server discovery and the two sign-in steps. */
+/** Paths under the app API that answer without a session: server discovery and the sign-in steps. */
 export function isPublicAppApiPath(pathname: string): boolean {
   const path = decodePath(pathname);
   return (

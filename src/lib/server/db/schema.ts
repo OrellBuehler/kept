@@ -189,13 +189,15 @@ export const AUTH_CHALLENGE_KINDS = [
   "passkey_register",
   "passkey_login",
   "passkey_stepup",
+  "app_signin",
 ] as const;
 export type AuthChallengeKind = (typeof AUTH_CHALLENGE_KINDS)[number];
 
 /**
  * Short-lived server state of a half-finished authentication: the pending
- * second-factor login ("login", keyed by the hash of a cookie token) and
- * WebAuthn challenges. Never grants access on its own.
+ * second-factor login ("login", keyed by the hash of a cookie token), WebAuthn
+ * challenges and an app's sign-in through the browser ("app_signin"). Never
+ * grants access on its own.
  */
 export const authChallenges = table(
   "auth_challenges",

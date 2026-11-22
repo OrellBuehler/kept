@@ -26,8 +26,11 @@ notifies locally, and it schedules the due-date reminders ahead so they arrive e
 server cannot be reached.
 
 **Sign-in.** Password, plus an authenticator or recovery code when the account has two-step
-verification. Passkeys cannot be used in the app: an account that only has passkeys signs in
-with a recovery code. The session token is kept in the Android Keystore / iOS Keychain; signing
+verification. Or **Sign in with the browser**: the app opens your server's own login page, where
+passkeys and password managers work as on the web, and takes over the session when you confirm
+there (the server must be Kept 0.7 or newer). The app's own form cannot use passkeys, because a
+passkey is bound to your server's address and an app can only be tied to addresses known when it
+is built. The session token is kept in the Android Keystore / iOS Keychain; signing
 out or changing the password on the web ends it.
 
 ## Build

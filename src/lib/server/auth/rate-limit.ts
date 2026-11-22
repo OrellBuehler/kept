@@ -362,6 +362,15 @@ export const passkeyOptionsLimiter = new LoginRateLimiter(
   Infinity,
 );
 
+/** An app's browser sign-in per IP: starts (each creates a challenge row) and token requests, counted apart; never refunded. */
+export const appSignInLimiter = new LoginRateLimiter(
+  Date.now,
+  WINDOW_MS,
+  60,
+  Infinity,
+  Infinity,
+);
+
 /** First-run /setup submissions per IP (each costs a password hash); call with username "setup". */
 export const setupLimiter = new LoginRateLimiter(
   Date.now,

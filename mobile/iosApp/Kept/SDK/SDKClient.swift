@@ -73,6 +73,28 @@ final class SDKClient: @unchecked Sendable {
         sdk.cancelSecondFactor()
     }
 
+    /// The scheme of the address the server's sign-in page sends the browser to when it is done.
+    static let browserCallbackScheme = "ch.orellbuehler.kept"
+
+    /// Starts a sign-in on the server's own login page; the address to open in a browser.
+    func startBrowserSignIn() async throws -> URL {
+        let address = try await call { try await self.sdk.startBrowserSignIn() }
+        guard let url = URL(string: address) else { throw KeptError.unreadable }
+        return url
+    }
+
+    /// After the browser came back to `callback`: fetches the session for what was approved there.
+    func finishBrowserSignIn(callback: URL) async throws {
+        let address = callback.absoluteString
+        try await call {
+            _ = try await self.sdk.finishBrowserSignIn(callbackUrl: address)
+        }
+    }
+
+    func cancelBrowserSignIn() {
+        sdk.cancelBrowserSignIn()
+    }
+
     func logout() async {
         do {
             try await sdk.logout()

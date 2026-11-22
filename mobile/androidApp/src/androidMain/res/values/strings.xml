@@ -50,7 +50,10 @@
     <string name="login_expired">Your session has ended. Sign in again.</string>
     <string name="code_title">Two-step verification</string>
     <string name="code_text">Enter the code from your authenticator app, or a recovery code.</string>
-    <string name="code_text_recovery">This account signs in with a passkey, which the app cannot use. Enter one of your recovery codes.</string>
+    <string name="login_browser">Sign in with the browser</string>
+    <string name="login_browser_text">For a passkey or a password manager: sign in on your server\'s own page and come back.</string>
+    <string name="login_browser_missing">No browser is installed to sign in with.</string>
+    <string name="code_text_recovery">This account signs in with a passkey. Sign in with the browser to use it, or enter one of your recovery codes.</string>
     <string name="code_label">Code</string>
     <string name="code_submit">Verify</string>
     <string name="code_cancel">Start again</string>

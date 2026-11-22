@@ -125,6 +125,7 @@ android {
         implementation(libs.lifecycle.process)
         implementation(libs.kotlinx.coroutines.android)
         implementation(libs.work.runtime)
+        implementation(libs.browser)
         debugImplementation(libs.compose.ui.tooling)
         testImplementation(libs.kotlin.test)
         testImplementation(libs.kotlin.test.junit)
