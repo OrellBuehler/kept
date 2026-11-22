@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.7.0
 
 ### Added
 
@@ -27,6 +27,19 @@
   dashboard): confirms that the account is up to date although there was nothing to import, for
   banks that issue no statement for a period without transactions. It quiets the "last import"
   warnings and the notification like an import does. Web only for now.
+- **Sign in to the apps through the browser**: the apps open your server's login page in the
+  system browser, where passkeys and password managers work as on the web, and you confirm there
+  that the app may sign in. The password form stays.
+- **Reported gain and return of pillar 3a portfolios**: the update values dialog takes the gain
+  (CHF) and return (%) the provider reports next to the value. The account page shows them, the
+  pillar 3a page charts each portfolio's return over time, and the MCP tool `get_pillar3a`
+  returns them.
+- **Website link** on institutions and accounts: an icon on the accounts list and the account
+  page opens the account's portal, or the institution's when the account has none.
+- **Why a bill suggestion is ambiguous**: a suggestion marked "Several matches" says whether the
+  payment is also suggested for other bills, the bill has other suggested payments, or the payment
+  went to a different account than the bill names ("Different account"). On the bills page the
+  badge narrows the list to the competing matches.
 
 ### Changed
 
@@ -34,6 +47,10 @@
   reverting the delete brings the document back.
 
 ### Fixed
+
+- The CSV mapping step lays out row by row, so the preview of a wide file is no longer cut off.
+- The forecast and net worth charts no longer draw their fill past the bottom of the chart when
+  the axis does not start at zero.
 
 - Bill matching: a payment of twice the open amount was suggested twice and never confirmed
   automatically; a bill stayed "paid" in an integration after its payment was deleted; payments
