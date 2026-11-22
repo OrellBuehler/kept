@@ -158,7 +158,7 @@ export const institutionInputSchema = z.object({
   ),
   websiteUrl: optionalWebUrl,
 });
-/** `websiteUrl` may be left out by callers that predate it; the ledger stores that as no link. */
+/** `websiteUrl` may be left out by callers that predate it: a create stores no link, an update keeps the stored one. */
 export type InstitutionInput = Omit<
   z.output<typeof institutionInputSchema>,
   "websiteUrl"
@@ -347,7 +347,10 @@ export const accountInputSchema = z
     };
   });
 export type ParsedAccountInput = z.output<typeof accountInputSchema>;
-/** What the ledger takes to create or update an account; `confirmRemoveMirrors` only matters to updates. */
+/**
+ * What the ledger takes to create or update an account; `confirmRemoveMirrors` only matters to updates.
+ * A left-out `websiteUrl` creates no link and keeps the stored one on update.
+ */
 export type AccountInput = Omit<
   ParsedAccountInput,
   "confirmRemoveMirrors" | "websiteUrl"

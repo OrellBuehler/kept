@@ -121,9 +121,14 @@ export async function updateInstitution(
           .limit(1),
       );
       if (!before) throw notFound("Institution");
+      const next = {
+        ...input,
+        websiteUrl:
+          input.websiteUrl === undefined ? before.websiteUrl : input.websiteUrl,
+      };
       await tx
         .update(institutions)
-        .set({ ...input, websiteUrl: input.websiteUrl ?? null })
+        .set(next)
         .where(and(eq(institutions.userId, userId), eq(institutions.id, id)));
       await recordUpdate(
         {
@@ -133,7 +138,7 @@ export async function updateInstitution(
           summary: input.name,
         },
         pick(before, AUDIT_FIELDS),
-        pick({ ...input, websiteUrl: input.websiteUrl ?? null }, AUDIT_FIELDS),
+        pick(next, AUDIT_FIELDS),
       );
     });
   } catch (err) {

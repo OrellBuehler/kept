@@ -346,6 +346,20 @@ describe("account detail page", () => {
     expect((await getAccount(u.id, acc.id)).fillFromTransfers).toBe(false);
   });
 
+  it("updateAccount keeps the website when the form has no such field", async () => {
+    const u = await createTestUser();
+    const acc = await seedAccount(u.id, {
+      websiteUrl: "https://portal.example.com",
+    });
+    const form = { name: "Main", type: "current", currency: "CHF" };
+    await run("updateAccount", u, acc.id, form);
+    expect((await getAccount(u.id, acc.id)).websiteUrl).toBe(
+      "https://portal.example.com",
+    );
+    await run("updateAccount", u, acc.id, { ...form, websiteUrl: "" });
+    expect((await getAccount(u.id, acc.id)).websiteUrl).toBeNull();
+  });
+
   it("updateAccount validation failure echoes values", async () => {
     const u = await createTestUser();
     const acc = await seedAccount(u.id);

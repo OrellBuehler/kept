@@ -561,7 +561,6 @@ async function updateAccountInTx(
     .update(accounts)
     .set({
       ...rest,
-      websiteUrl: rest.websiteUrl ?? null,
       fillFromTransfers,
       tradesMoveCash,
       sortOrder: sortOrder ?? current.sortOrder,

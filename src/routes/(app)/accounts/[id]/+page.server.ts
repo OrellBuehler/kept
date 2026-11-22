@@ -263,7 +263,11 @@ export const actions: Actions = {
       });
     }
     try {
-      await updateAccount(user.id, params.id, parsed.data);
+      // Apps released before the field post no websiteUrl; that keeps the stored link.
+      await updateAccount(user.id, params.id, {
+        ...parsed.data,
+        websiteUrl: form.has("websiteUrl") ? parsed.data.websiteUrl : undefined,
+      });
       return { success: true as const, action: "updateAccount" as const };
     } catch (err) {
       return ledgerFailure("updateAccount", err, values);

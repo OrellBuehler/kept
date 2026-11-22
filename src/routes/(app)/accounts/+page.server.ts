@@ -105,7 +105,11 @@ export const actions: Actions = {
     const { id, ...input } = parsed.data;
     try {
       const logo = await readLogoUpload(form);
-      await updateInstitution(user.id, id, input);
+      // Apps released before the field post no websiteUrl; that keeps the stored link.
+      await updateInstitution(user.id, id, {
+        ...input,
+        websiteUrl: form.has("websiteUrl") ? input.websiteUrl : undefined,
+      });
       if (logo) await setInstitutionLogo(user.id, id, logo);
       else if (form.get("removeLogo") === "1")
         await removeInstitutionLogo(user.id, id);
