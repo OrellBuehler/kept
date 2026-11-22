@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.6.0
 
 ### Upgrading from 0.5.0
 
@@ -16,6 +16,15 @@
 
 ### Added
 
+- **Apps for Android and iOS** (`mobile/`): native apps with the features of the web, for a server
+  you host yourself. You enter the address of your server, then sign in with your Kept username
+  and password (plus an authenticator or recovery code with two-step verification). The apps can
+  remind you of bills that are due, budgets that are used up and accounts without a recent
+  import; there is no push service, the app asks your server in the background. The Android APK
+  is attached to the release once signing is set up; iOS is in TestFlight testing.
+- **App API** under `/api/app/v1` for the apps (`docs/app-api.md`): sign-in with a bearer session,
+  the data and actions of the pages the apps show, and `GET /reminders`. Nothing to configure;
+  signing out or changing the password on the web ends the app's session.
 - **Copy a CSV mapping from another account**: the column-mapping page offers the mappings saved
   for your other accounts. Applying one fills the form (with this account's currency as the
   default) and the preview checks it against the file before it is saved for this account.
