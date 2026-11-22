@@ -961,6 +961,19 @@ describe("suggestMatches: ambiguity and precedence", () => {
     });
   });
 
+  it("a payment of twice the remaining amount is suggested once, by reference", () => {
+    const b = bill({ reference: QRR, referenceType: "QRR" });
+    const s = only(
+      suggestMatches([b], [tx({ reference: QRR, amount: minor(-20000) })], []),
+    );
+    expect(s).toMatchObject({
+      rule: "reference",
+      amount: 10000,
+      ambiguous: false,
+    });
+    expect(autoConfirmable(s)).toBe(true);
+  });
+
   it("a bill can match by reference and by IBAN for different transactions", () => {
     const b = bill({ reference: QRR, referenceType: "QRR" });
     const result = suggestMatches(

@@ -294,6 +294,7 @@ export function suggestMatches(
 
   // Pass 1: structured references.
   const consumed = new Map<string, number>();
+  const referenced = new Set<string>();
   for (const { bill, remaining, overpaid, wantsIncoming } of open) {
     if (overpaid) continue;
     const billRef =
@@ -329,6 +330,7 @@ export function suggestMatches(
         amount: minor(amount),
         ambiguous: ibanConflict,
       });
+      referenced.add(`${bill.id}\u0000${tx.id}`);
       // A demoted match is only a suggestion; it must not block other bills.
       if (!ibanConflict) {
         consumed.set(tx.id, Math.max(consumed.get(tx.id) ?? 0, amount));
@@ -344,6 +346,8 @@ export function suggestMatches(
     const window = paymentWindow(bill, o);
     for (const { tx, free: txFree } of free) {
       if (allocated.has(`${bill.id}\u0000${tx.id}`)) continue;
+      // The pair is already suggested by its reference, whatever is left of the payment.
+      if (referenced.has(`${bill.id}\u0000${tx.id}`)) continue;
       if (!sameCurrency(bill.currency, tx.currency)) continue;
       if (txFree > 0 !== wantsIncoming) continue;
       if (
