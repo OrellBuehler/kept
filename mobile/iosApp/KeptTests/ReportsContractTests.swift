@@ -5,7 +5,7 @@ import XCTest
 final class ReportsContractTests: XCTestCase {
     func testReports() throws {
         let page = try ContractTests.decode(ReportsPage.self, "reports")
-        XCTAssertEqual(page.today, "2026-11-21")
+        XCTAssertNotNil(page.today.range(of: #"^\d{4}-\d{2}-\d{2}$"#, options: .regularExpression))
         XCTAssertTrue(page.hasShared)
         XCTAssertEqual(page.accounts.count, 10)
         XCTAssertTrue(page.accounts.contains { $0.iban == nil })

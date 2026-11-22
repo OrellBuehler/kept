@@ -12,12 +12,12 @@
       ],
       "securities": [
         {
-          "securityId": "f4d754a4-0ad5-4283-9a35-59b8059c0f09",
+          "securityId": "bee6b308-fa58-4f57-81ab-579e5a313d8d",
           "name": "Example Stock Corp",
           "currency": "USD",
           "quantity": 2000000000,
           "price": 5400000000,
-          "priceDate": "2026-11-16",
+          "priceDate": "2026-11-17",
           "priceSource": "manual",
           "totals": [
             {
@@ -30,19 +30,19 @@
           ],
           "positions": [
             {
-              "securityId": "f4d754a4-0ad5-4283-9a35-59b8059c0f09",
+              "securityId": "bee6b308-fa58-4f57-81ab-579e5a313d8d",
               "name": "Example Stock Corp",
               "currency": "USD",
               "quantity": 2000000000,
               "price": 5400000000,
-              "priceDate": "2026-11-16",
+              "priceDate": "2026-11-17",
               "priceSource": "manual",
               "fxRate": 87000000,
               "value": 93960,
               "cost": 88900,
               "gain": 5060,
               "estimated": false,
-              "accountId": "46d68a57-3f39-40a8-b5c2-2c6908edecbb",
+              "accountId": "94aa557c-b095-4d45-a191-b3191548225b",
               "accountName": "Example Brokerage",
               "institutionName": "Example Broker",
               "accountCurrency": "CHF"
@@ -50,12 +50,12 @@
           ]
         },
         {
-          "securityId": "bf2bedf0-1e28-48e9-b134-faf297f3289e",
+          "securityId": "a217d557-ad88-43ad-81d5-62d114958d4d",
           "name": "Example World ETF",
           "currency": "CHF",
           "quantity": 2400000000,
           "price": 5840000000,
-          "priceDate": "2026-11-18",
+          "priceDate": "2026-11-19",
           "priceSource": "provider",
           "totals": [
             {
@@ -68,19 +68,19 @@
           ],
           "positions": [
             {
-              "securityId": "bf2bedf0-1e28-48e9-b134-faf297f3289e",
+              "securityId": "a217d557-ad88-43ad-81d5-62d114958d4d",
               "name": "Example World ETF",
               "currency": "CHF",
               "quantity": 2400000000,
               "price": 5840000000,
-              "priceDate": "2026-11-18",
+              "priceDate": "2026-11-19",
               "priceSource": "provider",
               "fxRate": 100000000,
               "value": 140160,
               "cost": 122600,
               "gain": 17560,
               "estimated": false,
-              "accountId": "46d68a57-3f39-40a8-b5c2-2c6908edecbb",
+              "accountId": "94aa557c-b095-4d45-a191-b3191548225b",
               "accountName": "Example Brokerage",
               "institutionName": "Example Broker",
               "accountCurrency": "CHF"
@@ -91,7 +91,7 @@
     },
     "securities": [
       {
-        "id": "75997bd2-c5bb-4349-9ded-7f3d4dd89c4b",
+        "id": "264dfb34-d980-4e78-9aa7-d7a346fbb591",
         "name": "Example Bond Fund",
         "kind": "bond",
         "isin": "EX0000000021",
@@ -99,7 +99,7 @@
         "currency": "CHF"
       },
       {
-        "id": "f4d754a4-0ad5-4283-9a35-59b8059c0f09",
+        "id": "bee6b308-fa58-4f57-81ab-579e5a313d8d",
         "name": "Example Stock Corp",
         "kind": "stock",
         "isin": null,
@@ -107,7 +107,7 @@
         "currency": "USD"
       },
       {
-        "id": "bf2bedf0-1e28-48e9-b134-faf297f3289e",
+        "id": "a217d557-ad88-43ad-81d5-62d114958d4d",
         "name": "Example World ETF",
         "kind": "etf",
         "isin": "EX0000000013",
@@ -121,7 +121,7 @@
     },
     "priceHistory": {
       "security": {
-        "id": "bf2bedf0-1e28-48e9-b134-faf297f3289e",
+        "id": "a217d557-ad88-43ad-81d5-62d114958d4d",
         "name": "Example World ETF",
         "kind": "etf",
         "isin": "EX0000000013",
@@ -130,23 +130,23 @@
       },
       "prices": [
         {
-          "id": "e5fee6a8-ebec-458c-9a15-535fa0ea36ed",
-          "securityId": "bf2bedf0-1e28-48e9-b134-faf297f3289e",
-          "date": "2026-11-18",
+          "id": "ddabb5f7-e2cb-497d-8d6f-6898437236d6",
+          "securityId": "a217d557-ad88-43ad-81d5-62d114958d4d",
+          "date": "2026-11-19",
           "price": 5840000000,
           "source": "provider"
         },
         {
-          "id": "20fc6d01-ff19-4c2e-b2a7-0d6b8a092342",
-          "securityId": "bf2bedf0-1e28-48e9-b134-faf297f3289e",
-          "date": "2026-11-17",
+          "id": "c03993c7-2002-4755-83d9-a7a2a6f03971",
+          "securityId": "a217d557-ad88-43ad-81d5-62d114958d4d",
+          "date": "2026-11-18",
           "price": 5810000000,
           "source": "provider"
         },
         {
-          "id": "b0b90f8e-93ab-4fae-a2df-976b9f92b0da",
-          "securityId": "bf2bedf0-1e28-48e9-b134-faf297f3289e",
-          "date": "2026-10-22",
+          "id": "882f3b06-d033-4f65-b4e2-db92f7c8412e",
+          "securityId": "a217d557-ad88-43ad-81d5-62d114958d4d",
+          "date": "2026-10-23",
           "price": 5720000000,
           "source": "manual"
         }

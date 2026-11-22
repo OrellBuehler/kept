@@ -109,6 +109,24 @@ export function amountField(
   });
 }
 
+/** An absolute http(s) URL, at most 300 characters; blank becomes null. */
+export const optionalWebUrl = optionalOf(
+  z
+    .string()
+    .trim()
+    .max(300, "The link must be at most 300 characters.")
+    .refine((v) => {
+      try {
+        const u = new URL(v);
+        return (
+          (u.protocol === "https:" || u.protocol === "http:") && u.host !== ""
+        );
+      } catch {
+        return false;
+      }
+    }, "Enter a full web address starting with https://."),
+);
+
 // --- institutions ---------------------------------------------------------
 
 export const institutionInputSchema = z.object({
@@ -138,8 +156,13 @@ export const institutionInputSchema = z.object({
       .regex(/^#[0-9a-fA-F]{6}$/, "Color must look like #1a2b3c.")
       .transform((v) => v.toLowerCase()),
   ),
+  websiteUrl: optionalWebUrl,
 });
-export type InstitutionInput = z.output<typeof institutionInputSchema>;
+/** `websiteUrl` may be left out by callers that predate it: a create stores no link, an update keeps the stored one. */
+export type InstitutionInput = Omit<
+  z.output<typeof institutionInputSchema>,
+  "websiteUrl"
+> & { websiteUrl?: string | null };
 
 // --- accounts -------------------------------------------------------------
 
@@ -161,6 +184,8 @@ export const accountInputSchema = z
     sharedWith: optionalText(80, "Shared with"),
     /** Pillar 3a only: the provider's contract number. */
     contractNumber: optionalText(60, "Contract number"),
+    /** The account's web portal link. */
+    websiteUrl: optionalWebUrl,
     /** Pillar 3a only: the IBAN (usually a QR-IBAN) to pay into. */
     depositIban: optionalIban,
     /** Months of notice before the balance can be withdrawn. */
@@ -322,8 +347,14 @@ export const accountInputSchema = z
     };
   });
 export type ParsedAccountInput = z.output<typeof accountInputSchema>;
-/** What the ledger takes to create or update an account; `confirmRemoveMirrors` only matters to updates. */
-export type AccountInput = Omit<ParsedAccountInput, "confirmRemoveMirrors">;
+/**
+ * What the ledger takes to create or update an account; `confirmRemoveMirrors` only matters to updates.
+ * A left-out `websiteUrl` creates no link and keeps the stored one on update.
+ */
+export type AccountInput = Omit<
+  ParsedAccountInput,
+  "confirmRemoveMirrors" | "websiteUrl"
+> & { websiteUrl?: string | null };
 
 // --- transactions ---------------------------------------------------------
 

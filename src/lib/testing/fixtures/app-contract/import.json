@@ -2,98 +2,105 @@
   "data": {
     "accounts": [
       {
-        "id": "fac3616a-1a96-4171-ac3d-50b72d0d3cfb",
+        "id": "3486d393-2f40-42b8-90c5-ffd2a5bddb26",
         "name": "Example Checking",
         "currency": "CHF",
         "institutionName": "Example Bank",
         "institution": {
-          "id": "1fd13a15-292d-4b4a-aba8-e6d033b536bb",
+          "id": "0c320f11-40b2-46d1-a815-d1ea67c2e416",
           "name": "Example Bank",
           "color": "#1a73e8",
-          "logoVersion": "fa25202f7fd431e3"
+          "logoVersion": "fa25202f7fd431e3",
+          "websiteUrl": null
         }
       },
       {
-        "id": "b0da608d-0c75-4473-954f-999f8a577658",
+        "id": "258d6028-d2f3-4ec4-961d-61ebc4c915cd",
         "name": "Example Savings",
         "currency": "CHF",
         "institutionName": "Example Bank",
         "institution": {
-          "id": "1fd13a15-292d-4b4a-aba8-e6d033b536bb",
+          "id": "0c320f11-40b2-46d1-a815-d1ea67c2e416",
           "name": "Example Bank",
           "color": "#1a73e8",
-          "logoVersion": "fa25202f7fd431e3"
+          "logoVersion": "fa25202f7fd431e3",
+          "websiteUrl": null
         }
       },
       {
-        "id": "4723c0bd-5915-4bb4-bf8a-e4c4e6c71ab3",
+        "id": "58f7cd50-c58c-44d6-8f61-42310e0d0aca",
         "name": "Example Credit Card",
         "currency": "CHF",
         "institutionName": "Example Bank",
         "institution": {
-          "id": "1fd13a15-292d-4b4a-aba8-e6d033b536bb",
+          "id": "0c320f11-40b2-46d1-a815-d1ea67c2e416",
           "name": "Example Bank",
           "color": "#1a73e8",
-          "logoVersion": "fa25202f7fd431e3"
+          "logoVersion": "fa25202f7fd431e3",
+          "websiteUrl": null
         }
       },
       {
-        "id": "46d68a57-3f39-40a8-b5c2-2c6908edecbb",
+        "id": "94aa557c-b095-4d45-a191-b3191548225b",
         "name": "Example Brokerage",
         "currency": "CHF",
         "institutionName": "Example Broker",
         "institution": {
-          "id": "98b8538b-76c4-4eaf-86b7-febbeaf40536",
+          "id": "9feb3805-2382-4fe4-a094-5edbfda2f29c",
           "name": "Example Broker",
           "color": null,
-          "logoVersion": null
+          "logoVersion": null,
+          "websiteUrl": null
         }
       },
       {
-        "id": "d436a836-7204-4373-ad12-082d0d7aa5d8",
+        "id": "1edd858c-af1f-4910-84c4-859409bbd141",
         "name": "Example Pillar 3a",
         "currency": "CHF",
         "institutionName": "Example Broker",
         "institution": {
-          "id": "98b8538b-76c4-4eaf-86b7-febbeaf40536",
+          "id": "9feb3805-2382-4fe4-a094-5edbfda2f29c",
           "name": "Example Broker",
           "color": null,
-          "logoVersion": null
+          "logoVersion": null,
+          "websiteUrl": null
         }
       },
       {
-        "id": "a0c71505-621d-4c92-846f-59b9fc558340",
+        "id": "74f1e5be-630c-4e2b-b1c3-2aa178ef8e02",
         "name": "Example Pension Fund",
         "currency": "CHF",
         "institutionName": null,
         "institution": null
       },
       {
-        "id": "5e3f3af3-8d32-4036-b403-b20a5eef538c",
+        "id": "f94ecd48-dc50-45ea-9517-7c45ede0f286",
         "name": "Example Euro Account",
         "currency": "EUR",
         "institutionName": "Example Bank",
         "institution": {
-          "id": "1fd13a15-292d-4b4a-aba8-e6d033b536bb",
+          "id": "0c320f11-40b2-46d1-a815-d1ea67c2e416",
           "name": "Example Bank",
           "color": "#1a73e8",
-          "logoVersion": "fa25202f7fd431e3"
+          "logoVersion": "fa25202f7fd431e3",
+          "websiteUrl": null
         }
       },
       {
-        "id": "789bf03b-84f9-44f1-bec9-0dcb3b0c55c2",
+        "id": "08b2c1a0-6b0b-4978-864a-332697bc6ffb",
         "name": "Example Joint Account",
         "currency": "CHF",
         "institutionName": "Example Bank",
         "institution": {
-          "id": "1fd13a15-292d-4b4a-aba8-e6d033b536bb",
+          "id": "0c320f11-40b2-46d1-a815-d1ea67c2e416",
           "name": "Example Bank",
           "color": "#1a73e8",
-          "logoVersion": "fa25202f7fd431e3"
+          "logoVersion": "fa25202f7fd431e3",
+          "websiteUrl": null
         }
       },
       {
-        "id": "abf4ce0f-0eb2-4dbe-886d-8370faf6e15c",
+        "id": "df17c54a-a84b-448c-9b4a-bb1a5a8355a4",
         "name": "Example Wallet",
         "currency": "CHF",
         "institutionName": null,
@@ -102,14 +109,14 @@
     ],
     "recentImports": [
       {
-        "id": "a691fc54-8417-4c18-ab64-aa24fae85cbf",
-        "accountId": "5e3f3af3-8d32-4036-b403-b20a5eef538c",
+        "id": "e0512642-03d4-477d-a21b-fc74c3d146f7",
+        "accountId": "f94ecd48-dc50-45ea-9517-7c45ede0f286",
         "accountName": "Example Euro Account",
         "currency": "EUR",
         "format": "camt053",
         "fileName": "euro.xml",
-        "statementFrom": "2026-11-19",
-        "statementTo": "2026-11-19",
+        "statementFrom": "2026-11-20",
+        "statementTo": "2026-11-20",
         "openingBalance": null,
         "openingBalanceDate": null,
         "closingBalance": null,
@@ -117,11 +124,11 @@
         "newCount": 1,
         "duplicateCount": 0,
         "warnings": [],
-        "createdAt": 1795292416645
+        "createdAt": 1795359130167
       },
       {
-        "id": "84849fed-7db8-4190-bb03-73478d09f2f2",
-        "accountId": "4723c0bd-5915-4bb4-bf8a-e4c4e6c71ab3",
+        "id": "14f74e43-2b24-4362-9b52-0751d48050b7",
+        "accountId": "58f7cd50-c58c-44d6-8f61-42310e0d0aca",
         "accountName": "Example Credit Card",
         "currency": "CHF",
         "format": "csv",
@@ -135,11 +142,11 @@
         "newCount": 5,
         "duplicateCount": 0,
         "warnings": [],
-        "createdAt": 1795292415900
+        "createdAt": 1795359129302
       },
       {
-        "id": "0f54f833-89bc-4859-8790-d8d17d8f84cf",
-        "accountId": "fac3616a-1a96-4171-ac3d-50b72d0d3cfb",
+        "id": "e8a60d9e-0a59-4a36-aeae-e858985cc301",
+        "accountId": "3486d393-2f40-42b8-90c5-ffd2a5bddb26",
         "accountName": "Example Checking",
         "currency": "CHF",
         "format": "camt053",
@@ -157,11 +164,11 @@
           "The file's opening balance (CHF 75.00 on 2025-01-01) does not match the ledger balance at the end of the previous day (CHF 1,232.50). This usually means a gap between imports or missing transactions.",
           "After this import the ledger balance on 2025-01-31 would be CHF 1,232.50, but the file's closing balance is CHF 75.00. This usually means a gap between imports or missing transactions."
         ],
-        "createdAt": 1795292415888
+        "createdAt": 1795359129289
       },
       {
-        "id": "d392ae18-cf07-4c3e-a26d-7740dfaf7c1b",
-        "accountId": "fac3616a-1a96-4171-ac3d-50b72d0d3cfb",
+        "id": "5e31da6c-3a33-4e5b-81b2-5a4b1ff28102",
+        "accountId": "3486d393-2f40-42b8-90c5-ffd2a5bddb26",
         "accountName": "Example Checking",
         "currency": "CHF",
         "format": "camt053",
@@ -175,14 +182,14 @@
         "newCount": 5,
         "duplicateCount": 0,
         "warnings": [],
-        "createdAt": 1795292415882
+        "createdAt": 1795359129277
       }
     ],
     "inbox": {
       "enabled": true,
       "folder": "/var/lib/kept/inbox/alice",
       "lastScan": {
-        "at": 1795296016634,
+        "at": 1795362730156,
         "imported": 1,
         "review": 1,
         "failed": 1,
@@ -191,47 +198,47 @@
       },
       "entries": [
         {
-          "id": "8c94d8aa-3b58-44c5-8928-960a6b228623",
+          "id": "7de613d7-6a3e-4ff6-b68d-776b20b78140",
           "fileName": "statement.csv",
           "status": "review",
           "reason": "No column mapping is saved for this account yet. Review the file to map its columns.",
           "accountName": "Example Wallet",
           "newCount": null,
           "duplicateCount": null,
-          "updatedAt": 1795292416660
+          "updatedAt": 1795359130183
         },
         {
-          "id": "65abdde9-8492-4c20-835b-021354061bd5",
-          "fileName": "unknown.csv",
-          "status": "failed",
-          "reason": "Cannot tell which account this file belongs to. Put CSV and Excel files in a folder named after the account.",
-          "accountName": null,
-          "newCount": null,
-          "duplicateCount": null,
-          "updatedAt": 1795292416655
-        },
-        {
-          "id": "4305b399-2024-488f-bec6-88e4611ebd9e",
+          "id": "4aed3210-f18d-4965-86fe-4b36eea0a0f2",
           "fileName": "again.xml",
           "status": "duplicate",
           "reason": "This exact file was already imported into the account.",
           "accountName": "Example Checking",
           "newCount": null,
           "duplicateCount": null,
-          "updatedAt": 1795292416654
+          "updatedAt": 1795359130177
         },
         {
-          "id": "afe2284b-93da-475b-9d88-065886b585c7",
+          "id": "eb710b20-80f3-4b6b-8083-32e4b3349a61",
+          "fileName": "unknown.csv",
+          "status": "failed",
+          "reason": "Cannot tell which account this file belongs to. Put CSV and Excel files in a folder named after the account.",
+          "accountName": null,
+          "newCount": null,
+          "duplicateCount": null,
+          "updatedAt": 1795359130177
+        },
+        {
+          "id": "e978bc5b-0bfc-4453-8482-45a2c8a5a25f",
           "fileName": "euro.xml",
           "status": "imported",
           "reason": null,
           "accountName": "Example Euro Account",
           "newCount": 1,
           "duplicateCount": 0,
-          "updatedAt": 1795292416647
+          "updatedAt": 1795359130170
         }
       ]
     },
-    "selectedAccountId": "fac3616a-1a96-4171-ac3d-50b72d0d3cfb"
+    "selectedAccountId": "3486d393-2f40-42b8-90c5-ffd2a5bddb26"
   }
 }

@@ -1,11 +1,11 @@
 {
   "user": {
-    "id": "a19c4f65-cf24-458f-afef-8a9f4be965ba",
+    "id": "afc38fa4-5f92-4bae-a994-22f0cda93262",
     "username": "alice",
     "displayName": "Alice Example",
     "role": "admin"
   },
-  "today": "2026-11-21",
+  "today": "2026-11-22",
   "overdueBills": 1,
   "preferences": {
     "ibanDisplay": "masked",
@@ -16,5 +16,5 @@
     "investmentCashLiquid": true
   },
   "twoFactor": true,
-  "sessionExpiresAt": "2026-12-21T20:20:16.021Z"
+  "sessionExpiresAt": "2026-12-22T14:52:09.443Z"
 }

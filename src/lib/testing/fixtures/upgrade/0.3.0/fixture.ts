@@ -157,9 +157,11 @@ export const expected: Expected = {
       "free_withdrawal_period",
       "notice_months",
       "trades_move_cash",
+      "website_url",
     ],
     category_rules: ["seq"],
     documents: ["held_until"],
+    institutions: ["website_url"],
     paperless_connections: ["instance_key"],
     tax_credits: ["seq"],
     transactions: ["deduction_year", "mirror_of_id", "seq"],
@@ -179,7 +181,10 @@ export const expected: Expected = {
           free_withdrawal_period: none,
           notice_months: none,
           trades_move_cash: int(0),
+          website_url: none,
         };
+      case "institutions":
+        return { website_url: none };
       case "category_rules":
       case "tax_credits":
         return { seq: rowid(before) };

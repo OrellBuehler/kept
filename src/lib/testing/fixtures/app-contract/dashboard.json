@@ -1,32 +1,32 @@
 {
   "data": {
-    "today": "2026-11-21",
+    "today": "2026-11-22",
     "forecastAlerts": [
       {
-        "accountId": "fac3616a-1a96-4171-ac3d-50b72d0d3cfb",
+        "accountId": "3486d393-2f40-42b8-90c5-ffd2a5bddb26",
         "name": "Example Checking",
         "currency": "CHF",
-        "date": "2026-12-03",
+        "date": "2026-12-04",
         "balance": -125665
       }
     ],
     "needsAmount": [
       {
-        "transferId": "ed40b991-4046-400c-a8d5-355d243180f3",
-        "sourceTransactionId": "fe85a7a1-9534-46d3-945e-7598144429c1",
-        "sourceAccountId": "fac3616a-1a96-4171-ac3d-50b72d0d3cfb",
+        "transferId": "c1264663-6774-492b-902e-6fc8029f9bf5",
+        "sourceTransactionId": "f8385a74-2cd1-4e93-a866-69d645524fc6",
+        "sourceAccountId": "3486d393-2f40-42b8-90c5-ffd2a5bddb26",
         "sourceAccountName": "Example Checking",
-        "targetAccountId": "5e3f3af3-8d32-4036-b403-b20a5eef538c",
+        "targetAccountId": "f94ecd48-dc50-45ea-9517-7c45ede0f286",
         "targetAccountName": "Example Euro Account",
         "targetCurrency": "EUR",
         "direction": "in",
-        "bookingDate": "2026-11-15",
+        "bookingDate": "2026-11-16",
         "amount": -20000,
         "currency": "CHF",
         "description": "Top up euros",
         "linkCandidate": {
-          "id": "2530c440-3bd5-4653-90bc-c3fd7f489bcc",
-          "bookingDate": "2026-11-16",
+          "id": "fda26542-361f-4ead-b417-2e8d2c8c4434",
+          "bookingDate": "2026-11-17",
           "amount": 21000,
           "currency": "EUR",
           "description": "Incoming transfer"
@@ -34,123 +34,123 @@
       }
     ],
     "dashboard": {
-      "today": "2026-11-21",
+      "today": "2026-11-22",
       "range": "6m",
       "hasShared": true,
       "netWorth": {
-        "from": "2026-05-21",
-        "to": "2026-11-21",
+        "from": "2026-05-22",
+        "to": "2026-11-22",
         "step": "week",
         "series": [
           {
             "currency": "CHF",
             "points": [
               {
-                "date": "2026-05-23",
+                "date": "2026-05-24",
                 "amount": 7155650
               },
               {
-                "date": "2026-05-30",
+                "date": "2026-05-31",
                 "amount": 7155650
               },
               {
-                "date": "2026-06-06",
+                "date": "2026-06-07",
                 "amount": 7155650
               },
               {
-                "date": "2026-06-13",
+                "date": "2026-06-14",
                 "amount": 7155650
               },
               {
-                "date": "2026-06-20",
+                "date": "2026-06-21",
                 "amount": 7155650
               },
               {
-                "date": "2026-06-27",
+                "date": "2026-06-28",
                 "amount": 7155150
               },
               {
-                "date": "2026-07-04",
+                "date": "2026-07-05",
                 "amount": 7155150
               },
               {
-                "date": "2026-07-11",
+                "date": "2026-07-12",
                 "amount": 7155150
               },
               {
-                "date": "2026-07-18",
+                "date": "2026-07-19",
                 "amount": 7155150
               },
               {
-                "date": "2026-07-25",
+                "date": "2026-07-26",
                 "amount": 7155150
               },
               {
-                "date": "2026-08-01",
+                "date": "2026-08-02",
                 "amount": 6975150
               },
               {
-                "date": "2026-08-08",
+                "date": "2026-08-09",
                 "amount": 6963775
               },
               {
-                "date": "2026-08-15",
+                "date": "2026-08-16",
                 "amount": 6966585
               },
               {
-                "date": "2026-08-22",
+                "date": "2026-08-23",
                 "amount": 6961005
               },
               {
-                "date": "2026-08-29",
+                "date": "2026-08-30",
                 "amount": 7911105
               },
               {
-                "date": "2026-09-05",
-                "amount": 7731105
+                "date": "2026-09-06",
+                "amount": 7722695
               },
               {
-                "date": "2026-09-12",
+                "date": "2026-09-13",
                 "amount": 7721505
               },
               {
-                "date": "2026-09-19",
+                "date": "2026-09-20",
                 "amount": 7710445
               },
               {
-                "date": "2026-09-26",
+                "date": "2026-09-27",
                 "amount": 9780445
               },
               {
-                "date": "2026-10-03",
+                "date": "2026-10-04",
                 "amount": 9591205
               },
               {
-                "date": "2026-10-10",
+                "date": "2026-10-11",
                 "amount": 9708800
               },
               {
-                "date": "2026-10-17",
-                "amount": 9693400
+                "date": "2026-10-18",
+                "amount": 9689170
               },
               {
-                "date": "2026-10-24",
-                "amount": 9386550
+                "date": "2026-10-25",
+                "amount": 10336550
               },
               {
-                "date": "2026-10-31",
-                "amount": 10331730
+                "date": "2026-11-01",
+                "amount": 10151730
               },
               {
-                "date": "2026-11-07",
+                "date": "2026-11-08",
                 "amount": 10144730
               },
               {
-                "date": "2026-11-14",
+                "date": "2026-11-15",
                 "amount": 9968880
               },
               {
-                "date": "2026-11-21",
+                "date": "2026-11-22",
                 "amount": 9545830
               }
             ]
@@ -159,111 +159,111 @@
             "currency": "EUR",
             "points": [
               {
-                "date": "2026-05-23",
+                "date": "2026-05-24",
                 "amount": 80000
               },
               {
-                "date": "2026-05-30",
+                "date": "2026-05-31",
                 "amount": 80000
               },
               {
-                "date": "2026-06-06",
+                "date": "2026-06-07",
                 "amount": 80000
               },
               {
-                "date": "2026-06-13",
+                "date": "2026-06-14",
                 "amount": 80000
               },
               {
-                "date": "2026-06-20",
+                "date": "2026-06-21",
                 "amount": 80000
               },
               {
-                "date": "2026-06-27",
+                "date": "2026-06-28",
                 "amount": 80000
               },
               {
-                "date": "2026-07-04",
+                "date": "2026-07-05",
                 "amount": 80000
               },
               {
-                "date": "2026-07-11",
+                "date": "2026-07-12",
                 "amount": 80000
               },
               {
-                "date": "2026-07-18",
+                "date": "2026-07-19",
                 "amount": 80000
               },
               {
-                "date": "2026-07-25",
+                "date": "2026-07-26",
                 "amount": 80000
               },
               {
-                "date": "2026-08-01",
+                "date": "2026-08-02",
                 "amount": 80000
               },
               {
-                "date": "2026-08-08",
+                "date": "2026-08-09",
                 "amount": 80000
               },
               {
-                "date": "2026-08-15",
+                "date": "2026-08-16",
                 "amount": 80000
               },
               {
-                "date": "2026-08-22",
+                "date": "2026-08-23",
                 "amount": 80000
               },
               {
-                "date": "2026-08-29",
+                "date": "2026-08-30",
                 "amount": 80000
               },
               {
-                "date": "2026-09-05",
+                "date": "2026-09-06",
                 "amount": 80000
               },
               {
-                "date": "2026-09-12",
+                "date": "2026-09-13",
                 "amount": 80000
               },
               {
-                "date": "2026-09-19",
+                "date": "2026-09-20",
                 "amount": 80000
               },
               {
-                "date": "2026-09-26",
+                "date": "2026-09-27",
                 "amount": 80000
               },
               {
-                "date": "2026-10-03",
+                "date": "2026-10-04",
                 "amount": 80000
               },
               {
-                "date": "2026-10-10",
+                "date": "2026-10-11",
                 "amount": 80000
               },
               {
-                "date": "2026-10-17",
+                "date": "2026-10-18",
                 "amount": 105000
               },
               {
-                "date": "2026-10-24",
+                "date": "2026-10-25",
                 "amount": 100000
               },
               {
-                "date": "2026-10-31",
+                "date": "2026-11-01",
                 "amount": 100000
               },
               {
-                "date": "2026-11-07",
+                "date": "2026-11-08",
                 "amount": 97650
               },
               {
-                "date": "2026-11-14",
+                "date": "2026-11-15",
                 "amount": 97650
               },
               {
-                "date": "2026-11-21",
+                "date": "2026-11-22",
                 "amount": 118650
               }
             ]
@@ -274,111 +274,111 @@
             "currency": "CHF",
             "points": [
               {
-                "date": "2026-05-23",
+                "date": "2026-05-24",
                 "amount": 7005650
               },
               {
-                "date": "2026-05-30",
+                "date": "2026-05-31",
                 "amount": 7005650
               },
               {
-                "date": "2026-06-06",
+                "date": "2026-06-07",
                 "amount": 7005650
               },
               {
-                "date": "2026-06-13",
+                "date": "2026-06-14",
                 "amount": 7005650
               },
               {
-                "date": "2026-06-20",
+                "date": "2026-06-21",
                 "amount": 7005650
               },
               {
-                "date": "2026-06-27",
+                "date": "2026-06-28",
                 "amount": 7005150
               },
               {
-                "date": "2026-07-04",
+                "date": "2026-07-05",
                 "amount": 7005150
               },
               {
-                "date": "2026-07-11",
+                "date": "2026-07-12",
                 "amount": 7005150
               },
               {
-                "date": "2026-07-18",
+                "date": "2026-07-19",
                 "amount": 7005150
               },
               {
-                "date": "2026-07-25",
+                "date": "2026-07-26",
                 "amount": 7005150
               },
               {
-                "date": "2026-08-01",
+                "date": "2026-08-02",
                 "amount": 6825150
               },
               {
-                "date": "2026-08-08",
+                "date": "2026-08-09",
                 "amount": 6813775
               },
               {
-                "date": "2026-08-15",
+                "date": "2026-08-16",
                 "amount": 6816585
               },
               {
-                "date": "2026-08-22",
+                "date": "2026-08-23",
                 "amount": 6811005
               },
               {
-                "date": "2026-08-29",
+                "date": "2026-08-30",
                 "amount": 7761105
               },
               {
-                "date": "2026-09-05",
-                "amount": 7581105
+                "date": "2026-09-06",
+                "amount": 7572695
               },
               {
-                "date": "2026-09-12",
+                "date": "2026-09-13",
                 "amount": 7571505
               },
               {
-                "date": "2026-09-19",
+                "date": "2026-09-20",
                 "amount": 7560445
               },
               {
-                "date": "2026-09-26",
+                "date": "2026-09-27",
                 "amount": 9630445
               },
               {
-                "date": "2026-10-03",
+                "date": "2026-10-04",
                 "amount": 9441205
               },
               {
-                "date": "2026-10-10",
+                "date": "2026-10-11",
                 "amount": 9558800
               },
               {
-                "date": "2026-10-17",
-                "amount": 9543400
+                "date": "2026-10-18",
+                "amount": 9539170
               },
               {
-                "date": "2026-10-24",
-                "amount": 9236550
+                "date": "2026-10-25",
+                "amount": 10186550
               },
               {
-                "date": "2026-10-31",
-                "amount": 10181730
+                "date": "2026-11-01",
+                "amount": 10001730
               },
               {
-                "date": "2026-11-07",
+                "date": "2026-11-08",
                 "amount": 9979730
               },
               {
-                "date": "2026-11-14",
+                "date": "2026-11-15",
                 "amount": 9809880
               },
               {
-                "date": "2026-11-21",
+                "date": "2026-11-22",
                 "amount": 9386830
               }
             ]
@@ -387,111 +387,111 @@
             "currency": "EUR",
             "points": [
               {
-                "date": "2026-05-23",
+                "date": "2026-05-24",
                 "amount": 80000
               },
               {
-                "date": "2026-05-30",
+                "date": "2026-05-31",
                 "amount": 80000
               },
               {
-                "date": "2026-06-06",
+                "date": "2026-06-07",
                 "amount": 80000
               },
               {
-                "date": "2026-06-13",
+                "date": "2026-06-14",
                 "amount": 80000
               },
               {
-                "date": "2026-06-20",
+                "date": "2026-06-21",
                 "amount": 80000
               },
               {
-                "date": "2026-06-27",
+                "date": "2026-06-28",
                 "amount": 80000
               },
               {
-                "date": "2026-07-04",
+                "date": "2026-07-05",
                 "amount": 80000
               },
               {
-                "date": "2026-07-11",
+                "date": "2026-07-12",
                 "amount": 80000
               },
               {
-                "date": "2026-07-18",
+                "date": "2026-07-19",
                 "amount": 80000
               },
               {
-                "date": "2026-07-25",
+                "date": "2026-07-26",
                 "amount": 80000
               },
               {
-                "date": "2026-08-01",
+                "date": "2026-08-02",
                 "amount": 80000
               },
               {
-                "date": "2026-08-08",
+                "date": "2026-08-09",
                 "amount": 80000
               },
               {
-                "date": "2026-08-15",
+                "date": "2026-08-16",
                 "amount": 80000
               },
               {
-                "date": "2026-08-22",
+                "date": "2026-08-23",
                 "amount": 80000
               },
               {
-                "date": "2026-08-29",
+                "date": "2026-08-30",
                 "amount": 80000
               },
               {
-                "date": "2026-09-05",
+                "date": "2026-09-06",
                 "amount": 80000
               },
               {
-                "date": "2026-09-12",
+                "date": "2026-09-13",
                 "amount": 80000
               },
               {
-                "date": "2026-09-19",
+                "date": "2026-09-20",
                 "amount": 80000
               },
               {
-                "date": "2026-09-26",
+                "date": "2026-09-27",
                 "amount": 80000
               },
               {
-                "date": "2026-10-03",
+                "date": "2026-10-04",
                 "amount": 80000
               },
               {
-                "date": "2026-10-10",
+                "date": "2026-10-11",
                 "amount": 80000
               },
               {
-                "date": "2026-10-17",
+                "date": "2026-10-18",
                 "amount": 105000
               },
               {
-                "date": "2026-10-24",
+                "date": "2026-10-25",
                 "amount": 100000
               },
               {
-                "date": "2026-10-31",
+                "date": "2026-11-01",
                 "amount": 100000
               },
               {
-                "date": "2026-11-07",
+                "date": "2026-11-08",
                 "amount": 97650
               },
               {
-                "date": "2026-11-14",
+                "date": "2026-11-15",
                 "amount": 97650
               },
               {
-                "date": "2026-11-21",
+                "date": "2026-11-22",
                 "amount": 118650
               }
             ]
@@ -514,18 +514,20 @@
       },
       "accounts": [
         {
-          "id": "fac3616a-1a96-4171-ac3d-50b72d0d3cfb",
+          "id": "3486d393-2f40-42b8-90c5-ffd2a5bddb26",
           "name": "Example Checking",
           "type": "current",
           "currency": "CHF",
           "iban": "CH9300762011623852957",
           "contractNumber": null,
+          "websiteUrl": null,
           "depositIban": null,
           "institution": {
-            "id": "1fd13a15-292d-4b4a-aba8-e6d033b536bb",
+            "id": "0c320f11-40b2-46d1-a815-d1ea67c2e416",
             "name": "Example Bank",
             "color": "#1a73e8",
-            "logoVersion": "fa25202f7fd431e3"
+            "logoVersion": "fa25202f7fd431e3",
+            "websiteUrl": null
           },
           "balance": 112860,
           "cashBalance": 112860,
@@ -536,8 +538,8 @@
           "shareBps": 10000,
           "sharedWith": null,
           "shareBalance": 112860,
-          "lastBookingDate": "2026-11-20",
-          "lastImportAt": 1795292415888,
+          "lastBookingDate": "2026-11-21",
+          "lastImportAt": 1795359129289,
           "lastSnapshotDate": "2025-01-31",
           "lastPortfolioValueDate": null,
           "stale": false,
@@ -545,18 +547,20 @@
           "staleDays": 0
         },
         {
-          "id": "b0da608d-0c75-4473-954f-999f8a577658",
+          "id": "258d6028-d2f3-4ec4-961d-61ebc4c915cd",
           "name": "Example Savings",
           "type": "savings",
           "currency": "CHF",
           "iban": "CH5604835012345678009",
           "contractNumber": null,
+          "websiteUrl": null,
           "depositIban": null,
           "institution": {
-            "id": "1fd13a15-292d-4b4a-aba8-e6d033b536bb",
+            "id": "0c320f11-40b2-46d1-a815-d1ea67c2e416",
             "name": "Example Bank",
             "color": "#1a73e8",
-            "logoVersion": "fa25202f7fd431e3"
+            "logoVersion": "fa25202f7fd431e3",
+            "websiteUrl": null
           },
           "balance": 1251000,
           "cashBalance": 1251000,
@@ -567,27 +571,29 @@
           "shareBps": 10000,
           "sharedWith": null,
           "shareBalance": 1251000,
-          "lastBookingDate": "2026-11-01",
+          "lastBookingDate": "2026-11-02",
           "lastImportAt": null,
-          "lastSnapshotDate": "2026-11-11",
+          "lastSnapshotDate": "2026-11-12",
           "lastPortfolioValueDate": null,
           "stale": false,
           "noData": false,
           "staleDays": 10
         },
         {
-          "id": "4723c0bd-5915-4bb4-bf8a-e4c4e6c71ab3",
+          "id": "58f7cd50-c58c-44d6-8f61-42310e0d0aca",
           "name": "Example Credit Card",
           "type": "credit_card",
           "currency": "CHF",
           "iban": null,
           "contractNumber": null,
+          "websiteUrl": null,
           "depositIban": null,
           "institution": {
-            "id": "1fd13a15-292d-4b4a-aba8-e6d033b536bb",
+            "id": "0c320f11-40b2-46d1-a815-d1ea67c2e416",
             "name": "Example Bank",
             "color": "#1a73e8",
-            "logoVersion": "fa25202f7fd431e3"
+            "logoVersion": "fa25202f7fd431e3",
+            "websiteUrl": null
           },
           "balance": 359650,
           "cashBalance": 359650,
@@ -598,8 +604,8 @@
           "shareBps": 10000,
           "sharedWith": null,
           "shareBalance": 359650,
-          "lastBookingDate": "2026-11-13",
-          "lastImportAt": 1795292415900,
+          "lastBookingDate": "2026-11-14",
+          "lastImportAt": 1795359129302,
           "lastSnapshotDate": null,
           "lastPortfolioValueDate": null,
           "stale": false,
@@ -607,18 +613,20 @@
           "staleDays": 0
         },
         {
-          "id": "46d68a57-3f39-40a8-b5c2-2c6908edecbb",
+          "id": "94aa557c-b095-4d45-a191-b3191548225b",
           "name": "Example Brokerage",
           "type": "investment",
           "currency": "CHF",
           "iban": null,
           "contractNumber": null,
+          "websiteUrl": null,
           "depositIban": null,
           "institution": {
-            "id": "98b8538b-76c4-4eaf-86b7-febbeaf40536",
+            "id": "9feb3805-2382-4fe4-a094-5edbfda2f29c",
             "name": "Example Broker",
             "color": null,
-            "logoVersion": null
+            "logoVersion": null,
+            "websiteUrl": null
           },
           "balance": 2023320,
           "cashBalance": 1789200,
@@ -633,7 +641,7 @@
           "shareBps": 10000,
           "sharedWith": null,
           "shareBalance": 2023320,
-          "lastBookingDate": "2026-08-03",
+          "lastBookingDate": "2026-08-04",
           "lastImportAt": null,
           "lastSnapshotDate": null,
           "lastPortfolioValueDate": null,
@@ -642,18 +650,20 @@
           "staleDays": 5
         },
         {
-          "id": "d436a836-7204-4373-ad12-082d0d7aa5d8",
+          "id": "1edd858c-af1f-4910-84c4-859409bbd141",
           "name": "Example Pillar 3a",
           "type": "pillar_3a",
           "currency": "CHF",
           "iban": null,
           "contractNumber": "EX-3A-0001",
+          "websiteUrl": null,
           "depositIban": "CH4431999123000889012",
           "institution": {
-            "id": "98b8538b-76c4-4eaf-86b7-febbeaf40536",
+            "id": "9feb3805-2382-4fe4-a094-5edbfda2f29c",
             "name": "Example Broker",
             "color": null,
-            "logoVersion": null
+            "logoVersion": null,
+            "websiteUrl": null
           },
           "balance": 846000,
           "cashBalance": 0,
@@ -667,18 +677,19 @@
           "lastBookingDate": null,
           "lastImportAt": null,
           "lastSnapshotDate": null,
-          "lastPortfolioValueDate": "2026-11-17",
+          "lastPortfolioValueDate": "2026-11-18",
           "stale": false,
           "noData": false,
           "staleDays": 4
         },
         {
-          "id": "a0c71505-621d-4c92-846f-59b9fc558340",
+          "id": "74f1e5be-630c-4e2b-b1c3-2aa178ef8e02",
           "name": "Example Pension Fund",
           "type": "pension",
           "currency": "CHF",
           "iban": "NL91ABNA0417164300",
           "contractNumber": null,
+          "websiteUrl": null,
           "depositIban": null,
           "institution": null,
           "balance": 4625000,
@@ -692,25 +703,27 @@
           "shareBalance": 4625000,
           "lastBookingDate": null,
           "lastImportAt": null,
-          "lastSnapshotDate": "2026-10-07",
+          "lastSnapshotDate": "2026-10-08",
           "lastPortfolioValueDate": null,
           "stale": false,
           "noData": false,
           "staleDays": 45
         },
         {
-          "id": "5e3f3af3-8d32-4036-b403-b20a5eef538c",
+          "id": "f94ecd48-dc50-45ea-9517-7c45ede0f286",
           "name": "Example Euro Account",
           "type": "current",
           "currency": "EUR",
           "iban": "DE89370400440532013000",
           "contractNumber": null,
+          "websiteUrl": null,
           "depositIban": null,
           "institution": {
-            "id": "1fd13a15-292d-4b4a-aba8-e6d033b536bb",
+            "id": "0c320f11-40b2-46d1-a815-d1ea67c2e416",
             "name": "Example Bank",
             "color": "#1a73e8",
-            "logoVersion": "fa25202f7fd431e3"
+            "logoVersion": "fa25202f7fd431e3",
+            "websiteUrl": null
           },
           "balance": 118650,
           "cashBalance": 118650,
@@ -721,27 +734,29 @@
           "shareBps": 10000,
           "sharedWith": null,
           "shareBalance": 118650,
-          "lastBookingDate": "2026-11-16",
+          "lastBookingDate": "2026-11-17",
           "lastImportAt": null,
-          "lastSnapshotDate": "2026-10-22",
+          "lastSnapshotDate": "2026-10-23",
           "lastPortfolioValueDate": null,
           "stale": false,
           "noData": false,
           "staleDays": 30
         },
         {
-          "id": "789bf03b-84f9-44f1-bec9-0dcb3b0c55c2",
+          "id": "08b2c1a0-6b0b-4978-864a-332697bc6ffb",
           "name": "Example Joint Account",
           "type": "current",
           "currency": "CHF",
           "iban": "AT611904300234573201",
           "contractNumber": null,
+          "websiteUrl": null,
           "depositIban": null,
           "institution": {
-            "id": "1fd13a15-292d-4b4a-aba8-e6d033b536bb",
+            "id": "0c320f11-40b2-46d1-a815-d1ea67c2e416",
             "name": "Example Bank",
             "color": "#1a73e8",
-            "logoVersion": "fa25202f7fd431e3"
+            "logoVersion": "fa25202f7fd431e3",
+            "websiteUrl": null
           },
           "balance": 318000,
           "cashBalance": 318000,
@@ -752,7 +767,7 @@
           "shareBps": 5000,
           "sharedWith": "Alice Example",
           "shareBalance": 159000,
-          "lastBookingDate": "2026-11-10",
+          "lastBookingDate": "2026-11-11",
           "lastImportAt": null,
           "lastSnapshotDate": null,
           "lastPortfolioValueDate": null,
@@ -761,12 +776,13 @@
           "staleDays": null
         },
         {
-          "id": "abf4ce0f-0eb2-4dbe-886d-8370faf6e15c",
+          "id": "df17c54a-a84b-448c-9b4a-bb1a5a8355a4",
           "name": "Example Wallet",
           "type": "cash",
           "currency": "CHF",
           "iban": null,
           "contractNumber": null,
+          "websiteUrl": null,
           "depositIban": null,
           "institution": null,
           "balance": 10000,
@@ -797,12 +813,12 @@
           "ladder": [
             {
               "months": 3,
-              "availableFrom": "2027-02-21",
+              "availableFrom": "2027-02-22",
               "balance": 751000,
               "shareBalance": 751000,
               "accounts": [
                 {
-                  "id": "b0da608d-0c75-4473-954f-999f8a577658",
+                  "id": "258d6028-d2f3-4ec4-961d-61ebc4c915cd",
                   "name": "Example Savings"
                 }
               ]
@@ -911,21 +927,21 @@
             "total": 204220,
             "items": [
               {
-                "categoryId": "59627596-bc0f-48c1-ba8b-b7c86e7679d5",
+                "categoryId": "1c49ae63-806d-4f8e-9a3d-d1c1b020697e",
                 "name": "Housing",
                 "color": "#6a1b9a",
                 "icon": "house",
                 "spent": 180000
               },
               {
-                "categoryId": "a7bc1111-6e4d-4c4d-820f-46129f5c3ba9",
+                "categoryId": "e10dc4b7-7d3c-46b2-b721-fea02f669522",
                 "name": "Food",
                 "color": "#e65100",
                 "icon": "utensils",
                 "spent": 12220
               },
               {
-                "categoryId": "ed587f32-c0e7-4514-8d42-43d369bed898",
+                "categoryId": "4f24e690-2f9a-44fd-a428-1d54559c326c",
                 "name": "Insurance",
                 "color": null,
                 "icon": "shield",
@@ -944,21 +960,21 @@
             "total": 210220,
             "items": [
               {
-                "categoryId": "59627596-bc0f-48c1-ba8b-b7c86e7679d5",
+                "categoryId": "1c49ae63-806d-4f8e-9a3d-d1c1b020697e",
                 "name": "Housing",
                 "color": "#6a1b9a",
                 "icon": "house",
                 "spent": 180000
               },
               {
-                "categoryId": "a7bc1111-6e4d-4c4d-820f-46129f5c3ba9",
+                "categoryId": "e10dc4b7-7d3c-46b2-b721-fea02f669522",
                 "name": "Food",
                 "color": "#e65100",
                 "icon": "utensils",
                 "spent": 18220
               },
               {
-                "categoryId": "ed587f32-c0e7-4514-8d42-43d369bed898",
+                "categoryId": "4f24e690-2f9a-44fd-a428-1d54559c326c",
                 "name": "Insurance",
                 "color": null,
                 "icon": "shield",
@@ -1002,29 +1018,29 @@
         },
         "upcoming": [
           {
-            "id": "c4d7ba00-cfa6-44b1-b1a9-0cef22f7cd0a",
+            "id": "bf4b28ad-dfa3-415d-871e-1d6279da9bb5",
             "kind": "invoice",
             "creditorName": "Example Dental Clinic",
             "invoiceNumber": null,
             "amount": 60000,
             "remaining": 35000,
             "currency": "CHF",
-            "dueDate": "2026-11-26",
+            "dueDate": "2026-11-27",
             "dueInDays": 5
           },
           {
-            "id": "d14bc2a5-606c-48ba-a724-a17b8a51b941",
+            "id": "13b8f141-bd83-46f0-b554-232e4ffe9e95",
             "kind": "invoice",
             "creditorName": "Example Supplier AG",
             "invoiceNumber": "2001",
             "amount": 194975,
             "remaining": 194975,
             "currency": "CHF",
-            "dueDate": "2026-12-03",
+            "dueDate": "2026-12-04",
             "dueInDays": 12
           }
         ],
-        "unmatchedSuggestions": 4
+        "unmatchedSuggestions": 5
       },
       "unmatched": {
         "days": 60,
@@ -1032,39 +1048,39 @@
       },
       "imports": [
         {
-          "accountId": "fac3616a-1a96-4171-ac3d-50b72d0d3cfb",
+          "accountId": "3486d393-2f40-42b8-90c5-ffd2a5bddb26",
           "accountName": "Example Checking",
-          "lastImportAt": 1795292415888,
-          "lastBookingDate": "2026-11-20",
+          "lastImportAt": 1795359129289,
+          "lastBookingDate": "2026-11-21",
           "stale": false,
           "staleDays": 0
         },
         {
-          "accountId": "b0da608d-0c75-4473-954f-999f8a577658",
+          "accountId": "258d6028-d2f3-4ec4-961d-61ebc4c915cd",
           "accountName": "Example Savings",
           "lastImportAt": null,
-          "lastBookingDate": "2026-11-01",
+          "lastBookingDate": "2026-11-02",
           "stale": false,
           "staleDays": 10
         },
         {
-          "accountId": "4723c0bd-5915-4bb4-bf8a-e4c4e6c71ab3",
+          "accountId": "58f7cd50-c58c-44d6-8f61-42310e0d0aca",
           "accountName": "Example Credit Card",
-          "lastImportAt": 1795292415900,
-          "lastBookingDate": "2026-11-13",
+          "lastImportAt": 1795359129302,
+          "lastBookingDate": "2026-11-14",
           "stale": false,
           "staleDays": 0
         },
         {
-          "accountId": "46d68a57-3f39-40a8-b5c2-2c6908edecbb",
+          "accountId": "94aa557c-b095-4d45-a191-b3191548225b",
           "accountName": "Example Brokerage",
           "lastImportAt": null,
-          "lastBookingDate": "2026-08-03",
+          "lastBookingDate": "2026-08-04",
           "stale": false,
           "staleDays": 5
         },
         {
-          "accountId": "d436a836-7204-4373-ad12-082d0d7aa5d8",
+          "accountId": "1edd858c-af1f-4910-84c4-859409bbd141",
           "accountName": "Example Pillar 3a",
           "lastImportAt": null,
           "lastBookingDate": null,
@@ -1072,7 +1088,7 @@
           "staleDays": 4
         },
         {
-          "accountId": "a0c71505-621d-4c92-846f-59b9fc558340",
+          "accountId": "74f1e5be-630c-4e2b-b1c3-2aa178ef8e02",
           "accountName": "Example Pension Fund",
           "lastImportAt": null,
           "lastBookingDate": null,
@@ -1080,23 +1096,23 @@
           "staleDays": 45
         },
         {
-          "accountId": "5e3f3af3-8d32-4036-b403-b20a5eef538c",
+          "accountId": "f94ecd48-dc50-45ea-9517-7c45ede0f286",
           "accountName": "Example Euro Account",
           "lastImportAt": null,
-          "lastBookingDate": "2026-11-16",
+          "lastBookingDate": "2026-11-17",
           "stale": false,
           "staleDays": 30
         },
         {
-          "accountId": "789bf03b-84f9-44f1-bec9-0dcb3b0c55c2",
+          "accountId": "08b2c1a0-6b0b-4978-864a-332697bc6ffb",
           "accountName": "Example Joint Account",
           "lastImportAt": null,
-          "lastBookingDate": "2026-11-10",
+          "lastBookingDate": "2026-11-11",
           "stale": false,
           "staleDays": null
         },
         {
-          "accountId": "abf4ce0f-0eb2-4dbe-886d-8370faf6e15c",
+          "accountId": "df17c54a-a84b-448c-9b4a-bb1a5a8355a4",
           "accountName": "Example Wallet",
           "lastImportAt": null,
           "lastBookingDate": null,

@@ -36,6 +36,7 @@
     openingDate: string | null;
     shareBps: number;
     sharedWith: string | null;
+    websiteUrl?: string | null;
     noticeMonths: number | null;
     freeWithdrawal: Minor | null;
     freeWithdrawalPeriod: WithdrawalPeriod | null;
@@ -154,6 +155,7 @@
           "openingDate",
           "share",
           "sharedWith",
+          "websiteUrl",
           "noticeMonths",
           "freeWithdrawal",
           "freeWithdrawalPeriod",
@@ -384,6 +386,24 @@
           </FormField>
         </div>
       {/if}
+
+      <FormField
+        label="Website (optional)"
+        for="{uid}-website"
+        errors={errors.websiteUrl}
+        hint="Link to the account's portal; the institution's link is used when empty."
+      >
+        <Input
+          id="{uid}-website"
+          name="websiteUrl"
+          type="url"
+          maxlength={300}
+          placeholder="https://www.example.com"
+          autocomplete="off"
+          value={account?.websiteUrl ?? ""}
+          aria-invalid={!!errors.websiteUrl}
+        />
+      </FormField>
 
       {#if hasNotice}
         <div role="group" aria-labelledby="{uid}-withdrawal" class="grid gap-4">

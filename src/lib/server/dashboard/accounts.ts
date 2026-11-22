@@ -20,6 +20,7 @@ export interface AccountBalanceView {
   currency: string;
   iban: string | null;
   contractNumber: string | null;
+  websiteUrl: string | null;
   depositIban: string | null;
   institution: InstitutionRef | null;
   balance: Minor;
@@ -136,6 +137,7 @@ export async function accountBalances(
       currency: a.currency,
       iban: a.iban,
       contractNumber: a.contractNumber,
+      websiteUrl: a.websiteUrl,
       depositIban: a.depositIban,
       institution: a.institution,
       balance: a.balance,

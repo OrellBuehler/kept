@@ -38,6 +38,7 @@ describe("accounts page", () => {
         bic: null,
         color: null,
         logoVersion: null,
+        websiteUrl: null,
         accountCount: 1,
       },
     ]);
@@ -52,6 +53,7 @@ describe("accounts page", () => {
           name: "Inst A",
           color: null,
           logoVersion: null,
+          websiteUrl: null,
         },
         lastBookingDate: null,
         lastImportAt: null,
@@ -110,6 +112,22 @@ describe("accounts page", () => {
     expect(await listInstitutions(u.id)).toEqual([]);
   });
 
+  it("updateInstitution keeps the website when the form has no such field", async () => {
+    const u = await createTestUser();
+    const base = { name: "Bank" };
+    await run("createInstitution", u, {
+      ...base,
+      websiteUrl: "https://portal.example.com",
+    });
+    const id = (await listInstitutions(u.id))[0]!.id;
+    await run("updateInstitution", u, { ...base, id });
+    expect((await listInstitutions(u.id))[0]!.websiteUrl).toBe(
+      "https://portal.example.com",
+    );
+    await run("updateInstitution", u, { ...base, id, websiteUrl: "" });
+    expect((await listInstitutions(u.id))[0]!.websiteUrl).toBeNull();
+  });
+
   it("returns field errors and echoes values", async () => {
     const u = await createTestUser();
     const r = await run("createInstitution", u, { name: "", bic: "x" });
@@ -122,7 +140,7 @@ describe("accounts page", () => {
           name: ["Name is required."],
           bic: ["BIC must be 8 or 11 characters."],
         },
-        values: { name: "", bic: "x", color: "" },
+        values: { name: "", bic: "x", color: "", websiteUrl: "" },
       },
     });
   });

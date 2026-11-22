@@ -18,6 +18,7 @@ export interface InstitutionView {
   bic: string | null;
   color: string | null;
   logoVersion: string | null;
+  websiteUrl: string | null;
   accountCount: number;
 }
 
@@ -27,6 +28,7 @@ const columns = {
   bic: institutions.bic,
   color: institutions.color,
   logoVersion: institutions.logoVersion,
+  websiteUrl: institutions.websiteUrl,
 };
 
 /**
@@ -44,7 +46,7 @@ function mapNameViolation(err: unknown): never {
   throw err;
 }
 
-const AUDIT_FIELDS = ["name", "bic", "color"] as const;
+const AUDIT_FIELDS = ["name", "bic", "color", "websiteUrl"] as const;
 
 export async function listInstitutions(
   userId: string,
@@ -86,7 +88,7 @@ export async function createInstitution(
       const created = (
         await tx
           .insert(institutions)
-          .values({ userId, ...input })
+          .values({ userId, ...input, websiteUrl: input.websiteUrl ?? null })
           .returning(columns)
       )[0]!;
       await recordChange({
@@ -119,9 +121,14 @@ export async function updateInstitution(
           .limit(1),
       );
       if (!before) throw notFound("Institution");
+      const next = {
+        ...input,
+        websiteUrl:
+          input.websiteUrl === undefined ? before.websiteUrl : input.websiteUrl,
+      };
       await tx
         .update(institutions)
-        .set(input)
+        .set(next)
         .where(and(eq(institutions.userId, userId), eq(institutions.id, id)));
       await recordUpdate(
         {
@@ -131,7 +138,7 @@ export async function updateInstitution(
           summary: input.name,
         },
         pick(before, AUDIT_FIELDS),
-        pick(input, AUDIT_FIELDS),
+        pick(next, AUDIT_FIELDS),
       );
     });
   } catch (err) {

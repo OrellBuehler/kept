@@ -171,6 +171,7 @@ export const FIELD_LABELS: Record<string, string> = {
   iban: "IBAN",
   institutionId: "Institution",
   contractNumber: "Contract number",
+  websiteUrl: "Website",
   depositIban: "Deposit IBAN",
   openingBalance: "Opening balance",
   openingDate: "Opening date",

@@ -2,47 +2,47 @@
   "data": {
     "accounts": [
       {
-        "id": "fac3616a-1a96-4171-ac3d-50b72d0d3cfb",
+        "id": "3486d393-2f40-42b8-90c5-ffd2a5bddb26",
         "name": "Example Checking",
         "currency": "CHF"
       },
       {
-        "id": "b0da608d-0c75-4473-954f-999f8a577658",
+        "id": "258d6028-d2f3-4ec4-961d-61ebc4c915cd",
         "name": "Example Savings",
         "currency": "CHF"
       },
       {
-        "id": "4723c0bd-5915-4bb4-bf8a-e4c4e6c71ab3",
+        "id": "58f7cd50-c58c-44d6-8f61-42310e0d0aca",
         "name": "Example Credit Card",
         "currency": "CHF"
       },
       {
-        "id": "46d68a57-3f39-40a8-b5c2-2c6908edecbb",
+        "id": "94aa557c-b095-4d45-a191-b3191548225b",
         "name": "Example Brokerage",
         "currency": "CHF"
       },
       {
-        "id": "d436a836-7204-4373-ad12-082d0d7aa5d8",
+        "id": "1edd858c-af1f-4910-84c4-859409bbd141",
         "name": "Example Pillar 3a",
         "currency": "CHF"
       },
       {
-        "id": "a0c71505-621d-4c92-846f-59b9fc558340",
+        "id": "74f1e5be-630c-4e2b-b1c3-2aa178ef8e02",
         "name": "Example Pension Fund",
         "currency": "CHF"
       },
       {
-        "id": "5e3f3af3-8d32-4036-b403-b20a5eef538c",
+        "id": "f94ecd48-dc50-45ea-9517-7c45ede0f286",
         "name": "Example Euro Account",
         "currency": "EUR"
       },
       {
-        "id": "789bf03b-84f9-44f1-bec9-0dcb3b0c55c2",
+        "id": "08b2c1a0-6b0b-4978-864a-332697bc6ffb",
         "name": "Example Joint Account",
         "currency": "CHF"
       },
       {
-        "id": "abf4ce0f-0eb2-4dbe-886d-8370faf6e15c",
+        "id": "df17c54a-a84b-448c-9b4a-bb1a5a8355a4",
         "name": "Example Wallet",
         "currency": "CHF"
       }
@@ -60,7 +60,7 @@
       "message": "Invoice 2024-0815",
       "invoiceNumber": "INV-0815"
     },
-    "documentId": "3806779a-f0c7-4d9c-9747-348bc6b6cec2",
+    "documentId": "aaeb9ae4-ce32-42c5-846b-133c0cccbbdd",
     "extraction": {
       "source": "qr",
       "warnings": []
