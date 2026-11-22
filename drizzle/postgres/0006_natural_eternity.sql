@@ -1,0 +1,1 @@
+ALTER TABLE "documents" ADD COLUMN "held_until" timestamp (3) with time zone;

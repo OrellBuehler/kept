@@ -115,6 +115,7 @@ export async function seedToken(
   scopes: readonly ApiScope[],
   over: {
     categoryIds?: string[] | null;
+    accountIds?: string[] | null;
     expiresAt?: Date | null;
     name?: string;
   } = {},
@@ -123,6 +124,7 @@ export async function seedToken(
     name: over.name ?? "test token",
     scopes: [...scopes],
     categoryIds: over.categoryIds ?? null,
+    accountIds: over.accountIds ?? null,
     expiresAt: over.expiresAt ?? null,
   });
 }

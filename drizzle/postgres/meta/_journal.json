@@ -22,6 +22,34 @@
       "when": 1791299383957,
       "tag": "0002_clumsy_siren",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1795312309424,
+      "tag": "0003_moaning_nitro",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1795317597928,
+      "tag": "0004_outstanding_vulture",
+      "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1795325125235,
+      "tag": "0005_elite_daimon_hellstrom",
+      "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1795333800885,
+      "tag": "0006_natural_eternity",
+      "breakpoints": true
     }
   ]
 }

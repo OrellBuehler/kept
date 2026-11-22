@@ -3,6 +3,11 @@ import { minor } from "$lib/money";
 import type { Fixed8 } from "$lib/quantity";
 import { fixed } from "$lib/quantity";
 import { listAccounts } from "$lib/server/ledger/accounts";
+import {
+  accountAllowed,
+  UNRESTRICTED,
+  type Visibility,
+} from "$lib/server/ledger/visibility";
 import { loadHoldingsInputs } from "./load";
 import { makeHoldingsValueAt, type Position } from "./valuation";
 
@@ -68,13 +73,15 @@ const byCurrency = (a: CurrencyTotal, b: CurrencyTotal) =>
 /**
  * Current holdings of the user's non-archived accounts, as totals per account
  * currency and grouped by security. One batched load for all accounts.
+ * A credential limited to some accounts only counts those.
  */
 export async function investmentsOverview(
   userId: string,
   today: string,
+  visibility: Visibility = UNRESTRICTED,
 ): Promise<InvestmentsOverview> {
   const accounts = (await listAccounts(userId, today)).filter(
-    (a) => !a.archived,
+    (a) => !a.archived && accountAllowed(visibility, a.id),
   );
   const inputs = await loadHoldingsInputs(
     userId,

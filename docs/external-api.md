@@ -5,13 +5,15 @@ household app that shows apartment costs and open bills next to its own data. It
 an app can read bills, transactions, categories, recurring payments and account names, and attach
 links (such as "open in my app") to bills and transactions. It cannot create or change anything else.
 
-Everything lives under `/api/external/v1/`. Nothing else in Kept accepts a token, and nothing under
-that prefix accepts a login session.
+Everything lives under `/api/external/v1/`. Nothing else in Kept accepts a token (apart from the
+[MCP server](mcp.md) at `/api/mcp`, which uses the same tokens), and nothing under that prefix
+accepts a login session. The token form also offers permissions that only the MCP server uses
+(balances, budgets, writes and so on); they do nothing on this API.
 
 ## Create a token
 
 Open **Settings → API tokens**, choose a name, tick the permissions the app needs, optionally limit
-the transactions it may see to some categories and set an expiry, confirm with your password (and
+the transactions it may see to some categories or accounts and set an expiry, confirm with your password (and
 your authenticator code if you use one), and copy the token. Kept shows it once and stores only a
 hash; if you lose it, revoke it and create another.
 
@@ -49,12 +51,26 @@ curl -sS -H "Authorization: Bearer $TOKEN" "$KEPT/api/external/v1/me"
 
 `GET /me` needs a valid token but no scope. A token without the scope an endpoint needs gets `403`.
 
+Further permissions (`balances:read`, `budgets:read`, `forecast:read`, `investments:read`,
+`pillar3a:read`, `taxes:read`, `changes:read`, `bills:write`, `matches:write`, `transactions:write`,
+`categories:write`, `changes:revert`) belong to the [MCP server](mcp.md); no endpoint here uses them.
+A token may hold them and use this API with the permissions above.
+
 **Category restriction.** A token can be limited to chosen categories. It then only sees
 transactions in those categories (a transaction in any other category, or without one, answers
 `404`, as does attaching a link to it) and only those categories. Recurring series are detected
 across all categories, so a category-restricted token cannot read them (`403`, and the settings page
 refuses the combination). Bills and accounts are not tied to a category and stay readable with
 their scope; a bill's `paidAmount` counts payments in any category.
+
+**Account restriction.** A token can also be limited to chosen accounts. It then only sees
+transactions of those accounts (a payment of any other account answers `404`, as does attaching or
+removing a link on it, and `accountId` must be one of its accounts, anything else returns an empty
+list) and only those accounts in `GET /accounts`. Like the category restriction it cannot read
+recurring series (`403`), and the settings page refuses the combination. Bills are not tied to an
+account and stay readable with their scope; a bill's `paidAmount` counts payments in any account.
+Both restrictions can be combined: a payment must satisfy both. If a stored token holds a scope that
+cannot honour its restrictions, the scope is ignored when the token is used.
 
 ## Conventions
 
@@ -98,14 +114,15 @@ their scope; a bill's `paidAmount` counts payments in any category.
   "displayName": "Alice",
   "locale": "de-CH",
   "defaultCurrency": "CHF",
-  "token": { "scopes": ["bills:read"], "categoryIds": null }
+  "token": { "scopes": ["bills:read"], "categoryIds": null, "accountIds": null }
 }
 ```
 
 ### `GET /bills` and `GET /bills/{id}`
 
 Query: `status`, `dueFrom`, `dueTo` (`YYYY-MM-DD`, inclusive; bills without a due date are left out
-when either is set), `updatedSince`, `cursor`, `limit`. Ordered by due date, earliest first,
+when either is set), `q` (free text over creditor, invoice number, message, notes, reference, IBAN
+or an exact amount), `updatedSince`, `cursor`, `limit`. Ordered by due date, earliest first,
 undated bills last.
 
 `status` filters like the bill list in Kept and takes one value or a comma-separated list:
@@ -155,7 +172,9 @@ undated bills last.
 
 Query: `from`, `to` (booking date, `YYYY-MM-DD`, inclusive), `categoryId`, `accountId`, `q`
 (case-insensitive text in description or counterparty name, up to 100 characters),
-`updatedSince`, `cursor`, `limit`. Newest booking date first.
+`uncategorized` (`true`: only payments without a category, `false`: only with one), `unmatched`
+(`true`: only payments no bill is allocated to, `false`: only allocated ones), `updatedSince`,
+`cursor`, `limit`. Newest booking date first.
 
 ```json
 {

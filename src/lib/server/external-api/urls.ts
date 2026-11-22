@@ -1,3 +1,20 @@
+/** The origin `ORIGIN` configures, or null when it is unset or not an http(s) URL. */
+export function configuredOrigin(
+  originEnv: string | undefined = process.env.ORIGIN,
+): string | null {
+  const configured = originEnv?.trim();
+  if (!configured) return null;
+  try {
+    const url = new URL(configured);
+    if (url.protocol === "http:" || url.protocol === "https:") {
+      return url.origin;
+    }
+  } catch (err) {
+    if (!(err instanceof TypeError)) throw err;
+  }
+  return null;
+}
+
 /**
  * The public URL of this Kept instance: `ORIGIN` when set and valid (behind a
  * proxy the request URL may be an internal one), else the request's own origin.
@@ -6,18 +23,7 @@ export function publicOrigin(
   requestUrl: URL,
   originEnv: string | undefined = process.env.ORIGIN,
 ): string {
-  const configured = originEnv?.trim();
-  if (configured) {
-    try {
-      const url = new URL(configured);
-      if (url.protocol === "http:" || url.protocol === "https:") {
-        return url.origin;
-      }
-    } catch (err) {
-      if (!(err instanceof TypeError)) throw err;
-    }
-  }
-  return requestUrl.origin;
+  return configuredOrigin(originEnv) ?? requestUrl.origin;
 }
 
 export const billUrl = (origin: string, id: string) =>

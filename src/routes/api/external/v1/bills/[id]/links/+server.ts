@@ -8,19 +8,19 @@ import {
 
 export const GET = apiEndpoint(
   "bills:read",
-  async ({ event, userId, token }) => {
+  async ({ event, userId, grant }) => {
     const id = event.params.id ?? "";
-    await assertLinkable(userId, "bill", id, token.categoryIds);
+    await assertLinkable(userId, "bill", id, grant);
     return { items: await listLinks(userId, "bill", id) };
   },
 );
 
 export const POST = apiEndpoint(
   "links:write",
-  async ({ event, userId, token }) => {
+  async ({ event, userId, grant }) => {
     const id = event.params.id ?? "";
     const body = await readBody(event.request, createLinkBody);
-    await assertLinkable(userId, "bill", id, token.categoryIds);
+    await assertLinkable(userId, "bill", id, grant);
     const { link, created } = await createLink(userId, "bill", id, body);
     return Response.json(link, { status: created ? 201 : 200 });
   },

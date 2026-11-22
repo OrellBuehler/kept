@@ -31,11 +31,23 @@ import {
   isApiPath,
   isAppApiPath,
   isExternalApiPath,
+  isMcpPath,
   isPublicPath,
 } from "$lib/server/auth/routing";
+import { runAsActor } from "$lib/server/audit/context";
 import { handleAppApi } from "$lib/server/app-api/gate";
 import { handleExternalApi } from "$lib/server/external-api/gate";
 import { sweepOrphanedLinks } from "$lib/server/external-api/links";
+import {
+  registerHeldDocumentSweep,
+  unregisterHeldDocumentSweep,
+} from "$lib/server/bills/held-documents";
+import { handleMcpGate } from "$lib/server/mcp/gate";
+import {
+  registerOAuthSweep,
+  unregisterOAuthSweep,
+} from "$lib/server/oauth/maintenance";
+import { csrfRefusal } from "$lib/server/csrf";
 import { describeError } from "$lib/server/errors";
 import {
   warnIfAddressHeaderUnset,
@@ -68,11 +80,15 @@ export async function init() {
   registerPaperless();
   registerMarketData();
   registerNotifications();
+  registerOAuthSweep();
+  registerHeldDocumentSweep();
   onShutdown("backups", stopBackups);
   onShutdown("inbox scan", stopInbox);
   onShutdown("paperless sync", unregisterPaperless);
   onShutdown("market data refresh", unregisterMarketData);
   onShutdown("notifications", unregisterNotifications);
+  onShutdown("oauth sweep", unregisterOAuthSweep);
+  onShutdown("held document sweep", unregisterHeldDocumentSweep);
   installShutdownHandler();
 }
 
@@ -102,8 +118,17 @@ async function handleRequest({
   resolve,
 }: Parameters<Handle>[0]): Promise<Response> {
   warnIfProxied(event.request.headers);
+  // SvelteKit's own check is off (vite.config.ts) so that OAuth clients can post
+  // their token request without an Origin; this is the same check, minus those endpoints.
+  if (!import.meta.env.DEV) {
+    const forbidden = csrfRefusal(event.request, event.url);
+    if (forbidden) return forbidden;
+  }
   if (isExternalApiPath(event.url.pathname)) {
     return handleExternalApi(event, resolve);
+  }
+  if (isMcpPath(event.url.pathname)) {
+    return handleMcpGate(event, resolve);
   }
   if (isAppApiPath(event.url.pathname)) {
     return handleAppApi(event, resolve);
@@ -130,7 +155,11 @@ async function handleRequest({
   }
 
   const { pathname, search } = event.url;
-  if (event.locals.user || isPublicPath(pathname)) return resolve(event);
+  if (event.locals.user) {
+    const actor = { kind: "web", userId: event.locals.user.id } as const;
+    return runAsActor(actor, () => resolve(event));
+  }
+  if (isPublicPath(pathname)) return resolve(event);
 
   if ((await countUsers()) === 0)
     return redirectResponse("/setup", staleCookie);

@@ -168,12 +168,46 @@ const matrix: Record<string, Entry> = {
         (m as never as { DELETE: (e: never) => unknown }).DELETE(e),
     },
   },
+  // The MCP server: bearer API tokens only (the hook builds the grant), tools carry their own scopes.
+  "/src/routes/api/mcp/+server.ts": {
+    access: "token",
+    scope: null,
+    handlers: {
+      POST: (m, e) => (m as never as { POST: (e: never) => unknown }).POST(e),
+      GET: (m, e) => (m as never as { GET: (e: never) => unknown }).GET(e),
+      DELETE: (m, e) =>
+        (m as never as { DELETE: (e: never) => unknown }).DELETE(e),
+    },
+  },
   "/src/routes/api/external/v1/[...rest]/+server.ts": {
     access: "token",
     scope: null,
     handlers: {
       fallback: (m, e) =>
         (m as never as { fallback: (e: never) => unknown }).fallback(e),
+    },
+  },
+  // OAuth for the MCP server. The endpoints a client calls itself (metadata, registration,
+  // token, revocation) are public by design: they carry no session and are protected by what
+  // the client must present (see src/lib/server/oauth). Consent needs the owner's session.
+  "/src/routes/.well-known/oauth-protected-resource/+server.ts": {
+    access: "public",
+  },
+  "/src/routes/.well-known/oauth-protected-resource/api/mcp/+server.ts": {
+    access: "public",
+  },
+  "/src/routes/.well-known/oauth-authorization-server/+server.ts": {
+    access: "public",
+  },
+  "/src/routes/oauth/register/+server.ts": { access: "public" },
+  "/src/routes/oauth/token/+server.ts": { access: "public" },
+  "/src/routes/oauth/revoke/+server.ts": { access: "public" },
+  "/src/routes/oauth/authorize/+page.server.ts": {
+    access: "user",
+    handlers: {
+      load: (m, e) => m.load(e),
+      "actions.approve": (m, e) => m.actions.approve(e),
+      "actions.deny": (m, e) => m.actions.deny(e),
     },
   },
   "/src/routes/setup/+page.server.ts": { access: "public" },
@@ -273,12 +307,23 @@ const matrix: Record<string, Entry> = {
       "actions.setBlur": (m, e) => m.actions.setBlur(e),
     },
   },
+  "/src/routes/(app)/settings/changes/+page.server.ts": {
+    access: "user",
+    handlers: {
+      load: (m, e) => m.load(e),
+      "actions.revert": (m, e) => m.actions.revert(e),
+      "actions.revertSelected": (m, e) => m.actions.revertSelected(e),
+      "actions.revertAll": (m, e) => m.actions.revertAll(e),
+    },
+  },
   "/src/routes/(app)/settings/api-tokens/+page.server.ts": {
     access: "user",
     handlers: {
       load: (m, e) => m.load(e),
       "actions.create": (m, e) => m.actions.create(e),
       "actions.revoke": (m, e) => m.actions.revoke(e),
+      "actions.revokeConnection": (m, e) => m.actions.revokeConnection(e),
+      "actions.renameConnection": (m, e) => m.actions.renameConnection(e),
     },
   },
   "/src/routes/(app)/settings/paperless/+page.server.ts": {
@@ -561,6 +606,8 @@ const loaders: Record<string, () => Promise<Module>> = {
   ...import.meta.glob("/src/routes/**/+page.server.ts"),
   ...import.meta.glob("/src/routes/**/+layout.server.ts"),
   ...import.meta.glob("/src/routes/**/+server.ts"),
+  // A glob skips dot directories unless the pattern names them.
+  ...import.meta.glob("/src/routes/.well-known/**/+server.ts"),
 } as Record<string, () => Promise<Module>>;
 
 describe("route inventory", () => {
@@ -687,8 +734,10 @@ describe("token authorization", () => {
       const apiToken = {
         id: "t",
         userId: user.id,
+        name: "test token",
         scopes: API_SCOPES.filter((s) => s !== scope),
         categoryIds: null,
+        accountIds: null,
       };
       const res = (await call(mod, ev({ apiToken, form: {} }))) as Response;
       expect(res.status).toBe(403);

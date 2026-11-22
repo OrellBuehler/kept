@@ -65,6 +65,12 @@ src/lib/server/ledger/           institutions, accounts, transactions, snapshots
 src/lib/server/bills/            bills, documents, QR-bill/PDF extraction, bill ↔ payment matching
 src/lib/server/dashboard/        aggregate queries for the dashboard
 src/lib/server/app-api/          the mobile apps' API (/api/app/v1): bearer session gate, bridge to page loads and actions, reminders
+src/lib/server/audit/           change log: runAsActor, recordChange (in the writing transaction), listChanges, revertChange(s)
+src/lib/server/auth/grant.ts     Grant: what a credential (API token or OAuth connection) may do and see; the one object both token surfaces use
+src/lib/server/external-api/     the token REST API's gate, DTOs and helpers (`/api/external/v1`)
+src/lib/server/mcp/              the MCP server (`/api/mcp`, stateless Streamable HTTP): gate, tool registry (`tools/`), one scope list per tool
+src/lib/server/oauth/            OAuth authorization server for /api/mcp: clients (DCR), authorize/consent, codes, tokens, connections, sweep; endpoints under /oauth and /.well-known
+src/lib/server/csrf.ts           the form-post origin check (SvelteKit's own is off in vite.config.ts), minus the OAuth client endpoints
 src/lib/server/events.ts         generic in-process events (integrations subscribe; core emits)
 src/lib/server/integrations/     optional adapters (paperless/) — the core never imports these
 src/lib/server/reports/          pdfmake document builders
@@ -85,6 +91,15 @@ mobile/                          Android and iOS apps (Kotlin Multiplatform); se
   so re-importing overlapping files never duplicates transactions.
 - **Every query is scoped to the current user.** No endpoint returns another user's data.
 - **External input is parsed with Zod** (forms, API bodies, imported files, integration payloads).
+- **Service mutations record their change in the same transaction.** Every create, update and delete of user
+  data calls `recordChange`/`recordUpdate` (`$lib/server/audit`) inside the transaction that writes it, so the change
+  log commits or rolls back with the change; the actor comes from `runAsActor` (web, app, api, mcp, system), never
+  from a parameter. A new mutation also adds its action to `CHANGE_ACTIONS` and, when it can be undone, a revert handler.
+- **Token surfaces filter by the grant.** `/api/external/v1` and `/api/mcp` derive a `Grant` (`auth/grant.ts`) from the
+  credential; lists and lookups narrow transactions with `transactionVisibility()` / `visibleTransactionIds()`
+  (`ledger/visibility.ts`), writes call `requireTransaction()`/`requireAccount()`/`requireCategory()` first, and a scope
+  that cannot honour a restriction is listed in `SCOPE_CONFLICTS` (`$lib/api-tokens`). A new MCP tool declares its
+  scopes (`defineTool`) and is probed with restricted grants in `mcp/restrictions.test.ts`.
 - **Paperless is an adapter.** Nothing outside `integrations/paperless/` knows about Paperless;
   a bill may reference a Paperless document id, but works without one.
 - **Transactions are `transaction(async (tx) => …)` from `$lib/server/db`.** Inside, `getDB()` resolves to

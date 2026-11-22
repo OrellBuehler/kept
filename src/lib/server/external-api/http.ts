@@ -2,6 +2,7 @@ import { isHttpError, json, type RequestEvent } from "@sveltejs/kit";
 import { z } from "zod";
 import type { ApiScope } from "$lib/api-tokens";
 import type { ApiTokenAuth } from "$lib/server/auth/api-tokens";
+import { grantFromApiToken, type Grant } from "$lib/server/auth/grant";
 import { LedgerError } from "$lib/server/ledger/errors";
 
 export const DEFAULT_LIMIT = 50;
@@ -22,6 +23,8 @@ export class ApiError extends Error {
 export interface ApiContext {
   event: RequestEvent;
   token: ApiTokenAuth;
+  /** What the token may do and see; every list and lookup filters by it. */
+  grant: Grant;
   /** The owner of the token: every query is scoped to this id. */
   userId: string;
   url: URL;
@@ -44,13 +47,15 @@ export function apiEndpoint(
   return async (event) => {
     const token = event.locals.apiToken;
     if (!token) return errorResponse(401, "A bearer token is required.");
-    if (scope !== null && !token.scopes.includes(scope)) {
+    const grant = event.locals.grant ?? grantFromApiToken(token);
+    if (scope !== null && !grant.scopes.includes(scope)) {
       return errorResponse(403, `This token lacks the ${scope} permission.`);
     }
     try {
       const result = await fn({
         event,
         token,
+        grant,
         userId: token.userId,
         url: event.url,
       });

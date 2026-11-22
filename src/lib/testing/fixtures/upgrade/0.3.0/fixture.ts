@@ -116,10 +116,15 @@ export const archivedAccounts: Record<string, number> = {
 export const newTables = [
   "admin_audit_log",
   "api_tokens",
+  "change_log",
   "deduction_year_migration",
   "external_links",
   "fx_rates",
   "market_data_settings",
+  "mcp_connections",
+  "oauth_authorizations",
+  "oauth_clients",
+  "oauth_tokens",
   "paperless_instances",
   "paperless_pending",
   "pending_imports",
@@ -154,6 +159,7 @@ export const expected: Expected = {
       "trades_move_cash",
     ],
     category_rules: ["seq"],
+    documents: ["held_until"],
     paperless_connections: ["instance_key"],
     tax_credits: ["seq"],
     transactions: ["deduction_year", "mirror_of_id", "seq"],
@@ -177,6 +183,8 @@ export const expected: Expected = {
       case "category_rules":
       case "tax_credits":
         return { seq: rowid(before) };
+      case "documents":
+        return { held_until: none };
       case "paperless_connections":
         return { instance_key: none };
       case "transactions":

@@ -14,6 +14,12 @@ import {
   transaction,
   transactions,
 } from "$lib/server/db";
+import {
+  transactionVisibility,
+  type Visibility,
+} from "$lib/server/ledger/visibility";
+import { recordChange, recordUpdate } from "$lib/server/audit/record";
+import { pick } from "$lib/server/audit/snapshots";
 import { hasControlOrSpace, normalizeLinkUrl } from "$lib/external-links";
 import { ApiError, iso, notFoundError } from "./http";
 
@@ -78,12 +84,12 @@ const toDto = (r: Row): ExternalLinkDto => ({
   createdAt: iso(r.createdAt),
 });
 
-/** Whether the user owns the entity and, for a transaction, a category-restricted token may see it. */
+/** Whether the user owns the entity and, for a transaction, a restricted token may see it. */
 async function entityVisible(
   userId: string,
   entityType: ExternalLinkEntityType,
   entityId: string,
-  allowedCategories: readonly string[] | null,
+  visibility: Visibility,
 ): Promise<boolean> {
   const db = getDB();
   if (entityType === "bill") {
@@ -98,18 +104,18 @@ async function entityVisible(
   }
   const found = await first(
     db
-      .select({ categoryId: transactions.categoryId })
+      .select({ id: transactions.id })
       .from(transactions)
       .where(
-        and(eq(transactions.userId, userId), eq(transactions.id, entityId)),
+        and(
+          eq(transactions.userId, userId),
+          eq(transactions.id, entityId),
+          transactionVisibility(visibility),
+        ),
       )
       .limit(1),
   );
-  if (!found) return false;
-  return (
-    allowedCategories === null ||
-    (found.categoryId !== null && allowedCategories.includes(found.categoryId))
-  );
+  return found !== undefined;
 }
 
 /** Throws "not found" for an entity the user does not own or the token may not see. */
@@ -117,9 +123,9 @@ export async function assertLinkable(
   userId: string,
   entityType: ExternalLinkEntityType,
   entityId: string,
-  allowedCategories: readonly string[] | null,
+  visibility: Visibility,
 ): Promise<void> {
-  if (!(await entityVisible(userId, entityType, entityId, allowedCategories))) {
+  if (!(await entityVisible(userId, entityType, entityId, visibility))) {
     throw notFoundError(entityType === "bill" ? "Bill" : "Transaction");
   }
 }
@@ -202,6 +208,16 @@ export async function createLink(
           .set({ label: body.label })
           .where(eq(externalLinks.id, existing.id))
           .returning();
+        await recordUpdate(
+          {
+            userId,
+            action: "external_link.update",
+            entityId: existing.id,
+            summary: body.label,
+          },
+          { label: existing.label },
+          { label: body.label },
+        );
         return { link: toDto(row!), created: false };
       }
       const count = (
@@ -220,6 +236,17 @@ export async function createLink(
         .insert(externalLinks)
         .values({ userId, entityType, entityId, ...body })
         .returning();
+      await recordChange({
+        userId,
+        action: "external_link.create",
+        entityId: row!.id,
+        summary: row!.label,
+        after: {
+          ...pick(row!, ["source", "label", "url"] as const),
+          linkedType: entityType,
+          linkedId: entityId,
+        },
+      });
       return { link: toDto(row!), created: true };
     },
     { lock: `external-links:${userId}` },
@@ -227,13 +254,13 @@ export async function createLink(
 }
 
 /**
- * Deletes a link of this user. A transaction link that a category-restricted
- * token cannot see is "not found", like a link of another user.
+ * Deletes a link of this user. A transaction link that a restricted token
+ * cannot see is "not found", like a link of another user.
  */
 export async function deleteLink(
   userId: string,
   linkId: string,
-  allowedCategories: readonly string[] | null,
+  visibility: Visibility,
 ): Promise<void> {
   const link = await first(
     getDB()
@@ -247,18 +274,30 @@ export async function deleteLink(
   if (!link) throw notFoundError("Link");
   // An orphan, or a transaction hidden from this token, is as "not found" as another user's link.
   if (
-    !(await entityVisible(
-      userId,
-      link.entityType,
-      link.entityId,
-      allowedCategories,
-    ))
+    !(await entityVisible(userId, link.entityType, link.entityId, visibility))
   ) {
     throw notFoundError("Link");
   }
-  await getDB()
-    .delete(externalLinks)
-    .where(and(eq(externalLinks.userId, userId), eq(externalLinks.id, linkId)));
+  await transaction(async (tx) => {
+    const deleted = await tx
+      .delete(externalLinks)
+      .where(
+        and(eq(externalLinks.userId, userId), eq(externalLinks.id, linkId)),
+      )
+      .returning({ id: externalLinks.id });
+    if (deleted.length === 0) return;
+    await recordChange({
+      userId,
+      action: "external_link.delete",
+      entityId: linkId,
+      summary: link.label,
+      before: {
+        ...pick(link, ["source", "label", "url"] as const),
+        linkedType: link.entityType,
+        linkedId: link.entityId,
+      },
+    });
+  });
 }
 
 /** Removes links whose bill or transaction no longer exists. Reads never show them; this only frees the rows. */

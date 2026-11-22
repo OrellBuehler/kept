@@ -3,8 +3,8 @@ import { deleteLink } from "$lib/server/external-api/links";
 
 export const DELETE = apiEndpoint(
   "links:write",
-  async ({ event, userId, token }) => {
-    await deleteLink(userId, event.params.linkId ?? "", token.categoryIds);
+  async ({ event, userId, grant }) => {
+    await deleteLink(userId, event.params.linkId ?? "", grant);
     return new Response(null, { status: 204 });
   },
 );

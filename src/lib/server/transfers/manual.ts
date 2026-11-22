@@ -12,6 +12,9 @@ import {
   sql,
 } from "drizzle-orm";
 import { minor, type Minor } from "$lib/money";
+import { recordChange } from "$lib/server/audit/record";
+import { pick, transactionSummary } from "$lib/server/audit/snapshots";
+import type { Snapshot } from "$lib/server/audit/types";
 import {
   accounts,
   first,
@@ -112,6 +115,24 @@ async function release(
   }
 }
 
+const MIRROR_FIELDS = [
+  "accountId",
+  "source",
+  "currency",
+  "bookingDate",
+  "valueDate",
+  "amount",
+  "counterpartyName",
+  "counterpartyIban",
+  "description",
+  "reference",
+] as const;
+
+/** A counter-transaction as the change log shows it. */
+function mirrorSnapshot(row: typeof transactions.$inferSelect): Snapshot {
+  return { ...pick(row, MIRROR_FIELDS), createdAt: row.createdAt.getTime() };
+}
+
 /**
  * Remembers an unlink: the transfer becomes `dismissed` so the engine never
  * recreates that pair or mirror. A mirror is deleted; the paired rows stay.
@@ -127,21 +148,21 @@ export async function unlink(
       const ids = [row.outTransactionId, row.inTransactionId].filter(
         (id): id is string => id !== null,
       );
-      const mirrors = new Set(
+      const mirrorRows =
         ids.length === 0
           ? []
-          : (
-              await tx
-                .select({ id: transactions.id })
-                .from(transactions)
-                .where(
-                  and(
-                    inArray(transactions.id, ids),
-                    eq(transactions.source, "mirror"),
-                  ),
-                )
-            ).map((m) => m.id),
-      );
+          : await tx
+              .select()
+              .from(transactions)
+              .where(
+                and(
+                  eq(transactions.userId, userId),
+                  inArray(transactions.id, ids),
+                  eq(transactions.source, "mirror"),
+                ),
+              )
+              .orderBy(asc(transactions.id));
+      const mirrors = new Set(mirrorRows.map((m) => m.id));
       // The mirror's id leaves the row first, or deleting it would delete the row too.
       await tx
         .update(transfers)
@@ -161,6 +182,15 @@ export async function unlink(
         await tx
           .delete(transactions)
           .where(inArray(transactions.id, [...mirrors]));
+        for (const m of mirrorRows) {
+          await recordChange({
+            userId,
+            action: "transaction.delete",
+            entityId: m.id,
+            summary: transactionSummary(m),
+            before: mirrorSnapshot(m),
+          });
+        }
       }
     },
     { lock: ledgerLock(userId) },
@@ -531,7 +561,7 @@ export async function resolveNeedsAmount(
           .onConflictDoNothing({
             target: [transactions.accountId, transactions.externalId],
           })
-          .returning({ id: transactions.id }),
+          .returning(),
       );
       if (!mirror) {
         throw new LedgerError(
@@ -539,6 +569,13 @@ export async function resolveNeedsAmount(
           "A counter-transaction for this transfer already exists.",
         );
       }
+      await recordChange({
+        userId,
+        action: "transaction.create",
+        entityId: mirror.id,
+        summary: transactionSummary(mirror),
+        after: mirrorSnapshot(mirror),
+      });
       await tx
         .update(transfers)
         .set({

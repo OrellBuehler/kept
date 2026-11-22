@@ -10,6 +10,8 @@ import {
   transaction,
   type DB,
 } from "$lib/server/db";
+import { recordChange } from "$lib/server/audit/record";
+import { pick } from "$lib/server/audit/snapshots";
 import { ledgerLock } from "./lock";
 import { LedgerError, notFound } from "./errors";
 import type { SnapshotInput } from "./schemas";
@@ -34,6 +36,8 @@ const columns = {
   amount: balanceSnapshots.amount,
   note: balanceSnapshots.note,
 };
+
+const AUDIT_FIELDS = ["accountId", "date", "amount", "note"] as const;
 
 async function assertAccount(
   userId: string,
@@ -103,12 +107,19 @@ export async function createSnapshot(
     row = await transaction(
       async (tx) => {
         await assertAccount(userId, accountId, tx);
-        return (
+        const created = (
           await tx
             .insert(balanceSnapshots)
             .values({ ...input, userId, accountId, source: "manual" })
-            .returning({ id: balanceSnapshots.id })
+            .returning(columns)
         )[0]!;
+        await recordChange({
+          userId,
+          action: "snapshot.create",
+          entityId: created.id,
+          after: pick(created, AUDIT_FIELDS),
+        });
+        return created;
       },
       { lock: ledgerLock(userId) },
     );
@@ -137,9 +148,20 @@ export async function deleteSnapshot(
       "Imported balances cannot be deleted. Delete the import instead.",
     );
   }
-  await getDB()
-    .delete(balanceSnapshots)
-    .where(
-      and(eq(balanceSnapshots.userId, userId), eq(balanceSnapshots.id, id)),
-    );
+  await transaction(async (tx) => {
+    const deleted = await tx
+      .delete(balanceSnapshots)
+      .where(
+        and(eq(balanceSnapshots.userId, userId), eq(balanceSnapshots.id, id)),
+      )
+      .returning({ id: balanceSnapshots.id });
+    if (deleted.length > 0) {
+      await recordChange({
+        userId,
+        action: "snapshot.delete",
+        entityId: id,
+        before: pick(current, AUDIT_FIELDS),
+      });
+    }
+  });
 }

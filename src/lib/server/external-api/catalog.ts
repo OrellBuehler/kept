@@ -9,6 +9,11 @@ import {
   type SeriesStatus,
 } from "$lib/recurring-types";
 import { accounts, categories, getDB, recurringSeries } from "$lib/server/db";
+import {
+  accountVisibility,
+  isRestricted,
+  type Visibility,
+} from "$lib/server/ledger/visibility";
 import { listRecurring } from "$lib/server/recurring/series";
 import { ApiError, iso, pageInMemory, pagingQuery, type Page } from "./http";
 
@@ -65,9 +70,10 @@ const since = (updatedAt: Date, updatedSince: Date | undefined) =>
 
 export async function listCategoryDtos(
   userId: string,
-  allowed: readonly string[] | null,
+  visibility: Visibility,
   query: z.output<typeof listQuery>,
 ): Promise<Page<CategoryDto>> {
+  const allowed = visibility.categoryIds;
   if (allowed !== null && allowed.length === 0) {
     return { items: [], nextCursor: null };
   }
@@ -101,6 +107,7 @@ export async function listCategoryDtos(
 
 export async function listAccountDtos(
   userId: string,
+  visibility: Visibility,
   query: z.output<typeof listQuery>,
 ): Promise<Page<AccountDto>> {
   const rows = await getDB()
@@ -114,7 +121,7 @@ export async function listAccountDtos(
       updatedAt: accounts.updatedAt,
     })
     .from(accounts)
-    .where(eq(accounts.userId, userId));
+    .where(and(eq(accounts.userId, userId), accountVisibility(visibility)));
   const withKey = rows
     .filter((r) => since(r.updatedAt, query.updatedSince))
     .map((r) => ({
@@ -138,14 +145,14 @@ export async function listAccountDtos(
 
 export async function listRecurringDtos(
   userId: string,
-  allowed: readonly string[] | null,
+  visibility: Visibility,
   query: z.output<typeof recurringQuery>,
 ): Promise<Page<RecurringSeriesDto>> {
-  // Series are detected across every category, so a category-restricted token may not read them.
-  if (allowed !== null) {
+  // Series are detected across every category and account, so a restricted token may not read them.
+  if (isRestricted(visibility)) {
     throw new ApiError(
       403,
-      "Recurring series are not available to tokens limited to categories.",
+      "Recurring series are not available to tokens limited to categories or accounts.",
     );
   }
   const [views, times] = await Promise.all([

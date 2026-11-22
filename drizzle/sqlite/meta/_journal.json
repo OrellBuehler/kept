@@ -225,6 +225,34 @@
       "when": 1791299381580,
       "tag": "0031_short_ben_grimm",
       "breakpoints": true
+    },
+    {
+      "idx": 32,
+      "version": "6",
+      "when": 1795312305860,
+      "tag": "0032_dashing_lyja",
+      "breakpoints": true
+    },
+    {
+      "idx": 33,
+      "version": "6",
+      "when": 1795317594887,
+      "tag": "0033_acoustic_cloak",
+      "breakpoints": true
+    },
+    {
+      "idx": 34,
+      "version": "6",
+      "when": 1795325114470,
+      "tag": "0034_panoramic_master_mold",
+      "breakpoints": true
+    },
+    {
+      "idx": 35,
+      "version": "6",
+      "when": 1795333798378,
+      "tag": "0035_aspiring_speed",
+      "breakpoints": true
     }
   ]
 }

@@ -1,3 +1,4 @@
+import { runAsSystem } from "$lib/server/audit/context";
 import { detach } from "$lib/server/detached";
 import { readDatabaseConfig } from "$lib/server/db/config";
 import { connectionParams } from "$lib/server/db/postgres";
@@ -93,7 +94,10 @@ export function startTicker(options: TickerOptions): () => void {
     if (running) return;
     running = true;
     try {
-      await runExclusive(options.name, options.run);
+      // Scheduled work is the system's, even when the timer was started from a request.
+      await runExclusive(options.name, () =>
+        runAsSystem(() => options.run(), options.name),
+      );
     } catch (err) {
       console.error("%s tick failed: %s", options.name, describeError(err));
     } finally {

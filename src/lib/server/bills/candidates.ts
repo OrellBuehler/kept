@@ -9,6 +9,10 @@ import {
   transactions,
 } from "$lib/server/db";
 import { parseMoneyInput } from "$lib/server/ledger/schemas";
+import {
+  transactionVisibility,
+  type Visibility,
+} from "$lib/server/ledger/visibility";
 import { getBill } from "./bills";
 import { transactionDisplayColumns, type TransactionDisplay } from "./display";
 import { computeBillStatus, type Allocation } from "./matching";
@@ -41,7 +45,18 @@ export interface CandidatePage {
 export async function candidateTransactions(
   userId: string,
   billId: string,
-  opts: { q?: string; page?: number; pageSize?: number } = {},
+  opts: {
+    q?: string;
+    page?: number;
+    pageSize?: number;
+    /** A restricted credential only sees payments inside its accounts and categories. */
+    visibility?: Visibility;
+    /**
+     * Search only what the MCP tool returns of a payment (counterparty,
+     * description, amount), not its reference, which no tool shows.
+     */
+    returnedFieldsOnly?: boolean;
+  } = {},
 ): Promise<CandidatePage> {
   const bill = await getBill(userId, billId);
   const db = getDB();
@@ -92,7 +107,9 @@ export async function candidateTransactions(
     search = or(
       likeContains(transactions.counterpartyName, q),
       likeContains(transactions.description, q),
-      likeContains(transactions.reference, q),
+      opts.returnedFieldsOnly
+        ? undefined
+        : likeContains(transactions.reference, q),
       amount.ok
         ? sql`abs(${transactions.amount}) = ${Math.abs(amount.value)}`
         : undefined,
@@ -107,6 +124,7 @@ export async function candidateTransactions(
     sql`${used} < abs(${transactions.amount})`,
     notOnBill,
     search,
+    transactionVisibility(opts.visibility),
   );
 
   const total = (await first(

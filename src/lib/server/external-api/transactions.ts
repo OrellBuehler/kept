@@ -1,4 +1,17 @@
-import { and, desc, eq, exists, gte, inArray, lt, lte, or } from "drizzle-orm";
+import {
+  and,
+  desc,
+  eq,
+  exists,
+  gte,
+  inArray,
+  isNotNull,
+  isNull,
+  lt,
+  lte,
+  notExists,
+  or,
+} from "drizzle-orm";
 import { z } from "zod";
 import type { Minor } from "$lib/money";
 import {
@@ -8,6 +21,11 @@ import {
   likeContains,
   transactions,
 } from "$lib/server/db";
+import {
+  accountAllowed,
+  transactionVisibility,
+  type Visibility,
+} from "$lib/server/ledger/visibility";
 import {
   DEFAULT_LIMIT,
   ApiError,
@@ -37,7 +55,16 @@ export interface TransactionDto {
   updatedAt: string;
 }
 
+/** What the MCP server shows on top of the REST shape: the owner's note (never IBANs or references). */
+export interface TransactionDetailDto extends TransactionDto {
+  note: string | null;
+}
+
 const MAX_SEARCH = 100;
+
+const flag = z
+  .enum(["true", "false"], "Use true or false.")
+  .transform((v) => v === "true");
 
 export const transactionsQuery = z.object({
   ...pagingQuery,
@@ -45,6 +72,10 @@ export const transactionsQuery = z.object({
   to: dateParam.optional(),
   categoryId: z.string().min(1).max(64).optional(),
   accountId: z.string().min(1).max(64).optional(),
+  /** Only payments without a category (`true`) or with one (`false`). */
+  uncategorized: flag.optional(),
+  /** Only payments no bill is allocated to (`true`) or that are allocated to one (`false`). */
+  unmatched: flag.optional(),
   q: z
     .string()
     .max(MAX_SEARCH)
@@ -62,6 +93,8 @@ const columns = {
   currency: transactions.currency,
   counterpartyName: transactions.counterpartyName,
   description: transactions.description,
+  reference: transactions.reference,
+  note: transactions.note,
   categoryId: transactions.categoryId,
   updatedAt: transactions.updatedAt,
 };
@@ -74,6 +107,8 @@ type Row = {
   currency: string;
   counterpartyName: string | null;
   description: string | null;
+  reference: string | null;
+  note: string | null;
   categoryId: string | null;
   updatedAt: Date;
 };
@@ -118,11 +153,11 @@ async function allocatedBills(
   return out;
 }
 
-function toDto(
+function toDetail(
   r: Row,
   allocated: Allocated | undefined,
   origin: string,
-): TransactionDto {
+): TransactionDetailDto {
   const updated = Math.max(
     r.updatedAt.getTime(),
     allocated?.changedAt?.getTime() ?? 0,
@@ -135,6 +170,7 @@ function toDto(
     currency: r.currency,
     counterpartyName: r.counterpartyName,
     description: r.description,
+    note: r.note,
     categoryId: r.categoryId,
     billIds: allocated?.billIds ?? [],
     url: transactionUrl(origin, r.accountId, r.id),
@@ -143,16 +179,16 @@ function toDto(
 }
 
 /**
- * Newest booking date first (then insertion order, then id). `allowed` is the
- * token's category restriction: when set, only transactions in those
- * categories exist as far as the token is concerned.
+ * Newest booking date first (then insertion order, then id). `visibility` is
+ * the credential's restriction: only transactions inside it exist as far as
+ * the credential is concerned.
  */
-export async function listTransactionDtos(
+export async function listTransactionDetails(
   userId: string,
-  allowed: readonly string[] | null,
+  visibility: Visibility,
   query: TransactionsQuery,
   origin: string,
-): Promise<Page<TransactionDto>> {
+): Promise<Page<TransactionDetailDto>> {
   const limit = query.limit ?? DEFAULT_LIMIT;
   const cursor = decodeCursor(query.cursor, 3);
   if (
@@ -168,17 +204,32 @@ export async function listTransactionDtos(
     throw new ApiError(400, "Invalid cursor.");
   }
   if (
-    allowed !== null &&
-    (allowed.length === 0 ||
-      (query.categoryId !== undefined && !allowed.includes(query.categoryId)))
+    query.accountId !== undefined &&
+    !accountAllowed(visibility, query.accountId)
   ) {
     return { items: [], nextCursor: null };
   }
+  const db = getDB();
   const where = and(
     eq(transactions.userId, userId),
-    allowed !== null
-      ? inArray(transactions.categoryId, [...allowed])
+    transactionVisibility(visibility),
+    query.uncategorized === true ? isNull(transactions.categoryId) : undefined,
+    query.uncategorized === false
+      ? isNotNull(transactions.categoryId)
       : undefined,
+    query.unmatched === undefined
+      ? undefined
+      : (query.unmatched ? notExists : exists)(
+          db
+            .select({ id: billAllocations.id })
+            .from(billAllocations)
+            .where(
+              and(
+                eq(billAllocations.transactionId, transactions.id),
+                eq(billAllocations.userId, userId),
+              ),
+            ),
+        ),
     query.categoryId !== undefined
       ? eq(transactions.categoryId, query.categoryId)
       : undefined,
@@ -246,7 +297,7 @@ export async function listTransactionDtos(
   );
   const last = slice[slice.length - 1];
   return {
-    items: slice.map((r) => toDto(r, bills.get(r.id), origin)),
+    items: slice.map((r) => toDetail(r, bills.get(r.id), origin)),
     nextCursor:
       rows.length > limit && last
         ? encodeCursor([last.bookingDate, last.seq, last.id])
@@ -254,15 +305,12 @@ export async function listTransactionDtos(
   };
 }
 
-export async function getTransactionDto(
+export async function getTransactionDetail(
   userId: string,
-  allowed: readonly string[] | null,
+  visibility: Visibility,
   id: string,
   origin: string,
-): Promise<TransactionDto> {
-  if (allowed !== null && allowed.length === 0) {
-    throw notFoundError("Transaction");
-  }
+): Promise<TransactionDetailDto> {
   const row = await first(
     getDB()
       .select(columns)
@@ -271,14 +319,41 @@ export async function getTransactionDto(
         and(
           eq(transactions.userId, userId),
           eq(transactions.id, id),
-          allowed !== null
-            ? inArray(transactions.categoryId, [...allowed])
-            : undefined,
+          transactionVisibility(visibility),
         ),
       )
       .limit(1),
   );
   if (!row) throw notFoundError("Transaction");
   const bills = await allocatedBills(userId, [row.id]);
-  return toDto(row, bills.get(row.id), origin);
+  return toDetail(row, bills.get(row.id), origin);
+}
+
+/** The REST shape: without the owner's note. */
+function publicShape({
+  note: _note,
+  ...dto
+}: TransactionDetailDto): TransactionDto {
+  return dto;
+}
+
+export async function listTransactionDtos(
+  userId: string,
+  visibility: Visibility,
+  query: TransactionsQuery,
+  origin: string,
+): Promise<Page<TransactionDto>> {
+  const page = await listTransactionDetails(userId, visibility, query, origin);
+  return { items: page.items.map(publicShape), nextCursor: page.nextCursor };
+}
+
+export async function getTransactionDto(
+  userId: string,
+  visibility: Visibility,
+  id: string,
+  origin: string,
+): Promise<TransactionDto> {
+  return publicShape(
+    await getTransactionDetail(userId, visibility, id, origin),
+  );
 }

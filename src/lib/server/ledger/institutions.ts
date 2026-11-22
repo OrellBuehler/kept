@@ -7,6 +7,8 @@ import {
   first,
   transaction,
 } from "$lib/server/db";
+import { recordChange, recordUpdate } from "$lib/server/audit/record";
+import { pick } from "$lib/server/audit/snapshots";
 import { LedgerError, notFound } from "./errors";
 import type { InstitutionInput } from "./schemas";
 
@@ -41,6 +43,8 @@ function mapNameViolation(err: unknown): never {
   }
   throw err;
 }
+
+const AUDIT_FIELDS = ["name", "bic", "color"] as const;
 
 export async function listInstitutions(
   userId: string,
@@ -78,12 +82,22 @@ export async function createInstitution(
   input: InstitutionInput,
 ): Promise<InstitutionView> {
   try {
-    const row = (
-      await getDB()
-        .insert(institutions)
-        .values({ userId, ...input })
-        .returning(columns)
-    )[0]!;
+    const row = await transaction(async (tx) => {
+      const created = (
+        await tx
+          .insert(institutions)
+          .values({ userId, ...input })
+          .returning(columns)
+      )[0]!;
+      await recordChange({
+        userId,
+        action: "institution.create",
+        entityId: created.id,
+        summary: created.name,
+        after: pick(created, AUDIT_FIELDS),
+      });
+      return created;
+    });
     return { ...row!, accountCount: 0 };
   } catch (err) {
     mapNameViolation(err);
@@ -95,17 +109,34 @@ export async function updateInstitution(
   id: string,
   input: InstitutionInput,
 ): Promise<InstitutionView> {
-  let updated: { id: string }[] = [];
   try {
-    updated = await getDB()
-      .update(institutions)
-      .set(input)
-      .where(and(eq(institutions.userId, userId), eq(institutions.id, id)))
-      .returning({ id: institutions.id });
+    await transaction(async (tx) => {
+      const before = await first(
+        tx
+          .select(columns)
+          .from(institutions)
+          .where(and(eq(institutions.userId, userId), eq(institutions.id, id)))
+          .limit(1),
+      );
+      if (!before) throw notFound("Institution");
+      await tx
+        .update(institutions)
+        .set(input)
+        .where(and(eq(institutions.userId, userId), eq(institutions.id, id)));
+      await recordUpdate(
+        {
+          userId,
+          action: "institution.update",
+          entityId: id,
+          summary: input.name,
+        },
+        pick(before, AUDIT_FIELDS),
+        pick(input, AUDIT_FIELDS),
+      );
+    });
   } catch (err) {
     mapNameViolation(err);
   }
-  if (updated.length === 0) throw notFound("Institution");
   return await getInstitution(userId, id);
 }
 
@@ -116,7 +147,7 @@ export async function deleteInstitution(
   await transaction(async (tx) => {
     const found = await first(
       tx
-        .select({ id: institutions.id })
+        .select(columns)
         .from(institutions)
         .where(and(eq(institutions.userId, userId), eq(institutions.id, id)))
         .limit(1),
@@ -138,5 +169,12 @@ export async function deleteInstitution(
     await tx
       .delete(institutions)
       .where(and(eq(institutions.userId, userId), eq(institutions.id, id)));
+    await recordChange({
+      userId,
+      action: "institution.delete",
+      entityId: id,
+      summary: found.name,
+      before: pick(found, AUDIT_FIELDS),
+    });
   });
 }

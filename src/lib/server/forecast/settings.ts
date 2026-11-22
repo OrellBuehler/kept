@@ -8,6 +8,7 @@ import {
   first,
   transaction,
 } from "$lib/server/db";
+import { recordUpdate } from "$lib/server/audit/record";
 import { LedgerError, notFound } from "$lib/server/ledger/errors";
 import { parseMoneyInput } from "$lib/server/ledger/schemas";
 import type { AccountSettingsInput } from "./schemas";
@@ -61,6 +62,28 @@ export async function saveAccountSettings(
         }
         threshold = minor(parsed.value);
       }
+      const previous = await first(
+        tx
+          .select({
+            threshold: forecastAccountSettings.threshold,
+            defaultPayment: forecastAccountSettings.isDefaultPayment,
+          })
+          .from(forecastAccountSettings)
+          .where(eq(forecastAccountSettings.accountId, account.id))
+          .limit(1),
+      );
+      await recordUpdate(
+        {
+          userId,
+          action: "forecast_setting.update",
+          entityId: account.id,
+        },
+        {
+          threshold: previous?.threshold ?? null,
+          defaultPayment: previous?.defaultPayment ?? false,
+        },
+        { threshold, defaultPayment },
+      );
       await tx
         .insert(forecastAccountSettings)
         .values({

@@ -1,7 +1,14 @@
 import { and, asc, desc, eq, inArray, isNull, lt, or } from "drizzle-orm";
 import { z } from "zod";
-import { API_SCOPES, API_TOKEN_PREFIX, type ApiScope } from "$lib/api-tokens";
 import {
+  API_SCOPES,
+  API_TOKEN_PREFIX,
+  IMPLIED_SCOPES,
+  scopeConflicts,
+  type ApiScope,
+} from "$lib/api-tokens";
+import {
+  accounts,
   apiTokens,
   categories,
   first,
@@ -14,6 +21,7 @@ import { hashToken } from "./sessions";
 
 export const MAX_ACTIVE_TOKENS = 25;
 export const MAX_TOKEN_CATEGORIES = 100;
+export const MAX_TOKEN_ACCOUNTS = 100;
 export const TOKEN_NAME_MAX = 64;
 /** `lastUsedAt` is written at most this often per token. */
 export const LAST_USED_THROTTLE_MS = 60_000;
@@ -22,6 +30,56 @@ export const MAX_TOKEN_LIFETIME_MS = 5 * 365 * 24 * 60 * 60 * 1000;
 const PREFIX_LENGTH = API_TOKEN_PREFIX.length + 6;
 /** A token is `kept_` plus 43 base64url characters; anything much longer is not worth hashing. */
 const MAX_TOKEN_LENGTH = 128;
+
+/** The permissions a token or connection may hold; implied scopes are added. */
+export const scopesSchema = z
+  .array(z.enum(API_SCOPES))
+  .min(1, "Choose at least one permission.")
+  .transform((s) => {
+    const all = new Set<ApiScope>(s);
+    for (const scope of s) {
+      for (const implied of IMPLIED_SCOPES[scope] ?? []) all.add(implied);
+    }
+    return API_SCOPES.filter((scope) => all.has(scope));
+  });
+
+/** Null: all categories. An empty list is refused, never read as "all". */
+export const categoryIdsSchema = z
+  .array(z.string().min(1).max(64))
+  .min(1, "Choose at least one category.")
+  .max(MAX_TOKEN_CATEGORIES)
+  .nullable()
+  .transform((ids) => (ids ? [...new Set(ids)] : null));
+
+/** Null: all accounts. An empty list is refused, never read as "all". */
+export const accountIdsSchema = z
+  .array(z.string().min(1).max(64))
+  .min(1, "Choose at least one account.")
+  .max(MAX_TOKEN_ACCOUNTS)
+  .nullable()
+  .optional()
+  .transform((ids) => (ids ? [...new Set(ids)] : null));
+
+/** Adds an issue per scope that cannot be combined with the chosen restrictions. */
+export function refuseScopeConflicts(
+  v: {
+    scopes: readonly ApiScope[];
+    categoryIds: string[] | null;
+    accountIds?: string[] | null;
+  },
+  ctx: z.RefinementCtx,
+): void {
+  for (const conflict of scopeConflicts(v.scopes, {
+    categoryIds: v.categoryIds,
+    accountIds: v.accountIds ?? null,
+  })) {
+    ctx.addIssue({
+      code: "custom",
+      path: ["scopes"],
+      message: conflict.message,
+    });
+  }
+}
 
 export const createApiTokenSchema = z
   .object({
@@ -33,28 +91,18 @@ export const createApiTokenSchema = z
         TOKEN_NAME_MAX,
         `Name must be at most ${TOKEN_NAME_MAX} characters.`,
       ),
-    scopes: z
-      .array(z.enum(API_SCOPES))
-      .min(1, "Choose at least one permission.")
-      .transform((s) => API_SCOPES.filter((scope) => s.includes(scope))),
-    /** Null: all categories. An empty list is refused, never read as "all". */
-    categoryIds: z
-      .array(z.string().min(1).max(64))
-      .min(1, "Choose at least one category.")
-      .max(MAX_TOKEN_CATEGORIES)
-      .nullable()
-      .transform((ids) => (ids ? [...new Set(ids)] : null)),
+    scopes: scopesSchema,
+    categoryIds: categoryIdsSchema,
+    accountIds: accountIdsSchema,
     expiresAt: z.date().nullable(),
   })
-  .refine(
-    (v) => v.categoryIds === null || !v.scopes.includes("recurring:read"),
-    {
-      path: ["scopes"],
-      message:
-        "A token limited to categories cannot read recurring payments: they are detected across all categories.",
-    },
-  );
+  .superRefine(refuseScopeConflicts);
 export type CreateApiTokenInput = z.input<typeof createApiTokenSchema>;
+/** A parsed token form; `accountIds` may be left out for "all accounts". */
+export type NewApiToken = Omit<
+  z.output<typeof createApiTokenSchema>,
+  "accountIds"
+> & { accountIds?: string[] | null };
 
 export interface ApiTokenInfo {
   id: string;
@@ -62,6 +110,7 @@ export interface ApiTokenInfo {
   prefix: string;
   scopes: ApiScope[];
   categoryIds: string[] | null;
+  accountIds: string[] | null;
   lastUsedAt: number | null;
   expiresAt: number | null;
   revokedAt: number | null;
@@ -72,8 +121,11 @@ export interface ApiTokenInfo {
 export interface ApiTokenAuth {
   id: string;
   userId: string;
+  /** The token's name when it was verified: a display snapshot for the change log. */
+  name: string;
   scopes: ApiScope[];
   categoryIds: string[] | null;
+  accountIds: string[] | null;
 }
 
 type Row = typeof apiTokens.$inferSelect;
@@ -85,6 +137,7 @@ function toInfo(row: Row): ApiTokenInfo {
     prefix: row.prefix,
     scopes: row.scopes,
     categoryIds: row.categoryIds,
+    accountIds: row.accountIds,
     lastUsedAt: row.lastUsedAt?.getTime() ?? null,
     expiresAt: row.expiresAt?.getTime() ?? null,
     revokedAt: row.revokedAt?.getTime() ?? null,
@@ -101,34 +154,81 @@ function generateToken(): string {
   );
 }
 
-/**
- * Creates a token and returns its plaintext, which exists nowhere else: only
- * its hash is stored. The category restriction must name the user's own
- * categories.
- */
-export async function createApiToken(
+/** Throws a LedgerError unless the expiry is in the future and within five years. */
+export function assertExpiry(expiresAt: Date | null, now: number): void {
+  if (expiresAt === null) return;
+  const at = expiresAt.getTime();
+  if (at <= now) {
+    throw new LedgerError(
+      "invalid",
+      "The expiry must be in the future.",
+      "expires",
+    );
+  }
+  if (at > now + MAX_TOKEN_LIFETIME_MS) {
+    throw new LedgerError(
+      "invalid",
+      "The expiry must be within five years.",
+      "expires",
+    );
+  }
+}
+
+/** Throws a LedgerError unless every restriction id names one of the user's own categories or accounts. */
+export async function assertOwnRestrictions(
+  db: Pick<ReturnType<typeof getDB>, "select">,
   userId: string,
-  input: z.output<typeof createApiTokenSchema>,
-  now: number = Date.now(),
-): Promise<{ token: string; info: ApiTokenInfo }> {
-  if (input.expiresAt !== null) {
-    const at = input.expiresAt.getTime();
-    if (at <= now) {
-      throw new LedgerError(
-        "invalid",
-        "The expiry must be in the future.",
-        "expires",
+  categoryIds: readonly string[] | null,
+  accountIds: readonly string[] | null,
+): Promise<void> {
+  if (categoryIds !== null) {
+    const owned = await db
+      .select({ id: categories.id })
+      .from(categories)
+      .where(
+        and(
+          eq(categories.userId, userId),
+          inArray(categories.id, [...categoryIds]),
+        ),
       );
-    }
-    if (at > now + MAX_TOKEN_LIFETIME_MS) {
+    if (owned.length !== categoryIds.length) {
       throw new LedgerError(
         "invalid",
-        "The expiry must be within five years.",
-        "expires",
+        "Choose your own categories.",
+        "categoryIds",
       );
     }
   }
+  if (accountIds !== null) {
+    const owned = await db
+      .select({ id: accounts.id })
+      .from(accounts)
+      .where(
+        and(eq(accounts.userId, userId), inArray(accounts.id, [...accountIds])),
+      );
+    if (owned.length !== accountIds.length) {
+      throw new LedgerError(
+        "invalid",
+        "Choose your own accounts.",
+        "accountIds",
+      );
+    }
+  }
+}
+
+/**
+ * Creates a token and returns its plaintext, which exists nowhere else: only
+ * its hash is stored. The category and account restrictions must name the
+ * user's own categories and accounts.
+ */
+export async function createApiToken(
+  userId: string,
+  input: NewApiToken,
+  now: number = Date.now(),
+): Promise<{ token: string; info: ApiTokenInfo }> {
+  assertExpiry(input.expiresAt, now);
   const token = generateToken();
+  const accountIds = input.accountIds ? [...new Set(input.accountIds)] : null;
   const row = await transaction(
     async (tx) => {
       const active = await tx
@@ -144,24 +244,7 @@ export async function createApiToken(
           `You can have at most ${MAX_ACTIVE_TOKENS} active tokens. Revoke one first.`,
         );
       }
-      if (input.categoryIds !== null) {
-        const owned = await tx
-          .select({ id: categories.id })
-          .from(categories)
-          .where(
-            and(
-              eq(categories.userId, userId),
-              inArray(categories.id, input.categoryIds),
-            ),
-          );
-        if (owned.length !== input.categoryIds.length) {
-          throw new LedgerError(
-            "invalid",
-            "Choose your own categories.",
-            "categoryIds",
-          );
-        }
-      }
+      await assertOwnRestrictions(tx, userId, input.categoryIds, accountIds);
       const created = (await first(
         tx
           .insert(apiTokens)
@@ -172,6 +255,7 @@ export async function createApiToken(
             prefix: token.slice(0, PREFIX_LENGTH),
             scopes: input.scopes,
             categoryIds: input.categoryIds,
+            accountIds,
             expiresAt: input.expiresAt,
           })
           .returning(),
@@ -267,8 +351,10 @@ export async function verifyApiToken(
     token: {
       id: row.id,
       userId: row.userId,
+      name: row.name,
       scopes: row.scopes,
       categoryIds: row.categoryIds,
+      accountIds: row.accountIds,
     },
   };
 }

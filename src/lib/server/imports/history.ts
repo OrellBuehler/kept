@@ -25,6 +25,7 @@ import {
   first,
   transaction,
 } from "$lib/server/db";
+import { recordChange } from "$lib/server/audit/record";
 import { getAccount } from "$lib/server/ledger/accounts";
 import {
   announceBills,
@@ -333,6 +334,16 @@ export async function undoImport(
       }
       // Real rows that had replaced mirrors are gone: the transfers they stood for are mirrored again.
       await linkTransfersInTx(tx, userId, { targetAccountId: found.accountId });
+      await recordChange({
+        userId,
+        action: "import.undo",
+        entityId: importId,
+        summary: "Import undone",
+        before: {
+          accountId: found.accountId,
+          removedTransactions: found.n,
+        },
+      });
       return { accountId: found.accountId, removedTransactions: found.n };
     },
     { lock: ledgerLock(userId) },

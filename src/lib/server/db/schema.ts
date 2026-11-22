@@ -223,6 +223,8 @@ export const AUTH_EVENT_TYPES = [
   "two_factor_reset",
   "api_token_created",
   "api_token_revoked",
+  "mcp_connection_granted",
+  "mcp_connection_revoked",
 ] as const;
 export type AuthEventType = (typeof AUTH_EVENT_TYPES)[number];
 
@@ -763,6 +765,13 @@ export const documents = table(
     /** Relative to the documents root; built from ids, never from user input. */
     storageKey: text("storage_key").notNull(),
     source: text("source", { enum: DOCUMENT_SOURCES }).notNull(),
+    /**
+     * Set when a bill that referenced this document was deleted through the
+     * API or MCP: the file is kept so that reverting the delete in the change
+     * log can attach it again, and removed by a sweep once this instant has
+     * passed and no bill references it. Null: removed with its last bill.
+     */
+    heldUntil: instant("held_until"),
     ...timestamps(),
   },
   (t) => [
@@ -1448,11 +1457,12 @@ export const pillar3aYears = table(
 );
 
 /**
- * A bearer token for the external read API (`/api/external/v1/`). Only the
- * SHA-256 of the token is stored; the plaintext is shown once at creation.
- * `scopes` are the permissions it grants; `categoryIds`, when set, limits
- * transactions and categories to those categories (ids may outlive the
- * category: a deleted one simply matches nothing).
+ * A bearer token for the external API (`/api/external/v1/`) and the MCP server
+ * (`/api/mcp`). Only the SHA-256 of the token is stored; the plaintext is
+ * shown once at creation. `scopes` are the permissions it grants;
+ * `categoryIds`, when set, limits transactions and categories to those
+ * categories, `accountIds` limits everything to those accounts (ids may
+ * outlive the row: a deleted one simply matches nothing).
  */
 export const apiTokens = table(
   "api_tokens",
@@ -1465,6 +1475,7 @@ export const apiTokens = table(
     prefix: text("prefix").notNull(),
     scopes: json<ApiScope[]>("scopes").notNull(),
     categoryIds: json<string[]>("category_ids"),
+    accountIds: json<string[]>("account_ids"),
     lastUsedAt: instant("last_used_at"),
     expiresAt: instant("expires_at"),
     revokedAt: instant("revoked_at"),
@@ -1473,6 +1484,124 @@ export const apiTokens = table(
   (t) => [
     uniqueIndex("api_tokens_token_hash_uq").on(t.tokenHash),
     index("api_tokens_user_id_idx").on(t.userId),
+  ],
+);
+
+/**
+ * An application that registered itself (RFC 7591) to ask for access to the
+ * MCP server. Public clients only: there is no secret, PKCE protects the
+ * code. Registration is open, so every field is bounded and shown as untrusted
+ * text. Not owned by a user: a client only becomes someone's data through a
+ * connection.
+ */
+export const oauthClients = table("oauth_clients", {
+  /** The OAuth `client_id`. */
+  id: id(),
+  name: text("name").notNull(),
+  /** Exact URIs, except that a loopback URI matches on any port (RFC 8252). */
+  redirectUris: json<string[]>("redirect_uris").notNull(),
+  clientUri: text("client_uri"),
+  ...timestamps(),
+});
+
+/**
+ * One consent of one user to one client, and the credential its tokens
+ * stand for: `id` is the change log's actor token id, so what a connection
+ * changed stays attributable across token refreshes. Scopes and restrictions
+ * are what the owner ticked on the consent page, not what the client asked for.
+ * `resource` is the MCP resource the tokens were issued for (their audience).
+ */
+export const mcpConnections = table(
+  "mcp_connections",
+  {
+    id: id(),
+    userId: userId(),
+    clientId: text("client_id")
+      .notNull()
+      .references(() => oauthClients.id, { onDelete: "cascade" }),
+    name: text("name").notNull(),
+    scopes: json<ApiScope[]>("scopes").notNull(),
+    categoryIds: json<string[]>("category_ids"),
+    accountIds: json<string[]>("account_ids"),
+    resource: text("resource").notNull(),
+    lastUsedAt: instant("last_used_at"),
+    expiresAt: instant("expires_at"),
+    revokedAt: instant("revoked_at"),
+    ...timestamps(),
+  },
+  (t) => [
+    index("mcp_connections_user_id_idx").on(t.userId),
+    index("mcp_connections_client_id_idx").on(t.clientId),
+  ],
+);
+
+/**
+ * An authorization request through its two steps. It starts as the validated
+ * request of a signed-in user, waiting for the consent page (`codeHash` null);
+ * approving it stores what the owner chose and the hash of the one-time code
+ * (`approvedAt`, `codeHash`, `scopes`, restrictions); redeeming the code sets
+ * `usedAt` and `connectionId`. A used row stays until it is swept so that a
+ * second redemption is recognised and revokes what the first one issued.
+ * Everything the code is bound to (client, redirect URI, PKCE challenge,
+ * resource) is read from this row, never from the consent form.
+ */
+export const oauthAuthorizations = table(
+  "oauth_authorizations",
+  {
+    id: id(),
+    userId: userId(),
+    clientId: text("client_id")
+      .notNull()
+      .references(() => oauthClients.id, { onDelete: "cascade" }),
+    redirectUri: text("redirect_uri").notNull(),
+    state: text("state"),
+    codeChallenge: text("code_challenge").notNull(),
+    resource: text("resource").notNull(),
+    /** What the client asked for (known scopes only), to pre-tick the consent page. */
+    requestedScopes: json<ApiScope[]>("requested_scopes").notNull(),
+    /** Until when the request may be approved, then until when the code may be redeemed. */
+    expiresAt: instant("expires_at").notNull(),
+    approvedAt: instant("approved_at"),
+    codeHash: text("code_hash"),
+    scopes: json<ApiScope[]>("scopes"),
+    categoryIds: json<string[]>("category_ids"),
+    accountIds: json<string[]>("account_ids"),
+    connectionExpiresAt: instant("connection_expires_at"),
+    usedAt: instant("used_at"),
+    connectionId: text("connection_id"),
+    ...timestamps(),
+  },
+  (t) => [
+    uniqueIndex("oauth_authorizations_code_hash_uq").on(t.codeHash),
+    index("oauth_authorizations_user_id_idx").on(t.userId),
+    index("oauth_authorizations_client_id_idx").on(t.clientId),
+  ],
+);
+
+export const OAUTH_TOKEN_KINDS = ["access", "refresh"] as const;
+export type OAuthTokenKind = (typeof OAUTH_TOKEN_KINDS)[number];
+
+/**
+ * The access and refresh tokens of a connection; only their SHA-256 is stored.
+ * A refresh token is single use: rotating sets `usedAt`, and presenting it again
+ * revokes the whole connection.
+ */
+export const oauthTokens = table(
+  "oauth_tokens",
+  {
+    id: id(),
+    connectionId: text("connection_id")
+      .notNull()
+      .references(() => mcpConnections.id, { onDelete: "cascade" }),
+    kind: text("kind", { enum: OAUTH_TOKEN_KINDS }).notNull(),
+    tokenHash: text("token_hash").notNull(),
+    expiresAt: instant("expires_at").notNull(),
+    usedAt: instant("used_at"),
+    ...timestamps(),
+  },
+  (t) => [
+    uniqueIndex("oauth_tokens_token_hash_uq").on(t.tokenHash),
+    index("oauth_tokens_connection_id_idx").on(t.connectionId),
   ],
 );
 
@@ -1506,5 +1635,54 @@ export const externalLinks = table(
       t.url,
     ),
     index("external_links_entity_idx").on(t.entityType, t.entityId),
+  ],
+);
+
+export const ACTOR_KINDS = ["web", "app", "api", "mcp", "system"] as const;
+export type ActorKind = (typeof ACTOR_KINDS)[number];
+
+/**
+ * Change log: what changed in the user's data, who did it (web session, mobile
+ * app, API token, mcp connection or the system) and enough of the before and
+ * after state to show a diff and to undo it. `userId` owns the data. The actor
+ * token is not a foreign key and `actorLabel` is a display snapshot, so entries
+ * stay readable after the token is deleted. `before` / `after` hold only
+ * values (minor units, `YYYY-MM-DD` strings, epoch milliseconds), never
+ * secrets. An entry is never rewritten except to mark it reverted; a revert
+ * writes an entry of its own with `revertOfEntryId`.
+ */
+export const changeLog = table(
+  "change_log",
+  {
+    id: id(),
+    userId: userId(),
+    /** Insertion order, newest last (see `nextSeq`); the listing key. */
+    seq: seq(),
+    actorKind: text("actor_kind", { enum: ACTOR_KINDS }).notNull(),
+    actorTokenId: text("actor_token_id"),
+    actorLabel: text("actor_label"),
+    /** `<entity>.<verb>`, such as `bill.update`. */
+    action: text("action").notNull(),
+    entityType: text("entity_type").notNull(),
+    entityId: text("entity_id").notNull(),
+    /** A short label of the entity, such as a creditor name. Never an amount. */
+    summary: text("summary"),
+    before: json<unknown>("before"),
+    after: json<unknown>("after"),
+    revertedAt: instant("reverted_at"),
+    revertedByEntryId: text("reverted_by_entry_id"),
+    revertOfEntryId: text("revert_of_entry_id"),
+    ...timestamps(),
+  },
+  (t) => [
+    index("change_log_user_seq_idx").on(t.userId, t.seq),
+    index("change_log_user_actor_idx").on(t.userId, t.actorKind, t.seq),
+    index("change_log_user_token_idx").on(t.userId, t.actorTokenId, t.seq),
+    index("change_log_user_entity_idx").on(
+      t.userId,
+      t.entityType,
+      t.entityId,
+      t.seq,
+    ),
   ],
 );

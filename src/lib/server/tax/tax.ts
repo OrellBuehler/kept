@@ -1,4 +1,13 @@
-import { and, asc, between, eq, isNotNull, isNull, ne } from "drizzle-orm";
+import {
+  and,
+  asc,
+  between,
+  count,
+  eq,
+  isNotNull,
+  isNull,
+  ne,
+} from "drizzle-orm";
 import { minor, type Minor } from "$lib/money";
 import {
   billAllocations,
@@ -6,10 +15,13 @@ import {
   first,
   getDB,
   readSnapshot,
+  transaction,
   taxCredits,
   taxYears,
   transactions,
 } from "$lib/server/db";
+import { recordChange, recordUpdate } from "$lib/server/audit/record";
+import { pick } from "$lib/server/audit/snapshots";
 import { notFound } from "$lib/server/ledger/errors";
 import { updateUnlessMirror } from "$lib/server/transfers/guard";
 import {
@@ -171,6 +183,19 @@ export async function getTaxYear(
   return view;
 }
 
+const TAX_YEAR_AUDIT_FIELDS = [
+  "authority",
+  "currency",
+  "assessedTotal",
+  "notes",
+] as const;
+const TAX_CREDIT_AUDIT_FIELDS = [
+  "bookingDate",
+  "amount",
+  "reference",
+  "description",
+] as const;
+
 export async function upsertTaxYear(
   userId: string,
   input: TaxYearInput,
@@ -181,14 +206,40 @@ export async function upsertTaxYear(
     assessedTotal: input.assessedTotal,
     notes: input.notes,
   };
-  // One statement: the unique index on (user, year) decides insert or update.
-  await getDB()
-    .insert(taxYears)
-    .values({ ...values, userId, year: input.year })
-    .onConflictDoUpdate({
-      target: [taxYears.userId, taxYears.year],
-      set: { ...values, updatedAt: new Date() },
-    });
+  await transaction(async (tx) => {
+    const previous = await first(
+      tx
+        .select()
+        .from(taxYears)
+        .where(and(eq(taxYears.userId, userId), eq(taxYears.year, input.year)))
+        .limit(1),
+    );
+    // One statement: the unique index on (user, year) decides insert or update.
+    const [row] = await tx
+      .insert(taxYears)
+      .values({ ...values, userId, year: input.year })
+      .onConflictDoUpdate({
+        target: [taxYears.userId, taxYears.year],
+        set: { ...values, updatedAt: new Date() },
+      })
+      .returning();
+    const summary = `Tax year ${input.year}`;
+    if (!previous) {
+      await recordChange({
+        userId,
+        action: "tax_year.create",
+        entityId: row!.id,
+        summary,
+        after: { year: input.year, ...pick(values, TAX_YEAR_AUDIT_FIELDS) },
+      });
+    } else {
+      await recordUpdate(
+        { userId, action: "tax_year.update", entityId: row!.id, summary },
+        pick(previous, TAX_YEAR_AUDIT_FIELDS),
+        pick(values, TAX_YEAR_AUDIT_FIELDS),
+      );
+    }
+  });
   return await getTaxYear(userId, input.year);
 }
 
@@ -199,9 +250,31 @@ export async function deleteTaxYear(
 ): Promise<void> {
   const row = await yearRow(userId, year);
   if (!row) throw notFound("Tax year");
-  await getDB()
-    .delete(taxYears)
-    .where(and(eq(taxYears.userId, userId), eq(taxYears.id, row.id)));
+  await transaction(async (tx) => {
+    const credits = (await first(
+      tx
+        .select({ n: count() })
+        .from(taxCredits)
+        .where(
+          and(eq(taxCredits.userId, userId), eq(taxCredits.taxYearId, row.id)),
+        )
+        .limit(1),
+    ))!.n;
+    await tx
+      .delete(taxYears)
+      .where(and(eq(taxYears.userId, userId), eq(taxYears.id, row.id)));
+    await recordChange({
+      userId,
+      action: "tax_year.delete",
+      entityId: row.id,
+      summary: `Tax year ${year}`,
+      before: {
+        year,
+        ...pick(row, TAX_YEAR_AUDIT_FIELDS),
+        statementLines: credits,
+      },
+    });
+  });
 }
 
 async function ensureYearRow(userId: string, year: number) {
@@ -223,12 +296,22 @@ export async function addTaxCredit(
   input: TaxCreditInput,
 ): Promise<CreditLine> {
   const row = await ensureYearRow(userId, year);
-  const created = (
-    await getDB()
-      .insert(taxCredits)
-      .values({ ...input, userId, taxYearId: row.id })
-      .returning()
-  )[0]!;
+  const created = await transaction(async (tx) => {
+    const inserted = (
+      await tx
+        .insert(taxCredits)
+        .values({ ...input, userId, taxYearId: row.id })
+        .returning()
+    )[0]!;
+    await recordChange({
+      userId,
+      action: "tax_credit.create",
+      entityId: inserted.id,
+      summary: `Tax year ${year}`,
+      after: { year, ...pick(inserted, TAX_CREDIT_AUDIT_FIELDS) },
+    });
+    return inserted;
+  });
   return toCredit(created);
 }
 
@@ -236,20 +319,38 @@ export async function deleteTaxCredit(
   userId: string,
   creditId: string,
 ): Promise<number> {
-  const db = getDB();
-  const credit = await first(
-    db
-      .select({ id: taxCredits.id, year: taxYears.year })
-      .from(taxCredits)
-      .innerJoin(taxYears, eq(taxYears.id, taxCredits.taxYearId))
-      .where(and(eq(taxCredits.userId, userId), eq(taxCredits.id, creditId)))
-      .limit(1),
-  );
-  if (!credit) throw notFound("Statement line");
-  await db
-    .delete(taxCredits)
-    .where(and(eq(taxCredits.userId, userId), eq(taxCredits.id, creditId)));
-  return credit.year;
+  return await transaction(async (tx) => {
+    const credit = await first(
+      tx
+        .select({
+          id: taxCredits.id,
+          year: taxYears.year,
+          bookingDate: taxCredits.bookingDate,
+          amount: taxCredits.amount,
+          reference: taxCredits.reference,
+          description: taxCredits.description,
+        })
+        .from(taxCredits)
+        .innerJoin(taxYears, eq(taxYears.id, taxCredits.taxYearId))
+        .where(and(eq(taxCredits.userId, userId), eq(taxCredits.id, creditId)))
+        .limit(1),
+    );
+    if (!credit) throw notFound("Statement line");
+    await tx
+      .delete(taxCredits)
+      .where(and(eq(taxCredits.userId, userId), eq(taxCredits.id, creditId)));
+    await recordChange({
+      userId,
+      action: "tax_credit.delete",
+      entityId: creditId,
+      summary: `Tax year ${credit.year}`,
+      before: {
+        year: credit.year,
+        ...pick(credit, TAX_CREDIT_AUDIT_FIELDS),
+      },
+    });
+    return credit.year;
+  });
 }
 
 /** Marks a transaction as a tax payment for `year`, or clears the mark with null. */
