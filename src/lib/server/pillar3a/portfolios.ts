@@ -1,6 +1,7 @@
 import { and, asc, eq, inArray, lte, sql } from "drizzle-orm";
 import { isQrIban } from "$lib/iban";
 import type { Minor } from "$lib/money";
+import { returnBps } from "$lib/pillar-3a";
 import type { PortfolioCloseReason } from "$lib/pillar-3a-types";
 import { isValidQrr } from "$lib/references";
 import {
@@ -34,6 +35,10 @@ export interface PortfolioView {
   /** Newest manually entered value dated on or before today, whether the portfolio is open or not. */
   latestValue: Minor | null;
   latestValueDate: string | null;
+  /** Total gain the provider reported with that value. */
+  latestGain: Minor | null;
+  /** Total return of that value in hundredths of a percent: as reported, or derived from the gain. */
+  latestGainBps: number | null;
 }
 
 const columns = {
@@ -80,15 +85,23 @@ async function assertPillar3aAccount(
 
 async function withLatest(
   userId: string,
-  rows: Omit<PortfolioView, "latestValue" | "latestValueDate">[],
+  rows: Omit<
+    PortfolioView,
+    "latestValue" | "latestValueDate" | "latestGain" | "latestGainBps"
+  >[],
 ): Promise<PortfolioView[]> {
   if (rows.length === 0) return [];
-  const latest = new Map<string, { date: string; amount: Minor }>();
+  const latest = new Map<
+    string,
+    { date: string; amount: Minor; gain: Minor | null; gainBps: number | null }
+  >();
   for (const v of await getDB()
     .select({
       portfolioId: portfolioValues.portfolioId,
       date: portfolioValues.date,
       amount: portfolioValues.amount,
+      gain: portfolioValues.gain,
+      gainBps: portfolioValues.gainBps,
     })
     .from(portfolioValues)
     .where(
@@ -103,14 +116,19 @@ async function withLatest(
     )) {
     const current = latest.get(v.portfolioId);
     if (!current || v.date > current.date) {
-      latest.set(v.portfolioId, { date: v.date, amount: v.amount });
+      latest.set(v.portfolioId, v);
     }
   }
-  return rows.map((r) => ({
-    ...r,
-    latestValue: latest.get(r.id)?.amount ?? null,
-    latestValueDate: latest.get(r.id)?.date ?? null,
-  }));
+  return rows.map((r) => {
+    const v = latest.get(r.id);
+    return {
+      ...r,
+      latestValue: v?.amount ?? null,
+      latestValueDate: v?.date ?? null,
+      latestGain: v?.gain ?? null,
+      latestGainBps: v ? returnBps(v) : null,
+    };
+  });
 }
 
 /** The user's portfolios (of one account when given), open ones first. */

@@ -19,6 +19,7 @@
   import type { FormErrors } from "$lib/form-errors";
   import { submitHandler } from "$lib/form-submit";
   import { formatIban, isQrIban } from "$lib/iban";
+  import { formatReturn } from "$lib/pillar-3a";
   import {
     PORTFOLIO_CLOSE_REASONS,
     PORTFOLIO_CLOSE_REASON_LABELS,
@@ -167,6 +168,21 @@
             {currency}
             class="text-lg font-semibold"
           />
+          {#if p.latestGain !== null || p.latestGainBps !== null}
+            <div class="text-sm tabular-nums">
+              {#if p.latestGain !== null}
+                <Amount value={p.latestGain} {currency} flow />
+              {/if}
+              {#if p.latestGainBps !== null}
+                {#if p.latestGain !== null}
+                  <span class="text-muted-foreground">·</span>
+                {/if}
+                <span class="text-muted-foreground">
+                  {formatReturn(p.latestGainBps, prefs.locale)}
+                </span>
+              {/if}
+            </div>
+          {/if}
           {#if p.latestValueDate}
             <div class="text-muted-foreground text-xs">
               as of {prefs.date(p.latestValueDate)}
@@ -222,8 +238,9 @@
   <Card.Header>
     <Card.Title>Portfolios</Card.Title>
     <Card.Description>
-      Each portfolio is valued by hand from your provider's statement. Their
-      values are added to the cash balance of this account.
+      Each portfolio is valued by hand from your provider's statement, with its
+      gain if you enter it. Their values are added to the cash balance of this
+      account.
     </Card.Description>
   </Card.Header>
   <Card.Content class="grid gap-6">
@@ -312,7 +329,12 @@
 </Card.Root>
 
 <PortfolioFormDialog bind:open={formOpen} portfolio={editing} {qrIban} />
-<PortfolioValuesDialog bind:open={valuesOpen} portfolios={open} {currency} />
+<PortfolioValuesDialog
+  bind:open={valuesOpen}
+  portfolios={open}
+  {values}
+  {currency}
+/>
 <PortfolioHistorySheet
   bind:open={historyOpen}
   name={historyName}

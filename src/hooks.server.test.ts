@@ -66,6 +66,15 @@ describe("handle", () => {
     );
   });
 
+  it("sends an app's sign-in through /login and keeps its request", async () => {
+    await createTestUser();
+    const { res } = await run("/login/app?request=abc_-123");
+    expect(res.status).toBe(303);
+    expect(res.headers.get("location")).toBe(
+      `/login?redirectTo=${encodeURIComponent("/login/app?request=abc_-123")}`,
+    );
+  });
+
   it("answers unauthenticated /api with 401 JSON", async () => {
     await createTestUser();
     const { res } = await run("/api/things");
@@ -424,7 +433,13 @@ describe("handle: app API", () => {
 
   it("lets server discovery and the sign-in steps through without a session", async () => {
     await createTestUser();
-    for (const p of ["/server", "/auth/login", "/auth/verify"]) {
+    for (const p of [
+      "/server",
+      "/auth/login",
+      "/auth/verify",
+      "/auth/browser",
+      "/auth/browser/token",
+    ]) {
       const { res, resolved, event } = await app(`/api/app/v1${p}`);
       expect(res.status, p).toBe(200);
       expect(resolved(), p).toBe(true);

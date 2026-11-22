@@ -53,6 +53,10 @@ const matrix: Record<string, Entry> = {
   "/src/routes/api/app/v1/server/+server.ts": { access: "public" },
   "/src/routes/api/app/v1/auth/login/+server.ts": { access: "public" },
   "/src/routes/api/app/v1/auth/verify/+server.ts": { access: "public" },
+  "/src/routes/api/app/v1/auth/browser/+server.ts": { access: "public" },
+  "/src/routes/api/app/v1/auth/browser/token/+server.ts": {
+    access: "public",
+  },
   "/src/routes/api/app/v1/auth/logout/+server.ts": {
     access: "user",
     handlers: {
@@ -214,6 +218,13 @@ const matrix: Record<string, Entry> = {
   "/src/routes/login/+page.server.ts": { access: "public" },
   "/src/routes/logout/+page.server.ts": { access: "public" },
   "/src/routes/login/verify/+page.server.ts": { access: "public" },
+  "/src/routes/login/app/+page.server.ts": {
+    access: "user",
+    handlers: {
+      load: (m, e) => m.load(e),
+      "actions.default": (m, e) => m.actions.default(e),
+    },
+  },
   "/src/routes/api/auth/passkey/login/options/+server.ts": {
     access: "public",
   },

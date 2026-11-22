@@ -3,6 +3,7 @@ import { minor, type Minor } from "$lib/money";
 import {
   FIRST_BUY_IN_GAP_YEAR,
   gapsFor,
+  returnBps,
   settingFor,
   yearLimit,
   type GapYear,
@@ -61,6 +62,10 @@ export interface Pillar3aPortfolioOverview {
   contributed: Minor;
   /** `latestValue - contributed`; null without a value. */
   gain: Minor | null;
+  /** Total gain the provider reported with the latest value. */
+  reportedGain: Minor | null;
+  /** Total return of the latest value in hundredths of a percent: as reported, or derived from the reported gain. */
+  returnBps: number | null;
 }
 
 export interface Pillar3aOverview {
@@ -137,12 +142,17 @@ export async function pillar3aOverview(
     });
   }
 
-  const latest = new Map<string, { date: string; amount: Minor }>();
+  const latest = new Map<
+    string,
+    { date: string; amount: Minor; gain: Minor | null; gainBps: number | null }
+  >();
   for (const v of await db
     .select({
       portfolioId: portfolioValues.portfolioId,
       date: portfolioValues.date,
       amount: portfolioValues.amount,
+      gain: portfolioValues.gain,
+      gainBps: portfolioValues.gainBps,
     })
     .from(portfolioValues)
     .where(
@@ -150,7 +160,7 @@ export async function pillar3aOverview(
     )) {
     const current = latest.get(v.portfolioId);
     if (!current || v.date > current.date) {
-      latest.set(v.portfolioId, { date: v.date, amount: v.amount });
+      latest.set(v.portfolioId, v);
     }
   }
   const contributedBy = new Map<string, number>();
@@ -208,6 +218,8 @@ export async function pillar3aOverview(
       latestValueDate: v?.date ?? null,
       contributed: minor(contributed),
       gain: v === null ? null : minor(v.amount - contributed),
+      reportedGain: v?.gain ?? null,
+      returnBps: v === null ? null : returnBps(v),
     };
   });
 

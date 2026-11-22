@@ -4,6 +4,7 @@
   import { Button } from "$lib/components/ui/button";
   import Amount from "$lib/components/Amount.svelte";
   import Trash2Icon from "@lucide/svelte/icons/trash-2";
+  import { formatReturn, returnBps } from "$lib/pillar-3a";
   import type { PortfolioValueView } from "$lib/server/pillar3a";
   import { usePreferences } from "$lib/preferences.svelte";
 
@@ -25,7 +26,7 @@
 </script>
 
 <Sheet.Root bind:open>
-  <Sheet.Content class="w-full overflow-y-auto sm:max-w-md">
+  <Sheet.Content class="w-full overflow-y-auto sm:max-w-lg">
     <Sheet.Header>
       <Sheet.Title>{name}</Sheet.Title>
       <Sheet.Description>Value history, newest first.</Sheet.Description>
@@ -39,6 +40,7 @@
             <Table.Row>
               <Table.Head>Date</Table.Head>
               <Table.Head class="text-end">Value</Table.Head>
+              <Table.Head class="text-end">Gain</Table.Head>
               <Table.Head class="w-10">
                 <span class="sr-only">Actions</span>
               </Table.Head>
@@ -59,6 +61,16 @@
                 </Table.Cell>
                 <Table.Cell class="text-end">
                   <Amount value={v.amount} {currency} />
+                </Table.Cell>
+                <Table.Cell class="text-end">
+                  {#if v.gain !== null}
+                    <Amount value={v.gain} {currency} flow />
+                  {/if}
+                  {#if returnBps(v) !== null}
+                    <div class="text-muted-foreground text-xs tabular-nums">
+                      {formatReturn(returnBps(v) ?? 0, prefs.locale)}
+                    </div>
+                  {/if}
                 </Table.Cell>
                 <Table.Cell class="text-end">
                   <Button

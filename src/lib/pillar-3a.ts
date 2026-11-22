@@ -331,3 +331,30 @@ export function lateDecemberWarning(date: string): string | null {
 export function taxYearOf(date: string): number {
   return Number(date.slice(0, 4));
 }
+
+/**
+ * Total return of a portfolio value in hundredths of a percent: the provider's
+ * own figure when entered, else the reported gain over the capital it grew
+ * from (`amount - gain`). Null without a gain, or when that capital is not positive.
+ */
+export function returnBps(value: {
+  amount: number;
+  gain: number | null;
+  gainBps: number | null;
+}): number | null {
+  if (value.gainBps !== null) return value.gainBps;
+  if (value.gain === null) return null;
+  const base = value.amount - value.gain;
+  if (base <= 0) return null;
+  return Math.round((value.gain * 10_000) / base);
+}
+
+/** Hundredths of a percent as a signed percentage: 425 -> "+4.25%". */
+export function formatReturn(bps: number, locale = "en"): string {
+  return new Intl.NumberFormat(locale, {
+    style: "percent",
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+    signDisplay: "exceptZero",
+  }).format(bps / 10_000);
+}
