@@ -22,8 +22,8 @@
         tools:targetApi="33">
 
         <!-- The launcher activity has to be exported. Besides a bill id (an opaque string) it
-             takes the return from a sign-in in the browser: that address only says "come back",
-             the session is fetched with a secret that never left the app. -->
+             takes the return from a sign-in in the browser: its code is worth nothing without the
+             secret that never left the app. -->
         <!-- nosemgrep: java.android.security.exported_activity.exported_activity -->
         <activity
             android:name=".MainActivity"

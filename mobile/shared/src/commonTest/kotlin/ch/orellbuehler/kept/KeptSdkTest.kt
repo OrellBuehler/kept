@@ -105,42 +105,33 @@ class KeptSdkTest {
             assertFalse(sdk.insecure)
         }
 
+    private val browserStart =
+        """{"request":"req","secret":"sec","path":"/login/app?request=req","expiresAt":"2030-01-01T00:00:00.000Z"}"""
+    private val browserBack = "ch.orellbuehler.kept://signin?request=req&code=cod"
+
     @Test
     fun signsInThroughTheBrowser() =
         runTest {
-            var approved = false
             val sdk =
                 sdk { request ->
                     when (request.url.encodedPath) {
                         "/api/app/v1/server" -> json(SERVER)
-                        "/api/app/v1/auth/browser" ->
-                            json(
-                                """{"request":"req","secret":"sec","path":"/login/app?request=req","expiresAt":"2030-01-01T00:00:00.000Z"}""",
-                            )
-                        else ->
-                            if (approved) {
-                                json("""{"status":"ok","token":"tok3","user":$USER}""")
-                            } else {
-                                json("""{"message":"Finish signing in in the browser first."}""", 409)
-                            }
+                        "/api/app/v1/auth/browser" -> json(browserStart)
+                        else -> json("""{"status":"ok","token":"tok3","user":$USER}""")
                     }
                 }
             sdk.connect("kept.example.org")
             assertFalse(sdk.browserSignInPending)
             assertEquals("https://kept.example.org/login/app?request=req", sdk.startBrowserSignIn())
             assertTrue(sdk.browserSignInPending)
+            assertIs<SessionState.SignedOut>(sdk.state.value)
 
-            val early = assertFailsWith<KeptException> { sdk.finishBrowserSignIn() }
-            assertEquals(409, early.status)
-            assertTrue(sdk.browserSignInPending)
-
-            approved = true
-            assertEquals("alice", sdk.finishBrowserSignIn().username)
+            assertEquals("alice", sdk.finishBrowserSignIn(browserBack).username)
             assertEquals("tok3", secure.values["session.token"])
             assertIs<SessionState.SignedIn>(sdk.state.value)
             assertFalse(sdk.browserSignInPending)
             assertEquals(
-                """{"request":"req","secret":"sec"}""",
+                """{"request":"req","secret":"sec","code":"cod"}""",
                 requests
                     .last()
                     .body
@@ -150,36 +141,72 @@ class KeptSdkTest {
         }
 
     @Test
-    fun browserSignInEndsWhenItExpiredOrWasCancelled() =
+    fun aReturnThatIsNotOfTheWaitingSignInAsksNothingAndKeepsIt() =
         runTest {
             val sdk =
                 sdk { request ->
                     when (request.url.encodedPath) {
                         "/api/app/v1/server" -> json(SERVER)
-                        "/api/app/v1/auth/browser" -> json("""{"request":"req","secret":"sec","path":"/login/app?request=req"}""")
-                        else -> json("""{"message":"Your sign-in expired. Start again."}""", 410)
+                        else -> json(browserStart)
+                    }
+                }
+            sdk.connect("kept.example.org")
+            assertEquals(410, assertFailsWith<KeptException> { sdk.finishBrowserSignIn(browserBack) }.status)
+
+            sdk.startBrowserSignIn()
+            val sent = requests.size
+            for (stray in listOf(
+                "ch.orellbuehler.kept://signin",
+                "ch.orellbuehler.kept://signin?request=req",
+                "ch.orellbuehler.kept://signin?request=other&code=cod",
+                "ch.orellbuehler.kept://signin?request=req&code=",
+            )) {
+                assertEquals(410, assertFailsWith<KeptException> { sdk.finishBrowserSignIn(stray) }.status, stray)
+            }
+            assertEquals(sent, requests.size)
+            assertTrue(sdk.browserSignInPending)
+        }
+
+    @Test
+    fun browserSignInEndsWhenItExpiredOrWasCancelledAndSurvivesAnOutage() =
+        runTest {
+            var status = 503
+            val sdk =
+                sdk { request ->
+                    when (request.url.encodedPath) {
+                        "/api/app/v1/server" -> json(SERVER)
+                        "/api/app/v1/auth/browser" -> json(browserStart)
+                        else -> json("""{"message":"Your sign-in expired. Start again."}""", status)
                     }
                 }
             sdk.connect("kept.example.org")
             sdk.startBrowserSignIn()
-            assertEquals(410, assertFailsWith<KeptException> { sdk.finishBrowserSignIn() }.status)
+            assertEquals(503, assertFailsWith<KeptException> { sdk.finishBrowserSignIn(browserBack) }.status)
+            assertTrue(sdk.browserSignInPending)
+
+            status = 410
+            assertEquals(410, assertFailsWith<KeptException> { sdk.finishBrowserSignIn(browserBack) }.status)
             assertFalse(sdk.browserSignInPending)
 
             sdk.startBrowserSignIn()
             sdk.cancelBrowserSignIn()
             assertFalse(sdk.browserSignInPending)
-            assertEquals(410, assertFailsWith<KeptException> { sdk.finishBrowserSignIn() }.status)
+
+            sdk.startBrowserSignIn()
+            sdk.connect("kept.example.org")
+            assertFalse(sdk.browserSignInPending)
         }
 
     @Test
-    fun browserSignInNeedsAServerThatKnowsIt() =
+    fun browserSignInNeedsAServerThatKnowsItAndAPathOnThatServer() =
         runTest {
+            var answer = """{"message":"Sign in to continue."}"""
+            var status = 401
             val sdk =
                 sdk { request ->
                     when (request.url.encodedPath) {
                         "/api/app/v1/server" -> json(SERVER)
-                        "/api/app/v1/auth/browser" -> json("""{"message":"Sign in to continue."}""", 401)
-                        else -> json("""{"request":"req","secret":"sec","path":"https://elsewhere.example/login"}""")
+                        else -> json(answer, status)
                     }
                 }
             sdk.connect("kept.example.org")
@@ -187,6 +214,12 @@ class KeptSdkTest {
             assertEquals(KeptErrorKind.REJECTED, old.kind)
             assertTrue(old.message!!.contains("Update Kept"))
             assertIs<SessionState.SignedOut>(sdk.state.value)
+
+            status = 200
+            for (path in listOf("https://elsewhere.example/login", "//elsewhere.example/login", "login/app")) {
+                answer = """{"request":"req","secret":"sec","path":"$path"}"""
+                assertEquals(KeptErrorKind.SERVER, assertFailsWith<KeptException> { sdk.startBrowserSignIn() }.kind, path)
+            }
             assertFalse(sdk.browserSignInPending)
         }
 

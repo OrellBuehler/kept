@@ -55,8 +55,8 @@ final class AuthModel {
         return url
     }
 
-    func finishBrowser() async {
-        await run { try await self.client.finishBrowserSignIn() }
+    func finishBrowser(callback: URL) async {
+        await run { try await self.client.finishBrowserSignIn(callback: callback) }
     }
 
     func cancelBrowser(error text: String? = nil) {
@@ -188,11 +188,12 @@ struct LoginView: View {
     }
 
     /// A private browser sheet: nothing of the sign-in stays behind in Safari. The address it
-    /// comes back with only says "done"; the session is fetched with what the app kept.
+    /// comes back with carries the code of the approval; with what the app kept it is the session.
     private func signInWithBrowser() async {
         guard let url = await model.startBrowser() else { return }
+        let callback: URL
         do {
-            _ = try await webAuthenticationSession.authenticate(
+            callback = try await webAuthenticationSession.authenticate(
                 using: url,
                 callback: .customScheme(SDKClient.browserCallbackScheme),
                 preferredBrowserSession: .ephemeral,
@@ -205,7 +206,7 @@ struct LoginView: View {
             model.cancelBrowser(error: "The browser could not be opened. Sign in with your password instead.")
             return
         }
-        await model.finishBrowser()
+        await model.finishBrowser(callback: callback)
     }
 
     private var browserButton: some View {

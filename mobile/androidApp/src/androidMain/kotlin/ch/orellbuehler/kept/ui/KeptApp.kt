@@ -24,7 +24,7 @@ fun KeptApp(
 ) {
     val state by app.state.collectAsStateWithLifecycle()
     val session by app.session.collectAsStateWithLifecycle()
-    val browserReturns by app.browserReturns.collectAsStateWithLifecycle()
+    val browserReturn by app.browserReturn.collectAsStateWithLifecycle()
     val locale = session?.preferences?.locale ?: "en-GB"
     val formats = remember(locale) { Formats(locale) }
     KeptTheme {
@@ -40,7 +40,8 @@ fun KeptApp(
                     LoginScreen(
                         serverUrl = current.serverUrl,
                         expired = current.expired,
-                        browserReturns = browserReturns,
+                        browserReturn = browserReturn,
+                        onBrowserReturnTaken = app::browserReturnTaken,
                     )
                 is SessionState.SignedIn -> MainScreen(app)
             }

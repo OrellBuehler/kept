@@ -66,6 +66,15 @@ describe("handle", () => {
     );
   });
 
+  it("sends an app's sign-in through /login and keeps its request", async () => {
+    await createTestUser();
+    const { res } = await run("/login/app?request=abc_-123");
+    expect(res.status).toBe(303);
+    expect(res.headers.get("location")).toBe(
+      `/login?redirectTo=${encodeURIComponent("/login/app?request=abc_-123")}`,
+    );
+  });
+
   it("answers unauthenticated /api with 401 JSON", async () => {
     await createTestUser();
     const { res } = await run("/api/things");

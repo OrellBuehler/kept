@@ -1,8 +1,11 @@
 import { fail } from "@sveltejs/kit";
+import { z } from "zod";
 import { appSignInCallback } from "$lib/server/app-api/sign-in";
 import { requireUser } from "$lib/server/auth/guards";
 import { approveAppSignIn, isOpenAppSignIn } from "$lib/server/auth/challenges";
 import type { Actions, PageServerLoad } from "./$types";
+
+const requestSchema = z.string().min(1).max(200);
 
 const EXPIRED =
   "This sign-in has expired or was already used. Go back to the app and start again.";
@@ -27,12 +30,15 @@ export const actions: Actions = {
   default: async ({ locals, request, url }) => {
     const user = requireUser(locals);
     const form = await request.formData();
-    const id = form.get("request") ?? url.searchParams.get("request");
-    if (typeof id !== "string" || !(await approveAppSignIn(id, user.id))) {
+    const id = requestSchema.safeParse(
+      form.get("request") ?? url.searchParams.get("request"),
+    );
+    const code = id.success ? await approveAppSignIn(id.data, user.id) : null;
+    if (!id.success || !code) {
       return fail(400, { errors: { form: [EXPIRED] } });
     }
     // Not a redirect: the page's form-action policy only allows this origin,
     // so the page itself opens the app (and offers a link when that fails).
-    return { callback: appSignInCallback(id) };
+    return { callback: appSignInCallback(id.data, code) };
   },
 };

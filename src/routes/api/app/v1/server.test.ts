@@ -10,6 +10,7 @@ import {
   APP_SIGN_IN_TTL_MS,
   approveAppSignIn,
   createAppSignIn,
+  isOpenAppSignIn,
   takeAppSignIn,
 } from "$lib/server/auth/challenges";
 import { validateSessionToken } from "$lib/server/auth/sessions";
@@ -224,16 +225,25 @@ describe("app API: sign-in through the browser", () => {
         createTestEvent({ user, form: { request } }) as never,
       ),
     );
-  const trade = (request: string, secret: string) =>
-    call(browserToken as Handler, { json: { request, secret } });
+  /** Approves and answers the code the return address carries. */
+  const approved = async (user: User, request: string) => {
+    const result = await approve(user, request);
+    if (result.type !== "return") throw new Error("not approved");
+    const callback = new URL((result.value as { callback: string }).callback);
+    expect(callback.protocol).toBe("ch.orellbuehler.kept:");
+    expect(callback.host).toBe("signin");
+    expect(callback.searchParams.get("request")).toBe(request);
+    return callback.searchParams.get("code")!;
+  };
+  const trade = (request: string, secret: string, code: string) =>
+    call(browserToken as Handler, { json: { request, secret, code } });
 
   it("hands the app a session once the user approved the request on the web", async () => {
     const user = await createTestUser({ username: "alice" });
     const { request, secret, path } = await start();
     expect(path).toBe(`/login/app?request=${request}`);
 
-    const early = await trade(request, secret);
-    expect(early.status).toBe(409);
+    expect((await trade(request, secret, "early")).status).toBe(409);
 
     const page = (await approveLoad(
       createTestEvent({
@@ -243,31 +253,48 @@ describe("app API: sign-in through the browser", () => {
     )) as { open: boolean; username: string };
     expect(page).toMatchObject({ open: true, username: "alice" });
 
-    const approved = await approve(user, request);
-    expect(approved).toEqual({
-      type: "return",
-      value: { callback: `ch.orellbuehler.kept://signin?request=${request}` },
-    });
+    const code = await approved(user, request);
 
-    const ok = await trade(request, secret);
+    const ok = await trade(request, secret, code);
     expect(ok.status).toBe(200);
     expect(ok.body).toMatchObject({ status: "ok", user: { id: user.id } });
     expect((await validateSessionToken(ok.body.token as string))?.user.id).toBe(
       user.id,
     );
 
-    expect((await trade(request, secret)).status).toBe(410);
+    expect((await trade(request, secret, code)).status).toBe(410);
   });
 
-  it("gives the session only to the holder of the secret", async () => {
+  it("gives nothing to whoever started the request but did not get the code of the approval", async () => {
+    const user = await createTestUser();
+    const { request, secret } = await start();
+    const code = await approved(user, request);
+
+    for (const guess of [secret, request, "x"]) {
+      expect((await trade(request, secret, guess)).status).toBe(410);
+    }
+    expect((await trade(request, secret, code)).status).toBe(200);
+  });
+
+  it("gives nothing to whoever has the return address but not the secret", async () => {
     const user = await createTestUser();
     const mine = await start();
     const other = await start();
-    await approve(user, mine.request);
+    const code = await approved(user, mine.request);
 
-    expect((await trade(mine.request, other.secret)).status).toBe(410);
-    expect((await trade(mine.request, mine.request)).status).toBe(410);
-    expect((await trade(mine.request, mine.secret)).status).toBe(200);
+    expect((await trade(mine.request, other.secret, code)).status).toBe(410);
+    expect((await trade(mine.request, code, code)).status).toBe(410);
+    expect((await trade(other.request, other.secret, code)).status).toBe(409);
+    expect((await trade(mine.request, mine.secret, code)).status).toBe(200);
+  });
+
+  it("answers a wrong secret alike whether the request is open or not, and leaves it usable", async () => {
+    const user = await createTestUser();
+    const { request, secret } = await start();
+    expect((await trade(request, "wrong", "x")).status).toBe(410);
+    expect((await trade("unknown", "wrong", "x")).status).toBe(410);
+    const code = await approved(user, request);
+    expect((await trade(request, secret, code)).status).toBe(200);
   });
 
   it("approves a request once, and never an unknown or expired one", async () => {
@@ -276,15 +303,16 @@ describe("app API: sign-in through the browser", () => {
     const { request, secret } = await start();
 
     expect((await approve(alice, "nope")).type).toBe("fail");
-    expect((await approve(alice, request)).type).toBe("return");
+    expect((await approve(alice, "x".repeat(201))).type).toBe("fail");
+    const code = await approved(alice, request);
     expect((await approve(bob, request)).type).toBe("fail");
-    expect((await trade(request, secret)).body).toMatchObject({
+    expect((await trade(request, secret, code)).body).toMatchObject({
       user: { id: alice.id },
     });
 
     const late = await createAppSignIn(Date.now() - APP_SIGN_IN_TTL_MS - 1);
     expect((await approve(alice, late.request)).type).toBe("fail");
-    expect((await trade(late.request, late.secret)).status).toBe(410);
+    expect((await trade(late.request, late.secret, "x")).status).toBe(410);
     const page = (await approveLoad(
       createTestEvent({
         user: alice,
@@ -294,25 +322,95 @@ describe("app API: sign-in through the browser", () => {
     expect(page.open).toBe(false);
   });
 
+  it("lets one of two approvers and one of two takers through", async () => {
+    const alice = await createTestUser({ username: "alice" });
+    const bob = await createTestUser({ username: "bob" });
+    const { request, secret } = await start();
+
+    const codes = await Promise.all([
+      approveAppSignIn(request, alice.id),
+      approveAppSignIn(request, bob.id),
+    ]);
+    const winners = codes.filter((c) => c !== null);
+    expect(winners).toHaveLength(1);
+
+    const taken = await Promise.all([
+      trade(request, secret, winners[0]),
+      trade(request, secret, winners[0]),
+    ]);
+    expect(taken.map((t) => t.status).sort()).toEqual([200, 410]);
+    const owner = codes[0] ? alice : bob;
+    expect(taken.find((t) => t.status === 200)?.body).toMatchObject({
+      user: { id: owner.id },
+    });
+  });
+
   it("refuses a request that was approved but ran out before the app came back", async () => {
     const user = await createTestUser();
     const started = await createAppSignIn();
-    expect(await approveAppSignIn(started.request, user.id)).toBe(true);
+    const code = await approveAppSignIn(started.request, user.id);
+    expect(code).not.toBeNull();
     expect(
       await takeAppSignIn(
         started.request,
         started.secret,
+        code!,
         started.expiresAt.getTime(),
       ),
     ).toBeNull();
-    expect((await trade(started.request, started.secret)).status).toBe(410);
+    expect((await trade(started.request, started.secret, code!)).status).toBe(
+      410,
+    );
   });
 
-  it("limits how often an address can start one", async () => {
+  it("is not reachable with the tokens of the other half-finished sign-ins", async () => {
+    const user = await createTestUser({ username: "alice" });
+    await enableTotp(user);
+    const first = await call(login as Handler, {
+      json: { username: "alice", password: user.password },
+    });
+    const pendingToken = first.body.pendingToken as string;
+
+    expect(await isOpenAppSignIn(pendingToken)).toBe(false);
+    expect(await approveAppSignIn(pendingToken, user.id)).toBeNull();
+    expect((await trade(pendingToken, pendingToken, "x")).status).toBe(410);
+
+    const { request } = await start();
+    const code = await approved(user, request);
+    const asCode = await call(verify as Handler, {
+      json: { pendingToken: request, code },
+    });
+    expect(asCode.status).toBe(410);
+  });
+
+  it("refuses a token request that is not the three values as JSON", async () => {
+    const { request, secret } = await start();
+    for (const body of [
+      {},
+      { request, secret },
+      { request, secret, code: "" },
+      { request, secret: "x".repeat(201), code: "x" },
+    ]) {
+      const res = await call(browserToken as Handler, { json: body });
+      expect(res.status, JSON.stringify(body)).toBe(400);
+    }
+    expect(
+      (await call(browserToken as Handler, { form: { request, secret } }))
+        .status,
+    ).toBe(415);
+  });
+
+  it("limits how often an address can start one or ask for a token", async () => {
     for (let i = 0; i < 60; i++) await start();
     const res = await callRaw(browserStart as Handler, { method: "POST" });
     expect(res.status).toBe(429);
     expect(Number(res.headers.get("retry-after"))).toBeGreaterThan(0);
+
+    for (let i = 0; i < 60; i++) await trade("a", "b", "c");
+    const token = await callRaw(browserToken as Handler, {
+      json: { request: "a", secret: "b", code: "c" },
+    });
+    expect(token.status).toBe(429);
   });
 });
 

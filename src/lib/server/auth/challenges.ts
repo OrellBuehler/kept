@@ -220,7 +220,7 @@ export async function takeWebauthnChallenge(
 export interface AppSignIn {
   /** Public: travels through the browser and names the request on the approval page. */
   request: string;
-  /** Stays in the app: only its holder can turn the approved request into a session. */
+  /** Stays in the app: needed, with the code of the approval, to turn the request into a session. */
   secret: string;
   expiresAt: Date;
 }
@@ -272,47 +272,75 @@ export async function isOpenAppSignIn(
   return row !== undefined;
 }
 
-/** Hands the request to `userId`. True for the one caller that finds it open. */
+/** What the row of an approved request holds: only secret and code together make it. */
+function approvedChallenge(secretHash: string, code: string): string {
+  return hashToken(`${secretHash}.${code}`);
+}
+
+/**
+ * Hands the request to `userId` and answers the one-time code that goes back
+ * to the app in the return address, or null when the request is not open (for
+ * all but one of several approvers, too). The code is what ties the session
+ * to the device the approval happened on: whoever started the request
+ * elsewhere holds the secret but never sees the code.
+ */
 export async function approveAppSignIn(
   request: string,
   userId: string,
   now: number = Date.now(),
-): Promise<boolean> {
-  const rows = await getDB()
+): Promise<string | null> {
+  const db = getDB();
+  const open = and(
+    eq(authChallenges.id, hashToken(request)),
+    eq(authChallenges.kind, "app_signin"),
+    isNull(authChallenges.userId),
+    gt(authChallenges.expiresAt, new Date(now)),
+  );
+  const row = await first(
+    db
+      .select({ challenge: authChallenges.challenge })
+      .from(authChallenges)
+      .where(open)
+      .limit(1),
+  );
+  if (!row?.challenge) return null;
+  const code = newToken();
+  const rows = await db
     .update(authChallenges)
-    .set({ userId })
-    .where(
-      and(
-        eq(authChallenges.id, hashToken(request)),
-        eq(authChallenges.kind, "app_signin"),
-        isNull(authChallenges.userId),
-        gt(authChallenges.expiresAt, new Date(now)),
-      ),
-    )
+    .set({ userId, challenge: approvedChallenge(row.challenge, code) })
+    .where(and(open, eq(authChallenges.challenge, row.challenge)))
     .returning({ id: authChallenges.id });
-  return rows.length === 1;
+  return rows.length === 1 ? code : null;
 }
 
 /**
- * Consumes an approved request for the holder of its secret and answers whose
- * it is. "pending" while nobody has approved it (the row stays), null when it
- * is unknown, expired, already used or the secret is wrong.
+ * Consumes an approved request for the holder of its secret and of the code
+ * the approval made, and answers whose it is. "pending" while nobody has
+ * approved it (the row stays), null when it is unknown, expired, already used
+ * or secret or code are not its own.
  */
 export async function takeAppSignIn(
   request: string,
   secret: string,
+  code: string,
   now: number = Date.now(),
 ): Promise<{ userId: string } | "pending" | null> {
   const db = getDB();
   const mine = and(
     eq(authChallenges.id, hashToken(request)),
     eq(authChallenges.kind, "app_signin"),
-    eq(authChallenges.challenge, hashToken(secret)),
   );
+  const secretHash = hashToken(secret);
   const taken = await first(
     db
       .delete(authChallenges)
-      .where(and(mine, isNotNull(authChallenges.userId)))
+      .where(
+        and(
+          mine,
+          isNotNull(authChallenges.userId),
+          eq(authChallenges.challenge, approvedChallenge(secretHash, code)),
+        ),
+      )
       .returning(),
   );
   if (taken) {
@@ -323,7 +351,13 @@ export async function takeAppSignIn(
     db
       .select({ expiresAt: authChallenges.expiresAt })
       .from(authChallenges)
-      .where(mine)
+      .where(
+        and(
+          mine,
+          isNull(authChallenges.userId),
+          eq(authChallenges.challenge, secretHash),
+        ),
+      )
       .limit(1),
   );
   return open && open.expiresAt.getTime() > now ? "pending" : null;

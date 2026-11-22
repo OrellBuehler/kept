@@ -44,6 +44,6 @@ class MainActivity : ComponentActivity() {
     /** A tap on a reminder opens the bill it is about; the browser comes back from a sign-in. */
     private fun handleIncoming(intent: Intent?) {
         intent?.getStringExtra(ReminderScheduler.EXTRA_BILL_ID)?.let(appViewModel::openBill)
-        if (intent?.data?.scheme == KeptSdk.BROWSER_CALLBACK_SCHEME) appViewModel.browserReturned()
+        intent?.data?.takeIf { it.scheme == KeptSdk.BROWSER_CALLBACK_SCHEME }?.let { appViewModel.browserReturned(it.toString()) }
     }
 }

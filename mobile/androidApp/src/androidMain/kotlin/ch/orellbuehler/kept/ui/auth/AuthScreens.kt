@@ -96,9 +96,9 @@ class AuthViewModel(
     /** Asks the server for a sign-in on its own page and hands its address to [open] (a browser). */
     fun browser(open: (String) -> Unit) = run { open(sdk.startBrowserSignIn()) }
 
-    /** The browser came back: fetch the session, unless that return was not for a sign-in of ours. */
-    fun finishBrowser() {
-        if (sdk.browserSignInPending) run { sdk.finishBrowserSignIn() }
+    /** The browser came back to [address]: fetch the session, unless no sign-in of ours is waiting. */
+    fun finishBrowser(address: String) {
+        if (sdk.browserSignInPending) run { sdk.finishBrowserSignIn(address) }
     }
 
     fun browserMissing(text: String) {
@@ -222,7 +222,8 @@ fun ServerScreen() {
 fun LoginScreen(
     serverUrl: String,
     expired: Boolean,
-    browserReturns: Int,
+    browserReturn: String?,
+    onBrowserReturnTaken: () -> Unit,
 ) {
     val vm = keptViewModel { AuthViewModel(it) }
     val state by vm.state.collectAsStateWithLifecycle()
@@ -237,7 +238,12 @@ fun LoginScreen(
             }
         }
     }
-    LaunchedEffect(browserReturns) { if (browserReturns > 0) vm.finishBrowser() }
+    LaunchedEffect(browserReturn) {
+        if (browserReturn != null) {
+            onBrowserReturnTaken()
+            vm.finishBrowser(browserReturn)
+        }
+    }
     var username by rememberSaveable { mutableStateOf("") }
     var password by rememberSaveable { mutableStateOf("") }
     var code by rememberSaveable { mutableStateOf("") }

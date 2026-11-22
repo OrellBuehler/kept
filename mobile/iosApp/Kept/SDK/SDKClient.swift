@@ -83,10 +83,11 @@ final class SDKClient: @unchecked Sendable {
         return url
     }
 
-    /// After the browser came back: fetches the session for what was approved there.
-    func finishBrowserSignIn() async throws {
+    /// After the browser came back to `callback`: fetches the session for what was approved there.
+    func finishBrowserSignIn(callback: URL) async throws {
+        let address = callback.absoluteString
         try await call {
-            _ = try await self.sdk.finishBrowserSignIn()
+            _ = try await self.sdk.finishBrowserSignIn(callbackUrl: address)
         }
     }
 

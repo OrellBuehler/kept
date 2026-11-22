@@ -362,7 +362,7 @@ export const passkeyOptionsLimiter = new LoginRateLimiter(
   Infinity,
 );
 
-/** Unauthenticated starts of an app's browser sign-in per IP (each creates a challenge row); never refunded. */
+/** An app's browser sign-in per IP: starts (each creates a challenge row) and token requests, counted apart; never refunded. */
 export const appSignInLimiter = new LoginRateLimiter(
   Date.now,
   WINDOW_MS,

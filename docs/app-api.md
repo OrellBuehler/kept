@@ -51,13 +51,15 @@ server's login page do the work:
    `path` to open (`/login/app?request=…`). The request lives for ten minutes.
 2. The app opens that path on the server in a browser (`ASWebAuthenticationSession`, a Custom Tab).
    The user signs in as on the web and confirms that the app may sign in as them.
-3. The page sends the browser to `ch.orellbuehler.kept://signin?request=…`, which brings the app
-   back. That address says only "done".
-4. `POST /auth/browser/token` with `request` and `secret` answers the session, once. The session
-   is a new one of its own, independent of the one in the browser.
+3. The page sends the browser to `ch.orellbuehler.kept://signin?request=…&code=…`, which brings
+   the app back with a one-time `code`.
+4. `POST /auth/browser/token` with `request`, `secret` and `code` answers the session, once. The
+   session is a new one of its own, independent of the one in the browser.
 
-Another app that catches the return address gets nothing: it has no `secret`. With the password
-form, an account that has only passkeys signs in with a recovery code (`totp` is `false` then).
+Neither half is worth anything alone. Another app that catches the return address has the code
+but no `secret`. Someone who starts a request and talks a user into approving the link has the
+`secret`, but the `code` only reaches the device the approval happened on. With the password form,
+an account that has only passkeys signs in with a recovery code (`totp` is `false` then).
 
 ## Pages
 

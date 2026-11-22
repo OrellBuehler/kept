@@ -145,8 +145,8 @@ class KeptSdk(
 
     /**
      * Starts a sign-in on the server's own login page, where passkeys and password managers
-     * work. Returns the address to open in a browser; when the browser comes back to
-     * [BROWSER_CALLBACK_SCHEME], call [finishBrowserSignIn].
+     * work. Returns the address to open in a browser; when the browser comes back to an address
+     * with the scheme [BROWSER_CALLBACK_SCHEME], hand that address to [finishBrowserSignIn].
      */
     @Throws(KeptException::class, CancellationException::class)
     suspend fun startBrowserSignIn(): String {
@@ -170,21 +170,26 @@ class KeptSdk(
         return server + path
     }
 
-    /** True between [startBrowserSignIn] and its end: a callback that arrives otherwise is not ours. */
+    /** True between [startBrowserSignIn] and its end: a return that arrives otherwise is not ours. */
     val browserSignInPending: Boolean get() = secure.get(KEY_BROWSER) != null
 
-    /** After the browser came back: trades what [startBrowserSignIn] kept for the session. */
+    /**
+     * After the browser came back to [callbackUrl]: trades what [startBrowserSignIn] kept, and the
+     * code of the approval that the address carries, for the session.
+     */
     @Throws(KeptException::class, CancellationException::class)
-    suspend fun finishBrowserSignIn(): SessionUser {
+    suspend fun finishBrowserSignIn(callbackUrl: String): SessionUser {
         val parts = secure.get(KEY_BROWSER)?.split('\n')
-        if (parts == null || parts.size != 2) {
-            secure.set(KEY_BROWSER, null)
+        val code = queryValue(callbackUrl, "code")
+        if (parts == null || parts.size != 2 || code == null || queryValue(callbackUrl, "request") != parts[0]) {
+            // Not the return of the sign-in that is waiting (if any): that one stays as it is.
             throw KeptException(KeptErrorKind.REJECTED, "Your sign-in expired. Start again.", 410)
         }
         val body =
             buildJsonObject {
                 put("request", parts[0])
                 put("secret", parts[1])
+                put("code", code)
             }
         try {
             val user = signedIn(unauthenticated("auth/browser/token", body))
@@ -399,6 +404,19 @@ class KeptSdk(
         private const val KEY_BROWSER = "signin.browser"
     }
 }
+
+/** A query value of an address, as it stands: the values of the sign-in return need no decoding. */
+internal fun queryValue(
+    url: String,
+    name: String,
+): String? =
+    url
+        .substringAfter('?', "")
+        .substringBefore('#')
+        .split('&')
+        .firstOrNull { it.startsWith("$name=") }
+        ?.substringAfter('=')
+        ?.takeIf { it.isNotEmpty() }
 
 internal fun encodeForm(form: FormBody): String {
     val grouped = LinkedHashMap<String, MutableList<String>>()

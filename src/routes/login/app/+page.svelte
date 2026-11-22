@@ -37,7 +37,7 @@
         {#if callback}
           You are signed in. Returning to the app…
         {:else if data.open}
-          The Kept app on this device is asking to sign in as
+          The Kept app is asking to sign in as
           <span class="text-foreground font-medium">{data.name}</span>.
         {:else}
           This sign-in has expired or was already used.
