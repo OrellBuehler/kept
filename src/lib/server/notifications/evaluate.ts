@@ -25,7 +25,10 @@ export type BudgetFact = Pick<
 export interface AccountFact {
   id: string;
   name: string;
-  /** Local date (YYYY-MM-DD) of the last import, or of creation when none happened. */
+  /**
+   * Local date (YYYY-MM-DD) of the last import or of the day the user confirmed
+   * there was nothing new to import, whichever is later; of creation when neither happened.
+   */
   lastImportDate: string;
 }
 

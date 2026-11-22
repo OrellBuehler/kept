@@ -18,6 +18,12 @@ export interface PlanAccount {
   type: AccountType;
   /** Normalized; null when the account has no IBAN. */
   iban: string | null;
+  /**
+   * Normalized IBAN the account is topped up through when it has none of its
+   * own (an e-money or card account). Null for pillar 3a accounts: their
+   * deposit IBAN is shared by many customers and payments go by reference.
+   */
+  topUpIban: string | null;
   openingDate: string | null;
   fillFromTransfers: boolean;
   hasPortfolios: boolean;
@@ -95,12 +101,34 @@ export function shiftDate(date: string, days: number): string {
     .slice(0, 10);
 }
 
-/** Account ids by normalized IBAN. Accounts without an IBAN are not addressable. */
+/** The IBANs a payment to this account can name: its own and its top-up IBAN. */
+export function ibansOf(
+  account: Pick<PlanAccount, "iban" | "topUpIban">,
+): string[] {
+  const out: string[] = [];
+  if (account.iban) out.push(account.iban);
+  if (account.topUpIban && account.topUpIban !== account.iban) {
+    out.push(account.topUpIban);
+  }
+  return out;
+}
+
+/**
+ * Accounts by normalized IBAN: their own, and the one they are topped up
+ * through. An account's own IBAN wins over a top-up IBAN, and a top-up IBAN
+ * two accounts share names neither. Accounts without either are not addressable.
+ */
 export function accountsByIban(
   accounts: readonly PlanAccount[],
 ): Map<string, PlanAccount> {
   const out = new Map<string, PlanAccount>();
   for (const a of accounts) if (a.iban) out.set(a.iban, a);
+  const topUps = new Map<string, PlanAccount | null>();
+  for (const a of accounts) {
+    if (!a.topUpIban || out.has(a.topUpIban)) continue;
+    topUps.set(a.topUpIban, topUps.has(a.topUpIban) ? null : a);
+  }
+  for (const [iban, a] of topUps) if (a) out.set(iban, a);
   return out;
 }
 
@@ -156,11 +184,13 @@ function counterpartMatches(
     (forward !== null && Math.abs(forward) === Math.abs(candidate.amount)) ||
     (backward !== null && Math.abs(backward) === Math.abs(source.amount));
   if (!agrees) return false;
-  // A counterparty that names someone else is a different payment.
+  // A counterparty that names someone else is a different payment. Only an
+  // account with an IBAN of its own can tell: one that is topped up through a
+  // provider's IBAN may be paid out from yet another.
   if (
     candidate.counterpartyIban !== null &&
     sourceAccount.iban !== null &&
-    normalizeIban(candidate.counterpartyIban) !== sourceAccount.iban
+    !ibansOf(sourceAccount).includes(normalizeIban(candidate.counterpartyIban))
   ) {
     return false;
   }
@@ -169,10 +199,7 @@ function counterpartMatches(
 
 /** Whether `iban` is absent or names `account`: a row that names someone else is a different payment. */
 function namesOrSilent(iban: string | null, account: PlanAccount): boolean {
-  return (
-    iban === null ||
-    (account.iban !== null && normalizeIban(iban) === account.iban)
-  );
+  return iban === null || ibansOf(account).includes(normalizeIban(iban));
 }
 
 /**

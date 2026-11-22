@@ -13,8 +13,8 @@
           "currency": "CHF",
           "rows": [
             {
-              "budgetId": "af0aedb0-1e6d-4683-bbbf-ea986a305412",
-              "categoryId": "9174b884-c0da-45f6-87bc-50da27bbf5f6",
+              "budgetId": "18fecc39-2d84-488f-ae36-15a5dc9e7445",
+              "categoryId": "c3b83b2f-eb1c-4b07-aefd-c80c1b024587",
               "categoryName": "Groceries",
               "parentName": "Food",
               "color": "#ef6c00",
@@ -25,8 +25,8 @@
               "over": false
             },
             {
-              "budgetId": "0d5f18d7-21ef-4239-a9d9-9370459979ce",
-              "categoryId": "8c392ee8-0383-4709-8a7a-51d718af5152",
+              "budgetId": "c2d060ac-a33c-4463-aa5e-8dceb73c2556",
+              "categoryId": "3d201809-98ab-4e6a-9300-03adcf7de760",
               "categoryName": "Restaurants",
               "parentName": "Food",
               "color": null,
@@ -37,8 +37,8 @@
               "over": true
             },
             {
-              "budgetId": "35adf3ad-ccde-4f29-8ab3-1f5504abe49a",
-              "categoryId": "1c49ae63-806d-4f8e-9a3d-d1c1b020697e",
+              "budgetId": "ba06ecb7-6345-4345-8391-7413506549d2",
+              "categoryId": "ce731cb5-c8b7-4c25-96d9-eb0c292c37c5",
               "categoryName": "Housing",
               "parentName": null,
               "color": "#6a1b9a",
@@ -49,8 +49,8 @@
               "over": false
             },
             {
-              "budgetId": "b9dbbdc1-abcf-43c4-a60f-15f0e439498d",
-              "categoryId": "450ebd85-d967-4044-8971-04846f4a8d0f",
+              "budgetId": "ca14774b-4a42-4cbd-8fd5-b4faff67bb57",
+              "categoryId": "f59c55bb-b6e2-43c8-a9e2-b7d1ecef6776",
               "categoryName": "Transport",
               "parentName": null,
               "color": null,
@@ -63,7 +63,7 @@
           ],
           "unbudgeted": [
             {
-              "categoryId": "a9c6683b-7ff6-4f28-a7d0-effbde9e8c3e",
+              "categoryId": "8d465930-64cf-45f8-b1f6-6ae41bd7f372",
               "categoryName": "Pharmacy",
               "parentName": "Health",
               "color": "#ad1457",
@@ -71,7 +71,7 @@
               "spent": 4230
             },
             {
-              "categoryId": "a04b9011-7055-4c72-b93b-5f31c54c22b8",
+              "categoryId": "1b0f012e-3823-4639-8b1b-332b6e82add3",
               "categoryName": "Subscriptions",
               "parentName": null,
               "color": null,
@@ -86,7 +86,7 @@
     },
     "categories": [
       {
-        "id": "cb9fc187-d60c-4d25-9cea-2c2b55da99aa",
+        "id": "f20ab74a-8c45-419b-88b4-7b750bdecd94",
         "name": "Donations",
         "parentId": null,
         "kind": "expense",
@@ -94,7 +94,7 @@
         "icon": "gift"
       },
       {
-        "id": "e10dc4b7-7d3c-46b2-b721-fea02f669522",
+        "id": "93d9bb1c-e756-4c96-ad92-206c29021ea5",
         "name": "Food",
         "parentId": null,
         "kind": "expense",
@@ -102,23 +102,23 @@
         "icon": "utensils"
       },
       {
-        "id": "9174b884-c0da-45f6-87bc-50da27bbf5f6",
+        "id": "c3b83b2f-eb1c-4b07-aefd-c80c1b024587",
         "name": "Groceries",
-        "parentId": "e10dc4b7-7d3c-46b2-b721-fea02f669522",
+        "parentId": "93d9bb1c-e756-4c96-ad92-206c29021ea5",
         "kind": "expense",
         "color": "#ef6c00",
         "icon": "shopping-cart"
       },
       {
-        "id": "8c392ee8-0383-4709-8a7a-51d718af5152",
+        "id": "3d201809-98ab-4e6a-9300-03adcf7de760",
         "name": "Restaurants",
-        "parentId": "e10dc4b7-7d3c-46b2-b721-fea02f669522",
+        "parentId": "93d9bb1c-e756-4c96-ad92-206c29021ea5",
         "kind": "expense",
         "color": null,
         "icon": null
       },
       {
-        "id": "c9570d74-255f-499f-a0fc-ef30491b444e",
+        "id": "128d7d76-bb41-40e8-8218-c6a9b4ecb8db",
         "name": "Gifts received",
         "parentId": null,
         "kind": "income",
@@ -126,7 +126,7 @@
         "icon": "gift"
       },
       {
-        "id": "5bed65b4-5475-4939-84be-153e83f03933",
+        "id": "5c3f07fe-c86e-4bd8-bbc4-134ab4de8cdc",
         "name": "Health",
         "parentId": null,
         "kind": "expense",
@@ -134,15 +134,15 @@
         "icon": "heart-pulse"
       },
       {
-        "id": "a9c6683b-7ff6-4f28-a7d0-effbde9e8c3e",
+        "id": "8d465930-64cf-45f8-b1f6-6ae41bd7f372",
         "name": "Pharmacy",
-        "parentId": "5bed65b4-5475-4939-84be-153e83f03933",
+        "parentId": "5c3f07fe-c86e-4bd8-bbc4-134ab4de8cdc",
         "kind": "expense",
         "color": "#ad1457",
         "icon": "heart-pulse"
       },
       {
-        "id": "1c49ae63-806d-4f8e-9a3d-d1c1b020697e",
+        "id": "ce731cb5-c8b7-4c25-96d9-eb0c292c37c5",
         "name": "Housing",
         "parentId": null,
         "kind": "expense",
@@ -150,7 +150,7 @@
         "icon": "house"
       },
       {
-        "id": "4f24e690-2f9a-44fd-a428-1d54559c326c",
+        "id": "b34c8640-c1b2-4076-be20-f9e3baa03d46",
         "name": "Insurance",
         "parentId": null,
         "kind": "expense",
@@ -158,7 +158,7 @@
         "icon": "shield"
       },
       {
-        "id": "da70ed36-7040-42e7-a869-f35bd04a17e2",
+        "id": "b5a6e353-7a7b-418d-ac9c-44e7f5de47fc",
         "name": "Salary",
         "parentId": null,
         "kind": "income",
@@ -166,7 +166,7 @@
         "icon": "wallet"
       },
       {
-        "id": "a04b9011-7055-4c72-b93b-5f31c54c22b8",
+        "id": "1b0f012e-3823-4639-8b1b-332b6e82add3",
         "name": "Subscriptions",
         "parentId": null,
         "kind": "expense",
@@ -174,7 +174,7 @@
         "icon": null
       },
       {
-        "id": "450ebd85-d967-4044-8971-04846f4a8d0f",
+        "id": "f59c55bb-b6e2-43c8-a9e2-b7d1ecef6776",
         "name": "Transport",
         "parentId": null,
         "kind": "expense",

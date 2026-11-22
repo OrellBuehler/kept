@@ -2,7 +2,7 @@
   "data": {
     "series": [
       {
-        "id": "055a2d7d-51b2-482e-960b-240f106536f6",
+        "id": "083fcd31-5f0a-40ce-ad30-bcbda4add266",
         "status": "dismissed",
         "name": "Example Streaming SA",
         "counterpartyIban": null,
@@ -24,7 +24,7 @@
         }
       },
       {
-        "id": "7cf6a19c-53e8-4ae5-9b83-f48580bf6b27",
+        "id": "d030cebe-1e61-4005-9ca9-5792db116a8a",
         "status": "confirmed",
         "name": "Example Employer AG",
         "counterpartyIban": "BE68539007547034",
@@ -42,7 +42,7 @@
         "priceChange": null
       },
       {
-        "id": "89f7aafc-f588-4b4e-b54f-db0c6f35fe45",
+        "id": "5fb04d94-2d24-4bcd-82d7-daed6f4daf20",
         "status": "confirmed",
         "name": "Example Property Management AG",
         "counterpartyIban": "GB82WEST12345698765432",
@@ -60,7 +60,7 @@
         "priceChange": null
       },
       {
-        "id": "3a0597ae-1108-4099-a6ea-41b22a1e59b9",
+        "id": "3d4b5cc4-b39c-451b-b5d6-66111988ae86",
         "status": "suggested",
         "name": "Example Tax Office",
         "counterpartyIban": null,

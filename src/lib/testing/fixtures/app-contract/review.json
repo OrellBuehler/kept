@@ -25,7 +25,7 @@
           "sankey": {
             "left": [
               {
-                "id": "income:da70ed36-7040-42e7-a869-f35bd04a17e2",
+                "id": "income:b5a6e353-7a7b-418d-ac9c-44e7f5de47fc",
                 "label": "Salary",
                 "value": 2854500,
                 "color": "#2e7d32",
@@ -33,7 +33,7 @@
                 "column": 0
               },
               {
-                "id": "income:c9570d74-255f-499f-a0fc-ef30491b444e",
+                "id": "income:128d7d76-bb41-40e8-8218-c6a9b4ecb8db",
                 "label": "Gifts received",
                 "value": 5000,
                 "color": null,
@@ -51,7 +51,7 @@
             },
             "right": [
               {
-                "id": "expense:1c49ae63-806d-4f8e-9a3d-d1c1b020697e",
+                "id": "expense:ce731cb5-c8b7-4c25-96d9-eb0c292c37c5",
                 "label": "Housing",
                 "value": 720000,
                 "color": "#6a1b9a",
@@ -59,7 +59,7 @@
                 "column": 2
               },
               {
-                "id": "expense:e10dc4b7-7d3c-46b2-b721-fea02f669522",
+                "id": "expense:93d9bb1c-e756-4c96-ad92-206c29021ea5",
                 "label": "Food",
                 "value": 95450,
                 "color": "#e65100",
@@ -67,7 +67,7 @@
                 "column": 2
               },
               {
-                "id": "expense:4f24e690-2f9a-44fd-a428-1d54559c326c",
+                "id": "expense:b34c8640-c1b2-4076-be20-f9e3baa03d46",
                 "label": "Insurance",
                 "value": 12000,
                 "color": null,
@@ -75,7 +75,7 @@
                 "column": 2
               },
               {
-                "id": "expense:cb9fc187-d60c-4d25-9cea-2c2b55da99aa",
+                "id": "expense:f20ab74a-8c45-419b-88b4-7b750bdecd94",
                 "label": "Donations",
                 "value": 9000,
                 "color": null,
@@ -83,7 +83,7 @@
                 "column": 2
               },
               {
-                "id": "expense:450ebd85-d967-4044-8971-04846f4a8d0f",
+                "id": "expense:f59c55bb-b6e2-43c8-a9e2-b7d1ecef6776",
                 "label": "Transport",
                 "value": 8600,
                 "color": null,
@@ -91,7 +91,7 @@
                 "column": 2
               },
               {
-                "id": "expense:5bed65b4-5475-4939-84be-153e83f03933",
+                "id": "expense:5c3f07fe-c86e-4bd8-bbc4-134ab4de8cdc",
                 "label": "Health",
                 "value": 4230,
                 "color": "#c62828",
@@ -99,7 +99,7 @@
                 "column": 2
               },
               {
-                "id": "expense:a04b9011-7055-4c72-b93b-5f31c54c22b8",
+                "id": "expense:1b0f012e-3823-4639-8b1b-332b6e82add3",
                 "label": "Subscriptions",
                 "value": 3670,
                 "color": null,
@@ -126,7 +126,7 @@
           },
           "changes": [
             {
-              "categoryId": "da70ed36-7040-42e7-a869-f35bd04a17e2",
+              "categoryId": "b5a6e353-7a7b-418d-ac9c-44e7f5de47fc",
               "name": "Salary",
               "color": "#2e7d32",
               "side": "income",
@@ -136,7 +136,7 @@
               "changePct": null
             },
             {
-              "categoryId": "1c49ae63-806d-4f8e-9a3d-d1c1b020697e",
+              "categoryId": "ce731cb5-c8b7-4c25-96d9-eb0c292c37c5",
               "name": "Housing",
               "color": "#6a1b9a",
               "side": "expense",
@@ -156,7 +156,7 @@
               "changePct": -0.6850305810397553
             },
             {
-              "categoryId": "e10dc4b7-7d3c-46b2-b721-fea02f669522",
+              "categoryId": "93d9bb1c-e756-4c96-ad92-206c29021ea5",
               "name": "Food",
               "color": "#e65100",
               "side": "expense",
@@ -166,7 +166,7 @@
               "changePct": null
             },
             {
-              "categoryId": "5bed65b4-5475-4939-84be-153e83f03933",
+              "categoryId": "5c3f07fe-c86e-4bd8-bbc4-134ab4de8cdc",
               "name": "Health",
               "color": "#c62828",
               "side": "expense",
@@ -176,7 +176,7 @@
               "changePct": -0.911875
             },
             {
-              "categoryId": "cb9fc187-d60c-4d25-9cea-2c2b55da99aa",
+              "categoryId": "f20ab74a-8c45-419b-88b4-7b750bdecd94",
               "name": "Donations",
               "color": null,
               "side": "expense",
@@ -186,7 +186,7 @@
               "changePct": -0.6
             },
             {
-              "categoryId": "4f24e690-2f9a-44fd-a428-1d54559c326c",
+              "categoryId": "b34c8640-c1b2-4076-be20-f9e3baa03d46",
               "name": "Insurance",
               "color": null,
               "side": "expense",
@@ -196,7 +196,7 @@
               "changePct": null
             },
             {
-              "categoryId": "450ebd85-d967-4044-8971-04846f4a8d0f",
+              "categoryId": "f59c55bb-b6e2-43c8-a9e2-b7d1ecef6776",
               "name": "Transport",
               "color": null,
               "side": "expense",
@@ -250,35 +250,35 @@
           ],
           "largestExpenses": [
             {
-              "id": "82ace240-aa2d-4ae0-9e1b-af54d5edd0d8",
+              "id": "36e87e34-cd0f-4a52-96eb-c6a5ea1dba10",
               "bookingDate": "2026-08-01",
               "amount": -180000,
               "counterparty": "Example Property Management AG",
               "categoryName": "Housing"
             },
             {
-              "id": "04c6733d-7439-4466-b932-0e132c41a94c",
+              "id": "32183c58-7075-40ab-abf3-261c2ffc0725",
               "bookingDate": "2026-09-01",
               "amount": -180000,
               "counterparty": "Example Property Management AG",
               "categoryName": "Housing"
             },
             {
-              "id": "153b01f2-0ecc-46b5-98dd-15d9bb3d6204",
+              "id": "aa7f5088-ea4c-4208-9f5d-7a7c347460a2",
               "bookingDate": "2026-10-01",
               "amount": -180000,
               "counterparty": "Example Property Management AG",
               "categoryName": "Housing"
             },
             {
-              "id": "f9d02484-1450-411e-8d81-209bf09b93e1",
+              "id": "74af4c3c-6424-4f4d-ab16-5fb910bd1a96",
               "bookingDate": "2026-11-01",
               "amount": -180000,
               "counterparty": "Example Property Management AG",
               "categoryName": "Housing"
             },
             {
-              "id": "c3682702-9712-4491-8c34-68e03aeb874d",
+              "id": "1c57cca6-1556-4984-a9a7-961c079ef173",
               "bookingDate": "2026-11-12",
               "amount": -120000,
               "counterparty": "Example Tax Office",
@@ -287,35 +287,35 @@
           ],
           "largestIncome": [
             {
-              "id": "ff11952e-c2d6-4f67-b6ac-f57994d898ca",
+              "id": "2b259465-1777-47bc-b7d7-2782ecb767ec",
               "bookingDate": "2026-08-25",
               "amount": 950000,
               "counterparty": "Example Employer AG",
               "categoryName": "Salary"
             },
             {
-              "id": "7d5d150e-fb24-49d0-ab6d-99c582dc18f9",
+              "id": "98522385-d0f3-4aff-8103-9f55cf3207fa",
               "bookingDate": "2026-09-25",
               "amount": 950000,
               "counterparty": "Example Employer AG",
               "categoryName": "Salary"
             },
             {
-              "id": "560f7bf7-5cce-4fd5-9d20-bec712973121",
+              "id": "dcab0cb9-4d6f-453b-93e7-7c881592988a",
               "bookingDate": "2026-10-25",
               "amount": 950000,
               "counterparty": "Example Employer AG",
               "categoryName": "Salary"
             },
             {
-              "id": "f9f8acc2-8eed-4cfe-aa1a-9fb3b59250b9",
+              "id": "c7ccaa7d-065b-4859-9882-83a2d905510e",
               "bookingDate": "2026-11-16",
               "amount": 5000,
               "counterparty": "Alice Example",
               "categoryName": "Gifts received"
             },
             {
-              "id": "902aca6d-2238-4779-afc7-3c3c3949ead1",
+              "id": "92f443dc-a415-4910-8685-cad91647c044",
               "bookingDate": "2026-11-14",
               "amount": 4500,
               "counterparty": "Example Online Shop",
@@ -400,7 +400,7 @@
           "sankey": {
             "left": [
               {
-                "id": "income:da70ed36-7040-42e7-a869-f35bd04a17e2",
+                "id": "income:b5a6e353-7a7b-418d-ac9c-44e7f5de47fc",
                 "label": "Salary",
                 "value": 46000,
                 "color": "#2e7d32",
@@ -445,14 +445,14 @@
           ],
           "largestExpenses": [
             {
-              "id": "eeec932e-2f84-49da-b37e-18bedee62b0b",
+              "id": "37e278a9-d285-4821-b1fb-6a20c926608b",
               "bookingDate": "2026-11-07",
               "amount": -2350,
               "counterparty": "Example Euro Shop",
               "categoryName": null
             },
             {
-              "id": "ad81a599-2ec8-4009-980b-85ddd21c91f2",
+              "id": "5a15f810-7e1c-4bc5-b70a-d5f8f04a9c3e",
               "bookingDate": "2026-11-20",
               "amount": -1540,
               "counterparty": null,
@@ -461,14 +461,14 @@
           ],
           "largestIncome": [
             {
-              "id": "8dc7cb12-73c9-4d73-885e-481cd6d5978b",
+              "id": "a982e9fd-d167-434c-838e-80304302cf0f",
               "bookingDate": "2026-10-13",
               "amount": 25000,
               "counterparty": "Example Euro Employer",
               "categoryName": "Salary"
             },
             {
-              "id": "fda26542-361f-4ead-b417-2e8d2c8c4434",
+              "id": "b11e2ba1-1c92-4c4b-a6ef-5203c804a6e9",
               "bookingDate": "2026-11-17",
               "amount": 21000,
               "counterparty": null,

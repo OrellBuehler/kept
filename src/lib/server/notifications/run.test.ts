@@ -5,7 +5,8 @@ import { getDB, notificationChannels, notificationsSent } from "$lib/server/db";
 import { createTestUser } from "$lib/testing/auth";
 import { seedBill } from "$lib/testing/bills";
 import { useTestDB } from "$lib/testing/db";
-import { seedAccount } from "$lib/testing/ledger";
+import { markAccountChecked } from "$lib/server/ledger/accounts";
+import { seedAccount, seedImport } from "$lib/testing/ledger";
 import { deliver, sendTest } from "./dispatch";
 import { runNotifications } from "./run";
 import {
@@ -139,6 +140,27 @@ describe("runNotifications", () => {
       new Date(2026 + 1, 0, 1),
     );
     expect(fetchFn).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not notify an account the user confirmed has no new transactions", async () => {
+    const user = await createTestUser();
+    await saveSettings(user.id, {
+      ...DEFAULT_SETTINGS,
+      staleImportEnabled: true,
+      staleImportDays: 7,
+    });
+    await saveChannel(user.id, "webhook", {
+      url: "https://hooks.example.org/k",
+    });
+    const account = await seedAccount(user.id, { name: "Main" });
+    await seedImport(user.id, account.id, { createdAt: new Date(2026, 9, 1) });
+    await markAccountChecked(user.id, account.id, new Date(2026, 11, 30));
+    const fetchFn = okFetch();
+    await runNotifications(
+      { fetch: fetchFn, smtp: null },
+      new Date(2026 + 1, 0, 1),
+    );
+    expect(fetchFn).not.toHaveBeenCalled();
   });
 });
 

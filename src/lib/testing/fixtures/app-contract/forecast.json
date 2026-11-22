@@ -13,7 +13,7 @@
       "days": 60,
       "accounts": [
         {
-          "accountId": "3486d393-2f40-42b8-90c5-ffd2a5bddb26",
+          "accountId": "09d4adeb-6055-4732-9aa7-55fcf812b195",
           "name": "Example Checking",
           "currency": "CHF",
           "hasBalance": true,
@@ -279,7 +279,7 @@
           "negativeDate": "2026-12-04"
         },
         {
-          "accountId": "258d6028-d2f3-4ec4-961d-61ebc4c915cd",
+          "accountId": "deff505a-857f-49e6-818c-9e9905326f2a",
           "name": "Example Savings",
           "currency": "CHF",
           "hasBalance": true,
@@ -540,7 +540,7 @@
           "negativeDate": null
         },
         {
-          "accountId": "58f7cd50-c58c-44d6-8f61-42310e0d0aca",
+          "accountId": "72b10af8-5a5b-4141-acaa-25c24a06aa91",
           "name": "Example Credit Card",
           "currency": "CHF",
           "hasBalance": true,
@@ -801,7 +801,7 @@
           "negativeDate": null
         },
         {
-          "accountId": "94aa557c-b095-4d45-a191-b3191548225b",
+          "accountId": "6faa4697-2b8e-44c5-987f-7504c19e6db0",
           "name": "Example Brokerage",
           "currency": "CHF",
           "hasBalance": true,
@@ -1062,7 +1062,7 @@
           "negativeDate": null
         },
         {
-          "accountId": "1edd858c-af1f-4910-84c4-859409bbd141",
+          "accountId": "e830d6db-f28b-46e9-b3ed-865186f49705",
           "name": "Example Pillar 3a",
           "currency": "CHF",
           "hasBalance": true,
@@ -1323,7 +1323,7 @@
           "negativeDate": null
         },
         {
-          "accountId": "74f1e5be-630c-4e2b-b1c3-2aa178ef8e02",
+          "accountId": "00c8febf-2a63-4e4d-9308-a538bdf99a12",
           "name": "Example Pension Fund",
           "currency": "CHF",
           "hasBalance": true,
@@ -1584,7 +1584,7 @@
           "negativeDate": null
         },
         {
-          "accountId": "f94ecd48-dc50-45ea-9517-7c45ede0f286",
+          "accountId": "5d4c0dbe-cff7-4a0c-bf61-4abf5e369332",
           "name": "Example Euro Account",
           "currency": "EUR",
           "hasBalance": true,
@@ -1845,7 +1845,7 @@
           "negativeDate": null
         },
         {
-          "accountId": "08b2c1a0-6b0b-4978-864a-332697bc6ffb",
+          "accountId": "e21427ce-594e-4e99-895e-8af59e193ded",
           "name": "Example Joint Account",
           "currency": "CHF",
           "hasBalance": true,
@@ -2106,7 +2106,7 @@
           "negativeDate": null
         },
         {
-          "accountId": "df17c54a-a84b-448c-9b4a-bb1a5a8355a4",
+          "accountId": "7716fa56-e09a-452c-bbd0-777845cb71aa",
           "name": "Example Wallet",
           "currency": "CHF",
           "hasBalance": false,
@@ -2372,46 +2372,46 @@
           "date": "2026-11-22",
           "amount": -8550,
           "currency": "CHF",
-          "accountId": "3486d393-2f40-42b8-90c5-ffd2a5bddb26",
+          "accountId": "09d4adeb-6055-4732-9aa7-55fcf812b195",
           "source": "bill",
           "label": "Example Utilities GmbH",
-          "ref": "9a21e5e2-a339-410e-8b91-5c04d3909702"
+          "ref": "735a4e17-7b4f-4953-a491-d1cfa5fff79d"
         },
         {
           "date": "2026-11-27",
           "amount": -35000,
           "currency": "CHF",
-          "accountId": "3486d393-2f40-42b8-90c5-ffd2a5bddb26",
+          "accountId": "09d4adeb-6055-4732-9aa7-55fcf812b195",
           "source": "bill",
           "label": "Example Dental Clinic",
-          "ref": "bf4b28ad-dfa3-415d-871e-1d6279da9bb5"
+          "ref": "f8ecf84e-c559-4056-882a-3b29c004f49d"
         },
         {
           "date": "2026-12-02",
           "amount": -45000,
           "currency": "CHF",
-          "accountId": "df17c54a-a84b-448c-9b4a-bb1a5a8355a4",
+          "accountId": "7716fa56-e09a-452c-bbd0-777845cb71aa",
           "source": "planned",
           "label": "Car service",
-          "ref": "2b3567d3-5f2d-40b7-a862-e3948f7f38ce"
+          "ref": "e19c013f-2f66-4052-9bae-2fd5807fc0ce"
         },
         {
           "date": "2026-12-04",
           "amount": -194975,
           "currency": "CHF",
-          "accountId": "3486d393-2f40-42b8-90c5-ffd2a5bddb26",
+          "accountId": "09d4adeb-6055-4732-9aa7-55fcf812b195",
           "source": "bill",
           "label": "Example Supplier AG",
-          "ref": "13b8f141-bd83-46f0-b554-232e4ffe9e95"
+          "ref": "45dc014c-aad4-48d3-9c75-12c799843209"
         },
         {
           "date": "2026-12-17",
           "amount": -90000,
           "currency": "CHF",
-          "accountId": "3486d393-2f40-42b8-90c5-ffd2a5bddb26",
+          "accountId": "09d4adeb-6055-4732-9aa7-55fcf812b195",
           "source": "planned",
           "label": "Holiday booking",
-          "ref": "27c88d30-e09c-49e5-825d-c740b7607afc"
+          "ref": "071fa338-5c64-43b9-b018-c441d1405c5e"
         },
         {
           "date": "2026-12-25",
@@ -2420,16 +2420,16 @@
           "accountId": null,
           "source": "planned",
           "label": "Conference fee",
-          "ref": "13aed4b2-743c-41f4-9643-cce2a19c7e57"
+          "ref": "af815d5a-73cc-4867-a44c-ec345c10aa8e"
         },
         {
           "date": "2027-01-01",
           "amount": 30000,
           "currency": "CHF",
-          "accountId": "3486d393-2f40-42b8-90c5-ffd2a5bddb26",
+          "accountId": "09d4adeb-6055-4732-9aa7-55fcf812b195",
           "source": "planned",
           "label": "Tax refund",
-          "ref": "ad6b0e33-9805-4ad9-b9e6-0cad237e74ad"
+          "ref": "3cc66a3b-0889-48ca-b9f5-fc4861ca0d35"
         }
       ],
       "unassigned": [
@@ -2448,23 +2448,23 @@
     },
     "planned": [
       {
-        "id": "2b3567d3-5f2d-40b7-a862-e3948f7f38ce",
-        "accountId": "df17c54a-a84b-448c-9b4a-bb1a5a8355a4",
+        "id": "e19c013f-2f66-4052-9bae-2fd5807fc0ce",
+        "accountId": "7716fa56-e09a-452c-bbd0-777845cb71aa",
         "date": "2026-12-02",
         "amount": -45000,
         "currency": "CHF",
         "label": "Car service"
       },
       {
-        "id": "27c88d30-e09c-49e5-825d-c740b7607afc",
-        "accountId": "3486d393-2f40-42b8-90c5-ffd2a5bddb26",
+        "id": "071fa338-5c64-43b9-b018-c441d1405c5e",
+        "accountId": "09d4adeb-6055-4732-9aa7-55fcf812b195",
         "date": "2026-12-17",
         "amount": -90000,
         "currency": "CHF",
         "label": "Holiday booking"
       },
       {
-        "id": "13aed4b2-743c-41f4-9643-cce2a19c7e57",
+        "id": "af815d5a-73cc-4867-a44c-ec345c10aa8e",
         "accountId": null,
         "date": "2026-12-25",
         "amount": -12000,
@@ -2472,7 +2472,7 @@
         "label": "Conference fee"
       },
       {
-        "id": "ad6b0e33-9805-4ad9-b9e6-0cad237e74ad",
+        "id": "3cc66a3b-0889-48ca-b9f5-fc4861ca0d35",
         "accountId": null,
         "date": "2027-01-01",
         "amount": 30000,
@@ -2482,12 +2482,12 @@
     ],
     "settings": [
       {
-        "accountId": "3486d393-2f40-42b8-90c5-ffd2a5bddb26",
+        "accountId": "09d4adeb-6055-4732-9aa7-55fcf812b195",
         "threshold": 100000,
         "defaultPayment": true
       },
       {
-        "accountId": "df17c54a-a84b-448c-9b4a-bb1a5a8355a4",
+        "accountId": "7716fa56-e09a-452c-bbd0-777845cb71aa",
         "threshold": null,
         "defaultPayment": false
       }

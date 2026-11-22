@@ -2,7 +2,7 @@
   "data": {
     "reconciliation": {
       "year": {
-        "id": "64559452-8928-4885-8125-f58d9b7d1ca9",
+        "id": "f90bcaac-0d83-41b4-9157-1f07165c23b7",
         "year": 2025,
         "authority": "Example Tax Office",
         "currency": "CHF",
@@ -14,9 +14,9 @@
           "kind": "matched",
           "date": "2025-03-10",
           "mine": {
-            "id": "af3833a4-450d-4c4a-954d-11d1c28803b7",
-            "transactionId": "af3833a4-450d-4c4a-954d-11d1c28803b7",
-            "accountId": "3486d393-2f40-42b8-90c5-ffd2a5bddb26",
+            "id": "d775f669-19de-446b-80bb-9987b6f39200",
+            "transactionId": "d775f669-19de-446b-80bb-9987b6f39200",
+            "accountId": "09d4adeb-6055-4732-9aa7-55fcf812b195",
             "currency": "CHF",
             "date": "2025-03-10",
             "amount": 320000,
@@ -26,7 +26,7 @@
             "billIds": []
           },
           "office": {
-            "id": "faee45bd-62f0-406d-b739-78a1ec7d9de8",
+            "id": "8d683897-61d7-46a7-aea3-b9e2d0501707",
             "date": "2025-03-12",
             "amount": 320000,
             "reference": "EX-TAX-1",
@@ -38,9 +38,9 @@
           "kind": "amount_mismatch",
           "date": "2025-09-14",
           "mine": {
-            "id": "7f39dd54-0df3-459a-b5e6-f3a4e28e376c",
-            "transactionId": "7f39dd54-0df3-459a-b5e6-f3a4e28e376c",
-            "accountId": "3486d393-2f40-42b8-90c5-ffd2a5bddb26",
+            "id": "ec9cc920-7fe8-4efb-b4f5-2bca1f6059e6",
+            "transactionId": "ec9cc920-7fe8-4efb-b4f5-2bca1f6059e6",
+            "accountId": "09d4adeb-6055-4732-9aa7-55fcf812b195",
             "currency": "CHF",
             "date": "2025-09-14",
             "amount": 180000,
@@ -50,7 +50,7 @@
             "billIds": []
           },
           "office": {
-            "id": "31e48e23-e51e-4c86-9f2c-4e080df32239",
+            "id": "8b5e31ea-a0b0-4293-a561-adb9eaa1b396",
             "date": "2025-09-20",
             "amount": 150000,
             "reference": null,
@@ -63,7 +63,7 @@
           "date": "2025-10-05",
           "mine": null,
           "office": {
-            "id": "bd9f7a5f-ae93-4304-bcee-8d97833ae1fa",
+            "id": "63d2cefe-7bbb-4cf7-a9c2-480ade8469eb",
             "date": "2025-10-05",
             "amount": 64000,
             "reference": null,
@@ -75,9 +75,9 @@
           "kind": "missing_office",
           "date": "2025-11-02",
           "mine": {
-            "id": "03824c68-3367-46c4-8687-3880288086ce",
-            "transactionId": "03824c68-3367-46c4-8687-3880288086ce",
-            "accountId": "3486d393-2f40-42b8-90c5-ffd2a5bddb26",
+            "id": "33228e6c-d5e6-486e-bfbd-36e9471bad3e",
+            "transactionId": "33228e6c-d5e6-486e-bfbd-36e9471bad3e",
+            "accountId": "09d4adeb-6055-4732-9aa7-55fcf812b195",
             "currency": "CHF",
             "date": "2025-11-02",
             "amount": 90000,
@@ -94,7 +94,7 @@
           "date": "2025-12-20",
           "mine": null,
           "office": {
-            "id": "c3ff4352-e74f-472b-a7f4-30518a46c985",
+            "id": "bc31dcd1-f2f0-4865-b1f5-9b2cb829a039",
             "date": "2025-12-20",
             "amount": -5000,
             "reference": null,
@@ -106,9 +106,9 @@
           "kind": "missing_office",
           "date": "2026-11-12",
           "mine": {
-            "id": "c3682702-9712-4491-8c34-68e03aeb874d",
-            "transactionId": "c3682702-9712-4491-8c34-68e03aeb874d",
-            "accountId": "3486d393-2f40-42b8-90c5-ffd2a5bddb26",
+            "id": "1c57cca6-1556-4984-a9a7-961c079ef173",
+            "transactionId": "1c57cca6-1556-4984-a9a7-961c079ef173",
+            "accountId": "09d4adeb-6055-4732-9aa7-55fcf812b195",
             "currency": "CHF",
             "date": "2026-11-12",
             "amount": 120000,
@@ -116,7 +116,7 @@
             "label": "Example Tax Office",
             "via": "bill",
             "billIds": [
-              "0c4b9770-0698-4c46-a6d4-a3ccf8eee783"
+              "097647e8-54d8-4b36-b3aa-3aae8abb5d7d"
             ]
           },
           "office": null,
@@ -144,9 +144,9 @@
       "otherCurrencyLines": 0,
       "suggestions": [
         {
-          "creditId": "bd9f7a5f-ae93-4304-bcee-8d97833ae1fa",
-          "transactionId": "4a51e8b4-a28a-485f-a103-e1c1d728e9b0",
-          "accountId": "3486d393-2f40-42b8-90c5-ffd2a5bddb26",
+          "creditId": "63d2cefe-7bbb-4cf7-a9c2-480ade8469eb",
+          "transactionId": "ae7434b7-6b27-4cda-a659-e0cef85eaba1",
+          "accountId": "09d4adeb-6055-4732-9aa7-55fcf812b195",
           "bookingDate": "2025-10-01",
           "amount": -64000,
           "label": "Example Tax Office"
@@ -163,10 +163,10 @@
           "total": 575800,
           "lines": [
             {
-              "key": "c:3e2fd76b-9771-4345-86de-f1b0f59cd30e",
+              "key": "c:7f405bba-2fa5-4250-809c-818429a94a04",
               "transactionId": null,
               "source": "pillar_3a",
-              "accountId": "1edd858c-af1f-4910-84c4-859409bbd141",
+              "accountId": "e830d6db-f28b-46e9-b3ed-865186f49705",
               "date": "2025-12-10",
               "label": "Example Portfolio A",
               "amount": 525800,
@@ -176,10 +176,10 @@
               "explicitYear": false
             },
             {
-              "key": "tx:ec0f33f4-1eea-4e81-9d77-95258f12cd10",
-              "transactionId": "ec0f33f4-1eea-4e81-9d77-95258f12cd10",
+              "key": "tx:bbe5d5be-4dde-468c-9153-e5795f6d2e07",
+              "transactionId": "bbe5d5be-4dde-468c-9153-e5795f6d2e07",
               "source": "pillar_3a",
-              "accountId": "3486d393-2f40-42b8-90c5-ffd2a5bddb26",
+              "accountId": "09d4adeb-6055-4732-9aa7-55fcf812b195",
               "date": "2025-12-23",
               "label": "Example Portfolio A",
               "amount": 50000,
@@ -196,28 +196,28 @@
           "total": 24000,
           "lines": [
             {
-              "key": "tx:ee151483-5af5-46b3-819d-b71d532623da",
-              "transactionId": "ee151483-5af5-46b3-819d-b71d532623da",
+              "key": "tx:973b46d5-77e4-4604-97b6-84280f664d90",
+              "transactionId": "973b46d5-77e4-4604-97b6-84280f664d90",
               "source": "category",
-              "accountId": "3486d393-2f40-42b8-90c5-ffd2a5bddb26",
+              "accountId": "09d4adeb-6055-4732-9aa7-55fcf812b195",
               "date": "2025-06-18",
               "label": "Example Charity",
               "amount": 15000,
               "currency": "CHF",
-              "categoryId": "cb9fc187-d60c-4d25-9cea-2c2b55da99aa",
+              "categoryId": "f20ab74a-8c45-419b-88b4-7b750bdecd94",
               "excluded": false,
               "explicitYear": false
             },
             {
-              "key": "tx:be71a878-1763-4051-8af8-1527da8f1249",
-              "transactionId": "be71a878-1763-4051-8af8-1527da8f1249",
+              "key": "tx:020d801f-5907-4c5e-a21b-c4a79b5d1253",
+              "transactionId": "020d801f-5907-4c5e-a21b-c4a79b5d1253",
               "source": "category",
-              "accountId": "3486d393-2f40-42b8-90c5-ffd2a5bddb26",
+              "accountId": "09d4adeb-6055-4732-9aa7-55fcf812b195",
               "date": "2026-01-02",
               "label": "Example Charity",
               "amount": 9000,
               "currency": "CHF",
-              "categoryId": "cb9fc187-d60c-4d25-9cea-2c2b55da99aa",
+              "categoryId": "f20ab74a-8c45-419b-88b4-7b750bdecd94",
               "excluded": false,
               "explicitYear": true
             }
@@ -229,15 +229,15 @@
           "total": 48000,
           "lines": [
             {
-              "key": "tx:69f47e86-38eb-475b-b770-35dc0b855715",
-              "transactionId": "69f47e86-38eb-475b-b770-35dc0b855715",
+              "key": "tx:b1b19a2d-bc5a-4db1-b6ca-0ba36a2e697f",
+              "transactionId": "b1b19a2d-bc5a-4db1-b6ca-0ba36a2e697f",
               "source": "category",
-              "accountId": "3486d393-2f40-42b8-90c5-ffd2a5bddb26",
+              "accountId": "09d4adeb-6055-4732-9aa7-55fcf812b195",
               "date": "2025-02-11",
               "label": "Example Dental Clinic",
               "amount": 48000,
               "currency": "CHF",
-              "categoryId": "5bed65b4-5475-4939-84be-153e83f03933",
+              "categoryId": "5c3f07fe-c86e-4bd8-bbc4-134ab4de8cdc",
               "excluded": false,
               "explicitYear": false
             }
@@ -246,15 +246,15 @@
       ],
       "excluded": [
         {
-          "key": "tx:270c45bf-03c6-431c-9636-669911333ff1",
-          "transactionId": "270c45bf-03c6-431c-9636-669911333ff1",
+          "key": "tx:ec6005eb-5d67-43cc-a80f-ace940d66cf1",
+          "transactionId": "ec6005eb-5d67-43cc-a80f-ace940d66cf1",
           "source": "category",
-          "accountId": "3486d393-2f40-42b8-90c5-ffd2a5bddb26",
+          "accountId": "09d4adeb-6055-4732-9aa7-55fcf812b195",
           "date": "2025-07-04",
           "label": "Example Charity",
           "amount": 7500,
           "currency": "CHF",
-          "categoryId": "cb9fc187-d60c-4d25-9cea-2c2b55da99aa",
+          "categoryId": "f20ab74a-8c45-419b-88b4-7b750bdecd94",
           "excluded": true,
           "explicitYear": false,
           "type": "donations"
@@ -263,7 +263,7 @@
     },
     "deductionMappings": [
       {
-        "categoryId": "cb9fc187-d60c-4d25-9cea-2c2b55da99aa",
+        "categoryId": "f20ab74a-8c45-419b-88b4-7b750bdecd94",
         "name": "Donations",
         "parentId": null,
         "own": "donations",
@@ -271,7 +271,7 @@
         "inherited": false
       },
       {
-        "categoryId": "e10dc4b7-7d3c-46b2-b721-fea02f669522",
+        "categoryId": "93d9bb1c-e756-4c96-ad92-206c29021ea5",
         "name": "Food",
         "parentId": null,
         "own": null,
@@ -279,23 +279,23 @@
         "inherited": false
       },
       {
-        "categoryId": "9174b884-c0da-45f6-87bc-50da27bbf5f6",
+        "categoryId": "c3b83b2f-eb1c-4b07-aefd-c80c1b024587",
         "name": "Groceries",
-        "parentId": "e10dc4b7-7d3c-46b2-b721-fea02f669522",
+        "parentId": "93d9bb1c-e756-4c96-ad92-206c29021ea5",
         "own": null,
         "effective": null,
         "inherited": false
       },
       {
-        "categoryId": "8c392ee8-0383-4709-8a7a-51d718af5152",
+        "categoryId": "3d201809-98ab-4e6a-9300-03adcf7de760",
         "name": "Restaurants",
-        "parentId": "e10dc4b7-7d3c-46b2-b721-fea02f669522",
+        "parentId": "93d9bb1c-e756-4c96-ad92-206c29021ea5",
         "own": null,
         "effective": null,
         "inherited": false
       },
       {
-        "categoryId": "c9570d74-255f-499f-a0fc-ef30491b444e",
+        "categoryId": "128d7d76-bb41-40e8-8218-c6a9b4ecb8db",
         "name": "Gifts received",
         "parentId": null,
         "own": null,
@@ -303,7 +303,7 @@
         "inherited": false
       },
       {
-        "categoryId": "5bed65b4-5475-4939-84be-153e83f03933",
+        "categoryId": "5c3f07fe-c86e-4bd8-bbc4-134ab4de8cdc",
         "name": "Health",
         "parentId": null,
         "own": "medical",
@@ -311,15 +311,15 @@
         "inherited": false
       },
       {
-        "categoryId": "a9c6683b-7ff6-4f28-a7d0-effbde9e8c3e",
+        "categoryId": "8d465930-64cf-45f8-b1f6-6ae41bd7f372",
         "name": "Pharmacy",
-        "parentId": "5bed65b4-5475-4939-84be-153e83f03933",
+        "parentId": "5c3f07fe-c86e-4bd8-bbc4-134ab4de8cdc",
         "own": null,
         "effective": "medical",
         "inherited": true
       },
       {
-        "categoryId": "1c49ae63-806d-4f8e-9a3d-d1c1b020697e",
+        "categoryId": "ce731cb5-c8b7-4c25-96d9-eb0c292c37c5",
         "name": "Housing",
         "parentId": null,
         "own": null,
@@ -327,7 +327,7 @@
         "inherited": false
       },
       {
-        "categoryId": "4f24e690-2f9a-44fd-a428-1d54559c326c",
+        "categoryId": "b34c8640-c1b2-4076-be20-f9e3baa03d46",
         "name": "Insurance",
         "parentId": null,
         "own": null,
@@ -335,7 +335,7 @@
         "inherited": false
       },
       {
-        "categoryId": "da70ed36-7040-42e7-a869-f35bd04a17e2",
+        "categoryId": "b5a6e353-7a7b-418d-ac9c-44e7f5de47fc",
         "name": "Salary",
         "parentId": null,
         "own": null,
@@ -343,7 +343,7 @@
         "inherited": false
       },
       {
-        "categoryId": "a04b9011-7055-4c72-b93b-5f31c54c22b8",
+        "categoryId": "1b0f012e-3823-4639-8b1b-332b6e82add3",
         "name": "Subscriptions",
         "parentId": null,
         "own": null,
@@ -351,7 +351,7 @@
         "inherited": false
       },
       {
-        "categoryId": "450ebd85-d967-4044-8971-04846f4a8d0f",
+        "categoryId": "f59c55bb-b6e2-43c8-a9e2-b7d1ecef6776",
         "name": "Transport",
         "parentId": null,
         "own": null,

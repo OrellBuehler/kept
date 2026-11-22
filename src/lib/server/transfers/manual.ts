@@ -27,6 +27,7 @@ import {
 } from "$lib/server/db";
 import { LedgerError, notFound } from "$lib/server/ledger/errors";
 import {
+  counterpartyIbanIn,
   linkTransfersInTx,
   loadPlanAccounts,
   loadPlanAccountsInTx,
@@ -39,7 +40,9 @@ import {
   canMirrorOnto,
   counterAmount,
   daysApart,
+  ibansOf,
   shiftDate,
+  type PlanAccount,
 } from "./plan";
 
 type TransferRow = typeof transfers.$inferSelect;
@@ -290,7 +293,7 @@ function linkCandidateQuery(
   conn: Reader,
   userId: string,
   source: { bookingDate: string; amount: number },
-  home: { iban: string | null },
+  home: Pick<PlanAccount, "iban" | "topUpIban">,
   target: { id: string },
 ) {
   const outgoing = source.amount < 0;
@@ -319,11 +322,11 @@ function linkCandidateQuery(
           transactions.bookingDate,
           shiftDate(source.bookingDate, LINK_WINDOW_DAYS),
         ),
-        home.iban === null
+        ibansOf(home).length === 0
           ? sql`${transactions.counterpartyIban} is null`
           : or(
               sql`${transactions.counterpartyIban} is null`,
-              sql`upper(replace(${transactions.counterpartyIban}, ' ', '')) = ${home.iban}`,
+              counterpartyIbanIn(ibansOf(home)),
             ),
         notInLinkedTransfer,
       ),
@@ -352,7 +355,7 @@ function nearestCandidate(
 async function findLinkCandidate(
   userId: string,
   source: { bookingDate: string; amount: number },
-  home: { iban: string | null },
+  home: Pick<PlanAccount, "iban" | "topUpIban">,
   target: { id: string },
 ): Promise<LinkCandidate | null> {
   const rows = await linkCandidateQuery(getDB(), userId, source, home, target);
@@ -364,7 +367,7 @@ async function findLinkCandidateInTx(
   tx: Reader,
   userId: string,
   source: { bookingDate: string; amount: number },
-  home: { iban: string | null },
+  home: Pick<PlanAccount, "iban" | "topUpIban">,
   target: { id: string },
 ): Promise<LinkCandidate | null> {
   return nearestCandidate(
@@ -440,9 +443,7 @@ export async function listNeedsAmount(
       sources.set(t.id, t);
     }
   }
-  const ibans = new Map(
-    (await loadPlanAccounts(userId)).map((a) => [a.id, a.iban]),
-  );
+  const homes = new Map((await loadPlanAccounts(userId)).map((a) => [a.id, a]));
   const views: NeedsAmountView[] = [];
   for (const r of rows) {
     const sourceId = r.outTransactionId ?? r.inTransactionId;
@@ -471,7 +472,7 @@ export async function listNeedsAmount(
       linkCandidate: await findLinkCandidate(
         userId,
         src,
-        { iban: ibans.get(src.accountId) ?? null },
+        homes.get(src.accountId) ?? { iban: null, topUpIban: null },
         { id: targetId },
       ),
     });
@@ -779,7 +780,7 @@ export async function fillSuggestion(
   if (
     account.fillFromTransfers ||
     account.archived ||
-    account.iban === null ||
+    ibansOf(account).length === 0 ||
     account.type === "pillar_3a" ||
     account.hasPortfolios
   ) {
@@ -802,7 +803,7 @@ export async function fillSuggestion(
           eq(transactions.userId, userId),
           ne(transactions.accountId, accountId),
           ne(transactions.source, "mirror"),
-          sql`upper(replace(${transactions.counterpartyIban}, ' ', '')) = ${account.iban}`,
+          counterpartyIbanIn(ibansOf(account)),
           sql`not exists (select 1 from ${transfers} where ${transfers.outTransactionId} = ${transactions.id} or ${transfers.inTransactionId} = ${transactions.id})`,
         ),
       )
@@ -835,10 +836,10 @@ export async function enableFill(
           "Pillar 3a accounts cannot be filled from transfers.",
         );
       }
-      if (account.iban === null) {
+      if (ibansOf(account).length === 0) {
         throw new LedgerError(
           "invalid",
-          "The account needs an IBAN to be filled from transfers.",
+          "The account needs an IBAN or a top-up IBAN to be filled from transfers.",
           "iban",
         );
       }

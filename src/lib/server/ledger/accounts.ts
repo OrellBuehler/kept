@@ -81,6 +81,8 @@ export interface AccountView {
   lastBookingDate: string | null;
   /** Instant (ms since epoch) of the most recent import, or null. */
   lastImportAt: number | null;
+  /** Instant (ms since epoch) the user last confirmed there is nothing new to import, or null. */
+  lastCheckedAt: number | null;
 }
 
 const ACCOUNT_AUDIT_FIELDS = [
@@ -141,6 +143,7 @@ async function baseRows(userId: string, accountId?: string) {
       fillFromTransfers: accounts.fillFromTransfers,
       tradesMoveCash: accounts.tradesMoveCash,
       archived: accounts.archived,
+      checkedAt: accounts.checkedAt,
       sortOrder: accounts.sortOrder,
       shareBps: accounts.shareBps,
       sharedWith: accounts.sharedWith,
@@ -244,6 +247,7 @@ async function toViews(
     shareBalance: shareOf(values.get(r.id)!.total, r.shareBps),
     lastBookingDate: lastBooking.get(r.id) ?? null,
     lastImportAt: lastImport.get(r.id) ?? null,
+    lastCheckedAt: r.checkedAt?.getTime() ?? null,
   }));
 }
 
@@ -339,6 +343,64 @@ async function assertIbanFree(
       .limit(1),
   );
   if (clash) throw ibanTaken();
+  // The other direction of assertTopUpIbanFree: an IBAN another account is
+  // topped up through cannot become this account's own.
+  const topUpClash = await first(
+    tx
+      .select({ id: accounts.id })
+      .from(accounts)
+      .where(
+        and(
+          eq(accounts.userId, userId),
+          eq(accounts.depositIban, iban),
+          ne(accounts.type, "pillar_3a"),
+          exceptId ? ne(accounts.id, exceptId) : undefined,
+        ),
+      )
+      .limit(1),
+  );
+  if (topUpClash) {
+    throw new LedgerError(
+      "conflict",
+      "Another account is topped up through this IBAN.",
+      "iban",
+    );
+  }
+}
+
+/**
+ * A top-up IBAN must not be the IBAN of another account: a payment to it
+ * would then name two accounts. Runs inside the transaction of createAccount /
+ * updateAccount. Pillar 3a deposit IBANs are exempt: they never name an account.
+ */
+async function assertTopUpIbanFree(
+  tx: Reader,
+  userId: string,
+  input: Pick<AccountInput, "type" | "depositIban">,
+  exceptId?: string,
+) {
+  const iban = input.depositIban ?? null;
+  if (input.type === "pillar_3a" || iban === null) return;
+  const clash = await first(
+    tx
+      .select({ id: accounts.id })
+      .from(accounts)
+      .where(
+        and(
+          eq(accounts.userId, userId),
+          eq(accounts.iban, iban),
+          exceptId ? ne(accounts.id, exceptId) : undefined,
+        ),
+      )
+      .limit(1),
+  );
+  if (clash) {
+    throw new LedgerError(
+      "conflict",
+      "This is the IBAN of another of your accounts.",
+      "depositIban",
+    );
+  }
 }
 
 /**
@@ -360,6 +422,7 @@ export async function createAccount(
       async (tx) => {
         await assertInstitutionOwned(tx, userId, input.institutionId);
         await assertIbanFree(tx, userId, input.iban);
+        await assertTopUpIbanFree(tx, userId, input);
         const sortOrder =
           input.sortOrder ??
           ((
@@ -381,6 +444,7 @@ export async function createAccount(
             .values({
               ...input,
               websiteUrl: input.websiteUrl ?? null,
+              depositIban: input.depositIban ?? null,
               sortOrder,
               userId,
               fillFromTransfers:
@@ -390,8 +454,13 @@ export async function createAccount(
             })
             .returning({ id: accounts.id }),
         ))!;
-        // Transfers other accounts already show to this IBAN become mirrors here.
-        if (input.fillFromTransfers === true && input.type !== "pillar_3a") {
+        // Transfers other accounts already show to this account's IBAN or top-up
+        // IBAN pair with its rows, or become mirrors when it is filled from transfers.
+        if (
+          input.type !== "pillar_3a" &&
+          (input.fillFromTransfers === true ||
+            (input.depositIban ?? null) !== null)
+        ) {
           await linkTransfersInTx(tx, userId, { targetAccountId: created.id });
         }
         const snapshot = await accountSnapshotInTx(tx, userId, created.id);
@@ -417,12 +486,13 @@ async function updateAccountInTx(
   tx: Tx,
   userId: string,
   id: string,
-  input: AccountInput & { confirmRemoveMirrors?: boolean },
+  posted: AccountInput & { confirmRemoveMirrors?: boolean },
 ): Promise<void> {
   const current = await first(
     tx
       .select({
         name: accounts.name,
+        type: accounts.type,
         iban: accounts.iban,
         currency: accounts.currency,
         depositIban: accounts.depositIban,
@@ -436,9 +506,20 @@ async function updateAccountInTx(
       .limit(1),
   );
   if (!current) throw notFound("Account");
+  // A client that does not know the top-up IBAN did not send it: keep the stored one.
+  const input = {
+    ...posted,
+    depositIban:
+      posted.depositIban !== undefined
+        ? posted.depositIban
+        : current.type === "pillar_3a"
+          ? null
+          : current.depositIban,
+  };
   const audited = await accountSnapshotInTx(tx, userId, id);
   await assertInstitutionOwned(tx, userId, input.institutionId);
   await assertIbanFree(tx, userId, input.iban, id);
+  await assertTopUpIbanFree(tx, userId, input, id);
 
   const portfolioRows = await tx
     .select({ reference: portfolios.depositReference })
@@ -557,6 +638,10 @@ async function updateAccountInTx(
     }
   }
   const ibanChanged = rest.iban !== current.iban;
+  const topUpOf = (a: { type: string; depositIban: string | null }) =>
+    a.type === "pillar_3a" ? null : a.depositIban;
+  // What payments from other accounts can name: the IBAN or the top-up IBAN.
+  const addressChanged = ibanChanged || topUpOf(rest) !== topUpOf(current);
   await tx
     .update(accounts)
     .set({
@@ -589,10 +674,10 @@ async function updateAccountInTx(
       );
   }
   // Links that depended on the old IBAN go before the new one links anything.
-  if (ibanChanged) await revalidateLinks(tx, userId, id);
+  if (addressChanged) await revalidateLinks(tx, userId, id);
   if (
     (fillFromTransfers && !current.fillFromTransfers) ||
-    (ibanChanged && rest.iban !== null)
+    (addressChanged && (rest.iban !== null || topUpOf(rest) !== null))
   ) {
     await linkTransfersInTx(tx, userId, { targetAccountId: id });
   }
@@ -647,6 +732,37 @@ export async function setAccountArchived(
     },
     { lock: ledgerLock(userId) },
   );
+  return await getAccount(userId, id);
+}
+
+/**
+ * Records that the user looked and there is nothing new to import, which
+ * quiets the "not imported for a while" warnings like an import does.
+ */
+export async function markAccountChecked(
+  userId: string,
+  id: string,
+  now: Date = new Date(),
+): Promise<AccountView> {
+  await transaction(async (tx) => {
+    const before = await accountSnapshotInTx(tx, userId, id);
+    if (before.fields.archived === true) {
+      throw new LedgerError(
+        "invalid",
+        "An archived account is not checked for imports. Restore it first.",
+      );
+    }
+    await tx
+      .update(accounts)
+      .set({ checkedAt: now })
+      .where(and(eq(accounts.userId, userId), eq(accounts.id, id)));
+    await recordChange({
+      userId,
+      action: "account.check",
+      entityId: id,
+      summary: before.name,
+    });
+  });
   return await getAccount(userId, id);
 }
 

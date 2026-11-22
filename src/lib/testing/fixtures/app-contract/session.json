@@ -1,6 +1,6 @@
 {
   "user": {
-    "id": "afc38fa4-5f92-4bae-a994-22f0cda93262",
+    "id": "a60ad16d-a72f-4585-b8b7-b86662df28d8",
     "username": "alice",
     "displayName": "Alice Example",
     "role": "admin"
@@ -16,5 +16,5 @@
     "investmentCashLiquid": true
   },
   "twoFactor": true,
-  "sessionExpiresAt": "2026-12-22T14:52:09.443Z"
+  "sessionExpiresAt": "2026-12-22T18:40:53.398Z"
 }

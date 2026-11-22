@@ -1,7 +1,7 @@
 {
   "data": {
     "account": {
-      "id": "3486d393-2f40-42b8-90c5-ffd2a5bddb26",
+      "id": "09d4adeb-6055-4732-9aa7-55fcf812b195",
       "name": "Example Checking",
       "type": "current",
       "currency": "CHF",
@@ -21,7 +21,7 @@
       "shareBps": 10000,
       "sharedWith": null,
       "institution": {
-        "id": "0c320f11-40b2-46d1-a815-d1ea67c2e416",
+        "id": "99143ab8-cc3f-4fcd-8349-9356c18f8136",
         "name": "Example Bank",
         "color": "#1a73e8",
         "logoVersion": "fa25202f7fd431e3",
@@ -32,12 +32,13 @@
       "holdings": null,
       "shareBalance": 112860,
       "lastBookingDate": "2026-11-21",
-      "lastImportAt": 1795359129289
+      "lastImportAt": 1795372853185,
+      "lastCheckedAt": null
     },
     "imports": [
       {
-        "id": "e8a60d9e-0a59-4a36-aeae-e858985cc301",
-        "accountId": "3486d393-2f40-42b8-90c5-ffd2a5bddb26",
+        "id": "a07c7b04-bb7c-4e19-a065-ce8db60ea852",
+        "accountId": "09d4adeb-6055-4732-9aa7-55fcf812b195",
         "accountName": "Example Checking",
         "currency": "CHF",
         "format": "camt053",
@@ -55,11 +56,11 @@
           "The file's opening balance (CHF 75.00 on 2025-01-01) does not match the ledger balance at the end of the previous day (CHF 1,232.50). This usually means a gap between imports or missing transactions.",
           "After this import the ledger balance on 2025-01-31 would be CHF 1,232.50, but the file's closing balance is CHF 75.00. This usually means a gap between imports or missing transactions."
         ],
-        "createdAt": 1795359129289
+        "createdAt": 1795372853185
       },
       {
-        "id": "5e31da6c-3a33-4e5b-81b2-5a4b1ff28102",
-        "accountId": "3486d393-2f40-42b8-90c5-ffd2a5bddb26",
+        "id": "6ab7e5b0-c2d4-4954-9450-19422c9fa42a",
+        "accountId": "09d4adeb-6055-4732-9aa7-55fcf812b195",
         "accountName": "Example Checking",
         "currency": "CHF",
         "format": "camt053",
@@ -73,11 +74,11 @@
         "newCount": 5,
         "duplicateCount": 0,
         "warnings": [],
-        "createdAt": 1795359129277
+        "createdAt": 1795372853178
       }
     ],
     "impacts": {
-      "5e31da6c-3a33-4e5b-81b2-5a4b1ff28102": {
+      "6ab7e5b0-c2d4-4954-9450-19422c9fa42a": {
         "transactions": 5,
         "categorized": 3,
         "notes": 0,
@@ -88,7 +89,7 @@
         "transferLinks": 0,
         "mirrors": 0
       },
-      "e8a60d9e-0a59-4a36-aeae-e858985cc301": {
+      "a07c7b04-bb7c-4e19-a065-ce8db60ea852": {
         "transactions": 0,
         "categorized": 0,
         "notes": 0,

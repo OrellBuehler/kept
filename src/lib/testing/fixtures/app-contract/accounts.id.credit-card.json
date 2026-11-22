@@ -1,7 +1,7 @@
 {
   "data": {
     "account": {
-      "id": "58f7cd50-c58c-44d6-8f61-42310e0d0aca",
+      "id": "72b10af8-5a5b-4141-acaa-25c24a06aa91",
       "name": "Example Credit Card",
       "type": "credit_card",
       "currency": "CHF",
@@ -21,7 +21,7 @@
       "shareBps": 10000,
       "sharedWith": null,
       "institution": {
-        "id": "0c320f11-40b2-46d1-a815-d1ea67c2e416",
+        "id": "99143ab8-cc3f-4fcd-8349-9356c18f8136",
         "name": "Example Bank",
         "color": "#1a73e8",
         "logoVersion": "fa25202f7fd431e3",
@@ -32,7 +32,8 @@
       "holdings": null,
       "shareBalance": 359650,
       "lastBookingDate": "2026-11-14",
-      "lastImportAt": 1795359129302
+      "lastImportAt": 1795372853201,
+      "lastCheckedAt": null
     },
     "balance": 359650,
     "value": null,
@@ -43,7 +44,7 @@
     "trades": [],
     "securities": [
       {
-        "id": "264dfb34-d980-4e78-9aa7-d7a346fbb591",
+        "id": "df551038-cfed-4111-a4b9-9a32ba9e56ec",
         "name": "Example Bond Fund",
         "kind": "bond",
         "isin": "EX0000000021",
@@ -51,7 +52,7 @@
         "currency": "CHF"
       },
       {
-        "id": "bee6b308-fa58-4f57-81ab-579e5a313d8d",
+        "id": "b5de52ea-77a2-4fc3-aaea-9b403cd68003",
         "name": "Example Stock Corp",
         "kind": "stock",
         "isin": null,
@@ -59,7 +60,7 @@
         "currency": "USD"
       },
       {
-        "id": "a217d557-ad88-43ad-81d5-62d114958d4d",
+        "id": "f8194273-f8c2-452c-a4d9-69627be25e8c",
         "name": "Example World ETF",
         "kind": "etf",
         "isin": "EX0000000013",
@@ -69,22 +70,22 @@
     ],
     "institutions": [
       {
-        "id": "0c320f11-40b2-46d1-a815-d1ea67c2e416",
+        "id": "99143ab8-cc3f-4fcd-8349-9356c18f8136",
         "name": "Example Bank"
       },
       {
-        "id": "9feb3805-2382-4fe4-a094-5edbfda2f29c",
+        "id": "200d317e-d80f-4708-a041-86df1fc3d647",
         "name": "Example Broker"
       }
     ],
     "transactions": {
       "items": [
         {
-          "id": "902aca6d-2238-4779-afc7-3c3c3949ead1",
-          "accountId": "58f7cd50-c58c-44d6-8f61-42310e0d0aca",
+          "id": "92f443dc-a415-4910-8685-cad91647c044",
+          "accountId": "72b10af8-5a5b-4141-acaa-25c24a06aa91",
           "importId": null,
           "source": "import",
-          "externalId": "ext-81eb2aa6-d82e-4f77-99af-6d6bdea913f5",
+          "externalId": "ext-a7c02111-efbe-4c58-8c3a-116cbda77435",
           "bookingDate": "2026-11-14",
           "valueDate": null,
           "amount": 4500,
@@ -98,19 +99,19 @@
           "referenceType": null,
           "reversal": true,
           "note": null,
-          "categoryId": "da70ed36-7040-42e7-a869-f35bd04a17e2",
+          "categoryId": "b5a6e353-7a7b-418d-ac9c-44e7f5de47fc",
           "taxYear": null,
           "deductionYear": null,
-          "createdAt": 1795359129318,
+          "createdAt": 1795372853221,
           "mirrorOf": null,
           "transfer": null
         },
         {
-          "id": "fb67f627-9c8b-4fd8-92fa-798b54b801a5",
-          "accountId": "58f7cd50-c58c-44d6-8f61-42310e0d0aca",
+          "id": "33305c70-1086-4478-9582-6d26ddfb853d",
+          "accountId": "72b10af8-5a5b-4141-acaa-25c24a06aa91",
           "importId": null,
           "source": "import",
-          "externalId": "ext-bcee856e-98ae-4259-a40a-e8b2e5178e5f",
+          "externalId": "ext-978775dc-5ba9-454b-931c-12032d3337b5",
           "bookingDate": "2026-11-13",
           "valueDate": null,
           "amount": -4500,
@@ -127,16 +128,16 @@
           "categoryId": null,
           "taxYear": null,
           "deductionYear": null,
-          "createdAt": 1795359129318,
+          "createdAt": 1795372853221,
           "mirrorOf": null,
           "transfer": null
         },
         {
-          "id": "929b9c47-70ab-4a60-8e90-91cd3867b955",
-          "accountId": "58f7cd50-c58c-44d6-8f61-42310e0d0aca",
+          "id": "a1bfe9d8-9d8c-4f59-9275-bd71fcf6e372",
+          "accountId": "72b10af8-5a5b-4141-acaa-25c24a06aa91",
           "importId": null,
           "source": "import",
-          "externalId": "ext-825cbb38-1d6d-42b3-91ef-8fcbc32d2b8e",
+          "externalId": "ext-86a2117c-4711-4b44-911d-78c27ef4a882",
           "bookingDate": "2026-11-10",
           "valueDate": null,
           "amount": -31000,
@@ -153,14 +154,14 @@
           "categoryId": null,
           "taxYear": null,
           "deductionYear": null,
-          "createdAt": 1795359129318,
+          "createdAt": 1795372853220,
           "mirrorOf": null,
           "transfer": null
         },
         {
-          "id": "c0c256ed-50a5-4fa9-87f3-41224cd42ba1",
-          "accountId": "58f7cd50-c58c-44d6-8f61-42310e0d0aca",
-          "importId": "14f74e43-2b24-4362-9b52-0751d48050b7",
+          "id": "2a1a067f-e662-4f56-82e3-f929e45abb99",
+          "accountId": "72b10af8-5a5b-4141-acaa-25c24a06aa91",
+          "importId": "c36bff90-9c42-4599-912b-32c6969bac63",
           "source": "import",
           "externalId": "hash:b9cf8b05fd74075ae632b6a763a3829cfa1c2811e4380fb114338ade73853ff7#1",
           "bookingDate": "2024-08-04",
@@ -176,17 +177,17 @@
           "referenceType": null,
           "reversal": false,
           "note": null,
-          "categoryId": "da70ed36-7040-42e7-a869-f35bd04a17e2",
+          "categoryId": "b5a6e353-7a7b-418d-ac9c-44e7f5de47fc",
           "taxYear": null,
           "deductionYear": null,
-          "createdAt": 1795359129303,
+          "createdAt": 1795372853201,
           "mirrorOf": null,
           "transfer": null
         },
         {
-          "id": "914e706c-e7d6-40c7-a649-4bd7155490f0",
-          "accountId": "58f7cd50-c58c-44d6-8f61-42310e0d0aca",
-          "importId": "14f74e43-2b24-4362-9b52-0751d48050b7",
+          "id": "3a68ee89-d9d1-4286-bb83-ae0177aa1de8",
+          "accountId": "72b10af8-5a5b-4141-acaa-25c24a06aa91",
+          "importId": "c36bff90-9c42-4599-912b-32c6969bac63",
           "source": "import",
           "externalId": "hash:cdb6f6a86ec0880953d3b855ef86e11a217f9a88c9fe99e297852a273c9d235e#1",
           "bookingDate": "2024-08-03",
@@ -205,14 +206,14 @@
           "categoryId": null,
           "taxYear": null,
           "deductionYear": null,
-          "createdAt": 1795359129303,
+          "createdAt": 1795372853201,
           "mirrorOf": null,
           "transfer": null
         },
         {
-          "id": "d3d0137f-ff1e-4d87-8e4b-eb6548e81a79",
-          "accountId": "58f7cd50-c58c-44d6-8f61-42310e0d0aca",
-          "importId": "14f74e43-2b24-4362-9b52-0751d48050b7",
+          "id": "6676b115-4131-42ba-9880-bd5e592abf19",
+          "accountId": "72b10af8-5a5b-4141-acaa-25c24a06aa91",
+          "importId": "c36bff90-9c42-4599-912b-32c6969bac63",
           "source": "import",
           "externalId": "hash:2cb1229052a41ec12b98a8d6643348315c92975730c3433c1486b9f4870ed117#2",
           "bookingDate": "2024-08-02",
@@ -231,14 +232,14 @@
           "categoryId": null,
           "taxYear": null,
           "deductionYear": null,
-          "createdAt": 1795359129303,
+          "createdAt": 1795372853201,
           "mirrorOf": null,
           "transfer": null
         },
         {
-          "id": "9d6d255b-dbb2-46ea-ae3a-56bd47bf4617",
-          "accountId": "58f7cd50-c58c-44d6-8f61-42310e0d0aca",
-          "importId": "14f74e43-2b24-4362-9b52-0751d48050b7",
+          "id": "3c465576-b288-4bd4-9e33-c75838eeecbd",
+          "accountId": "72b10af8-5a5b-4141-acaa-25c24a06aa91",
+          "importId": "c36bff90-9c42-4599-912b-32c6969bac63",
           "source": "import",
           "externalId": "hash:2cb1229052a41ec12b98a8d6643348315c92975730c3433c1486b9f4870ed117#1",
           "bookingDate": "2024-08-02",
@@ -257,14 +258,14 @@
           "categoryId": null,
           "taxYear": null,
           "deductionYear": null,
-          "createdAt": 1795359129303,
+          "createdAt": 1795372853201,
           "mirrorOf": null,
           "transfer": null
         },
         {
-          "id": "3e4e5b3f-32cc-429b-856d-639d792881cb",
-          "accountId": "58f7cd50-c58c-44d6-8f61-42310e0d0aca",
-          "importId": "14f74e43-2b24-4362-9b52-0751d48050b7",
+          "id": "fabc32e1-538d-4c3c-adc3-47aa44399163",
+          "accountId": "72b10af8-5a5b-4141-acaa-25c24a06aa91",
+          "importId": "c36bff90-9c42-4599-912b-32c6969bac63",
           "source": "import",
           "externalId": "hash:22dade840452d5c2db1dd365d85203690c4392031171416c7a97c19aaa636280#1",
           "bookingDate": "2024-08-01",
@@ -283,7 +284,7 @@
           "categoryId": null,
           "taxYear": null,
           "deductionYear": null,
-          "createdAt": 1795359129303,
+          "createdAt": 1795372853201,
           "mirrorOf": null,
           "transfer": null
         }
@@ -303,7 +304,7 @@
     },
     "categories": [
       {
-        "id": "cb9fc187-d60c-4d25-9cea-2c2b55da99aa",
+        "id": "f20ab74a-8c45-419b-88b4-7b750bdecd94",
         "name": "Donations",
         "parentId": null,
         "kind": "expense",
@@ -311,7 +312,7 @@
         "icon": "gift"
       },
       {
-        "id": "e10dc4b7-7d3c-46b2-b721-fea02f669522",
+        "id": "93d9bb1c-e756-4c96-ad92-206c29021ea5",
         "name": "Food",
         "parentId": null,
         "kind": "expense",
@@ -319,23 +320,23 @@
         "icon": "utensils"
       },
       {
-        "id": "9174b884-c0da-45f6-87bc-50da27bbf5f6",
+        "id": "c3b83b2f-eb1c-4b07-aefd-c80c1b024587",
         "name": "Groceries",
-        "parentId": "e10dc4b7-7d3c-46b2-b721-fea02f669522",
+        "parentId": "93d9bb1c-e756-4c96-ad92-206c29021ea5",
         "kind": "expense",
         "color": "#ef6c00",
         "icon": "shopping-cart"
       },
       {
-        "id": "8c392ee8-0383-4709-8a7a-51d718af5152",
+        "id": "3d201809-98ab-4e6a-9300-03adcf7de760",
         "name": "Restaurants",
-        "parentId": "e10dc4b7-7d3c-46b2-b721-fea02f669522",
+        "parentId": "93d9bb1c-e756-4c96-ad92-206c29021ea5",
         "kind": "expense",
         "color": null,
         "icon": null
       },
       {
-        "id": "c9570d74-255f-499f-a0fc-ef30491b444e",
+        "id": "128d7d76-bb41-40e8-8218-c6a9b4ecb8db",
         "name": "Gifts received",
         "parentId": null,
         "kind": "income",
@@ -343,7 +344,7 @@
         "icon": "gift"
       },
       {
-        "id": "5bed65b4-5475-4939-84be-153e83f03933",
+        "id": "5c3f07fe-c86e-4bd8-bbc4-134ab4de8cdc",
         "name": "Health",
         "parentId": null,
         "kind": "expense",
@@ -351,15 +352,15 @@
         "icon": "heart-pulse"
       },
       {
-        "id": "a9c6683b-7ff6-4f28-a7d0-effbde9e8c3e",
+        "id": "8d465930-64cf-45f8-b1f6-6ae41bd7f372",
         "name": "Pharmacy",
-        "parentId": "5bed65b4-5475-4939-84be-153e83f03933",
+        "parentId": "5c3f07fe-c86e-4bd8-bbc4-134ab4de8cdc",
         "kind": "expense",
         "color": "#ad1457",
         "icon": "heart-pulse"
       },
       {
-        "id": "1c49ae63-806d-4f8e-9a3d-d1c1b020697e",
+        "id": "ce731cb5-c8b7-4c25-96d9-eb0c292c37c5",
         "name": "Housing",
         "parentId": null,
         "kind": "expense",
@@ -367,7 +368,7 @@
         "icon": "house"
       },
       {
-        "id": "4f24e690-2f9a-44fd-a428-1d54559c326c",
+        "id": "b34c8640-c1b2-4076-be20-f9e3baa03d46",
         "name": "Insurance",
         "parentId": null,
         "kind": "expense",
@@ -375,7 +376,7 @@
         "icon": "shield"
       },
       {
-        "id": "da70ed36-7040-42e7-a869-f35bd04a17e2",
+        "id": "b5a6e353-7a7b-418d-ac9c-44e7f5de47fc",
         "name": "Salary",
         "parentId": null,
         "kind": "income",
@@ -383,7 +384,7 @@
         "icon": "wallet"
       },
       {
-        "id": "a04b9011-7055-4c72-b93b-5f31c54c22b8",
+        "id": "1b0f012e-3823-4639-8b1b-332b6e82add3",
         "name": "Subscriptions",
         "parentId": null,
         "kind": "expense",
@@ -391,7 +392,7 @@
         "icon": null
       },
       {
-        "id": "450ebd85-d967-4044-8971-04846f4a8d0f",
+        "id": "f59c55bb-b6e2-43c8-a9e2-b7d1ecef6776",
         "name": "Transport",
         "parentId": null,
         "kind": "expense",

@@ -2,6 +2,7 @@ import { eq } from "drizzle-orm";
 import { describe, expect, it } from "vitest";
 import { minor } from "$lib/money";
 import { accounts, getDB } from "$lib/server/db";
+import { listChanges } from "$lib/server/audit";
 import { allocate } from "$lib/server/bills/allocations";
 import { createSnapshot } from "$lib/server/ledger";
 import { createTestUser } from "$lib/testing/auth";
@@ -388,6 +389,47 @@ describe("accountBalances", () => {
 
     const imports = await lastImports(u.id, TODAY);
     expect(imports.find((i) => i.accountName === "P old")!.stale).toBe(true);
+  });
+
+  it("counts a confirmed 'no new transactions' like an import", async () => {
+    const u = await createTestUser();
+    const { markAccountChecked } = await import("$lib/server/ledger/accounts");
+    const quiet = await seedAccount(u.id, { name: "Quiet" });
+    await seedImport(u.id, quiet.id, {
+      createdAt: new Date("2026-08-01T12:00:00"),
+    });
+    const [before] = await accountBalances(u.id, TODAY);
+    expect(before).toMatchObject({ stale: true, staleDays: 75 });
+
+    await markAccountChecked(u.id, quiet.id, new Date("2026-10-12T12:00:00"));
+    const [checked] = await accountBalances(u.id, TODAY);
+    expect(checked).toMatchObject({
+      stale: false,
+      staleDays: 3,
+      lastCheckedAt: new Date("2026-10-12T12:00:00").getTime(),
+    });
+    // The confirmation ages like an import does.
+    expect((await accountBalances(u.id, "2026-12-15"))[0]).toMatchObject({
+      stale: true,
+      staleDays: 64,
+    });
+    expect((await listChanges(u.id, {})).items.map((c) => c.action)).toContain(
+      "account.check",
+    );
+
+    // An account that was never imported is not checked for imports.
+    const manual = await seedAccount(u.id, { name: "Manual" });
+    await markAccountChecked(u.id, manual.id, new Date("2026-10-12T12:00:00"));
+    const byName = Object.fromEntries(
+      (await accountBalances(u.id, TODAY)).map((a) => [a.name, a]),
+    );
+    expect(byName.Manual).toMatchObject({ stale: false, staleDays: null });
+
+    const { archiveAccount } = await import("$lib/server/ledger");
+    await archiveAccount(u.id, quiet.id);
+    await expect(markAccountChecked(u.id, quiet.id)).rejects.toThrow(
+      /archived/,
+    );
   });
 
   it("omits archived accounts", async () => {

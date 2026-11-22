@@ -276,7 +276,10 @@ const matrix: Record<string, Entry> = {
   },
   "/src/routes/(app)/+page.server.ts": {
     access: "user",
-    handlers: { load: (m, e) => m.load(e) },
+    handlers: {
+      load: (m, e) => m.load(e),
+      "actions.markChecked": (m, e) => m.actions.markChecked(e),
+    },
   },
   "/src/routes/(app)/reports/+page.server.ts": {
     access: "user",
@@ -369,6 +372,7 @@ const matrix: Record<string, Entry> = {
       "actions.updateAccount": (m, e) => m.actions.updateAccount(e),
       "actions.archive": (m, e) => m.actions.archive(e),
       "actions.unarchive": (m, e) => m.actions.unarchive(e),
+      "actions.markChecked": (m, e) => m.actions.markChecked(e),
       "actions.deleteAccount": (m, e) => m.actions.deleteAccount(e),
       "actions.addTransaction": (m, e) => m.actions.addTransaction(e),
       "actions.updateTransaction": (m, e) => m.actions.updateTransaction(e),

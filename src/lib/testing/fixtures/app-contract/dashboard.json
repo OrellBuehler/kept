@@ -3,7 +3,7 @@
     "today": "2026-11-22",
     "forecastAlerts": [
       {
-        "accountId": "3486d393-2f40-42b8-90c5-ffd2a5bddb26",
+        "accountId": "09d4adeb-6055-4732-9aa7-55fcf812b195",
         "name": "Example Checking",
         "currency": "CHF",
         "date": "2026-12-04",
@@ -12,11 +12,11 @@
     ],
     "needsAmount": [
       {
-        "transferId": "c1264663-6774-492b-902e-6fc8029f9bf5",
-        "sourceTransactionId": "f8385a74-2cd1-4e93-a866-69d645524fc6",
-        "sourceAccountId": "3486d393-2f40-42b8-90c5-ffd2a5bddb26",
+        "transferId": "58b2355c-fc0f-40a1-87d8-d0f1d853e59d",
+        "sourceTransactionId": "9babb64f-7819-4cd5-aa5b-0fe5e8d87103",
+        "sourceAccountId": "09d4adeb-6055-4732-9aa7-55fcf812b195",
         "sourceAccountName": "Example Checking",
-        "targetAccountId": "f94ecd48-dc50-45ea-9517-7c45ede0f286",
+        "targetAccountId": "5d4c0dbe-cff7-4a0c-bf61-4abf5e369332",
         "targetAccountName": "Example Euro Account",
         "targetCurrency": "EUR",
         "direction": "in",
@@ -25,7 +25,7 @@
         "currency": "CHF",
         "description": "Top up euros",
         "linkCandidate": {
-          "id": "fda26542-361f-4ead-b417-2e8d2c8c4434",
+          "id": "b11e2ba1-1c92-4c4b-a6ef-5203c804a6e9",
           "bookingDate": "2026-11-17",
           "amount": 21000,
           "currency": "EUR",
@@ -514,7 +514,7 @@
       },
       "accounts": [
         {
-          "id": "3486d393-2f40-42b8-90c5-ffd2a5bddb26",
+          "id": "09d4adeb-6055-4732-9aa7-55fcf812b195",
           "name": "Example Checking",
           "type": "current",
           "currency": "CHF",
@@ -523,7 +523,7 @@
           "websiteUrl": null,
           "depositIban": null,
           "institution": {
-            "id": "0c320f11-40b2-46d1-a815-d1ea67c2e416",
+            "id": "99143ab8-cc3f-4fcd-8349-9356c18f8136",
             "name": "Example Bank",
             "color": "#1a73e8",
             "logoVersion": "fa25202f7fd431e3",
@@ -539,7 +539,8 @@
           "sharedWith": null,
           "shareBalance": 112860,
           "lastBookingDate": "2026-11-21",
-          "lastImportAt": 1795359129289,
+          "lastImportAt": 1795372853185,
+          "lastCheckedAt": null,
           "lastSnapshotDate": "2025-01-31",
           "lastPortfolioValueDate": null,
           "stale": false,
@@ -547,7 +548,7 @@
           "staleDays": 0
         },
         {
-          "id": "258d6028-d2f3-4ec4-961d-61ebc4c915cd",
+          "id": "deff505a-857f-49e6-818c-9e9905326f2a",
           "name": "Example Savings",
           "type": "savings",
           "currency": "CHF",
@@ -556,7 +557,7 @@
           "websiteUrl": null,
           "depositIban": null,
           "institution": {
-            "id": "0c320f11-40b2-46d1-a815-d1ea67c2e416",
+            "id": "99143ab8-cc3f-4fcd-8349-9356c18f8136",
             "name": "Example Bank",
             "color": "#1a73e8",
             "logoVersion": "fa25202f7fd431e3",
@@ -573,6 +574,7 @@
           "shareBalance": 1251000,
           "lastBookingDate": "2026-11-02",
           "lastImportAt": null,
+          "lastCheckedAt": null,
           "lastSnapshotDate": "2026-11-12",
           "lastPortfolioValueDate": null,
           "stale": false,
@@ -580,7 +582,7 @@
           "staleDays": 10
         },
         {
-          "id": "58f7cd50-c58c-44d6-8f61-42310e0d0aca",
+          "id": "72b10af8-5a5b-4141-acaa-25c24a06aa91",
           "name": "Example Credit Card",
           "type": "credit_card",
           "currency": "CHF",
@@ -589,7 +591,7 @@
           "websiteUrl": null,
           "depositIban": null,
           "institution": {
-            "id": "0c320f11-40b2-46d1-a815-d1ea67c2e416",
+            "id": "99143ab8-cc3f-4fcd-8349-9356c18f8136",
             "name": "Example Bank",
             "color": "#1a73e8",
             "logoVersion": "fa25202f7fd431e3",
@@ -605,7 +607,8 @@
           "sharedWith": null,
           "shareBalance": 359650,
           "lastBookingDate": "2026-11-14",
-          "lastImportAt": 1795359129302,
+          "lastImportAt": 1795372853201,
+          "lastCheckedAt": null,
           "lastSnapshotDate": null,
           "lastPortfolioValueDate": null,
           "stale": false,
@@ -613,7 +616,7 @@
           "staleDays": 0
         },
         {
-          "id": "94aa557c-b095-4d45-a191-b3191548225b",
+          "id": "6faa4697-2b8e-44c5-987f-7504c19e6db0",
           "name": "Example Brokerage",
           "type": "investment",
           "currency": "CHF",
@@ -622,7 +625,7 @@
           "websiteUrl": null,
           "depositIban": null,
           "institution": {
-            "id": "9feb3805-2382-4fe4-a094-5edbfda2f29c",
+            "id": "200d317e-d80f-4708-a041-86df1fc3d647",
             "name": "Example Broker",
             "color": null,
             "logoVersion": null,
@@ -643,6 +646,7 @@
           "shareBalance": 2023320,
           "lastBookingDate": "2026-08-04",
           "lastImportAt": null,
+          "lastCheckedAt": null,
           "lastSnapshotDate": null,
           "lastPortfolioValueDate": null,
           "stale": false,
@@ -650,7 +654,7 @@
           "staleDays": 5
         },
         {
-          "id": "1edd858c-af1f-4910-84c4-859409bbd141",
+          "id": "e830d6db-f28b-46e9-b3ed-865186f49705",
           "name": "Example Pillar 3a",
           "type": "pillar_3a",
           "currency": "CHF",
@@ -659,7 +663,7 @@
           "websiteUrl": null,
           "depositIban": "CH4431999123000889012",
           "institution": {
-            "id": "9feb3805-2382-4fe4-a094-5edbfda2f29c",
+            "id": "200d317e-d80f-4708-a041-86df1fc3d647",
             "name": "Example Broker",
             "color": null,
             "logoVersion": null,
@@ -676,6 +680,7 @@
           "shareBalance": 846000,
           "lastBookingDate": null,
           "lastImportAt": null,
+          "lastCheckedAt": null,
           "lastSnapshotDate": null,
           "lastPortfolioValueDate": "2026-11-18",
           "stale": false,
@@ -683,7 +688,7 @@
           "staleDays": 4
         },
         {
-          "id": "74f1e5be-630c-4e2b-b1c3-2aa178ef8e02",
+          "id": "00c8febf-2a63-4e4d-9308-a538bdf99a12",
           "name": "Example Pension Fund",
           "type": "pension",
           "currency": "CHF",
@@ -703,6 +708,7 @@
           "shareBalance": 4625000,
           "lastBookingDate": null,
           "lastImportAt": null,
+          "lastCheckedAt": null,
           "lastSnapshotDate": "2026-10-08",
           "lastPortfolioValueDate": null,
           "stale": false,
@@ -710,7 +716,7 @@
           "staleDays": 45
         },
         {
-          "id": "f94ecd48-dc50-45ea-9517-7c45ede0f286",
+          "id": "5d4c0dbe-cff7-4a0c-bf61-4abf5e369332",
           "name": "Example Euro Account",
           "type": "current",
           "currency": "EUR",
@@ -719,7 +725,7 @@
           "websiteUrl": null,
           "depositIban": null,
           "institution": {
-            "id": "0c320f11-40b2-46d1-a815-d1ea67c2e416",
+            "id": "99143ab8-cc3f-4fcd-8349-9356c18f8136",
             "name": "Example Bank",
             "color": "#1a73e8",
             "logoVersion": "fa25202f7fd431e3",
@@ -736,6 +742,7 @@
           "shareBalance": 118650,
           "lastBookingDate": "2026-11-17",
           "lastImportAt": null,
+          "lastCheckedAt": null,
           "lastSnapshotDate": "2026-10-23",
           "lastPortfolioValueDate": null,
           "stale": false,
@@ -743,7 +750,7 @@
           "staleDays": 30
         },
         {
-          "id": "08b2c1a0-6b0b-4978-864a-332697bc6ffb",
+          "id": "e21427ce-594e-4e99-895e-8af59e193ded",
           "name": "Example Joint Account",
           "type": "current",
           "currency": "CHF",
@@ -752,7 +759,7 @@
           "websiteUrl": null,
           "depositIban": null,
           "institution": {
-            "id": "0c320f11-40b2-46d1-a815-d1ea67c2e416",
+            "id": "99143ab8-cc3f-4fcd-8349-9356c18f8136",
             "name": "Example Bank",
             "color": "#1a73e8",
             "logoVersion": "fa25202f7fd431e3",
@@ -769,6 +776,7 @@
           "shareBalance": 159000,
           "lastBookingDate": "2026-11-11",
           "lastImportAt": null,
+          "lastCheckedAt": null,
           "lastSnapshotDate": null,
           "lastPortfolioValueDate": null,
           "stale": false,
@@ -776,7 +784,7 @@
           "staleDays": null
         },
         {
-          "id": "df17c54a-a84b-448c-9b4a-bb1a5a8355a4",
+          "id": "7716fa56-e09a-452c-bbd0-777845cb71aa",
           "name": "Example Wallet",
           "type": "cash",
           "currency": "CHF",
@@ -796,6 +804,7 @@
           "shareBalance": 10000,
           "lastBookingDate": null,
           "lastImportAt": null,
+          "lastCheckedAt": null,
           "lastSnapshotDate": null,
           "lastPortfolioValueDate": null,
           "stale": false,
@@ -818,7 +827,7 @@
               "shareBalance": 751000,
               "accounts": [
                 {
-                  "id": "258d6028-d2f3-4ec4-961d-61ebc4c915cd",
+                  "id": "deff505a-857f-49e6-818c-9e9905326f2a",
                   "name": "Example Savings"
                 }
               ]
@@ -927,21 +936,21 @@
             "total": 204220,
             "items": [
               {
-                "categoryId": "1c49ae63-806d-4f8e-9a3d-d1c1b020697e",
+                "categoryId": "ce731cb5-c8b7-4c25-96d9-eb0c292c37c5",
                 "name": "Housing",
                 "color": "#6a1b9a",
                 "icon": "house",
                 "spent": 180000
               },
               {
-                "categoryId": "e10dc4b7-7d3c-46b2-b721-fea02f669522",
+                "categoryId": "93d9bb1c-e756-4c96-ad92-206c29021ea5",
                 "name": "Food",
                 "color": "#e65100",
                 "icon": "utensils",
                 "spent": 12220
               },
               {
-                "categoryId": "4f24e690-2f9a-44fd-a428-1d54559c326c",
+                "categoryId": "b34c8640-c1b2-4076-be20-f9e3baa03d46",
                 "name": "Insurance",
                 "color": null,
                 "icon": "shield",
@@ -960,21 +969,21 @@
             "total": 210220,
             "items": [
               {
-                "categoryId": "1c49ae63-806d-4f8e-9a3d-d1c1b020697e",
+                "categoryId": "ce731cb5-c8b7-4c25-96d9-eb0c292c37c5",
                 "name": "Housing",
                 "color": "#6a1b9a",
                 "icon": "house",
                 "spent": 180000
               },
               {
-                "categoryId": "e10dc4b7-7d3c-46b2-b721-fea02f669522",
+                "categoryId": "93d9bb1c-e756-4c96-ad92-206c29021ea5",
                 "name": "Food",
                 "color": "#e65100",
                 "icon": "utensils",
                 "spent": 18220
               },
               {
-                "categoryId": "4f24e690-2f9a-44fd-a428-1d54559c326c",
+                "categoryId": "b34c8640-c1b2-4076-be20-f9e3baa03d46",
                 "name": "Insurance",
                 "color": null,
                 "icon": "shield",
@@ -1018,7 +1027,7 @@
         },
         "upcoming": [
           {
-            "id": "bf4b28ad-dfa3-415d-871e-1d6279da9bb5",
+            "id": "f8ecf84e-c559-4056-882a-3b29c004f49d",
             "kind": "invoice",
             "creditorName": "Example Dental Clinic",
             "invoiceNumber": null,
@@ -1029,7 +1038,7 @@
             "dueInDays": 5
           },
           {
-            "id": "13b8f141-bd83-46f0-b554-232e4ffe9e95",
+            "id": "45dc014c-aad4-48d3-9c75-12c799843209",
             "kind": "invoice",
             "creditorName": "Example Supplier AG",
             "invoiceNumber": "2001",
@@ -1048,15 +1057,15 @@
       },
       "imports": [
         {
-          "accountId": "3486d393-2f40-42b8-90c5-ffd2a5bddb26",
+          "accountId": "09d4adeb-6055-4732-9aa7-55fcf812b195",
           "accountName": "Example Checking",
-          "lastImportAt": 1795359129289,
+          "lastImportAt": 1795372853185,
           "lastBookingDate": "2026-11-21",
           "stale": false,
           "staleDays": 0
         },
         {
-          "accountId": "258d6028-d2f3-4ec4-961d-61ebc4c915cd",
+          "accountId": "deff505a-857f-49e6-818c-9e9905326f2a",
           "accountName": "Example Savings",
           "lastImportAt": null,
           "lastBookingDate": "2026-11-02",
@@ -1064,15 +1073,15 @@
           "staleDays": 10
         },
         {
-          "accountId": "58f7cd50-c58c-44d6-8f61-42310e0d0aca",
+          "accountId": "72b10af8-5a5b-4141-acaa-25c24a06aa91",
           "accountName": "Example Credit Card",
-          "lastImportAt": 1795359129302,
+          "lastImportAt": 1795372853201,
           "lastBookingDate": "2026-11-14",
           "stale": false,
           "staleDays": 0
         },
         {
-          "accountId": "94aa557c-b095-4d45-a191-b3191548225b",
+          "accountId": "6faa4697-2b8e-44c5-987f-7504c19e6db0",
           "accountName": "Example Brokerage",
           "lastImportAt": null,
           "lastBookingDate": "2026-08-04",
@@ -1080,7 +1089,7 @@
           "staleDays": 5
         },
         {
-          "accountId": "1edd858c-af1f-4910-84c4-859409bbd141",
+          "accountId": "e830d6db-f28b-46e9-b3ed-865186f49705",
           "accountName": "Example Pillar 3a",
           "lastImportAt": null,
           "lastBookingDate": null,
@@ -1088,7 +1097,7 @@
           "staleDays": 4
         },
         {
-          "accountId": "74f1e5be-630c-4e2b-b1c3-2aa178ef8e02",
+          "accountId": "00c8febf-2a63-4e4d-9308-a538bdf99a12",
           "accountName": "Example Pension Fund",
           "lastImportAt": null,
           "lastBookingDate": null,
@@ -1096,7 +1105,7 @@
           "staleDays": 45
         },
         {
-          "accountId": "f94ecd48-dc50-45ea-9517-7c45ede0f286",
+          "accountId": "5d4c0dbe-cff7-4a0c-bf61-4abf5e369332",
           "accountName": "Example Euro Account",
           "lastImportAt": null,
           "lastBookingDate": "2026-11-17",
@@ -1104,7 +1113,7 @@
           "staleDays": 30
         },
         {
-          "accountId": "08b2c1a0-6b0b-4978-864a-332697bc6ffb",
+          "accountId": "e21427ce-594e-4e99-895e-8af59e193ded",
           "accountName": "Example Joint Account",
           "lastImportAt": null,
           "lastBookingDate": "2026-11-11",
@@ -1112,7 +1121,7 @@
           "staleDays": null
         },
         {
-          "accountId": "df17c54a-a84b-448c-9b4a-bb1a5a8355a4",
+          "accountId": "7716fa56-e09a-452c-bbd0-777845cb71aa",
           "accountName": "Example Wallet",
           "lastImportAt": null,
           "lastBookingDate": null,

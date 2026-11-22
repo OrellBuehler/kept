@@ -100,9 +100,12 @@
     deleteInstitutionOpen = true;
   }
   function staleAgo(a: Account) {
-    if (a.lastImportAt === null || daysSince(a.lastImportAt, now) <= STALE_DAYS)
-      return null;
-    return formatAgo(a.lastImportAt, now);
+    if (a.lastImportAt === null) return null;
+    // "Nothing new to import", confirmed by the user, counts like an import.
+    const checked = (a.lastCheckedAt ?? 0) > a.lastImportAt;
+    const freshAt = checked ? a.lastCheckedAt! : a.lastImportAt;
+    if (daysSince(freshAt, now) <= STALE_DAYS) return null;
+    return `${checked ? "Last checked" : "Last import"} ${formatAgo(freshAt, now)}`;
   }
 </script>
 
@@ -301,6 +304,17 @@
                           {prefs.iban(account.iban)}
                         </span>
                       {/if}
+                      {#if account.depositIban && account.type !== "pillar_3a" && prefs.ibanDisplay !== "hidden"}
+                        <span
+                          class="text-muted-foreground text-xs"
+                          title="The IBAN you send money to when you top this account up. It is not this account's own IBAN."
+                        >
+                          Top up via
+                          <span class="font-mono">
+                            {prefs.iban(account.depositIban)}
+                          </span>
+                        </span>
+                      {/if}
                       <span class="text-muted-foreground text-xs">
                         {#if account.lastBookingDate}
                           Last booking {prefs.date(account.lastBookingDate)}
@@ -313,7 +327,7 @@
                           class="flex items-center gap-1 text-xs text-amber-600 dark:text-amber-400"
                         >
                           <TriangleAlertIcon class="size-3.5" />
-                          Last import {ago}
+                          {ago}
                         </span>
                       {/if}
                     </div>

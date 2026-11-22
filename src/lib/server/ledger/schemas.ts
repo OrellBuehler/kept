@@ -186,8 +186,17 @@ export const accountInputSchema = z
     contractNumber: optionalText(60, "Contract number"),
     /** The account's web portal link. */
     websiteUrl: optionalWebUrl,
-    /** Pillar 3a only: the IBAN (usually a QR-IBAN) to pay into. */
+    /**
+     * The IBAN to pay into when the account has none of its own: a pillar 3a
+     * QR-IBAN, or the IBAN an e-money or card account is topped up through.
+     */
     depositIban: optionalIban,
+    /**
+     * Posted (as "1") by forms that show the top-up IBAN of an account that is
+     * not a pillar 3a account. Without it a missing `depositIban` leaves the
+     * stored value alone: clients that only know the pillar 3a field do not send it.
+     */
+    depositIbanField: z.string().optional(),
     /** Months of notice before the balance can be withdrawn. */
     noticeMonths: optionalOf(
       z
@@ -247,7 +256,13 @@ export const accountInputSchema = z
       openingBalance = r.value;
     }
     let shareBps = FULL_SHARE_BPS;
-    const { share, fillFromTransfers, fillFromTransfersField, ...rest } = v;
+    const {
+      share,
+      fillFromTransfers,
+      fillFromTransfersField,
+      depositIbanField,
+      ...rest
+    } = v;
     const fillRequested =
       fillFromTransfers !== undefined
         ? ["on", "true", "1"].includes(fillFromTransfers)
@@ -255,6 +270,22 @@ export const accountInputSchema = z
           ? false
           : undefined;
     const pillar3a = v.type === "pillar_3a";
+    const depositPosted = pillar3a || depositIbanField !== undefined;
+    if (
+      !pillar3a &&
+      depositPosted &&
+      v.depositIban !== null &&
+      v.depositIban === v.iban
+    ) {
+      ctx.issues.push({
+        code: "custom",
+        message:
+          "The top-up IBAN is for an IBAN that is not the account's own. Leave it empty when it is the same.",
+        input: v.depositIban,
+        path: ["depositIban"],
+      });
+      return z.NEVER;
+    }
     if (pillar3a && v.currency !== PILLAR_3A_CURRENCY) {
       ctx.issues.push({
         code: "custom",
@@ -338,7 +369,7 @@ export const accountInputSchema = z
       freeWithdrawal,
       freeWithdrawalPeriod,
       contractNumber: pillar3a ? rest.contractNumber : null,
-      depositIban: pillar3a ? rest.depositIban : null,
+      depositIban: depositPosted ? rest.depositIban : undefined,
       sharedWith: pillar3a ? null : rest.sharedWith,
       fillFromTransfers: pillar3a ? false : fillRequested,
       tradesMoveCash: pillar3a ? false : rest.tradesMoveCash,

@@ -38,6 +38,8 @@ export interface AccountBalanceView {
   lastBookingDate: string | null;
   /** Instant (ms since epoch) of the latest import, or null if never imported. */
   lastImportAt: number | null;
+  /** Instant (ms since epoch) the user last confirmed there is nothing new to import, or null. */
+  lastCheckedAt: number | null;
   lastSnapshotDate: string | null;
   /** Pillar 3a: the date of the newest manually entered portfolio value. */
   lastPortfolioValueDate: string | null;
@@ -47,7 +49,8 @@ export interface AccountBalanceView {
   /**
    * Age in days of the data the stale flag is based on: the last import, or,
    * for accounts that were never imported, the last snapshot or portfolio
-   * value (whichever is newer). Recent holdings activity (a trade or a manual
+   * value (whichever is newer). For an imported account the day the user
+   * confirmed there is nothing new to import counts when it is later. Recent holdings activity (a trade or a manual
    * price of a held security; fetched prices do not count) takes over when it
    * clears staleness or when there is neither. Null when the account has none
    * of these.
@@ -110,9 +113,11 @@ export async function accountBalances(
     let staleDays: number | null = null;
     let stale = false;
     if (a.lastImportAt !== null) {
+      // "Nothing new to import", confirmed by the user, counts like an import.
+      const freshAt = Math.max(a.lastImportAt, a.lastCheckedAt ?? 0);
       staleDays = Math.max(
         0,
-        daysBetween(localToday(new Date(a.lastImportAt)), today),
+        daysBetween(localToday(new Date(freshAt)), today),
       );
       stale = staleDays > IMPORT_STALE_DAYS;
     } else if (lastBalanceDate !== null) {
@@ -151,6 +156,7 @@ export async function accountBalances(
       shareBalance: a.shareBalance,
       lastBookingDate: a.lastBookingDate,
       lastImportAt: a.lastImportAt,
+      lastCheckedAt: a.lastCheckedAt,
       lastSnapshotDate,
       lastPortfolioValueDate,
       stale,

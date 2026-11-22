@@ -1,0 +1,1 @@
+ALTER TABLE "accounts" ADD COLUMN "checked_at" timestamp (3) with time zone;

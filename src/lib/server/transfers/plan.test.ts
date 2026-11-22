@@ -24,6 +24,7 @@ const acc = (id: string, over: Partial<PlanAccount> = {}): PlanAccount => ({
   currency: "CHF",
   type: "current",
   iban: null,
+  topUpIban: null,
   openingDate: null,
   fillFromTransfers: false,
   hasPortfolios: false,
@@ -661,6 +662,105 @@ describe("pairIsConsistent across currencies", () => {
         A,
         credit(),
         eur,
+      ),
+    ).toBe(false);
+  });
+});
+
+describe("top-up IBAN", () => {
+  const wallet = (over: Partial<PlanAccount> = {}) =>
+    acc("w", { topUpIban: IBAN_C, ...over });
+  const topUp = (over: Partial<PlanTransaction> = {}) =>
+    tx({ counterpartyIban: IBAN_C, ...over });
+  const arrival = (over: Partial<PlanTransaction> = {}) =>
+    tx({
+      accountId: "w",
+      amount: 10000,
+      bookingDate: "2024-03-11",
+      counterpartyIban: null,
+      ...over,
+    });
+
+  it("pairs a payment to the top-up IBAN with the credit on that account", () => {
+    const out = topUp();
+    const into = arrival();
+    expect(plan([out], [into], [A, wallet()])).toMatchObject([
+      {
+        kind: "pair",
+        sourceId: out.id,
+        candidateId: into.id,
+        fromAccountId: "a",
+        toAccountId: "w",
+      },
+    ]);
+  });
+
+  it("pairs when the credit names the paying account", () => {
+    const out = topUp();
+    const into = arrival({ counterpartyIban: IBAN_A });
+    expect(plan([out], [into], [A, wallet()])).toMatchObject([
+      { kind: "pair", candidateId: into.id },
+    ]);
+  });
+
+  it("pairs from the credit's side with a debit that names the top-up IBAN", () => {
+    const into = arrival({ counterpartyIban: IBAN_A });
+    const out = topUp();
+    expect(plan([into], [out], [A, wallet()])).toMatchObject([
+      { kind: "pair", sourceId: into.id, candidateId: out.id },
+    ]);
+  });
+
+  it("pairs a payout with the credit although it names the provider's payout IBAN", () => {
+    const out = tx({
+      accountId: "w",
+      amount: -10000,
+      counterpartyIban: IBAN_A,
+    });
+    const into = tx({
+      accountId: "a",
+      amount: 10000,
+      bookingDate: "2024-03-11",
+      counterpartyIban: IBAN_B,
+    });
+    expect(plan([out], [into], [A, wallet()])).toMatchObject([
+      { kind: "pair", sourceId: out.id, candidateId: into.id },
+    ]);
+  });
+
+  it("mirrors onto an account filled from transfers, naming the paying account", () => {
+    const out = topUp();
+    expect(
+      plan([out], [], [A, wallet({ fillFromTransfers: true })]),
+    ).toMatchObject([
+      {
+        kind: "mirror",
+        toAccountId: "w",
+        mirror: { accountId: "w", amount: 10000, counterpartyIban: IBAN_A },
+      },
+    ]);
+  });
+
+  it("names no account when two accounts share the top-up IBAN", () => {
+    const other = acc("x", { topUpIban: IBAN_C, fillFromTransfers: true });
+    expect(plan([topUp()], [arrival()], [A, wallet(), other])).toEqual([]);
+  });
+
+  it("lets an account's own IBAN win over another account's top-up IBAN", () => {
+    const out = tx({});
+    expect(
+      plan([out], [], [A, B, acc("w", { topUpIban: IBAN_B })]),
+    ).toMatchObject([{ kind: "mirror", toAccountId: "b" }]);
+  });
+
+  it("keeps a pair consistent when a row names the top-up IBAN", () => {
+    expect(pairIsConsistent(topUp(), A, arrival(), wallet())).toBe(true);
+    expect(
+      pairIsConsistent(
+        tx({ counterpartyIban: IBAN_B }),
+        A,
+        arrival(),
+        wallet(),
       ),
     ).toBe(false);
   });

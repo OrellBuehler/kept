@@ -2,7 +2,7 @@
   "data": {
     "categories": [
       {
-        "id": "cb9fc187-d60c-4d25-9cea-2c2b55da99aa",
+        "id": "f20ab74a-8c45-419b-88b4-7b750bdecd94",
         "name": "Donations",
         "parentId": null,
         "kind": "expense",
@@ -11,7 +11,7 @@
         "transactionCount": 3
       },
       {
-        "id": "e10dc4b7-7d3c-46b2-b721-fea02f669522",
+        "id": "93d9bb1c-e756-4c96-ad92-206c29021ea5",
         "name": "Food",
         "parentId": null,
         "kind": "expense",
@@ -20,25 +20,25 @@
         "transactionCount": 0
       },
       {
-        "id": "9174b884-c0da-45f6-87bc-50da27bbf5f6",
+        "id": "c3b83b2f-eb1c-4b07-aefd-c80c1b024587",
         "name": "Groceries",
-        "parentId": "e10dc4b7-7d3c-46b2-b721-fea02f669522",
+        "parentId": "93d9bb1c-e756-4c96-ad92-206c29021ea5",
         "kind": "expense",
         "color": "#ef6c00",
         "icon": "shopping-cart",
         "transactionCount": 9
       },
       {
-        "id": "8c392ee8-0383-4709-8a7a-51d718af5152",
+        "id": "3d201809-98ab-4e6a-9300-03adcf7de760",
         "name": "Restaurants",
-        "parentId": "e10dc4b7-7d3c-46b2-b721-fea02f669522",
+        "parentId": "93d9bb1c-e756-4c96-ad92-206c29021ea5",
         "kind": "expense",
         "color": null,
         "icon": null,
         "transactionCount": 5
       },
       {
-        "id": "c9570d74-255f-499f-a0fc-ef30491b444e",
+        "id": "128d7d76-bb41-40e8-8218-c6a9b4ecb8db",
         "name": "Gifts received",
         "parentId": null,
         "kind": "income",
@@ -47,7 +47,7 @@
         "transactionCount": 1
       },
       {
-        "id": "5bed65b4-5475-4939-84be-153e83f03933",
+        "id": "5c3f07fe-c86e-4bd8-bbc4-134ab4de8cdc",
         "name": "Health",
         "parentId": null,
         "kind": "expense",
@@ -56,16 +56,16 @@
         "transactionCount": 1
       },
       {
-        "id": "a9c6683b-7ff6-4f28-a7d0-effbde9e8c3e",
+        "id": "8d465930-64cf-45f8-b1f6-6ae41bd7f372",
         "name": "Pharmacy",
-        "parentId": "5bed65b4-5475-4939-84be-153e83f03933",
+        "parentId": "5c3f07fe-c86e-4bd8-bbc4-134ab4de8cdc",
         "kind": "expense",
         "color": "#ad1457",
         "icon": "heart-pulse",
         "transactionCount": 1
       },
       {
-        "id": "1c49ae63-806d-4f8e-9a3d-d1c1b020697e",
+        "id": "ce731cb5-c8b7-4c25-96d9-eb0c292c37c5",
         "name": "Housing",
         "parentId": null,
         "kind": "expense",
@@ -74,7 +74,7 @@
         "transactionCount": 4
       },
       {
-        "id": "4f24e690-2f9a-44fd-a428-1d54559c326c",
+        "id": "b34c8640-c1b2-4076-be20-f9e3baa03d46",
         "name": "Insurance",
         "parentId": null,
         "kind": "expense",
@@ -83,7 +83,7 @@
         "transactionCount": 2
       },
       {
-        "id": "da70ed36-7040-42e7-a869-f35bd04a17e2",
+        "id": "b5a6e353-7a7b-418d-ac9c-44e7f5de47fc",
         "name": "Salary",
         "parentId": null,
         "kind": "income",
@@ -92,7 +92,7 @@
         "transactionCount": 11
       },
       {
-        "id": "a04b9011-7055-4c72-b93b-5f31c54c22b8",
+        "id": "1b0f012e-3823-4639-8b1b-332b6e82add3",
         "name": "Subscriptions",
         "parentId": null,
         "kind": "expense",
@@ -101,7 +101,7 @@
         "transactionCount": 3
       },
       {
-        "id": "450ebd85-d967-4044-8971-04846f4a8d0f",
+        "id": "f59c55bb-b6e2-43c8-a9e2-b7d1ecef6776",
         "name": "Transport",
         "parentId": null,
         "kind": "expense",
@@ -112,8 +112,8 @@
     ],
     "rules": [
       {
-        "id": "e785e927-c049-4de9-bb86-dcb0f6acd188",
-        "categoryId": "9174b884-c0da-45f6-87bc-50da27bbf5f6",
+        "id": "ef65a00d-f52b-45dc-b1ae-2408961a9a39",
+        "categoryId": "c3b83b2f-eb1c-4b07-aefd-c80c1b024587",
         "priority": 10,
         "counterpartyContains": "Grocer",
         "descriptionContains": null,
@@ -122,8 +122,8 @@
         "categoryName": "Groceries"
       },
       {
-        "id": "4ec83b6c-58e5-4391-9373-69f4bbe26aba",
-        "categoryId": "8c392ee8-0383-4709-8a7a-51d718af5152",
+        "id": "25e2b81a-f5d6-471c-b989-2b0cab47ba15",
+        "categoryId": "3d201809-98ab-4e6a-9300-03adcf7de760",
         "priority": 20,
         "counterpartyContains": "Bistro",
         "descriptionContains": null,
@@ -132,8 +132,8 @@
         "categoryName": "Restaurants"
       },
       {
-        "id": "9acc851f-7fbd-46c8-a3ee-a5bb82e4e754",
-        "categoryId": "1c49ae63-806d-4f8e-9a3d-d1c1b020697e",
+        "id": "92f54f97-2118-4b86-84cb-053b001baaf1",
+        "categoryId": "ce731cb5-c8b7-4c25-96d9-eb0c292c37c5",
         "priority": 30,
         "counterpartyContains": null,
         "descriptionContains": "Rent",
@@ -142,8 +142,8 @@
         "categoryName": "Housing"
       },
       {
-        "id": "406c69e3-5f56-476b-b338-313650e02513",
-        "categoryId": "a04b9011-7055-4c72-b93b-5f31c54c22b8",
+        "id": "19a6d9ac-63b1-45cf-b45b-391a56e5e868",
+        "categoryId": "1b0f012e-3823-4639-8b1b-332b6e82add3",
         "priority": 40,
         "counterpartyContains": "Streaming",
         "descriptionContains": null,
@@ -152,8 +152,8 @@
         "categoryName": "Subscriptions"
       },
       {
-        "id": "79ea0d19-195f-4653-8ccd-25e7a171b49e",
-        "categoryId": "4f24e690-2f9a-44fd-a428-1d54559c326c",
+        "id": "de4fda93-9abb-42e6-a083-f56053e27a0e",
+        "categoryId": "b34c8640-c1b2-4076-be20-f9e3baa03d46",
         "priority": 50,
         "counterpartyContains": "Insurance",
         "descriptionContains": null,
@@ -162,8 +162,8 @@
         "categoryName": "Insurance"
       },
       {
-        "id": "1611abc3-8922-4653-8dc5-2d91adfe7008",
-        "categoryId": "cb9fc187-d60c-4d25-9cea-2c2b55da99aa",
+        "id": "a0f3ead6-b2c5-44c1-a8d9-f293f7f2e609",
+        "categoryId": "f20ab74a-8c45-419b-88b4-7b750bdecd94",
         "priority": 60,
         "counterpartyContains": "Charity",
         "descriptionContains": null,
@@ -172,8 +172,8 @@
         "categoryName": "Donations"
       },
       {
-        "id": "1fba3ca5-715c-4092-84ef-a61fe87df693",
-        "categoryId": "da70ed36-7040-42e7-a869-f35bd04a17e2",
+        "id": "1e717101-1483-41f4-ba1c-be045e547016",
+        "categoryId": "b5a6e353-7a7b-418d-ac9c-44e7f5de47fc",
         "priority": 500,
         "counterpartyContains": null,
         "descriptionContains": null,

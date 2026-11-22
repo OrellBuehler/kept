@@ -267,6 +267,13 @@
       "when": 1795358871147,
       "tag": "0037_free_firebrand",
       "breakpoints": true
+    },
+    {
+      "idx": 38,
+      "version": "6",
+      "when": 1795372833929,
+      "tag": "0038_condemned_sandman",
+      "breakpoints": true
     }
   ]
 }
