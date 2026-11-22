@@ -12,6 +12,7 @@ import {
   listContributions,
   manualContributionSchema,
   pillar3aOverview,
+  portfolioPerformance,
   setYearSetting,
   updateDetectedContribution,
   updateManualContribution,
@@ -29,6 +30,7 @@ export const load: PageServerLoad = async ({ locals }) => {
     today,
     overview: await pillar3aOverview(user.id, today),
     contributions: await listContributions(user.id),
+    performance: await portfolioPerformance(user.id, today),
     accounts: (await listAccounts(user.id, today))
       .filter((a) => a.type === "pillar_3a")
       .map((a) => ({ id: a.id, name: a.name, archived: a.archived })),

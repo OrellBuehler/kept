@@ -4,7 +4,7 @@ import {
   PILLAR_3A_DEDUCTIONS,
   PORTFOLIO_CLOSE_REASONS,
 } from "$lib/pillar-3a-types";
-import { PILLAR_3A_CURRENCY } from "$lib/pillar-3a";
+import { PILLAR_3A_CURRENCY, returnBps } from "$lib/pillar-3a";
 import { isValidQrr, isValidScor, normalizeReference } from "$lib/references";
 import type { ParsedForm } from "$lib/server/forms";
 import {
@@ -16,7 +16,7 @@ import {
   optionalText,
   parseMoneyInput,
 } from "$lib/server/ledger/schemas";
-import type { Minor } from "$lib/money";
+import { minor, parseAmount, type Minor } from "$lib/money";
 
 const referenceSchema = z
   .string()
@@ -61,6 +61,10 @@ export type PortfolioCloseInput = z.output<typeof portfolioCloseSchema>;
 export interface PortfolioValueEntry {
   portfolioId: string;
   amount: Minor;
+  /** Total gain as the provider reports it; may be negative. Null clears it, undefined keeps what is stored. */
+  gain?: Minor | null;
+  /** Total return as the provider reports it, in hundredths of a percent. Null clears it, undefined keeps what is stored. */
+  gainBps?: number | null;
 }
 
 export const portfolioValueNoteSchema = optionalText(1000, "Note");
@@ -74,10 +78,37 @@ export interface PortfolioValuesInput {
 /** Form field that carries the value of one portfolio: `value:<portfolioId>`. */
 export const PORTFOLIO_VALUE_FIELD_PREFIX = "value:";
 
+/** Optional gain of one portfolio in CHF, signed: `gain:<portfolioId>`. */
+export const PORTFOLIO_GAIN_FIELD_PREFIX = "gain:";
+/** Optional return of one portfolio in percent, signed: `gainPercent:<portfolioId>`. */
+export const PORTFOLIO_GAIN_PERCENT_FIELD_PREFIX = "gainPercent:";
+
+/** Returns beyond this are typos: 100000 % in hundredths of a percent. */
+const MAX_GAIN_BPS = 10_000_000;
+
+/** "12.34", "-3,5" or "+7 %" into hundredths of a percent. */
+function parsePercentInput(
+  raw: string,
+): { ok: true; value: number } | { ok: false; message: string } {
+  const message = "Enter a percentage with up to two decimals, e.g. 4.25.";
+  try {
+    const value = parseAmount(raw.replace(/%\s*$/, ""), 2);
+    if (Math.abs(value) > MAX_GAIN_BPS) return { ok: false, message };
+    return { ok: true, value };
+  } catch (err) {
+    if (err instanceof SyntaxError || err instanceof RangeError) {
+      return { ok: false, message };
+    }
+    throw err;
+  }
+}
+
 /**
  * Parses the "update values" form: `date`, an optional `note` and one
- * `value:<portfolioId>` amount per portfolio. Blank amounts are skipped; at
- * least one amount is required. Amounts must not be negative.
+ * `value:<portfolioId>` amount per portfolio, each with an optional
+ * `gain:<portfolioId>` and `gainPercent:<portfolioId>`. Blank amounts are
+ * skipped; at least one amount is required. Amounts must not be negative; a
+ * gain needs the value of its portfolio.
  */
 export function parsePortfolioValuesForm(
   form: FormData,
@@ -105,6 +136,65 @@ export function parsePortfolioValuesForm(
       errors[key] = ["The value must not be negative."];
     } else {
       entries.push({ portfolioId, amount: parsed.value });
+    }
+  }
+  const byId = new Map(entries.map((e) => [e.portfolioId, e]));
+  const valueErrors = new Set(
+    Object.keys(errors).filter((k) =>
+      k.startsWith(PORTFOLIO_VALUE_FIELD_PREFIX),
+    ),
+  );
+  for (const [key, value] of form.entries()) {
+    if (typeof value !== "string") continue;
+    const percent = key.startsWith(PORTFOLIO_GAIN_PERCENT_FIELD_PREFIX);
+    if (!percent && !key.startsWith(PORTFOLIO_GAIN_FIELD_PREFIX)) continue;
+    const portfolioId = key.slice(
+      (percent
+        ? PORTFOLIO_GAIN_PERCENT_FIELD_PREFIX
+        : PORTFOLIO_GAIN_FIELD_PREFIX
+      ).length,
+    );
+    if (value.trim() === "") {
+      // A blank field clears the figure; a form without the field leaves it alone.
+      const blank = byId.get(portfolioId);
+      if (blank && percent) blank.gainBps = null;
+      else if (blank) blank.gain = null;
+      continue;
+    }
+    // Figures copied from a provider's page often carry a typographic minus.
+    const raw = value.replace(/[\u2212\u2013\u2014]/g, "-");
+    const parsed = percent
+      ? parsePercentInput(raw)
+      : parseMoneyInput(raw, PILLAR_3A_CURRENCY);
+    if (!parsed.ok) {
+      errors[key] = [parsed.message];
+      continue;
+    }
+    const entry = byId.get(portfolioId);
+    if (!entry) {
+      // An invalid value already carries its own message.
+      if (!valueErrors.has(`${PORTFOLIO_VALUE_FIELD_PREFIX}${portfolioId}`)) {
+        errors[key] = ["Enter the value of this portfolio too."];
+      }
+    } else if (percent) {
+      entry.gainBps = parsed.value;
+    } else {
+      entry.gain = minor(parsed.value);
+    }
+  }
+  for (const e of entries) {
+    const key = `${PORTFOLIO_GAIN_FIELD_PREFIX}${e.portfolioId}`;
+    if (e.gain == null || e.gainBps != null || errors[key]) continue;
+    // Without the provider's percentage the return is worked out from the gain.
+    const derived = returnBps({
+      amount: e.amount,
+      gain: e.gain,
+      gainBps: null,
+    });
+    if (derived === null || Math.abs(derived) > MAX_GAIN_BPS) {
+      errors[key] = [
+        "The gain is too large for this value. Check both, or enter the return too.",
+      ];
     }
   }
   if (entries.length === 0 && Object.keys(errors).length === 0) {

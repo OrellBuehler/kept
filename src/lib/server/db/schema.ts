@@ -1374,6 +1374,10 @@ export const portfolioValues = table(
     date: text("date").notNull(),
     /** Account currency; entered by hand. */
     amount: minor("amount").notNull(),
+    /** Total gain as the provider reports it on that date; may be negative. */
+    gain: minor("gain"),
+    /** Total return as the provider reports it, in hundredths of a percent. */
+    gainBps: int("gain_bps"),
     note: text("note"),
     ...timestamps(),
   },

@@ -252,7 +252,7 @@ export const overviewTools = [
     name: "get_pillar3a",
     title: "Get pillar 3a overview",
     description:
-      "Pillar 3a (Swiss retirement savings) overview in CHF as decimal strings: per year the contribution limit, ordinary contributions, buy-ins, the gap still open and any amount over the limit; the portfolios with latest value, contributed amount and gain; and totals. Not available to a connection limited to some accounts or categories, because limits count across all accounts.",
+      "Pillar 3a (Swiss retirement savings) overview in CHF as decimal strings: per year the contribution limit, ordinary contributions, buy-ins, the gap still open and any amount over the limit; the portfolios with latest value, contributed amount and gain (value minus contributions), plus, when entered with that value, the total gain the provider reported and the total return in percent (the figure of the provider, or else that gain over the capital it grew from); and totals. Not available to a connection limited to some accounts or categories, because limits count across all accounts.",
     scopes: ["pillar3a:read"],
     annotations: { readOnlyHint: true },
     input: {},
@@ -260,6 +260,8 @@ export const overviewTools = [
       const o = await pillar3aOverview(ctx.userId, ctx.today);
       const named = holds(ctx, "accounts:read");
       const chf = (v: number) => decimal(v, "CHF");
+      // Hundredths of a percent have the two decimals of CHF.
+      const percent = (bps: number) => decimal(bps, "CHF");
       return {
         asOf: o.today,
         currency: "CHF",
@@ -285,6 +287,8 @@ export const overviewTools = [
           latestValueDate: p.latestValueDate,
           contributed: chf(p.contributed),
           gain: p.gain === null ? null : chf(p.gain),
+          reportedGain: p.reportedGain === null ? null : chf(p.reportedGain),
+          returnPercent: p.returnBps === null ? null : percent(p.returnBps),
         })),
         totals: {
           value: chf(o.totals.value),

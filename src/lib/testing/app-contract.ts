@@ -995,13 +995,23 @@ export async function seedContractData(userId: string): Promise<ContractIds> {
     pillar3a.id,
     addDays(today, -60),
     [
-      { portfolioId: portfolioA.id, amount: amount("8200.00") },
+      {
+        portfolioId: portfolioA.id,
+        amount: amount("8200.00"),
+        gain: amount("700.00"),
+        gainBps: 912,
+      },
       { portfolioId: portfolioB.id, amount: amount("3000.00") },
     ],
     "Quarterly statement",
   );
   await setValues(userId, pillar3a.id, addDays(today, -4), [
-    { portfolioId: portfolioA.id, amount: amount("8460.00") },
+    {
+      portfolioId: portfolioA.id,
+      amount: amount("8460.00"),
+      gain: amount("960.00"),
+      gainBps: 1244,
+    },
   ]);
   await closePortfolio(userId, portfolioB.id, {
     closedOn: addDays(today, -30),

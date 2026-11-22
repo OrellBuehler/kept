@@ -1,5 +1,6 @@
-import { and, desc, eq, inArray } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, lte } from "drizzle-orm";
 import type { Minor } from "$lib/money";
+import { returnBps } from "$lib/pillar-3a";
 import {
   accounts,
   first,
@@ -17,6 +18,10 @@ export interface PortfolioValueView {
   portfolioId: string;
   date: string;
   amount: Minor;
+  /** Total gain as reported by the provider on that date. */
+  gain: Minor | null;
+  /** Total return as reported by the provider, in hundredths of a percent. */
+  gainBps: number | null;
   note: string | null;
 }
 
@@ -25,12 +30,16 @@ const columns = {
   portfolioId: portfolioValues.portfolioId,
   date: portfolioValues.date,
   amount: portfolioValues.amount,
+  gain: portfolioValues.gain,
+  gainBps: portfolioValues.gainBps,
   note: portfolioValues.note,
 };
 
 /**
  * Batch entry: the value of several portfolios of one account on `date`
- * ("update everything today"). Each (portfolio, date) is upserted. Every
+ * ("update everything today"). Each (portfolio, date) is upserted; a gain
+ * or return that is null is cleared, one that is undefined keeps what the date
+ * already has. Every
  * portfolio must belong to the account, and a closed portfolio takes no value
  * on or after its closing date.
  */
@@ -101,11 +110,19 @@ export async function setValues(
             portfolioId: e.portfolioId,
             date,
             amount: e.amount,
+            gain: e.gain ?? null,
+            gainBps: e.gainBps ?? null,
             note,
           })
           .onConflictDoUpdate({
             target: [portfolioValues.portfolioId, portfolioValues.date],
-            set: { amount: e.amount, note, updatedAt: new Date() },
+            set: {
+              amount: e.amount,
+              ...(e.gain !== undefined && { gain: e.gain }),
+              ...(e.gainBps !== undefined && { gainBps: e.gainBps }),
+              note,
+              updatedAt: new Date(),
+            },
           });
       }
     },
@@ -154,4 +171,48 @@ export async function deleteValue(userId: string, id: string): Promise<void> {
     .where(and(eq(portfolioValues.userId, userId), eq(portfolioValues.id, id)))
     .returning({ id: portfolioValues.id });
   if (deleted.length === 0) throw notFound("Value");
+}
+
+export interface PortfolioPerformancePoint {
+  date: string;
+  amount: Minor;
+  gain: Minor | null;
+  /** Total return in hundredths of a percent: as reported, or derived from the gain. */
+  gainBps: number;
+}
+
+export interface PortfolioPerformance {
+  portfolioId: string;
+  /** Oldest first: the values up to `today` that carry a gain or a return. */
+  points: PortfolioPerformancePoint[];
+}
+
+/**
+ * The reported performance of the user's portfolios over time, for comparing
+ * them. Portfolios without a reported gain are left out.
+ */
+export async function portfolioPerformance(
+  userId: string,
+  today: string,
+): Promise<PortfolioPerformance[]> {
+  const byPortfolio = new Map<string, PortfolioPerformancePoint[]>();
+  for (const v of await getDB()
+    .select(columns)
+    .from(portfolioValues)
+    .where(
+      and(eq(portfolioValues.userId, userId), lte(portfolioValues.date, today)),
+    )
+    .orderBy(asc(portfolioValues.date), asc(portfolioValues.id))) {
+    const gainBps = returnBps(v);
+    if (gainBps === null) continue;
+    let points = byPortfolio.get(v.portfolioId);
+    if (!points) {
+      points = [];
+      byPortfolio.set(v.portfolioId, points);
+    }
+    points.push({ date: v.date, amount: v.amount, gain: v.gain, gainBps });
+  }
+  return [...byPortfolio]
+    .map(([portfolioId, points]) => ({ portfolioId, points }))
+    .sort((a, b) => a.portfolioId.localeCompare(b.portfolioId));
 }

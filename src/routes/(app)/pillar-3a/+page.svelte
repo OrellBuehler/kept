@@ -6,12 +6,13 @@
   import { Badge } from "$lib/components/ui/badge";
   import { Button } from "$lib/components/ui/button";
   import Amount from "$lib/components/Amount.svelte";
-  import { PILLAR_3A_CURRENCY } from "$lib/pillar-3a";
+  import { formatReturn, PILLAR_3A_CURRENCY } from "$lib/pillar-3a";
   import { usePreferences } from "$lib/preferences.svelte";
   import LockIcon from "@lucide/svelte/icons/lock";
   import PiggyBankIcon from "@lucide/svelte/icons/piggy-bank";
   import BriefcaseIcon from "@lucide/svelte/icons/briefcase-business";
   import ContributionsCard from "./ContributionsCard.svelte";
+  import PerformanceCard from "./PerformanceCard.svelte";
   import OrphanAnnotationsCard from "./OrphanAnnotationsCard.svelte";
   import YearsCard from "./YearsCard.svelte";
   import type { PageProps } from "./$types";
@@ -91,7 +92,9 @@
       <Card.Header>
         <Card.Title>Portfolios</Card.Title>
         <Card.Description>
-          Values are entered by hand on the account page.
+          Values and gains are entered by hand on the account page. A reported
+          gain is your provider's figure; otherwise the gain is the value minus
+          your contributions, as in the total above.
         </Card.Description>
       </Card.Header>
       <Card.Content>
@@ -161,10 +164,23 @@
                     <dt class="text-muted-foreground">Contributed</dt>
                     <dd><Amount value={p.contributed} {currency} /></dd>
                   </div>
-                  {#if p.gain !== null}
+                  {#if p.reportedGain !== null}
+                    <div class="flex justify-end gap-2">
+                      <dt class="text-muted-foreground">Reported gain</dt>
+                      <dd><Amount value={p.reportedGain} {currency} flow /></dd>
+                    </div>
+                  {:else if p.gain !== null}
                     <div class="flex justify-end gap-2">
                       <dt class="text-muted-foreground">Gain</dt>
                       <dd><Amount value={p.gain} {currency} flow /></dd>
+                    </div>
+                  {/if}
+                  {#if p.returnBps !== null}
+                    <div class="flex justify-end gap-2">
+                      <dt class="text-muted-foreground">Return</dt>
+                      <dd class="tabular-nums">
+                        {formatReturn(p.returnBps, prefs.locale)}
+                      </dd>
                     </div>
                   {/if}
                 </dl>
@@ -174,6 +190,11 @@
         {/if}
       </Card.Content>
     </Card.Root>
+
+    <PerformanceCard
+      performance={data.performance}
+      portfolios={overview.portfolios}
+    />
 
     <ContributionsCard
       contributions={data.contributions}
