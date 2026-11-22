@@ -49,7 +49,10 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.autofill.ContentType
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.contentType
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
@@ -145,11 +148,16 @@ fun FormTextField(
     keyboardType: KeyboardType = KeyboardType.Text,
     capitalization: KeyboardCapitalization = KeyboardCapitalization.None,
     autoCorrect: Boolean = false,
+    /** What a password manager may fill in here. */
+    autofill: ContentType? = null,
 ) {
     OutlinedTextField(
         value = value,
         onValueChange = onValueChange,
-        modifier = modifier.fillMaxWidth(),
+        modifier =
+            modifier
+                .fillMaxWidth()
+                .then(if (autofill == null) Modifier else Modifier.semantics { contentType = autofill }),
         label = { Text(label, maxLines = 1, overflow = TextOverflow.Ellipsis) },
         placeholder = placeholder?.let { { Text(it) } },
         isError = error != null,

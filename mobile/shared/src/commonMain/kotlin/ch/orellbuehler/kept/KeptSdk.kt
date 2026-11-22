@@ -143,6 +143,64 @@ class KeptSdk(
         pendingToken = null
     }
 
+    /**
+     * Starts a sign-in on the server's own login page, where passkeys and password managers
+     * work. Returns the address to open in a browser; when the browser comes back to
+     * [BROWSER_CALLBACK_SCHEME], call [finishBrowserSignIn].
+     */
+    @Throws(KeptException::class, CancellationException::class)
+    suspend fun startBrowserSignIn(): String {
+        val server = serverUrl ?: throw KeptException(KeptErrorKind.NOT_KEPT, "Set the server address first.")
+        val json =
+            try {
+                unauthenticated("auth/browser", JsonObject(emptyMap()))
+            } catch (e: KeptException) {
+                // A server from before this existed answers its "sign in first" for the unknown path.
+                if (e.status != 401 && e.status != 404) throw e
+                throw KeptException(
+                    KeptErrorKind.REJECTED,
+                    "This server cannot sign the app in through the browser yet. Update Kept on the server, or use your password.",
+                    e.status,
+                )
+            }
+        val request = json.string("request") ?: throw unexpected()
+        val secret = json.string("secret") ?: throw unexpected()
+        val path = json.string("path")?.takeIf { it.startsWith("/") && !it.startsWith("//") } ?: throw unexpected()
+        secure.set(KEY_BROWSER, "$request\n$secret")
+        return server + path
+    }
+
+    /** True between [startBrowserSignIn] and its end: a callback that arrives otherwise is not ours. */
+    val browserSignInPending: Boolean get() = secure.get(KEY_BROWSER) != null
+
+    /** After the browser came back: trades what [startBrowserSignIn] kept for the session. */
+    @Throws(KeptException::class, CancellationException::class)
+    suspend fun finishBrowserSignIn(): SessionUser {
+        val parts = secure.get(KEY_BROWSER)?.split('\n')
+        if (parts == null || parts.size != 2) {
+            secure.set(KEY_BROWSER, null)
+            throw KeptException(KeptErrorKind.REJECTED, "Your sign-in expired. Start again.", 410)
+        }
+        val body =
+            buildJsonObject {
+                put("request", parts[0])
+                put("secret", parts[1])
+            }
+        try {
+            val user = signedIn(unauthenticated("auth/browser/token", body))
+            secure.set(KEY_BROWSER, null)
+            return user
+        } catch (e: KeptException) {
+            if (e.status == 410) secure.set(KEY_BROWSER, null)
+            throw e
+        }
+    }
+
+    /** The browser was closed without signing in. */
+    fun cancelBrowserSignIn() {
+        secure.set(KEY_BROWSER, null)
+    }
+
     /** Ends the session on the server (best effort) and on the device. */
     suspend fun logout() {
         val server = serverUrl
@@ -308,6 +366,7 @@ class KeptSdk(
 
     private fun clearSession() {
         pendingToken = null
+        secure.set(KEY_BROWSER, null)
         secure.set(KEY_TOKEN, null)
         prefs.set(KEY_USER, null)
     }
@@ -330,10 +389,14 @@ class KeptSdk(
             throw unexpected()
         }
 
-    private companion object {
-        const val KEY_SERVER = "server.url"
-        const val KEY_USER = "session.user"
-        const val KEY_TOKEN = "session.token"
+    companion object {
+        /** The scheme of the address the server's sign-in page sends the browser to when it is done. */
+        const val BROWSER_CALLBACK_SCHEME = "ch.orellbuehler.kept"
+
+        private const val KEY_SERVER = "server.url"
+        private const val KEY_USER = "session.user"
+        private const val KEY_TOKEN = "session.token"
+        private const val KEY_BROWSER = "signin.browser"
     }
 }
 

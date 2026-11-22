@@ -1,10 +1,17 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { minor } from "$lib/money";
 import {
+  appSignInLimiter,
   loginRateLimiter,
   passwordChangeLimiter,
   secondFactorLimiter,
 } from "$lib/server/auth/rate-limit";
+import {
+  APP_SIGN_IN_TTL_MS,
+  approveAppSignIn,
+  createAppSignIn,
+  takeAppSignIn,
+} from "$lib/server/auth/challenges";
 import { validateSessionToken } from "$lib/server/auth/sessions";
 import { listBudgets } from "$lib/server/categories/budgets";
 import { createCategory } from "$lib/server/categories/categories";
@@ -15,7 +22,13 @@ import { seedAccount } from "$lib/testing/ledger";
 import { useTestStore } from "$lib/testing/store";
 import { seedBill } from "$lib/testing/bills";
 import { useTestDB } from "$lib/testing/db";
-import { createTestEvent } from "$lib/testing/event";
+import { createTestEvent, outcome } from "$lib/testing/event";
+import {
+  actions as approveActions,
+  load as approveLoad,
+} from "../../../login/app/+page.server";
+import { POST as browserStart } from "./auth/browser/+server";
+import { POST as browserToken } from "./auth/browser/token/+server";
 import { POST as login } from "./auth/login/+server";
 import { POST as logout } from "./auth/logout/+server";
 import { POST as verify } from "./auth/verify/+server";
@@ -193,6 +206,113 @@ describe("app API: sign-in", () => {
       preferences: { defaultCurrency: "CHF" },
     });
     expect(res.body.today).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+  });
+});
+
+describe("app API: sign-in through the browser", () => {
+  useTestDB();
+  afterEach(() => appSignInLimiter.reset());
+
+  const start = async () => {
+    const res = await call(browserStart as Handler, { method: "POST" });
+    expect(res.status).toBe(200);
+    return res.body as { request: string; secret: string; path: string };
+  };
+  const approve = (user: User, request: string) =>
+    outcome(() =>
+      approveActions.default(
+        createTestEvent({ user, form: { request } }) as never,
+      ),
+    );
+  const trade = (request: string, secret: string) =>
+    call(browserToken as Handler, { json: { request, secret } });
+
+  it("hands the app a session once the user approved the request on the web", async () => {
+    const user = await createTestUser({ username: "alice" });
+    const { request, secret, path } = await start();
+    expect(path).toBe(`/login/app?request=${request}`);
+
+    const early = await trade(request, secret);
+    expect(early.status).toBe(409);
+
+    const page = (await approveLoad(
+      createTestEvent({
+        user,
+        url: `http://localhost${path}`,
+      }) as never,
+    )) as { open: boolean; username: string };
+    expect(page).toMatchObject({ open: true, username: "alice" });
+
+    const approved = await approve(user, request);
+    expect(approved).toEqual({
+      type: "return",
+      value: { callback: `ch.orellbuehler.kept://signin?request=${request}` },
+    });
+
+    const ok = await trade(request, secret);
+    expect(ok.status).toBe(200);
+    expect(ok.body).toMatchObject({ status: "ok", user: { id: user.id } });
+    expect((await validateSessionToken(ok.body.token as string))?.user.id).toBe(
+      user.id,
+    );
+
+    expect((await trade(request, secret)).status).toBe(410);
+  });
+
+  it("gives the session only to the holder of the secret", async () => {
+    const user = await createTestUser();
+    const mine = await start();
+    const other = await start();
+    await approve(user, mine.request);
+
+    expect((await trade(mine.request, other.secret)).status).toBe(410);
+    expect((await trade(mine.request, mine.request)).status).toBe(410);
+    expect((await trade(mine.request, mine.secret)).status).toBe(200);
+  });
+
+  it("approves a request once, and never an unknown or expired one", async () => {
+    const alice = await createTestUser({ username: "alice" });
+    const bob = await createTestUser({ username: "bob" });
+    const { request, secret } = await start();
+
+    expect((await approve(alice, "nope")).type).toBe("fail");
+    expect((await approve(alice, request)).type).toBe("return");
+    expect((await approve(bob, request)).type).toBe("fail");
+    expect((await trade(request, secret)).body).toMatchObject({
+      user: { id: alice.id },
+    });
+
+    const late = await createAppSignIn(Date.now() - APP_SIGN_IN_TTL_MS - 1);
+    expect((await approve(alice, late.request)).type).toBe("fail");
+    expect((await trade(late.request, late.secret)).status).toBe(410);
+    const page = (await approveLoad(
+      createTestEvent({
+        user: alice,
+        url: `http://localhost/login/app?request=${late.request}`,
+      }) as never,
+    )) as { open: boolean };
+    expect(page.open).toBe(false);
+  });
+
+  it("refuses a request that was approved but ran out before the app came back", async () => {
+    const user = await createTestUser();
+    const started = await createAppSignIn();
+    expect(await approveAppSignIn(started.request, user.id)).toBe(true);
+    expect(
+      await takeAppSignIn(
+        started.request,
+        started.secret,
+        started.expiresAt.getTime(),
+      ),
+    ).toBeNull();
+    expect((await trade(started.request, started.secret)).status).toBe(410);
+  });
+
+  it("limits how often an address can start one", async () => {
+    for (let i = 0; i < 60; i++) await start();
+    const res = await callRaw(browserStart as Handler, { method: "POST" });
+    expect(res.status).toBe(429);
+    expect(Number(res.headers.get("retry-after"))).toBeGreaterThan(0);
   });
 });
 

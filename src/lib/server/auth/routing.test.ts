@@ -176,11 +176,13 @@ describe("isAppApiPath", () => {
 });
 
 describe("isPublicAppApiPath", () => {
-  it("is true for discovery and the two sign-in steps only", () => {
+  it("is true for discovery and the sign-in steps only", () => {
     for (const p of [
       "/api/app/v1/server",
       "/api/app/v1/auth/login",
       "/api/app/v1/auth/verify",
+      "/api/app/v1/auth/browser",
+      "/api/app/v1/auth/browser/token",
       "/api/app/v1/%73erver",
       "/api/%61pp/v1/%73erver",
     ]) {
@@ -194,6 +196,8 @@ describe("isPublicAppApiPath", () => {
       "/api/app/v1/",
       "/api/app/v1/session",
       "/api/app/v1/auth/logout",
+      "/api/app/v1/auth/browser/",
+      "/api/app/v1/auth/browser/other",
       "/api/app/v1/server/",
       "/api/app/v1//server",
       "/api/app/v1/Server",

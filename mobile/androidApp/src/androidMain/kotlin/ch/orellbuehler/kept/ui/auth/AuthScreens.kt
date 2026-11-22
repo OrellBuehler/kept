@@ -1,5 +1,8 @@
 package ch.orellbuehler.kept.ui.auth
 
+import android.content.ActivityNotFoundException
+import android.net.Uri
+import androidx.browser.customtabs.CustomTabsIntent
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
@@ -15,16 +18,20 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.autofill.ContentType
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.input.KeyboardType
@@ -84,6 +91,19 @@ class AuthViewModel(
     fun cancelCode() {
         sdk.cancelSecondFactor()
         mutableState.value = AuthUiState()
+    }
+
+    /** Asks the server for a sign-in on its own page and hands its address to [open] (a browser). */
+    fun browser(open: (String) -> Unit) = run { open(sdk.startBrowserSignIn()) }
+
+    /** The browser came back: fetch the session, unless that return was not for a sign-in of ours. */
+    fun finishBrowser() {
+        if (sdk.browserSignInPending) run { sdk.finishBrowserSignIn() }
+    }
+
+    fun browserMissing(text: String) {
+        sdk.cancelBrowserSignIn()
+        mutableState.update { it.copy(error = text) }
     }
 
     fun changeServer() = sdk.disconnect()
@@ -164,6 +184,16 @@ private fun SubmitButton(
 }
 
 @Composable
+private fun BrowserButton(
+    busy: Boolean,
+    onClick: () -> Unit,
+) {
+    OutlinedButton(onClick = onClick, enabled = !busy, modifier = Modifier.fillMaxWidth().height(48.dp)) {
+        Text(stringResource(R.string.login_browser), maxLines = 1)
+    }
+}
+
+@Composable
 private fun ErrorText(text: String?) {
     if (!text.isNullOrBlank()) Text(text, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodyMedium)
 }
@@ -192,9 +222,22 @@ fun ServerScreen() {
 fun LoginScreen(
     serverUrl: String,
     expired: Boolean,
+    browserReturns: Int,
 ) {
     val vm = keptViewModel { AuthViewModel(it) }
     val state by vm.state.collectAsStateWithLifecycle()
+    val context = LocalContext.current
+    val browserMissing = stringResource(R.string.login_browser_missing)
+    val openBrowser = {
+        vm.browser { url ->
+            try {
+                CustomTabsIntent.Builder().build().launchUrl(context, Uri.parse(url))
+            } catch (e: ActivityNotFoundException) {
+                vm.browserMissing(browserMissing)
+            }
+        }
+    }
+    LaunchedEffect(browserReturns) { if (browserReturns > 0) vm.finishBrowser() }
     var username by rememberSaveable { mutableStateOf("") }
     var password by rememberSaveable { mutableStateOf("") }
     var code by rememberSaveable { mutableStateOf("") }
@@ -211,9 +254,11 @@ fun LoginScreen(
                 value = code,
                 onValueChange = { code = it },
                 keyboardType = if (totp) KeyboardType.Number else KeyboardType.Ascii,
+                autofill = ContentType.SmsOtpCode,
             )
             ErrorText(state.error)
             SubmitButton(stringResource(R.string.code_submit), state.busy, code.isNotBlank()) { vm.verify(code) }
+            if (!totp) BrowserButton(state.busy, openBrowser)
             TextButton(
                 onClick = {
                     code = ""
@@ -240,17 +285,27 @@ fun LoginScreen(
             value = username,
             onValueChange = { username = it },
             keyboardType = KeyboardType.Ascii,
+            autofill = ContentType.Username,
         )
         FormTextField(
             label = stringResource(R.string.login_password),
             value = password,
             onValueChange = { password = it },
             password = true,
+            autofill = ContentType.Password,
         )
         ErrorText(state.error)
         SubmitButton(stringResource(R.string.login_submit), state.busy, username.isNotBlank() && password.isNotEmpty()) {
             vm.login(username, password)
         }
+        BrowserButton(state.busy, openBrowser)
+        Text(
+            stringResource(R.string.login_browser_text),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            textAlign = TextAlign.Center,
+            modifier = Modifier.fillMaxWidth(),
+        )
         TextButton(onClick = vm::changeServer, modifier = Modifier.fillMaxWidth()) {
             Text(stringResource(R.string.login_change_server))
         }

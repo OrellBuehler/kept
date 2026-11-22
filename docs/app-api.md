@@ -6,8 +6,8 @@ token-authenticated [external API](external-api.md), which is small, scoped and 
 
 ## Authentication
 
-An app signs in with the user's password (and second factor) and gets a session token, which it
-sends as a bearer token:
+An app signs in with the user's password (and second factor), or through the browser, and gets a
+session token, which it sends as a bearer token:
 
 ```bash
 export KEPT=https://kept.example.org
@@ -29,20 +29,35 @@ curl -sS -H "Authorization: Bearer $TOKEN" "$KEPT/api/app/v1/session"
   matches no session (ended, expired or unknown) is just `401`, however often it is sent.
 - Responses carry `Cache-Control: no-store`, and errors are always `{ "message": "…" }`.
 
-| Endpoint             | Auth    | Purpose                                                                                                                                |
-| -------------------- | ------- | -------------------------------------------------------------------------------------------------------------------------------------- |
-| `GET /server`        | none    | `{ app: "kept", version, apiLevel, setupRequired }`: lets an app check the address before asking for a password                        |
-| `POST /auth/login`   | none    | `{ username, password }` → `{ status: "ok", token, expiresAt, user }` or `{ status: "second_factor", pendingToken, expiresAt, totp }`  |
-| `POST /auth/verify`  | none    | `{ pendingToken, code }` (authenticator or recovery code) → `{ status: "ok", token, expiresAt, user }`; `410` when the sign-in expired |
-| `POST /auth/logout`  | session | Ends the session the request was made with                                                                                             |
-| `GET /session`       | session | `{ user, today, overdueBills, preferences, twoFactor, sessionExpiresAt }`                                                              |
-| `GET /reminders`     | session | What a device should notify about, see below                                                                                           |
-| `GET /pages/<page>`  | session | A page's data                                                                                                                          |
-| `POST /pages/<page>` | session | A page's form action, named by `?_action=`                                                                                             |
-| `GET /endpoints/…`   | session | Files the web serves, and its JSON previews (`POST` for the ones that take a body)                                                     |
+| Endpoint                   | Auth    | Purpose                                                                                                                                |
+| -------------------------- | ------- | -------------------------------------------------------------------------------------------------------------------------------------- |
+| `GET /server`              | none    | `{ app: "kept", version, apiLevel, setupRequired }`: lets an app check the address before asking for a password                        |
+| `POST /auth/login`         | none    | `{ username, password }` → `{ status: "ok", token, expiresAt, user }` or `{ status: "second_factor", pendingToken, expiresAt, totp }`  |
+| `POST /auth/verify`        | none    | `{ pendingToken, code }` (authenticator or recovery code) → `{ status: "ok", token, expiresAt, user }`; `410` when the sign-in expired |
+| `POST /auth/browser`       | none    | Starts a sign-in through the browser → `{ request, secret, path, expiresAt }`, see below                                               |
+| `POST /auth/browser/token` | none    | `{ request, secret }` → `{ status: "ok", token, expiresAt, user }`; `409` until the user approved, `410` when it expired or was used   |
+| `POST /auth/logout`        | session | Ends the session the request was made with                                                                                             |
+| `GET /session`             | session | `{ user, today, overdueBills, preferences, twoFactor, sessionExpiresAt }`                                                              |
+| `GET /reminders`           | session | What a device should notify about, see below                                                                                           |
+| `GET /pages/<page>`        | session | A page's data                                                                                                                          |
+| `POST /pages/<page>`       | session | A page's form action, named by `?_action=`                                                                                             |
+| `GET /endpoints/…`         | session | Files the web serves, and its JSON previews (`POST` for the ones that take a body)                                                     |
 
-Passkeys cannot be used to sign in to the app; an account that has only passkeys signs in with a
-recovery code (`totp` is `false` then).
+**Sign-in through the browser.** The app's own form takes a password and a code. For everything
+else the web offers (passkeys, a password manager that fills in by web address) the app lets the
+server's login page do the work:
+
+1. `POST /auth/browser` answers a public `request` id, a `secret` that stays in the app, and the
+   `path` to open (`/login/app?request=…`). The request lives for ten minutes.
+2. The app opens that path on the server in a browser (`ASWebAuthenticationSession`, a Custom Tab).
+   The user signs in as on the web and confirms that the app may sign in as them.
+3. The page sends the browser to `ch.orellbuehler.kept://signin?request=…`, which brings the app
+   back. That address says only "done".
+4. `POST /auth/browser/token` with `request` and `secret` answers the session, once. The session
+   is a new one of its own, independent of the one in the browser.
+
+Another app that catches the return address gets nothing: it has no `secret`. With the password
+form, an account that has only passkeys signs in with a recovery code (`totp` is `false` then).
 
 ## Pages
 

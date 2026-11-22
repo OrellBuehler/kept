@@ -25,6 +25,11 @@ class AppViewModel(
     /** A bill to open as soon as the main screen is up (from a reminder). */
     val pendingBill: StateFlow<String?> = mutablePendingBill.asStateFlow()
 
+    private val mutableBrowserReturns = MutableStateFlow(0)
+
+    /** Counts the times the browser handed a sign-in back to the app; the login screen finishes it. */
+    val browserReturns: StateFlow<Int> = mutableBrowserReturns.asStateFlow()
+
     init {
         viewModelScope.launch {
             sdk.state.collect { state ->
@@ -47,6 +52,10 @@ class AppViewModel(
 
     fun openBill(id: String) {
         mutablePendingBill.value = id
+    }
+
+    fun browserReturned() {
+        mutableBrowserReturns.value += 1
     }
 
     fun billOpened() {

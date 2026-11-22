@@ -346,13 +346,22 @@ struct BillSuggestionRow: View {
             if showBill { billSide }
             transactionSide
             HStack(spacing: 12) {
+                // Not a Label: inside a list row its icon gets the row's icon column
+                // (a wide gap before the title) and the row's tint, which is the
+                // prominent button's own background.
                 Button(action: onConfirm) {
-                    Label("Confirm", systemImage: "checkmark")
+                    HStack(spacing: 4) {
+                        Image(systemName: "checkmark")
+                        Text("Confirm")
+                    }
                 }
                 .buttonStyle(.borderedProminent)
                 .disabled(busy)
                 Button(action: onDismiss) {
-                    Label("Dismiss", systemImage: "xmark")
+                    HStack(spacing: 4) {
+                        Image(systemName: "xmark")
+                        Text("Dismiss")
+                    }
                 }
                 .buttonStyle(.bordered)
                 .disabled(busy)

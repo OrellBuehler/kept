@@ -1,5 +1,5 @@
 import type { Cookies } from "@sveltejs/kit";
-import { and, eq, gte, lt, sql } from "drizzle-orm";
+import { and, eq, gt, gte, isNotNull, isNull, lt, sql } from "drizzle-orm";
 import {
   authChallenges,
   first,
@@ -15,7 +15,10 @@ export const PASSKEY_CHALLENGE_TTL_MS = 5 * 60 * 1000;
 /** Wrong second-factor attempts before the password has to be entered again. */
 export const MAX_PENDING_ATTEMPTS = 5;
 
-type WebauthnKind = Exclude<AuthChallengeKind, "login">;
+/** An app's sign-in through the browser: time to sign in on the web and return. */
+export const APP_SIGN_IN_TTL_MS = 10 * 60 * 1000;
+
+type WebauthnKind = Exclude<AuthChallengeKind, "login" | "app_signin">;
 
 export interface PendingLogin {
   id: string;
@@ -212,6 +215,118 @@ export async function takeWebauthnChallenge(
   if (row.expiresAt.getTime() <= now) return null;
   if (row.userId !== userId) return null;
   return row.challenge;
+}
+
+export interface AppSignIn {
+  /** Public: travels through the browser and names the request on the approval page. */
+  request: string;
+  /** Stays in the app: only its holder can turn the approved request into a session. */
+  secret: string;
+  expiresAt: Date;
+}
+
+/**
+ * Starts an app's sign-in through the browser. The row is keyed by the hash of
+ * `request` and holds the hash of `secret`; it belongs to nobody until a
+ * signed-in user approves it.
+ */
+export async function createAppSignIn(
+  now: number = Date.now(),
+): Promise<AppSignIn> {
+  await purgeExpiredChallenges(now);
+  const request = newToken();
+  const secret = newToken();
+  const expiresAt = new Date(now + APP_SIGN_IN_TTL_MS);
+  await getDB()
+    .insert(authChallenges)
+    .values({
+      id: hashToken(request),
+      userId: null,
+      kind: "app_signin",
+      challenge: hashToken(secret),
+      expiresAt,
+    });
+  return { request, secret, expiresAt };
+}
+
+/** True while `request` names a sign-in nobody has approved yet. */
+export async function isOpenAppSignIn(
+  request: string | null | undefined,
+  now: number = Date.now(),
+): Promise<boolean> {
+  if (!request) return false;
+  const row = await first(
+    getDB()
+      .select({ id: authChallenges.id })
+      .from(authChallenges)
+      .where(
+        and(
+          eq(authChallenges.id, hashToken(request)),
+          eq(authChallenges.kind, "app_signin"),
+          isNull(authChallenges.userId),
+          gt(authChallenges.expiresAt, new Date(now)),
+        ),
+      )
+      .limit(1),
+  );
+  return row !== undefined;
+}
+
+/** Hands the request to `userId`. True for the one caller that finds it open. */
+export async function approveAppSignIn(
+  request: string,
+  userId: string,
+  now: number = Date.now(),
+): Promise<boolean> {
+  const rows = await getDB()
+    .update(authChallenges)
+    .set({ userId })
+    .where(
+      and(
+        eq(authChallenges.id, hashToken(request)),
+        eq(authChallenges.kind, "app_signin"),
+        isNull(authChallenges.userId),
+        gt(authChallenges.expiresAt, new Date(now)),
+      ),
+    )
+    .returning({ id: authChallenges.id });
+  return rows.length === 1;
+}
+
+/**
+ * Consumes an approved request for the holder of its secret and answers whose
+ * it is. "pending" while nobody has approved it (the row stays), null when it
+ * is unknown, expired, already used or the secret is wrong.
+ */
+export async function takeAppSignIn(
+  request: string,
+  secret: string,
+  now: number = Date.now(),
+): Promise<{ userId: string } | "pending" | null> {
+  const db = getDB();
+  const mine = and(
+    eq(authChallenges.id, hashToken(request)),
+    eq(authChallenges.kind, "app_signin"),
+    eq(authChallenges.challenge, hashToken(secret)),
+  );
+  const taken = await first(
+    db
+      .delete(authChallenges)
+      .where(and(mine, isNotNull(authChallenges.userId)))
+      .returning(),
+  );
+  if (taken) {
+    if (!taken.userId || taken.expiresAt.getTime() <= now) return null;
+    return { userId: taken.userId };
+  }
+  const open = await first(
+    db
+      .select({ expiresAt: authChallenges.expiresAt })
+      .from(authChallenges)
+      .where(mine)
+      .limit(1),
+  );
+  return open && open.expiresAt.getTime() > now ? "pending" : null;
 }
 
 export function setPendingCookie(

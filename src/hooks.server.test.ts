@@ -424,7 +424,13 @@ describe("handle: app API", () => {
 
   it("lets server discovery and the sign-in steps through without a session", async () => {
     await createTestUser();
-    for (const p of ["/server", "/auth/login", "/auth/verify"]) {
+    for (const p of [
+      "/server",
+      "/auth/login",
+      "/auth/verify",
+      "/auth/browser",
+      "/auth/browser/token",
+    ]) {
       const { res, resolved, event } = await app(`/api/app/v1${p}`);
       expect(res.status, p).toBe(200);
       expect(resolved(), p).toBe(true);

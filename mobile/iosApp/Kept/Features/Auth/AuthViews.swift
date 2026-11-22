@@ -1,3 +1,4 @@
+import AuthenticationServices
 import Observation
 import SwiftUI
 
@@ -45,6 +46,22 @@ final class AuthModel {
         client.cancelSecondFactor()
         codeTotp = nil
         error = nil
+    }
+
+    /// Asks the server for a sign-in on its own page; nil (with `error` set) when it cannot.
+    func startBrowser() async -> URL? {
+        var url: URL?
+        await run { url = try await self.client.startBrowserSignIn() }
+        return url
+    }
+
+    func finishBrowser() async {
+        await run { try await self.client.finishBrowserSignIn() }
+    }
+
+    func cancelBrowser(error text: String? = nil) {
+        client.cancelBrowserSignIn()
+        error = text
     }
 
     func changeServer() {
@@ -154,7 +171,8 @@ struct ServerView: View {
     }
 }
 
-/// Username and password, then the second factor when the account has one.
+/// Username and password, then the second factor when the account has one; or the server's own
+/// sign-in page in a browser sheet, where passkeys and password managers work.
 struct LoginView: View {
     let serverURL: String
     let expired: Bool
@@ -163,9 +181,39 @@ struct LoginView: View {
     @State private var username = ""
     @State private var password = ""
     @State private var code = ""
+    @Environment(\.webAuthenticationSession) private var webAuthenticationSession
 
     private var host: String {
         serverURL.components(separatedBy: "://").last ?? serverURL
+    }
+
+    /// A private browser sheet: nothing of the sign-in stays behind in Safari. The address it
+    /// comes back with only says "done"; the session is fetched with what the app kept.
+    private func signInWithBrowser() async {
+        guard let url = await model.startBrowser() else { return }
+        do {
+            _ = try await webAuthenticationSession.authenticate(
+                using: url,
+                callback: .customScheme(SDKClient.browserCallbackScheme),
+                preferredBrowserSession: .ephemeral,
+                additionalHeaderFields: [:]
+            )
+        } catch let error as ASWebAuthenticationSessionError where error.code == .canceledLogin {
+            model.cancelBrowser()
+            return
+        } catch {
+            model.cancelBrowser(error: "The browser could not be opened. Sign in with your password instead.")
+            return
+        }
+        await model.finishBrowser()
+    }
+
+    private var browserButton: some View {
+        Button("Sign in with the browser") {
+            Task { await signInWithBrowser() }
+        }
+        .buttonStyle(.bordered)
+        .disabled(model.busy)
     }
 
     var body: some View {
@@ -174,7 +222,7 @@ struct LoginView: View {
                 title: "Two-step verification",
                 text: totp
                     ? "Enter the code from your authenticator app, or a recovery code."
-                    : "This account signs in with a passkey, which the app cannot use. Enter one of your recovery codes."
+                    : "This account signs in with a passkey. Sign in with the browser to use it, or enter a recovery code."
             ) {
                 TextField("Code", text: $code)
                     .textFieldStyle(.roundedBorder)
@@ -186,6 +234,7 @@ struct LoginView: View {
                 SubmitButton(title: "Verify", busy: model.busy, disabled: code.isEmpty) {
                     Task { await model.verify(code: code) }
                 }
+                if !totp { browserButton }
                 Button("Start again") {
                     code = ""
                     model.cancelCode()
@@ -223,6 +272,11 @@ struct LoginView: View {
                 SubmitButton(title: "Sign in", busy: model.busy, disabled: username.isEmpty || password.isEmpty) {
                     Task { await model.login(username: username, password: password) }
                 }
+                browserButton
+                Text("For a passkey or a password manager: sign in on your server's own page and come back.")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+                    .multilineTextAlignment(.center)
                 Button("Use another server") { model.changeServer() }
             }
         }
