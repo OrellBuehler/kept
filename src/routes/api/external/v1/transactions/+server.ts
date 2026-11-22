@@ -5,10 +5,10 @@ import {
 } from "$lib/server/external-api/transactions";
 import { publicOrigin } from "$lib/server/external-api/urls";
 
-export const GET = apiEndpoint("transactions:read", ({ userId, token, url }) =>
+export const GET = apiEndpoint("transactions:read", ({ userId, grant, url }) =>
   listTransactionDtos(
     userId,
-    token.categoryIds,
+    grant,
     parseQuery(url, transactionsQuery),
     publicOrigin(url),
   ),

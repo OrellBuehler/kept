@@ -1,10 +1,14 @@
+import { recordChange, recordUpdate } from "$lib/server/audit/record";
+import { pick } from "$lib/server/audit/snapshots";
+import type { Snapshot } from "$lib/server/audit/types";
 import { ledgerLock } from "$lib/server/ledger/lock";
-import { and, asc, eq, inArray, max, ne, sql } from "drizzle-orm";
+import { and, asc, count, eq, inArray, max, ne, sql } from "drizzle-orm";
 import type { AccountType, WithdrawalPeriod } from "$lib/ledger-types";
 import { shareOf, type Minor } from "$lib/money";
 import {
   accounts,
   balanceSnapshots,
+  bills,
   getDB,
   imports,
   institutions,
@@ -74,6 +78,44 @@ export interface AccountView {
   lastBookingDate: string | null;
   /** Instant (ms since epoch) of the most recent import, or null. */
   lastImportAt: number | null;
+}
+
+const ACCOUNT_AUDIT_FIELDS = [
+  "name",
+  "type",
+  "currency",
+  "iban",
+  "institutionId",
+  "contractNumber",
+  "depositIban",
+  "openingBalance",
+  "openingDate",
+  "noticeMonths",
+  "freeWithdrawal",
+  "freeWithdrawalPeriod",
+  "fillFromTransfers",
+  "tradesMoveCash",
+  "archived",
+  "sortOrder",
+  "shareBps",
+  "sharedWith",
+] as const;
+
+/** The account as the change log keeps it, read inside the transaction that changes it. */
+async function accountSnapshotInTx(
+  tx: Pick<DB, "select">,
+  userId: string,
+  id: string,
+): Promise<{ name: string; fields: Snapshot }> {
+  const row = await first(
+    tx
+      .select()
+      .from(accounts)
+      .where(and(eq(accounts.userId, userId), eq(accounts.id, id)))
+      .limit(1),
+  );
+  if (!row) throw notFound("Account");
+  return { name: row.name, fields: pick(row, ACCOUNT_AUDIT_FIELDS) };
 }
 
 async function baseRows(userId: string, accountId?: string) {
@@ -195,6 +237,26 @@ async function toViews(
     lastBookingDate: lastBooking.get(r.id) ?? null,
     lastImportAt: lastImport.get(r.id) ?? null,
   }));
+}
+
+/** Id, name and archived flag of the user's accounts in their display order: no balances, for pickers. */
+export async function listAccountNames(
+  userId: string,
+): Promise<{ id: string; name: string; archived: boolean }[]> {
+  return await getDB()
+    .select({
+      id: accounts.id,
+      name: accounts.name,
+      archived: accounts.archived,
+    })
+    .from(accounts)
+    .where(eq(accounts.userId, userId))
+    .orderBy(
+      asc(accounts.archived),
+      asc(accounts.sortOrder),
+      asc(accounts.name),
+      asc(accounts.id),
+    );
 }
 
 export async function listAccounts(
@@ -323,6 +385,14 @@ export async function createAccount(
         if (input.fillFromTransfers === true && input.type !== "pillar_3a") {
           await linkTransfersInTx(tx, userId, { targetAccountId: created.id });
         }
+        const snapshot = await accountSnapshotInTx(tx, userId, created.id);
+        await recordChange({
+          userId,
+          action: "account.create",
+          entityId: created.id,
+          summary: snapshot.name,
+          after: snapshot.fields,
+        });
         return created.id;
       },
       { lock: ledgerLock(userId) },
@@ -357,6 +427,7 @@ async function updateAccountInTx(
       .limit(1),
   );
   if (!current) throw notFound("Account");
+  const audited = await accountSnapshotInTx(tx, userId, id);
   await assertInstitutionOwned(tx, userId, input.institutionId);
   await assertIbanFree(tx, userId, input.iban, id);
 
@@ -516,6 +587,12 @@ async function updateAccountInTx(
   ) {
     await linkTransfersInTx(tx, userId, { targetAccountId: id });
   }
+  const changed = await accountSnapshotInTx(tx, userId, id);
+  await recordUpdate(
+    { userId, action: "account.update", entityId: id, summary: changed.name },
+    audited.fields,
+    changed.fields,
+  );
 }
 
 export async function updateAccount(
@@ -543,10 +620,21 @@ export async function setAccountArchived(
   // the archive are ordered.
   await transaction(
     async (tx) => {
+      const before = await accountSnapshotInTx(tx, userId, id);
       await tx
         .update(accounts)
         .set({ archived, archivedAt: archived ? new Date() : null })
         .where(and(eq(accounts.userId, userId), eq(accounts.id, id)));
+      if (before.fields.archived !== archived) {
+        await recordChange({
+          userId,
+          action: archived ? "account.archive" : "account.unarchive",
+          entityId: id,
+          summary: before.name,
+          before: { archived: before.fields.archived },
+          after: { archived },
+        });
+      }
     },
     { lock: ledgerLock(userId) },
   );
@@ -565,14 +653,54 @@ export async function deleteAccount(userId: string, id: string): Promise<void> {
   // while it checks the account, so none can be mid-write when the account goes.
   await transaction(
     async (tx) => {
+      const before = await accountSnapshotInTx(tx, userId, id);
+      const transactionCount = (await first(
+        tx
+          .select({ n: count() })
+          .from(transactions)
+          .where(
+            and(
+              eq(transactions.userId, userId),
+              eq(transactions.accountId, id),
+            ),
+          )
+          .limit(1),
+      ))!.n;
       const billIds = await billsAllocatedIn(
         tx,
         userId,
         eq(transactions.accountId, id),
       );
+      // The foreign key clears the account a bill expected; the log says so.
+      const expecting = await tx
+        .select({
+          id: bills.id,
+          creditorName: bills.creditorName,
+          invoiceNumber: bills.invoiceNumber,
+        })
+        .from(bills)
+        .where(and(eq(bills.userId, userId), eq(bills.expectedAccountId, id)))
+        .orderBy(asc(bills.id));
       await tx
         .delete(accounts)
         .where(and(eq(accounts.userId, userId), eq(accounts.id, id)));
+      await recordChange({
+        userId,
+        action: "account.delete",
+        entityId: id,
+        summary: before.name,
+        before: { ...before.fields, transactionCount },
+      });
+      for (const bill of expecting) {
+        await recordChange({
+          userId,
+          action: "bill.update",
+          entityId: bill.id,
+          summary: bill.creditorName ?? bill.invoiceNumber ?? null,
+          before: { expectedAccountId: id },
+          after: { expectedAccountId: null },
+        });
+      }
       announceBills(userId, billIds);
     },
     { lock: ledgerLock(userId) },

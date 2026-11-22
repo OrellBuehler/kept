@@ -1,5 +1,5 @@
 import { and, desc, eq, gte, inArray, ne } from "drizzle-orm";
-import type { BillKind } from "$lib/bill-types";
+import type { AllocationOrigin, BillKind } from "$lib/bill-types";
 import { type Minor } from "$lib/money";
 import {
   accounts,
@@ -12,9 +12,19 @@ import {
   first,
   transaction,
 } from "$lib/server/db";
+import { recordChange } from "$lib/server/audit/record";
+import {
+  allocationSnapshot,
+  dismissalSnapshot,
+} from "$lib/server/audit/snapshots";
 import { emitBillChanged } from "$lib/server/events";
 import { LedgerError, notFound } from "$lib/server/ledger/errors";
 import { lockTransactionRowsInTx } from "$lib/server/ledger/transactions";
+import {
+  isRestricted,
+  visibleTransactionIds,
+  type Visibility,
+} from "$lib/server/ledger/visibility";
 import {
   allocateInTx,
   type AllocationTx,
@@ -22,6 +32,7 @@ import {
   toMatchTransaction,
 } from "./allocations";
 import {
+  billSummary,
   billsLock,
   getBill,
   getBillInTx,
@@ -235,9 +246,32 @@ async function compute(userId: string, onlyBillId?: string): Promise<Computed> {
 /** Suggested bill/payment pairs, without the ones the user dismissed. Nothing is written. */
 export async function getSuggestions(
   userId: string,
-  options: { billId?: string } = {},
+  options: { billId?: string; visibility?: Visibility } = {},
 ): Promise<SuggestionView[]> {
-  return (await compute(userId, options.billId)).suggestions;
+  return await onlyVisible(
+    userId,
+    options.visibility,
+    (await compute(userId, options.billId)).suggestions,
+  );
+}
+
+/**
+ * The suggestions whose payment a restricted credential may see. The pairs are
+ * still computed over all payments (a hidden payment can make a visible one
+ * ambiguous); only what is shown or acted on is narrowed.
+ */
+async function onlyVisible(
+  userId: string,
+  visibility: Visibility | undefined,
+  suggestions: SuggestionView[],
+): Promise<SuggestionView[]> {
+  if (!visibility || !isRestricted(visibility)) return suggestions;
+  const visible = await visibleTransactionIds(
+    userId,
+    visibility,
+    suggestions.map((s) => s.transactionId),
+  );
+  return suggestions.filter((s) => visible.has(s.transactionId));
 }
 
 /**
@@ -372,13 +406,15 @@ export interface AutoMatchResult {
  */
 export async function runAutoMatching(
   userId: string,
+  visibility?: Visibility,
 ): Promise<AutoMatchResult> {
   const initial = await compute(userId);
-  const todo = initial.suggestions.filter((s) => s.auto);
+  const shown = await onlyVisible(userId, visibility, initial.suggestions);
+  const todo = shown.filter((s) => s.auto);
   if (todo.length === 0) {
     return {
       matched: 0,
-      suggestions: initial.suggestions,
+      suggestions: shown,
       truncated: initial.truncated,
     };
   }
@@ -389,8 +425,63 @@ export async function runAutoMatching(
   const after = await compute(userId);
   return {
     matched: allocatedBills.length,
-    suggestions: after.suggestions,
+    suggestions: await onlyVisible(userId, visibility, after.suggestions),
     truncated: after.truncated,
+  };
+}
+
+/** What `removeAllocationInTx` took away and whether it dismissed the pair. */
+export interface RemovedAllocation {
+  id: string;
+  billId: string;
+  transactionId: string;
+  amount: Minor;
+  origin: AllocationOrigin;
+  createdAt: number;
+  dismissed: boolean;
+}
+
+/**
+ * Removes an allocation on a transaction you already hold, which must have been
+ * started with `billsLock(userId)`; announcing the change is the caller's job.
+ * The pair is dismissed only if automatic matching would otherwise put it
+ * straight back. Does not write the change log.
+ */
+export async function removeAllocationInTx(
+  tx: AllocationTx,
+  userId: string,
+  allocationId: string,
+): Promise<RemovedAllocation> {
+  const [removed] = await tx
+    .delete(billAllocations)
+    .where(
+      and(
+        eq(billAllocations.userId, userId),
+        eq(billAllocations.id, allocationId),
+      ),
+    )
+    .returning();
+  if (!removed) throw notFound("Allocation");
+  const plan = await freshAutoPlanInTx(tx, userId);
+  const dismissed = plan.has(pairKey(removed.billId, removed.transactionId));
+  if (dismissed) {
+    await tx
+      .insert(matchDismissals)
+      .values({
+        userId,
+        billId: removed.billId,
+        transactionId: removed.transactionId,
+      })
+      .onConflictDoNothing();
+  }
+  return {
+    id: removed.id,
+    billId: removed.billId,
+    transactionId: removed.transactionId,
+    amount: removed.amount,
+    origin: removed.origin,
+    createdAt: removed.createdAt.getTime(),
+    dismissed,
   };
 }
 
@@ -405,30 +496,16 @@ export async function removeAllocation(
   // Delete, check and dismissal must not interleave with an automatic run, or it
   // re-creates the allocation in between. Same lock as every allocation write.
   await transaction(async (tx) => {
-    const [removed] = await tx
-      .delete(billAllocations)
-      .where(
-        and(
-          eq(billAllocations.userId, userId),
-          eq(billAllocations.id, allocationId),
-        ),
-      )
-      .returning({
-        billId: billAllocations.billId,
-        transactionId: billAllocations.transactionId,
-      });
-    if (!removed) throw notFound("Allocation");
-    const plan = await freshAutoPlanInTx(tx, userId);
-    if (plan.has(pairKey(removed.billId, removed.transactionId))) {
-      await tx
-        .insert(matchDismissals)
-        .values({
-          userId,
-          billId: removed.billId,
-          transactionId: removed.transactionId,
-        })
-        .onConflictDoNothing();
-    }
+    const removed = await removeAllocationInTx(tx, userId, allocationId);
+    const bill = await getBillInTx(tx, userId, removed.billId);
+    await recordChange({
+      userId,
+      action: "allocation.delete",
+      entityId: removed.id,
+      summary: billSummary(bill),
+      before: allocationSnapshot(removed),
+      after: removed.dismissed ? { dismissedPair: true } : null,
+    });
     afterCommit(() => emitBillChanged(userId, removed.billId));
   }, billsLock(userId));
 }
@@ -439,16 +516,28 @@ export async function undismissSuggestion(
   billId: string,
   transactionId: string,
 ): Promise<void> {
-  await getBill(userId, billId);
-  await getDB()
-    .delete(matchDismissals)
-    .where(
-      and(
-        eq(matchDismissals.userId, userId),
-        eq(matchDismissals.billId, billId),
-        eq(matchDismissals.transactionId, transactionId),
-      ),
-    );
+  const bill = await getBill(userId, billId);
+  await transaction(async (tx) => {
+    const removed = await tx
+      .delete(matchDismissals)
+      .where(
+        and(
+          eq(matchDismissals.userId, userId),
+          eq(matchDismissals.billId, billId),
+          eq(matchDismissals.transactionId, transactionId),
+        ),
+      )
+      .returning({ id: matchDismissals.id });
+    for (const row of removed) {
+      await recordChange({
+        userId,
+        action: "match_dismissal.delete",
+        entityId: row.id,
+        summary: billSummary(bill),
+        before: dismissalSnapshot({ billId, transactionId }),
+      });
+    }
+  });
 }
 
 /** Transactions the user dismissed for this bill, newest first. */
@@ -479,7 +568,7 @@ export async function dismissSuggestion(
   transactionId: string,
 ): Promise<void> {
   await transaction(async (tx) => {
-    await getBillInTx(tx, userId, billId);
+    const bill = await getBillInTx(tx, userId, billId);
     const found = await first(
       tx
         .select({ id: transactions.id })
@@ -493,9 +582,20 @@ export async function dismissSuggestion(
         .limit(1),
     );
     if (!found) throw notFound("Transaction");
-    await tx
+    const [created] = await tx
       .insert(matchDismissals)
       .values({ userId, billId, transactionId })
-      .onConflictDoNothing();
+      .onConflictDoNothing()
+      .returning({ id: matchDismissals.id });
+    // Dismissing a pair that was already dismissed changes nothing.
+    if (created) {
+      await recordChange({
+        userId,
+        action: "match_dismissal.create",
+        entityId: created.id,
+        summary: billSummary(bill),
+        after: dismissalSnapshot({ billId, transactionId }),
+      });
+    }
   });
 }

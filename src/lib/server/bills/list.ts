@@ -100,9 +100,16 @@ function bySortKey(a: BillWithStatus, b: BillWithStatus): number {
   return a.id < b.id ? -1 : a.id > b.id ? 1 : 0;
 }
 
+/**
+ * `returnedFieldsOnly` limits the text search to what the MCP tools return of a
+ * bill (creditor, invoice number, notes, an exact amount): a search over fields
+ * no tool shows (the message, the reference, the IBAN) would let a caller
+ * recover them by guessing prefixes.
+ */
 export function filterBills(
   views: readonly BillWithStatus[],
   { q, status }: { q: string; status: BillListStatus },
+  options: { returnedFieldsOnly?: boolean } = {},
 ): BillWithStatus[] {
   const text = q.trim().toLowerCase();
   const compact = stripSpaces(q);
@@ -110,10 +117,13 @@ export function filterBills(
   const matchesText = (v: BillWithStatus): boolean => {
     if (!text) return true;
     if (amount !== null && v.amount === amount) return true;
-    for (const field of [v.creditorName, v.invoiceNumber, v.message, v.notes]) {
+    const fields = options.returnedFieldsOnly
+      ? [v.creditorName, v.invoiceNumber, v.notes]
+      : [v.creditorName, v.invoiceNumber, v.message, v.notes];
+    for (const field of fields) {
       if (field && field.toLowerCase().includes(text)) return true;
     }
-    if (compact.length >= MIN_COMPACT_MATCH) {
+    if (!options.returnedFieldsOnly && compact.length >= MIN_COMPACT_MATCH) {
       for (const field of [v.reference, v.creditorIban]) {
         if (field && stripSpaces(field).includes(compact)) return true;
       }

@@ -4,7 +4,11 @@ import type { BillKind, BillStatusName } from "$lib/bill-types";
 import type { Minor } from "$lib/money";
 import { billAllocations, bills, first, getDB } from "$lib/server/db";
 import { todayLocal } from "$lib/server/bills/dates";
-import { BILL_LIST_STATUSES, matchesStatus } from "$lib/server/bills/list";
+import {
+  BILL_LIST_STATUSES,
+  filterBills,
+  matchesStatus,
+} from "$lib/server/bills/list";
 import {
   billView,
   billViews,
@@ -59,6 +63,8 @@ export const billsQuery = z.object({
   status: statusFilter.optional(),
   dueFrom: dateParam.optional(),
   dueTo: dateParam.optional(),
+  /** Free text over creditor, invoice number, message, notes, reference, IBAN and amount. */
+  q: z.string().trim().max(200).optional(),
 });
 export type BillsQuery = z.output<typeof billsQuery>;
 
@@ -117,14 +123,23 @@ export async function listBillDtos(
   query: BillsQuery,
   origin: string,
   today: string = todayLocal(),
+  options: { returnedFieldsOnly?: boolean } = {},
 ): Promise<Page<BillDto>> {
   const [views, times] = await Promise.all([
     billViews(userId, { today }),
     allocationTimes(userId),
   ]);
   const statuses = query.status;
+  const textMatches = query.q
+    ? new Set(
+        filterBills(views, { q: query.q, status: "all" }, options).map(
+          (v) => v.id,
+        ),
+      )
+    : null;
   const dtos = views
     .filter((v) => !statuses || statuses.some((s) => matchesStatus(v, s)))
+    .filter((v) => textMatches === null || textMatches.has(v.id))
     .filter((v) => {
       if (query.dueFrom === undefined && query.dueTo === undefined) return true;
       if (v.dueDate === null) return false;

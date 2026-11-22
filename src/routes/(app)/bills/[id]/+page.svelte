@@ -9,6 +9,7 @@
   import ExternalLinkIcon from "@lucide/svelte/icons/external-link";
   import FileTextIcon from "@lucide/svelte/icons/file-text";
   import PencilIcon from "@lucide/svelte/icons/pencil";
+  import HistoryIcon from "@lucide/svelte/icons/history";
   import RefreshCwIcon from "@lucide/svelte/icons/refresh-cw";
   import SearchIcon from "@lucide/svelte/icons/search";
   import Trash2Icon from "@lucide/svelte/icons/trash-2";
@@ -207,6 +208,13 @@
       <div class="flex flex-wrap gap-2">
         <Button variant="outline" size="sm" onclick={openEdit}>
           <PencilIcon /> Edit
+        </Button>
+        <Button
+          variant="outline"
+          size="sm"
+          href="{resolve('/(app)/settings/changes')}?type=bill&entity={bill.id}"
+        >
+          <HistoryIcon /> History
         </Button>
         <form
           method="POST"

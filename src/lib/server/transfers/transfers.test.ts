@@ -1,6 +1,7 @@
 import { and, eq } from "drizzle-orm";
 import { describe, expect, it } from "vitest";
 import { minor } from "$lib/money";
+import { isRevertible, listChanges } from "$lib/server/audit";
 import {
   accounts,
   first,
@@ -597,6 +598,14 @@ describe("foreign currency transfers", () => {
       amount: 9300,
       currency: "EUR",
     });
+    const logged = (await listChanges(user.id, { limit: 1 })).items[0]!;
+    expect(logged).toMatchObject({
+      action: "transaction.create",
+      entityId: (await rowsOf(eur.id))[0]!.id,
+      summary: "Main",
+      after: { source: "mirror", amount: 9300, currency: "EUR" },
+    });
+    expect(isRevertible(logged)).toBe(false);
     expect((await allTransfers())[0]).toMatchObject({
       status: "linked",
       method: "mirrored",
@@ -860,7 +869,15 @@ describe("unlink and manual links", () => {
     await linkTransfers(user.id, {});
     const transferId = (await allTransfers())[0]!.id;
 
+    const mirrorId = (await rowsOf(b.id))[0]!.id;
     await unlink(user.id, transferId);
+    const logged = (await listChanges(user.id, { limit: 1 })).items[0]!;
+    expect(logged).toMatchObject({
+      action: "transaction.delete",
+      entityId: mirrorId,
+      before: { source: "mirror", accountId: b.id },
+    });
+    expect(typeof logged.before!.createdAt).toBe("number");
     expect(await rowsOf(b.id)).toEqual([]);
     expect(await allTransfers()).toEqual([
       expect.objectContaining({

@@ -1,7 +1,7 @@
 import { fail } from "@sveltejs/kit";
 import { z } from "zod";
-import { API_SCOPES } from "$lib/api-tokens";
-import { confirmAdmin, adminConfirmMode } from "$lib/server/auth/admin-confirm";
+import { API_SCOPES, API_SCOPE_GROUPS, SCOPE_CONFLICTS } from "$lib/api-tokens";
+import { adminConfirmMode } from "$lib/server/auth/admin-confirm";
 import {
   createApiToken,
   createApiTokenSchema,
@@ -10,28 +10,42 @@ import {
 } from "$lib/server/auth/api-tokens";
 import { requireUser } from "$lib/server/auth/guards";
 import {
-  apiTokenConfirmLimiter,
-  RateLimitedError,
-} from "$lib/server/auth/rate-limit";
-import { adminCodeSchema, adminPasswordSchema } from "$lib/server/auth/schemas";
-import { AuthError } from "$lib/server/auth/types";
+  accessErrors,
+  confirmationFailure,
+  confirmSchema,
+  expiresSchema,
+} from "$lib/server/auth/token-form";
 import { listCategories } from "$lib/server/categories";
 import { parseForm, safeValues } from "$lib/server/forms";
+import { listAccountNames } from "$lib/server/ledger/accounts";
 import { ledgerFailure } from "$lib/server/ledger/http";
 import { idFormSchema } from "$lib/server/ledger/schemas";
+import {
+  listConnections,
+  renameConnection,
+  revokeConnection,
+} from "$lib/server/oauth/connections";
 import type { Actions, PageServerLoad } from "./$types";
 
-const FIELDS = ["name", "expires", "restrict"] as const;
+const FIELDS = ["name", "expires", "restrict", "restrictAccounts"] as const;
 
 export const load: PageServerLoad = async ({ locals }) => {
   const user = requireUser(locals);
-  const [tokens, categories] = await Promise.all([
+  const [tokens, connections, categories, accounts] = await Promise.all([
     listApiTokens(user.id),
+    listConnections(user.id),
     listCategories(user.id),
+    listAccountNames(user.id),
   ]);
   return {
     tokens,
+    /** Apps connected through sign-in (OAuth), newest first. */
+    connections,
     scopes: API_SCOPES,
+    scopeGroups: API_SCOPE_GROUPS,
+    /** Scopes that cannot be combined with a restriction to categories or accounts, and why. */
+    scopeConflicts: SCOPE_CONFLICTS,
+    accounts,
     categories: categories.map((c) => ({
       id: c.id,
       name: c.name,
@@ -40,62 +54,6 @@ export const load: PageServerLoad = async ({ locals }) => {
     confirmMode: await adminConfirmMode(user.id),
   };
 };
-
-const expiresSchema = z
-  .string()
-  .trim()
-  .max(10)
-  .transform((v, ctx) => {
-    if (v === "") return null;
-    const at = /^\d{4}-\d{2}-\d{2}$/.test(v)
-      ? new Date(`${v}T23:59:59.999Z`)
-      : null;
-    if (!at || Number.isNaN(at.getTime())) {
-      ctx.addIssue({ code: "custom", message: "Enter a date." });
-      return z.NEVER;
-    }
-    return at;
-  });
-
-const confirmSchema = z.object({
-  adminPassword: adminPasswordSchema,
-  adminCode: adminCodeSchema,
-});
-
-/** Failure to return when the password (and code) does not confirm the user, else null. */
-async function confirmationFailure(
-  userId: string,
-  sessionId: string | undefined,
-  input: { password: string; code: string },
-  values: Record<string, string>,
-) {
-  try {
-    await confirmAdmin(userId, sessionId, input, apiTokenConfirmLimiter);
-    return null;
-  } catch (err) {
-    if (err instanceof RateLimitedError) {
-      return fail(429, { errors: { form: [err.message] }, values });
-    }
-    if (err instanceof AuthError) {
-      if (err.code === "invalid_credentials") {
-        return fail(400, {
-          errors: { adminPassword: ["Your password is incorrect."] },
-          values,
-        });
-      }
-      if (err.code === "invalid_code") {
-        return fail(400, {
-          errors: { adminCode: ["That code is not valid."] },
-          values,
-        });
-      }
-      if (err.code === "passkey_required") {
-        return fail(400, { errors: { form: [err.message] }, values });
-      }
-    }
-    throw err;
-  }
-}
 
 export const actions: Actions = {
   create: async ({ locals, request }) => {
@@ -109,24 +67,21 @@ export const actions: Actions = {
     const categoryIds = form
       .getAll("categoryId")
       .filter((v) => typeof v === "string");
+    const restrictAccounts = form.get("restrictAccounts") === "on";
+    const accountIds = form
+      .getAll("accountId")
+      .filter((v) => typeof v === "string");
     const input = createApiTokenSchema.safeParse({
       name: form.get("name") ?? "",
       scopes: form.getAll("scope"),
       categoryIds: restrict ? categoryIds : null,
+      accountIds: restrictAccounts ? accountIds : null,
       expiresAt: expires.success ? expires.data : null,
     });
 
-    const errors: Record<string, string[]> = {};
-    if (!input.success) {
-      const flat = z.flattenError(input.error);
-      for (const [field, messages] of Object.entries(flat.fieldErrors)) {
-        if (Array.isArray(messages) && messages.length > 0) {
-          errors[field === "expiresAt" ? "expires" : field] =
-            messages as string[];
-        }
-      }
-      if (flat.formErrors.length > 0) errors.form = flat.formErrors;
-    }
+    const errors: Record<string, string[]> = input.success
+      ? {}
+      : accessErrors(input.error);
     if (!expires.success) errors.expires = [expires.error.issues[0]!.message];
     if (!confirm.ok) Object.assign(errors, confirm.errors);
     if (Object.keys(errors).length > 0 || !input.success || !confirm.ok) {
@@ -159,6 +114,41 @@ export const actions: Actions = {
       return { revoked: true as const };
     } catch (err) {
       return ledgerFailure("revoke", err);
+    }
+  },
+
+  revokeConnection: async ({ locals, request }) => {
+    const user = requireUser(locals);
+    const parsed = parseForm(
+      idFormSchema("connectionId"),
+      await request.formData(),
+    );
+    if (!parsed.ok) return fail(400, { errors: parsed.errors });
+    try {
+      await revokeConnection(user.id, parsed.data.connectionId);
+      return { revokedConnection: true as const };
+    } catch (err) {
+      return ledgerFailure("revokeConnection", err);
+    }
+  },
+
+  renameConnection: async ({ locals, request }) => {
+    const user = requireUser(locals);
+    const form = await request.formData();
+    const parsed = parseForm(
+      idFormSchema("connectionId").extend({ name: z.string().max(200) }),
+      form,
+    );
+    if (!parsed.ok) return fail(400, { errors: parsed.errors });
+    try {
+      await renameConnection(
+        user.id,
+        parsed.data.connectionId,
+        parsed.data.name,
+      );
+      return { renamedConnection: true as const };
+    } catch (err) {
+      return ledgerFailure("renameConnection", err);
     }
   },
 };

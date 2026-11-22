@@ -1,3 +1,4 @@
+import { UNRESTRICTED } from "$lib/server/ledger/visibility";
 import { Database } from "bun:sqlite";
 import { drizzle } from "drizzle-orm/bun-sqlite";
 import { migrate } from "drizzle-orm/bun-sqlite/migrator";
@@ -681,7 +682,7 @@ describe.skipIf(dialect === "pg")("upgrade from 0.3.0", () => {
       await startServer();
       const page = await listTransactionDtos(
         "usr-alice",
-        null,
+        UNRESTRICTED,
         transactionsQuery.parse({ accountId: "acc-a-eur", limit: "200" }),
         "http://localhost",
       );
@@ -775,7 +776,7 @@ describe.skipIf(dialect === "pg")("upgrade from 0.3.0", () => {
       expect(await countDeductionYearMoves("usr-carol", 2023)).toBe(0);
       const carol = await listTransactionDtos(
         "usr-carol",
-        null,
+        UNRESTRICTED,
         transactionsQuery.parse({ limit: "200" }),
         "http://localhost",
       );

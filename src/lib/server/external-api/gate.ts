@@ -1,5 +1,7 @@
 import { json, type RequestEvent } from "@sveltejs/kit";
-import { verifyApiToken } from "$lib/server/auth/api-tokens";
+import { runAsActor } from "$lib/server/audit/context";
+import { verifyApiToken, type ApiTokenAuth } from "$lib/server/auth/api-tokens";
+import { actorOf, grantFromApiToken } from "$lib/server/auth/grant";
 import { clientKey } from "$lib/server/auth/login";
 import { LoginRateLimiter, WINDOW_MS } from "$lib/server/auth/rate-limit";
 
@@ -28,10 +30,13 @@ export const apiAuthFailureLimiter = new LoginRateLimiter(
 
 const CHALLENGE = 'Bearer realm="kept"';
 
-export function unauthorized(message: string): Response {
+export function unauthorized(
+  message: string,
+  challenge: string = CHALLENGE,
+): Response {
   return json(
     { message },
-    { status: 401, headers: { "www-authenticate": CHALLENGE } },
+    { status: 401, headers: { "www-authenticate": challenge } },
   );
 }
 
@@ -98,6 +103,94 @@ export function noStore(response: Response): Response {
   }
 }
 
+export type BearerResult<T = ApiTokenAuth> =
+  { ok: true; token: T } | { ok: false; response: Response };
+
+/**
+ * Authenticates the bearer credential of a token surface: the address's budget
+ * for refused credentials, the check itself (`verify` looks the presented
+ * string up) and the per-credential request limit. Shared by the external API
+ * (API tokens) and the MCP server (API tokens and OAuth access tokens), so
+ * every surface protects the same way and shares the per-address budget.
+ */
+export async function authenticateCredential<T extends { id: string }>(
+  event: RequestEvent,
+  options: {
+    requests: LoginRateLimiter;
+    challenge?: string;
+    /** The challenge of a 401 for a credential that was presented and refused. */
+    rejectedChallenge?: string;
+    verify: (
+      presented: string,
+    ) => Promise<
+      | { ok: true; token: T }
+      | { ok: false; reason: "invalid" | "revoked" | "expired" }
+    >;
+  },
+): Promise<BearerResult<T>> {
+  const refuse = (message: string, rejected = true): BearerResult<T> => ({
+    ok: false,
+    response: unauthorized(
+      message,
+      (rejected ? options.rejectedChallenge : undefined) ?? options.challenge,
+    ),
+  });
+  const presented = bearerToken(event.request.headers.get("authorization"));
+  if (!presented) return refuse("A bearer token is required.", false);
+
+  const ip = clientKey(event.getClientAddress);
+  const attempt = apiAuthFailureLimiter.acquire(ip, ip);
+  if (!attempt.allowed) {
+    return {
+      ok: false,
+      response: tooManyRequests(
+        attempt.retryAfterMs,
+        "Too many rejected tokens, try again later.",
+      ),
+    };
+  }
+  let verified;
+  try {
+    verified = await options.verify(presented);
+  } catch (err) {
+    attempt.release();
+    throw err;
+  }
+  if (!verified.ok) {
+    // A token that exists but is revoked or expired is a stale client, not a guess: it
+    // must not burn the address's budget and lock out clients with valid tokens.
+    if (verified.reason !== "invalid") attempt.release();
+    return refuse(
+      verified.reason === "revoked"
+        ? "This token has been revoked."
+        : verified.reason === "expired"
+          ? "This token has expired."
+          : "The token is not valid.",
+    );
+  }
+  attempt.release();
+
+  const rate = options.requests.acquire(verified.token.id, verified.token.id);
+  if (!rate.allowed) {
+    return {
+      ok: false,
+      response: tooManyRequests(rate.retryAfterMs, "Rate limit exceeded."),
+    };
+  }
+  return { ok: true, token: verified.token };
+}
+
+/** `authenticateCredential` for the `Authorization: Bearer kept_...` API tokens. */
+export function authenticateBearer(
+  event: RequestEvent,
+  options: { requests: LoginRateLimiter; challenge?: string },
+): Promise<BearerResult> {
+  return authenticateCredential(event, {
+    ...options,
+    verify: (presented) => verifyApiToken(presented),
+  });
+}
+
 /**
  * Authentication for `/api/external/v1/`: only `Authorization: Bearer kept_…`
  * counts. Session cookies are never read here, and `locals.user` stays null, so
@@ -112,44 +205,17 @@ export async function handleExternalApi(
   event.locals.user = null;
   event.locals.session = null;
   event.locals.apiToken = null;
+  event.locals.grant = null;
 
-  const presented = bearerToken(event.request.headers.get("authorization"));
-  if (!presented) return unauthorized("A bearer token is required.");
+  const auth = await authenticateBearer(event, { requests: apiTokenLimiter });
+  if (!auth.ok) return auth.response;
 
-  const ip = clientKey(event.getClientAddress);
-  const attempt = apiAuthFailureLimiter.acquire(ip, ip);
-  if (!attempt.allowed) {
-    return tooManyRequests(
-      attempt.retryAfterMs,
-      "Too many rejected tokens, try again later.",
-    );
-  }
-  let verified;
-  try {
-    verified = await verifyApiToken(presented);
-  } catch (err) {
-    attempt.release();
-    throw err;
-  }
-  if (!verified.ok) {
-    // A token that exists but is revoked or expired is a stale client, not a guess: it
-    // must not burn the address's budget and lock out clients with valid tokens.
-    if (verified.reason !== "invalid") attempt.release();
-    return unauthorized(
-      verified.reason === "revoked"
-        ? "This token has been revoked."
-        : verified.reason === "expired"
-          ? "This token has expired."
-          : "The token is not valid.",
-    );
-  }
-  attempt.release();
-
-  const rate = apiTokenLimiter.acquire(verified.token.id, verified.token.id);
-  if (!rate.allowed) {
-    return tooManyRequests(rate.retryAfterMs, "Rate limit exceeded.");
-  }
-
-  event.locals.apiToken = verified.token;
-  return noStore(await asJsonError(await resolve(event)));
+  const grant = grantFromApiToken(auth.token);
+  event.locals.apiToken = auth.token;
+  event.locals.grant = grant;
+  return noStore(
+    await runAsActor(actorOf(grant, "api"), async () =>
+      asJsonError(await resolve(event)),
+    ),
+  );
 }

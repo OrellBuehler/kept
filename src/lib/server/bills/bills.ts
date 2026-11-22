@@ -1,4 +1,15 @@
-import { and, asc, count, desc, eq, lt, notExists, sql } from "drizzle-orm";
+import {
+  and,
+  asc,
+  count,
+  desc,
+  eq,
+  isNull,
+  lt,
+  notExists,
+  sql,
+  type SQL,
+} from "drizzle-orm";
 import { z } from "zod";
 import type { BillKind, BillReferenceType } from "$lib/bill-types";
 import type { Minor } from "$lib/money";
@@ -10,13 +21,22 @@ import {
   first,
   getDB,
   isUniqueViolation,
+  matchDismissals,
   type DB,
   afterCommit,
   transaction,
 } from "$lib/server/db";
+import { recordChange, recordUpdate } from "$lib/server/audit/record";
+import {
+  allocationSnapshot,
+  billFields,
+  billSnapshot,
+  dismissalSnapshot,
+} from "$lib/server/audit/snapshots";
 import { emitBillChanged } from "$lib/server/events";
 import { LedgerError, notFound } from "$lib/server/ledger/errors";
 import { deleteDocumentWhere } from "./documents";
+import { HELD_DOCUMENT_TTL_MS, holdsDocumentOnDelete } from "./held-documents";
 import type { MatchBill } from "./matching";
 import type { BillInput } from "./schemas";
 
@@ -130,6 +150,13 @@ export function toMatchBill(bill: BillView): MatchBill {
 export const billsLock = (userId: string) => ({
   lock: `bills:${userId}`,
 });
+
+/** The label of a bill in the change log: who it is from, never an amount. */
+export function billSummary(
+  bill: Pick<BillView, "creditorName" | "invoiceNumber">,
+): string | null {
+  return bill.creditorName ?? bill.invoiceNumber ?? null;
+}
 
 function ownedBillQuery(tx: Pick<DB, "select">, userId: string, id: string) {
   return tx
@@ -253,7 +280,15 @@ export async function createBill(
           })
           .returning(),
       ))!;
-      return toView(row);
+      const created = toView(row);
+      await recordChange({
+        userId,
+        action: "bill.create",
+        entityId: created.id,
+        summary: billSummary(created),
+        after: billSnapshot(created),
+      });
+      return created;
     });
   } catch (err) {
     if (ext && isUniqueViolation(err)) {
@@ -315,7 +350,18 @@ export async function updateBill(
         .returning(),
     );
     if (!row) throw notFound("Bill");
-    return toView(row);
+    const updated = toView(row);
+    await recordUpdate(
+      {
+        userId,
+        action: "bill.update",
+        entityId: id,
+        summary: billSummary(updated),
+      },
+      billFields(current),
+      billFields(updated),
+    );
+    return updated;
   }, billsLock(userId));
   afterCommit(() => emitBillChanged(userId, id));
   return view;
@@ -329,6 +375,7 @@ export async function updateBill(
 export async function deleteDocumentIfUnused(
   userId: string,
   documentId: string | null,
+  also?: SQL,
 ): Promise<boolean> {
   if (documentId === null) return false;
   return deleteDocumentWhere(
@@ -342,24 +389,90 @@ export async function deleteDocumentIfUnused(
           .from(bills)
           .where(eq(bills.documentId, documents.id)),
       ),
+      also,
     ),
   );
 }
 
-/** Deletes the bill, its allocations (cascade) and its uploaded document when nothing else uses it. */
+/**
+ * Deletes the bill, its allocations (cascade) and its uploaded document when
+ * nothing else uses it. When the delete is made through the API or MCP the
+ * document is kept (held) for `HELD_DOCUMENT_TTL_MS` instead, so that undoing
+ * the delete restores it too; the sweep in `held-documents.ts` removes it later.
+ */
 export async function deleteBill(userId: string, id: string): Promise<void> {
+  const held = holdsDocumentOnDelete();
   // Allocation checks read the bill and cascade away with it: the delete takes
   // the same lock as them, so an allocation cannot be mid-insert against it.
-  const [deleted] = await transaction(
-    async (tx) =>
+  const documentId = await transaction(async (tx) => {
+    const current = await getBillInTx(tx, userId, id);
+    // What the cascade takes along, so the change log can bring it back.
+    const allocations = await tx
+      .select({
+        id: billAllocations.id,
+        transactionId: billAllocations.transactionId,
+        amount: billAllocations.amount,
+        origin: billAllocations.origin,
+        createdAt: billAllocations.createdAt,
+      })
+      .from(billAllocations)
+      .where(
+        and(eq(billAllocations.userId, userId), eq(billAllocations.billId, id)),
+      )
+      .orderBy(asc(billAllocations.createdAt), asc(billAllocations.id));
+    const dismissals = await tx
+      .select({
+        id: matchDismissals.id,
+        transactionId: matchDismissals.transactionId,
+      })
+      .from(matchDismissals)
+      .where(
+        and(eq(matchDismissals.userId, userId), eq(matchDismissals.billId, id)),
+      )
+      .orderBy(asc(matchDismissals.createdAt), asc(matchDismissals.id));
+    const [deleted] = await tx
+      .delete(bills)
+      .where(and(eq(bills.userId, userId), eq(bills.id, id)))
+      .returning({ documentId: bills.documentId });
+    if (!deleted) throw notFound("Bill");
+    // A connection's delete must stay undoable: the document is held, not removed.
+    if (held && deleted.documentId !== null) {
       await tx
-        .delete(bills)
-        .where(and(eq(bills.userId, userId), eq(bills.id, id)))
-        .returning({ documentId: bills.documentId }),
-    billsLock(userId),
-  );
-  if (!deleted) throw notFound("Bill");
-  await deleteDocumentIfUnused(userId, deleted.documentId);
+        .update(documents)
+        .set({ heldUntil: new Date(Date.now() + HELD_DOCUMENT_TTL_MS) })
+        .where(
+          and(
+            eq(documents.userId, userId),
+            eq(documents.id, deleted.documentId),
+          ),
+        );
+    }
+    await recordChange({
+      userId,
+      action: "bill.delete",
+      entityId: id,
+      summary: billSummary(current),
+      before: {
+        ...billSnapshot(current),
+        allocations: allocations.map((a) => ({
+          id: a.id,
+          ...allocationSnapshot({
+            billId: id,
+            transactionId: a.transactionId,
+            amount: a.amount,
+            origin: a.origin,
+            createdAt: a.createdAt.getTime(),
+          }),
+        })),
+        dismissals: dismissals.map((d) => ({
+          id: d.id,
+          ...dismissalSnapshot({ billId: id, transactionId: d.transactionId }),
+        })),
+      },
+    });
+    return deleted.documentId;
+  }, billsLock(userId));
+  if (!held) await deleteDocumentIfUnused(userId, documentId);
 }
 
 export async function setBillCancelled(
@@ -370,12 +483,23 @@ export async function setBillCancelled(
   // Cancelling decides whether an allocation may be added, so it takes the
   // same lock as the allocation check.
   const row = await transaction(async (tx) => {
+    const current = await getBillInTx(tx, userId, id);
     const [updated] = await tx
       .update(bills)
       .set({ cancelled })
       .where(and(eq(bills.userId, userId), eq(bills.id, id)))
       .returning();
     if (!updated) throw notFound("Bill");
+    if (current.cancelled !== cancelled) {
+      await recordChange({
+        userId,
+        action: cancelled ? "bill.cancel" : "bill.uncancel",
+        entityId: id,
+        summary: billSummary(current),
+        before: { cancelled: current.cancelled },
+        after: { cancelled },
+      });
+    }
     afterCommit(() => emitBillChanged(userId, id));
     return updated;
   }, billsLock(userId));
@@ -404,7 +528,18 @@ export async function attachDocument(
         .returning(),
     );
     if (!row) throw notFound("Bill");
-    return { view: toView(row), previous: current.documentId };
+    const view = toView(row);
+    await recordUpdate(
+      {
+        userId,
+        action: "bill.update",
+        entityId: billId,
+        summary: billSummary(view),
+      },
+      { documentId: current.documentId },
+      { documentId: view.documentId },
+    );
+    return { view, previous: current.documentId };
   });
   if (previous !== null && previous !== documentId) {
     await deleteDocumentIfUnused(userId, previous);
@@ -444,6 +579,8 @@ export async function sweepUnreferencedDocuments(
         eq(documents.userId, userId),
         eq(documents.source, "upload"),
         lt(documents.createdAt, cutoff),
+        // A document held for undoing a bill delete is not an abandoned upload.
+        isNull(documents.heldUntil),
         notExists(
           getDB()
             .select({ one: sql`1` })
@@ -456,7 +593,11 @@ export async function sweepUnreferencedDocuments(
   // attached since the query above keeps its document.
   let removed = 0;
   for (const d of stale) {
-    if (await deleteDocumentIfUnused(userId, d.id)) removed++;
+    if (
+      await deleteDocumentIfUnused(userId, d.id, isNull(documents.heldUntil))
+    ) {
+      removed++;
+    }
   }
   return removed;
 }

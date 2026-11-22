@@ -45,6 +45,12 @@ export default defineConfig({
       adapter: adapter({ precompress: true, workbox: pwaOptions.workbox }),
       alias: { $lib: "src/lib", "$lib/*": "src/lib/*" },
       csp,
+      // SvelteKit's form-post origin check refuses a form-encoded POST without an
+      // Origin header, which is exactly what an OAuth client's token request is.
+      // "*" turns the built-in check off; src/lib/server/csrf.ts is the same
+      // check, applied in the handle hook to everything but the OAuth client
+      // endpoints. Do not set this without that hook.
+      csrf: { trustedOrigins: ["*"] },
     }),
     SvelteKitPWA(pwaOptions),
   ],

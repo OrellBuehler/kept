@@ -201,7 +201,11 @@ describe("external API: access", () => {
       displayName: "Me User",
       locale: "en-GB",
       defaultCurrency: "CHF",
-      token: { scopes: ["bills:read"], categoryIds: [cat.id] },
+      token: {
+        scopes: ["bills:read"],
+        categoryIds: [cat.id],
+        accountIds: null,
+      },
     });
   });
 

@@ -24,6 +24,10 @@ export const GET = apiEndpoint(null, async ({ userId, token }) => {
     displayName: user.displayName,
     locale: prefs.locale,
     defaultCurrency: prefs.defaultCurrency,
-    token: { scopes: token.scopes, categoryIds: token.categoryIds },
+    token: {
+      scopes: token.scopes,
+      categoryIds: token.categoryIds,
+      accountIds: token.accountIds ?? null,
+    },
   };
 });

@@ -322,14 +322,28 @@ describe("createApiTokenSchema", () => {
     ).toBe(false);
   });
 
-  it("knows every scope the API documents", () => {
-    expect([...API_SCOPES]).toEqual([
+  it("keeps the original scopes first and unchanged, then the MCP ones", () => {
+    expect(API_SCOPES.slice(0, 6)).toEqual([
       "bills:read",
       "transactions:read",
       "recurring:read",
       "categories:read",
       "accounts:read",
       "links:write",
+    ]);
+    expect(API_SCOPES.slice(6)).toEqual([
+      "balances:read",
+      "budgets:read",
+      "forecast:read",
+      "investments:read",
+      "pillar3a:read",
+      "taxes:read",
+      "changes:read",
+      "bills:write",
+      "matches:write",
+      "transactions:write",
+      "categories:write",
+      "changes:revert",
     ]);
   });
 });

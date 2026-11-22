@@ -3,7 +3,9 @@ import {
   isApiPath,
   isAppApiPath,
   isExternalApiPath,
+  isMcpPath,
   isPublicAppApiPath,
+  isCrossOriginPath,
   isPublicPath,
   safeRedirectTo,
 } from "./routing";
@@ -105,6 +107,40 @@ describe("isExternalApiPath", () => {
   });
 });
 
+describe("isMcpPath", () => {
+  it("matches the endpoint and everything under it, in any spelling", () => {
+    for (const p of [
+      "/api/mcp",
+      "/api/mcp/",
+      "/api/mcp/anything",
+      "/api/%6dcp",
+      "/api/mcp/%2e%2e",
+    ]) {
+      expect(isMcpPath(p), p).toBe(true);
+    }
+  });
+
+  it("does not match lookalikes or other APIs", () => {
+    for (const p of [
+      "/",
+      "/api",
+      "/api/mcpx",
+      "/api/mcp2",
+      "/api/public/mcp",
+      "/x/api/mcp",
+      "/api/external/v1/mcp",
+      "/api/%E0%A4%A",
+    ]) {
+      expect(isMcpPath(p), p).toBe(false);
+    }
+  });
+
+  it("is not public: the hook authenticates it separately", () => {
+    expect(isPublicPath("/api/mcp")).toBe(false);
+    expect(isApiPath("/api/mcp")).toBe(true);
+  });
+});
+
 describe("isAppApiPath", () => {
   it("matches the prefix and everything under it, in any spelling", () => {
     for (const p of [
@@ -176,5 +212,60 @@ describe("isPublicAppApiPath", () => {
   it("is not a public path of the web", () => {
     expect(isPublicPath("/api/app/v1/server")).toBe(false);
     expect(isApiPath("/api/app/v1/server")).toBe(true);
+  });
+});
+
+describe("the OAuth endpoints", () => {
+  it("makes public what a client calls itself, and the metadata documents", () => {
+    for (const path of [
+      "/oauth/register",
+      "/oauth/token",
+      "/oauth/revoke",
+      "/.well-known/oauth-protected-resource",
+      "/.well-known/oauth-protected-resource/api/mcp",
+      "/.well-known/oauth-authorization-server",
+    ]) {
+      expect(isPublicPath(path), path).toBe(true);
+    }
+  });
+
+  it("keeps the consent page behind the owner's session", () => {
+    for (const path of [
+      "/oauth/authorize",
+      "/oauth/authorize/",
+      "/oauth",
+      "/oauth/token/x",
+      "/oauth/tokens",
+      "/.well-known/oauth-protected-resourceX",
+      "/.well-known/other",
+    ]) {
+      expect(isPublicPath(path), path).toBe(false);
+    }
+  });
+
+  it("exempts only the three client endpoints and the exact MCP path from the form-post origin check", () => {
+    expect(
+      ["/oauth/register", "/oauth/token", "/oauth/revoke"].every(
+        isCrossOriginPath,
+      ),
+    ).toBe(true);
+    expect(isCrossOriginPath("/api/mcp")).toBe(true);
+    for (const path of [
+      "/oauth/authorize",
+      "/login",
+      "/api/mcp/",
+      "/api/mcp/x",
+      "/api/external/v1/bills",
+      "/api/app/v1/pages/x",
+      "/oauth/token/",
+    ]) {
+      expect(isCrossOriginPath(path), path).toBe(false);
+    }
+  });
+
+  it("keeps the whole request through the login round trip", () => {
+    const path =
+      "/oauth/authorize?client_id=c&redirect_uri=http%3A%2F%2F127.0.0.1%3A5%2Fcb&state=a%26b";
+    expect(safeRedirectTo(path)).toBe(path);
   });
 });

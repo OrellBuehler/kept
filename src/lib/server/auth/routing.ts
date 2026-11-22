@@ -1,16 +1,50 @@
+/**
+ * The endpoints an OAuth client calls itself, without the owner's session:
+ * registration, token and revocation, and the two metadata documents
+ * (`/oauth/authorize` is not among them: it needs the owner's session).
+ * They answer cross-origin requests, so they are also exempt from the
+ * form-post origin check (see `isCrossOriginPath`).
+ */
+export const OAUTH_CLIENT_PATHS = new Set([
+  "/oauth/register",
+  "/oauth/token",
+  "/oauth/revoke",
+]);
+const OAUTH_METADATA_PREFIXES = [
+  "/.well-known/oauth-protected-resource",
+  "/.well-known/oauth-authorization-server",
+];
+
 const PUBLIC_EXACT = new Set([
   "/login",
   "/login/verify",
   "/setup",
   "/api/health",
+  ...OAUTH_CLIENT_PATHS,
 ]);
 const PUBLIC_PREFIXES = ["/api/public/", "/api/auth/passkey/login/"];
 
 export function isPublicPath(pathname: string): boolean {
   return (
     PUBLIC_EXACT.has(pathname) ||
-    PUBLIC_PREFIXES.some((p) => pathname.startsWith(p))
+    PUBLIC_PREFIXES.some((p) => pathname.startsWith(p)) ||
+    OAUTH_METADATA_PREFIXES.some(
+      (p) => pathname === p || pathname.startsWith(`${p}/`),
+    )
   );
+}
+
+/**
+ * Paths that clients call from other origins with a form-encoded body or no
+ * content type and no `Origin` header (a command-line client has none): the
+ * only places the origin check of form posts does not apply. Nothing there
+ * reads a cookie: the OAuth client endpoints take what the client presents, and
+ * `/api/mcp` (matched exactly, as the SDK clients call it) takes a bearer token
+ * only, so an MCP client ending its session with a bodiless `DELETE` reaches
+ * the gate and gets its 405.
+ */
+export function isCrossOriginPath(pathname: string): boolean {
+  return OAUTH_CLIENT_PATHS.has(pathname) || pathname === MCP_PATH;
 }
 
 export const EXTERNAL_API_PREFIX = "/api/external/v1";
@@ -22,6 +56,13 @@ export const EXTERNAL_API_PREFIX = "/api/external/v1";
  */
 export function isExternalApiPath(pathname: string): boolean {
   return underPrefix(pathname, EXTERNAL_API_PREFIX);
+}
+
+export const MCP_PATH = "/api/mcp";
+
+/** The MCP server: bearer API tokens only, never a cookie. Decoded like `isExternalApiPath`. */
+export function isMcpPath(pathname: string): boolean {
+  return underPrefix(pathname, MCP_PATH);
 }
 
 export const APP_API_PREFIX = "/api/app/v1";

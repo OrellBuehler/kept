@@ -1,5 +1,35 @@
 # Changelog
 
+## Unreleased
+
+### Added
+
+- **MCP server** at `/api/mcp` (`docs/mcp.md`): an assistant that speaks the Model Context
+  Protocol can read your data and, if you allow it, create and edit bills, match payments, set
+  the category and note of a payment and manage categories and rules. It never changes the
+  amount, date or existence of a bank transaction. Connect with an API token or by signing in
+  (OAuth): the client opens a consent page where you choose the permissions.
+- **Finer permissions for API tokens and connected apps**: separate read permissions for
+  balances, budgets, forecast, investments, pillar 3a, taxes and the change log, write permissions
+  for bills, matches, payments and categories, and a restriction to chosen accounts next to the
+  one to categories. They apply to the external API as well.
+- **Change log** (Settings → Change log): every change with who made it (you on the web, the app,
+  an API token, an assistant, or Kept itself) and the values before and after. Changes to bills,
+  matches, payment categories and notes, categories and rules can be reverted one by one, or all
+  changes of one connection at once. A revert is refused when the data has changed since.
+- **Connected apps** on the API tokens page: rename or revoke what you connected by signing in.
+
+### Changed
+
+- A bill deleted through the API or by an assistant keeps its uploaded document for 30 days, so
+  reverting the delete brings the document back.
+
+### Fixed
+
+- Bill matching: a payment of twice the open amount was suggested twice and never confirmed
+  automatically; a bill stayed "paid" in an integration after its payment was deleted; payments
+  up to five days before the matching window were not considered.
+
 ## 0.6.0
 
 ### Upgrading from 0.5.0

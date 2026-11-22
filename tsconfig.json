@@ -1,6 +1,6 @@
 {
   "extends": "$app/tsconfig",
-  "include": ["src", "vite.config.ts"],
+  "include": ["src", "src/routes/.well-known/**/*.ts", "vite.config.ts"],
   "exclude": ["src/service-worker"],
   "compilerOptions": {
     "rewriteRelativeImportExtensions": true,

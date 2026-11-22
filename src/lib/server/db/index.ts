@@ -466,6 +466,15 @@ export function afterCommit(hook: Hook): void {
   else if (where === "root") void runHook(hook);
 }
 
+/**
+ * True while the caller runs inside `transaction()` (or a savepoint of one) that
+ * is still open: what a write that must commit or roll back with another one
+ * (the change log) checks before it starts.
+ */
+export function inTransaction(): boolean {
+  return classify(als.getStore()) === "tx";
+}
+
 /** The first row of a query, or undefined. Select call sites should add `.limit(1)`. */
 export async function first<T>(
   query: PromiseLike<T[]>,
