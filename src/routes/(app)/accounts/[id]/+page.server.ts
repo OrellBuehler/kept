@@ -90,6 +90,7 @@ const accountFields = [
   "currency",
   "iban",
   "contractNumber",
+  "websiteUrl",
   "depositIban",
   "openingBalance",
   "openingDate",

@@ -260,6 +260,13 @@
       "when": 1795352318164,
       "tag": "0036_great_pet_avengers",
       "breakpoints": true
+    },
+    {
+      "idx": 37,
+      "version": "6",
+      "when": 1795358871147,
+      "tag": "0037_free_firebrand",
+      "breakpoints": true
     }
   ]
 }

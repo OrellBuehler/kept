@@ -22,6 +22,7 @@
   import ArchiveRestoreIcon from "@lucide/svelte/icons/archive-restore";
   import ChevronLeftIcon from "@lucide/svelte/icons/chevron-left";
   import CopyIcon from "@lucide/svelte/icons/copy";
+  import ExternalLinkIcon from "@lucide/svelte/icons/external-link";
   import HistoryIcon from "@lucide/svelte/icons/history";
   import MoreHorizontalIcon from "@lucide/svelte/icons/ellipsis";
   import PencilIcon from "@lucide/svelte/icons/pencil";
@@ -43,6 +44,9 @@
   let { data }: PageProps = $props();
 
   const account = $derived(data.account);
+  const portalUrl = $derived(
+    account.websiteUrl ?? account.institution?.websiteUrl ?? null,
+  );
   const currencyLocked = $derived(
     account.lastBookingDate !== null ||
       account.openingBalance !== 0 ||
@@ -155,6 +159,16 @@
               <InstitutionLogo institution={account.institution} size="sm" />
               {account.institution.name}
             </span>
+          {/if}
+          {#if portalUrl}
+            <a
+              href={portalUrl}
+              target="_blank"
+              rel="external noopener noreferrer"
+              class="hover:text-foreground flex items-center gap-1 underline-offset-4 hover:underline"
+            >
+              Website <ExternalLinkIcon class="size-3.5" />
+            </a>
           {/if}
           {#if account.iban && prefs.ibanDisplay !== "hidden"}
             <span class="flex items-center gap-1">

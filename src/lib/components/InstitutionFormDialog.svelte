@@ -24,6 +24,7 @@
       bic: string | null;
       color: string | null;
       logoVersion: string | null;
+      websiteUrl?: string | null;
     } | null;
   } = $props();
 
@@ -86,7 +87,7 @@
       use:enhance={submitHandler({
         setPending: (v) => (pending = v),
         setErrors: (e) => (errors = e),
-        knownFields: ["name", "bic", "color", "logo"],
+        knownFields: ["name", "bic", "color", "websiteUrl", "logo"],
         successMessage: editing ? "Institution updated" : "Institution added",
         onSuccess: () => (open = false),
       })}
@@ -120,6 +121,23 @@
           autocapitalize="characters"
           value={institution?.bic ?? ""}
           aria-invalid={!!errors.bic}
+        />
+      </FormField>
+      <FormField
+        label="Website (optional)"
+        for="{uid}-website"
+        errors={errors.websiteUrl}
+        hint="Link to the e-banking or provider portal."
+      >
+        <Input
+          id="{uid}-website"
+          name="websiteUrl"
+          type="url"
+          maxlength={300}
+          placeholder="https://www.example.com"
+          autocomplete="off"
+          value={institution?.websiteUrl ?? ""}
+          aria-invalid={!!errors.websiteUrl}
         />
       </FormField>
       <FormField

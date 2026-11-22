@@ -1,12 +1,13 @@
 {
   "data": {
     "account": {
-      "id": "fac3616a-1a96-4171-ac3d-50b72d0d3cfb",
+      "id": "3486d393-2f40-42b8-90c5-ffd2a5bddb26",
       "name": "Example Checking",
       "type": "current",
       "currency": "CHF",
       "iban": "CH9300762011623852957",
       "contractNumber": null,
+      "websiteUrl": null,
       "depositIban": null,
       "openingBalance": 250000,
       "openingDate": null,
@@ -20,22 +21,23 @@
       "shareBps": 10000,
       "sharedWith": null,
       "institution": {
-        "id": "1fd13a15-292d-4b4a-aba8-e6d033b536bb",
+        "id": "0c320f11-40b2-46d1-a815-d1ea67c2e416",
         "name": "Example Bank",
         "color": "#1a73e8",
-        "logoVersion": "fa25202f7fd431e3"
+        "logoVersion": "fa25202f7fd431e3",
+        "websiteUrl": null
       },
       "balance": 112860,
       "cashBalance": 112860,
       "holdings": null,
       "shareBalance": 112860,
-      "lastBookingDate": "2026-11-20",
-      "lastImportAt": 1795292415888
+      "lastBookingDate": "2026-11-21",
+      "lastImportAt": 1795359129289
     },
     "imports": [
       {
-        "id": "0f54f833-89bc-4859-8790-d8d17d8f84cf",
-        "accountId": "fac3616a-1a96-4171-ac3d-50b72d0d3cfb",
+        "id": "e8a60d9e-0a59-4a36-aeae-e858985cc301",
+        "accountId": "3486d393-2f40-42b8-90c5-ffd2a5bddb26",
         "accountName": "Example Checking",
         "currency": "CHF",
         "format": "camt053",
@@ -53,11 +55,11 @@
           "The file's opening balance (CHF 75.00 on 2025-01-01) does not match the ledger balance at the end of the previous day (CHF 1,232.50). This usually means a gap between imports or missing transactions.",
           "After this import the ledger balance on 2025-01-31 would be CHF 1,232.50, but the file's closing balance is CHF 75.00. This usually means a gap between imports or missing transactions."
         ],
-        "createdAt": 1795292415888
+        "createdAt": 1795359129289
       },
       {
-        "id": "d392ae18-cf07-4c3e-a26d-7740dfaf7c1b",
-        "accountId": "fac3616a-1a96-4171-ac3d-50b72d0d3cfb",
+        "id": "5e31da6c-3a33-4e5b-81b2-5a4b1ff28102",
+        "accountId": "3486d393-2f40-42b8-90c5-ffd2a5bddb26",
         "accountName": "Example Checking",
         "currency": "CHF",
         "format": "camt053",
@@ -71,13 +73,13 @@
         "newCount": 5,
         "duplicateCount": 0,
         "warnings": [],
-        "createdAt": 1795292415882
+        "createdAt": 1795359129277
       }
     ],
     "impacts": {
-      "0f54f833-89bc-4859-8790-d8d17d8f84cf": {
-        "transactions": 0,
-        "categorized": 0,
+      "5e31da6c-3a33-4e5b-81b2-5a4b1ff28102": {
+        "transactions": 5,
+        "categorized": 3,
         "notes": 0,
         "taxYears": 0,
         "deductionYears": 0,
@@ -86,9 +88,9 @@
         "transferLinks": 0,
         "mirrors": 0
       },
-      "d392ae18-cf07-4c3e-a26d-7740dfaf7c1b": {
-        "transactions": 5,
-        "categorized": 3,
+      "e8a60d9e-0a59-4a36-aeae-e858985cc301": {
+        "transactions": 0,
+        "categorized": 0,
         "notes": 0,
         "taxYears": 0,
         "deductionYears": 0,

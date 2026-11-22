@@ -104,6 +104,60 @@ describe("institutions", () => {
     expect(updated).toMatchObject({ name: "Gamma", color: "#ffffff" });
   });
 
+  it("stores, changes and clears the website link, scoped to the owner", async () => {
+    const u = await createTestUser();
+    const other = await createTestUser();
+    const inst = await createInstitution(u.id, {
+      name: "Linked",
+      bic: null,
+      color: null,
+      websiteUrl: "https://portal.example.com",
+    });
+    expect(inst.websiteUrl).toBe("https://portal.example.com");
+    const acc = await seedAccount(u.id, {
+      institutionId: inst.id,
+      websiteUrl: "https://card.example.com",
+    });
+    expect(acc.websiteUrl).toBe("https://card.example.com");
+    expect(acc.institution?.websiteUrl).toBe("https://portal.example.com");
+
+    const changed = await updateInstitution(u.id, inst.id, {
+      name: "Linked",
+      bic: null,
+      color: null,
+      websiteUrl: "https://other.example.com",
+    });
+    expect(changed.websiteUrl).toBe("https://other.example.com");
+    expect((await getAccount(u.id, acc.id)).institution?.websiteUrl).toBe(
+      "https://other.example.com",
+    );
+    const cleared = await updateInstitution(u.id, inst.id, {
+      name: "Linked",
+      bic: null,
+      color: null,
+      websiteUrl: null,
+    });
+    expect(cleared.websiteUrl).toBeNull();
+
+    const edited = await updateAccount(u.id, acc.id, {
+      ...accountToInput(acc),
+      websiteUrl: "https://new.example.com",
+    });
+    expect(edited.websiteUrl).toBe("https://new.example.com");
+    const reread = await getAccount(u.id, acc.id);
+    expect(
+      (
+        await updateAccount(u.id, acc.id, {
+          ...accountToInput(reread),
+          websiteUrl: null,
+        })
+      ).websiteUrl,
+    ).toBeNull();
+
+    expect(await listInstitutions(other.id)).toEqual([]);
+    expect(await listAccounts(other.id)).toEqual([]);
+  });
+
   it("enforces unique names per user only", async () => {
     const a = await createTestUser();
     const b = await createTestUser();
@@ -399,6 +453,7 @@ function accountToInput(a: Awaited<ReturnType<typeof getAccount>>) {
     currency: a.currency,
     iban: a.iban,
     contractNumber: a.contractNumber,
+    websiteUrl: a.websiteUrl,
     depositIban: a.depositIban,
     openingBalance: a.openingBalance,
     openingDate: a.openingDate,

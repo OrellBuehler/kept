@@ -38,6 +38,7 @@ export interface InstitutionRef {
   name: string;
   color: string | null;
   logoVersion: string | null;
+  websiteUrl: string | null;
 }
 
 export interface AccountView {
@@ -48,6 +49,8 @@ export interface AccountView {
   iban: string | null;
   /** Pillar 3a: the provider's contract number. */
   contractNumber: string | null;
+  /** The account's own web portal link; `institution.websiteUrl` is the fallback. */
+  websiteUrl: string | null;
   /** Pillar 3a: the IBAN (usually a QR-IBAN) payments go to. */
   depositIban: string | null;
   openingBalance: Minor;
@@ -87,6 +90,7 @@ const ACCOUNT_AUDIT_FIELDS = [
   "iban",
   "institutionId",
   "contractNumber",
+  "websiteUrl",
   "depositIban",
   "openingBalance",
   "openingDate",
@@ -127,6 +131,7 @@ async function baseRows(userId: string, accountId?: string) {
       currency: accounts.currency,
       iban: accounts.iban,
       contractNumber: accounts.contractNumber,
+      websiteUrl: accounts.websiteUrl,
       depositIban: accounts.depositIban,
       openingBalance: accounts.openingBalance,
       openingDate: accounts.openingDate,
@@ -143,6 +148,7 @@ async function baseRows(userId: string, accountId?: string) {
       institutionName: institutions.name,
       institutionColor: institutions.color,
       institutionLogoVersion: institutions.logoVersion,
+      institutionWebsiteUrl: institutions.websiteUrl,
     })
     .from(accounts)
     .leftJoin(institutions, eq(institutions.id, accounts.institutionId))
@@ -210,6 +216,7 @@ async function toViews(
     currency: r.currency,
     iban: r.iban,
     contractNumber: r.contractNumber,
+    websiteUrl: r.websiteUrl,
     depositIban: r.depositIban,
     openingBalance: r.openingBalance,
     openingDate: r.openingDate,
@@ -228,6 +235,7 @@ async function toViews(
           name: r.institutionName!,
           color: r.institutionColor,
           logoVersion: r.institutionLogoVersion,
+          websiteUrl: r.institutionWebsiteUrl,
         }
       : null,
     balance: values.get(r.id)!.total,
@@ -372,6 +380,7 @@ export async function createAccount(
             .insert(accounts)
             .values({
               ...input,
+              websiteUrl: input.websiteUrl ?? null,
               sortOrder,
               userId,
               fillFromTransfers:
@@ -552,6 +561,7 @@ async function updateAccountInTx(
     .update(accounts)
     .set({
       ...rest,
+      websiteUrl: rest.websiteUrl ?? null,
       fillFromTransfers,
       tradesMoveCash,
       sortOrder: sortOrder ?? current.sortOrder,

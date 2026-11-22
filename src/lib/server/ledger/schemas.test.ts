@@ -52,7 +52,7 @@ describe("institutionInputSchema", () => {
     const min = parseForm(institutionInputSchema, form({ name: " Bank " }));
     expect(min).toEqual({
       ok: true,
-      data: { name: "Bank", bic: null, color: null },
+      data: { name: "Bank", bic: null, color: null, websiteUrl: null },
     });
     const full = parseForm(
       institutionInputSchema,
@@ -60,7 +60,12 @@ describe("institutionInputSchema", () => {
     );
     expect(full).toEqual({
       ok: true,
-      data: { name: "X", bic: LEDGER_BIC_11, color: "#abcdef" },
+      data: {
+        name: "X",
+        bic: LEDGER_BIC_11,
+        color: "#abcdef",
+        websiteUrl: null,
+      },
     });
     expect(
       parseForm(institutionInputSchema, form({ name: "X", bic: LEDGER_BIC_8 }))
@@ -78,6 +83,66 @@ describe("institutionInputSchema", () => {
       expect(Object.keys(r.errors).sort()).toEqual(["bic", "color", "name"]);
     expect(
       parseForm(institutionInputSchema, form({ name: "x".repeat(81) })).ok,
+    ).toBe(false);
+  });
+});
+
+describe("websiteUrl", () => {
+  const parse = (websiteUrl: string | undefined) =>
+    parseForm(
+      accountInputSchema,
+      form({
+        name: "Card",
+        type: "credit_card",
+        currency: "CHF",
+        ...(websiteUrl === undefined ? {} : { websiteUrl }),
+      }),
+    );
+
+  it("accepts an absolute http(s) link and trims it", () => {
+    expect(parse("  https://portal.example.com/login?a=1 ")).toMatchObject({
+      ok: true,
+      data: { websiteUrl: "https://portal.example.com/login?a=1" },
+    });
+    expect(parse("http://example.com")).toMatchObject({ ok: true });
+    expect(
+      parseForm(
+        institutionInputSchema,
+        form({ name: "X", websiteUrl: "https://www.example.com" }),
+      ),
+    ).toMatchObject({
+      ok: true,
+      data: { websiteUrl: "https://www.example.com" },
+    });
+  });
+
+  it("turns blank or missing into null", () => {
+    expect(parse("   ")).toMatchObject({
+      ok: true,
+      data: { websiteUrl: null },
+    });
+    expect(parse(undefined)).toMatchObject({
+      ok: true,
+      data: { websiteUrl: null },
+    });
+  });
+
+  it.each([
+    "javascript:alert(1)",
+    "data:text/html,hi",
+    "ftp://example.com",
+    "file:///etc/passwd",
+    "www.example.com",
+    "/relative/path",
+    "https://",
+    `https://example.com/${"a".repeat(300)}`,
+  ])("rejects %s", (value) => {
+    const r = parse(value);
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.errors.websiteUrl).toBeDefined();
+    expect(
+      parseForm(institutionInputSchema, form({ name: "X", websiteUrl: value }))
+        .ok,
     ).toBe(false);
   });
 });

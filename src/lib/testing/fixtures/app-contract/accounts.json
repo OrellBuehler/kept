@@ -2,30 +2,33 @@
   "data": {
     "institutions": [
       {
-        "id": "1fd13a15-292d-4b4a-aba8-e6d033b536bb",
+        "id": "0c320f11-40b2-46d1-a815-d1ea67c2e416",
         "name": "Example Bank",
         "bic": "EXAMCHZZ",
         "color": "#1a73e8",
         "logoVersion": "fa25202f7fd431e3",
+        "websiteUrl": null,
         "accountCount": 5
       },
       {
-        "id": "98b8538b-76c4-4eaf-86b7-febbeaf40536",
+        "id": "9feb3805-2382-4fe4-a094-5edbfda2f29c",
         "name": "Example Broker",
         "bic": null,
         "color": null,
         "logoVersion": null,
+        "websiteUrl": null,
         "accountCount": 2
       }
     ],
     "accounts": [
       {
-        "id": "fac3616a-1a96-4171-ac3d-50b72d0d3cfb",
+        "id": "3486d393-2f40-42b8-90c5-ffd2a5bddb26",
         "name": "Example Checking",
         "type": "current",
         "currency": "CHF",
         "iban": "CH9300762011623852957",
         "contractNumber": null,
+        "websiteUrl": null,
         "depositIban": null,
         "openingBalance": 250000,
         "openingDate": null,
@@ -39,28 +42,30 @@
         "shareBps": 10000,
         "sharedWith": null,
         "institution": {
-          "id": "1fd13a15-292d-4b4a-aba8-e6d033b536bb",
+          "id": "0c320f11-40b2-46d1-a815-d1ea67c2e416",
           "name": "Example Bank",
           "color": "#1a73e8",
-          "logoVersion": "fa25202f7fd431e3"
+          "logoVersion": "fa25202f7fd431e3",
+          "websiteUrl": null
         },
         "balance": 112860,
         "cashBalance": 112860,
         "holdings": null,
         "shareBalance": 112860,
-        "lastBookingDate": "2026-11-20",
-        "lastImportAt": 1795292415888
+        "lastBookingDate": "2026-11-21",
+        "lastImportAt": 1795359129289
       },
       {
-        "id": "b0da608d-0c75-4473-954f-999f8a577658",
+        "id": "258d6028-d2f3-4ec4-961d-61ebc4c915cd",
         "name": "Example Savings",
         "type": "savings",
         "currency": "CHF",
         "iban": "CH5604835012345678009",
         "contractNumber": null,
+        "websiteUrl": null,
         "depositIban": null,
         "openingBalance": 1200000,
-        "openingDate": "2026-07-24",
+        "openingDate": "2026-07-25",
         "noticeMonths": 3,
         "freeWithdrawal": 500000,
         "freeWithdrawalPeriod": "year",
@@ -71,25 +76,27 @@
         "shareBps": 10000,
         "sharedWith": null,
         "institution": {
-          "id": "1fd13a15-292d-4b4a-aba8-e6d033b536bb",
+          "id": "0c320f11-40b2-46d1-a815-d1ea67c2e416",
           "name": "Example Bank",
           "color": "#1a73e8",
-          "logoVersion": "fa25202f7fd431e3"
+          "logoVersion": "fa25202f7fd431e3",
+          "websiteUrl": null
         },
         "balance": 1251000,
         "cashBalance": 1251000,
         "holdings": null,
         "shareBalance": 1251000,
-        "lastBookingDate": "2026-11-01",
+        "lastBookingDate": "2026-11-02",
         "lastImportAt": null
       },
       {
-        "id": "4723c0bd-5915-4bb4-bf8a-e4c4e6c71ab3",
+        "id": "58f7cd50-c58c-44d6-8f61-42310e0d0aca",
         "name": "Example Credit Card",
         "type": "credit_card",
         "currency": "CHF",
         "iban": null,
         "contractNumber": null,
+        "websiteUrl": null,
         "depositIban": null,
         "openingBalance": 0,
         "openingDate": null,
@@ -103,28 +110,30 @@
         "shareBps": 10000,
         "sharedWith": null,
         "institution": {
-          "id": "1fd13a15-292d-4b4a-aba8-e6d033b536bb",
+          "id": "0c320f11-40b2-46d1-a815-d1ea67c2e416",
           "name": "Example Bank",
           "color": "#1a73e8",
-          "logoVersion": "fa25202f7fd431e3"
+          "logoVersion": "fa25202f7fd431e3",
+          "websiteUrl": null
         },
         "balance": 359650,
         "cashBalance": 359650,
         "holdings": null,
         "shareBalance": 359650,
-        "lastBookingDate": "2026-11-13",
-        "lastImportAt": 1795292415900
+        "lastBookingDate": "2026-11-14",
+        "lastImportAt": 1795359129302
       },
       {
-        "id": "46d68a57-3f39-40a8-b5c2-2c6908edecbb",
+        "id": "94aa557c-b095-4d45-a191-b3191548225b",
         "name": "Example Brokerage",
         "type": "investment",
         "currency": "CHF",
         "iban": null,
         "contractNumber": null,
+        "websiteUrl": null,
         "depositIban": null,
         "openingBalance": 2000000,
-        "openingDate": "2026-05-05",
+        "openingDate": "2026-05-06",
         "noticeMonths": null,
         "freeWithdrawal": null,
         "freeWithdrawalPeriod": null,
@@ -135,10 +144,11 @@
         "shareBps": 10000,
         "sharedWith": null,
         "institution": {
-          "id": "98b8538b-76c4-4eaf-86b7-febbeaf40536",
+          "id": "9feb3805-2382-4fe4-a094-5edbfda2f29c",
           "name": "Example Broker",
           "color": null,
-          "logoVersion": null
+          "logoVersion": null,
+          "websiteUrl": null
         },
         "balance": 2023320,
         "cashBalance": 1789200,
@@ -148,16 +158,17 @@
           "estimated": false
         },
         "shareBalance": 2023320,
-        "lastBookingDate": "2026-08-03",
+        "lastBookingDate": "2026-08-04",
         "lastImportAt": null
       },
       {
-        "id": "d436a836-7204-4373-ad12-082d0d7aa5d8",
+        "id": "1edd858c-af1f-4910-84c4-859409bbd141",
         "name": "Example Pillar 3a",
         "type": "pillar_3a",
         "currency": "CHF",
         "iban": null,
         "contractNumber": "EX-3A-0001",
+        "websiteUrl": null,
         "depositIban": "CH4431999123000889012",
         "openingBalance": 0,
         "openingDate": null,
@@ -171,10 +182,11 @@
         "shareBps": 10000,
         "sharedWith": null,
         "institution": {
-          "id": "98b8538b-76c4-4eaf-86b7-febbeaf40536",
+          "id": "9feb3805-2382-4fe4-a094-5edbfda2f29c",
           "name": "Example Broker",
           "color": null,
-          "logoVersion": null
+          "logoVersion": null,
+          "websiteUrl": null
         },
         "balance": 846000,
         "cashBalance": 0,
@@ -184,15 +196,16 @@
         "lastImportAt": null
       },
       {
-        "id": "a0c71505-621d-4c92-846f-59b9fc558340",
+        "id": "74f1e5be-630c-4e2b-b1c3-2aa178ef8e02",
         "name": "Example Pension Fund",
         "type": "pension",
         "currency": "CHF",
         "iban": "NL91ABNA0417164300",
         "contractNumber": null,
+        "websiteUrl": null,
         "depositIban": null,
         "openingBalance": 4500000,
-        "openingDate": "2026-05-05",
+        "openingDate": "2026-05-06",
         "noticeMonths": null,
         "freeWithdrawal": null,
         "freeWithdrawalPeriod": null,
@@ -211,12 +224,13 @@
         "lastImportAt": null
       },
       {
-        "id": "5e3f3af3-8d32-4036-b403-b20a5eef538c",
+        "id": "f94ecd48-dc50-45ea-9517-7c45ede0f286",
         "name": "Example Euro Account",
         "type": "current",
         "currency": "EUR",
         "iban": "DE89370400440532013000",
         "contractNumber": null,
+        "websiteUrl": null,
         "depositIban": null,
         "openingBalance": 80000,
         "openingDate": null,
@@ -230,25 +244,27 @@
         "shareBps": 10000,
         "sharedWith": null,
         "institution": {
-          "id": "1fd13a15-292d-4b4a-aba8-e6d033b536bb",
+          "id": "0c320f11-40b2-46d1-a815-d1ea67c2e416",
           "name": "Example Bank",
           "color": "#1a73e8",
-          "logoVersion": "fa25202f7fd431e3"
+          "logoVersion": "fa25202f7fd431e3",
+          "websiteUrl": null
         },
         "balance": 118650,
         "cashBalance": 118650,
         "holdings": null,
         "shareBalance": 118650,
-        "lastBookingDate": "2026-11-16",
+        "lastBookingDate": "2026-11-17",
         "lastImportAt": null
       },
       {
-        "id": "789bf03b-84f9-44f1-bec9-0dcb3b0c55c2",
+        "id": "08b2c1a0-6b0b-4978-864a-332697bc6ffb",
         "name": "Example Joint Account",
         "type": "current",
         "currency": "CHF",
         "iban": "AT611904300234573201",
         "contractNumber": null,
+        "websiteUrl": null,
         "depositIban": null,
         "openingBalance": 300000,
         "openingDate": null,
@@ -262,25 +278,27 @@
         "shareBps": 5000,
         "sharedWith": "Alice Example",
         "institution": {
-          "id": "1fd13a15-292d-4b4a-aba8-e6d033b536bb",
+          "id": "0c320f11-40b2-46d1-a815-d1ea67c2e416",
           "name": "Example Bank",
           "color": "#1a73e8",
-          "logoVersion": "fa25202f7fd431e3"
+          "logoVersion": "fa25202f7fd431e3",
+          "websiteUrl": null
         },
         "balance": 318000,
         "cashBalance": 318000,
         "holdings": null,
         "shareBalance": 159000,
-        "lastBookingDate": "2026-11-10",
+        "lastBookingDate": "2026-11-11",
         "lastImportAt": null
       },
       {
-        "id": "abf4ce0f-0eb2-4dbe-886d-8370faf6e15c",
+        "id": "df17c54a-a84b-448c-9b4a-bb1a5a8355a4",
         "name": "Example Wallet",
         "type": "cash",
         "currency": "CHF",
         "iban": null,
         "contractNumber": null,
+        "websiteUrl": null,
         "depositIban": null,
         "openingBalance": 10000,
         "openingDate": null,
@@ -302,12 +320,13 @@
         "lastImportAt": null
       },
       {
-        "id": "9903d314-508d-44b1-9052-6a298bc99e0f",
+        "id": "b584493c-b842-4484-8c08-86c209024e1b",
         "name": "Example Old Account",
         "type": "other",
         "currency": "CHF",
         "iban": null,
         "contractNumber": null,
+        "websiteUrl": null,
         "depositIban": null,
         "openingBalance": 0,
         "openingDate": null,
@@ -325,7 +344,7 @@
         "cashBalance": 1000,
         "holdings": null,
         "shareBalance": 1000,
-        "lastBookingDate": "2026-01-25",
+        "lastBookingDate": "2026-01-26",
         "lastImportAt": null
       }
     ]

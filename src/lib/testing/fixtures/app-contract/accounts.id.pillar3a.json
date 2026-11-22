@@ -1,12 +1,13 @@
 {
   "data": {
     "account": {
-      "id": "1a564118-6659-4918-b51c-0916c67288c1",
+      "id": "1edd858c-af1f-4910-84c4-859409bbd141",
       "name": "Example Pillar 3a",
       "type": "pillar_3a",
       "currency": "CHF",
       "iban": null,
       "contractNumber": "EX-3A-0001",
+      "websiteUrl": null,
       "depositIban": "CH4431999123000889012",
       "openingBalance": 0,
       "openingDate": null,
@@ -20,10 +21,11 @@
       "shareBps": 10000,
       "sharedWith": null,
       "institution": {
-        "id": "bb7ec956-353b-40fd-a197-40da32b089a0",
+        "id": "9feb3805-2382-4fe4-a094-5edbfda2f29c",
         "name": "Example Broker",
         "color": null,
-        "logoVersion": null
+        "logoVersion": null,
+        "websiteUrl": null
       },
       "balance": 846000,
       "cashBalance": 0,
@@ -45,8 +47,8 @@
     "showPortfolios": true,
     "portfolios": [
       {
-        "id": "e9f137c2-c693-4f19-bd33-910b88e790a0",
-        "accountId": "1a564118-6659-4918-b51c-0916c67288c1",
+        "id": "10234320-15d2-4f3f-b744-24cf9b33dcea",
+        "accountId": "1edd858c-af1f-4910-84c4-859409bbd141",
         "name": "Example Portfolio A",
         "number": "P-001",
         "strategy": "Equity 60",
@@ -61,8 +63,8 @@
         "latestGainBps": 1244
       },
       {
-        "id": "6b393632-aab2-4cf6-836a-d3ca602f10e4",
-        "accountId": "1a564118-6659-4918-b51c-0916c67288c1",
+        "id": "7acb8d01-f53f-4a50-814c-bb5f871708b4",
+        "accountId": "1edd858c-af1f-4910-84c4-859409bbd141",
         "name": "Example Portfolio B",
         "number": null,
         "strategy": null,
@@ -78,10 +80,10 @@
       }
     ],
     "portfolioValues": {
-      "e9f137c2-c693-4f19-bd33-910b88e790a0": [
+      "10234320-15d2-4f3f-b744-24cf9b33dcea": [
         {
-          "id": "88cfe4c3-264a-4616-8f07-a1086b651992",
-          "portfolioId": "e9f137c2-c693-4f19-bd33-910b88e790a0",
+          "id": "36dbb4f4-ed03-492d-a098-d1e2addde290",
+          "portfolioId": "10234320-15d2-4f3f-b744-24cf9b33dcea",
           "date": "2026-11-18",
           "amount": 846000,
           "gain": 96000,
@@ -89,8 +91,8 @@
           "note": null
         },
         {
-          "id": "f86563c3-ccec-4d93-9b25-fea5fa01313a",
-          "portfolioId": "e9f137c2-c693-4f19-bd33-910b88e790a0",
+          "id": "93f9fc7b-53b7-456c-9b84-b4d3e713972f",
+          "portfolioId": "10234320-15d2-4f3f-b744-24cf9b33dcea",
           "date": "2026-09-23",
           "amount": 820000,
           "gain": 70000,
@@ -98,10 +100,10 @@
           "note": "Quarterly statement"
         }
       ],
-      "6b393632-aab2-4cf6-836a-d3ca602f10e4": [
+      "7acb8d01-f53f-4a50-814c-bb5f871708b4": [
         {
-          "id": "a1bf3e90-34e2-4114-8bf0-c808644e419b",
-          "portfolioId": "6b393632-aab2-4cf6-836a-d3ca602f10e4",
+          "id": "858dd4d2-e8bf-4b93-bc36-900190c9f97b",
+          "portfolioId": "7acb8d01-f53f-4a50-814c-bb5f871708b4",
           "date": "2026-09-23",
           "amount": 300000,
           "gain": null,
@@ -113,7 +115,7 @@
     "trades": [],
     "securities": [
       {
-        "id": "75b0eac2-3182-4514-81ee-1b330af16958",
+        "id": "264dfb34-d980-4e78-9aa7-d7a346fbb591",
         "name": "Example Bond Fund",
         "kind": "bond",
         "isin": "EX0000000021",
@@ -121,7 +123,7 @@
         "currency": "CHF"
       },
       {
-        "id": "311ad664-8855-4f5b-88d7-2be2017a354c",
+        "id": "bee6b308-fa58-4f57-81ab-579e5a313d8d",
         "name": "Example Stock Corp",
         "kind": "stock",
         "isin": null,
@@ -129,7 +131,7 @@
         "currency": "USD"
       },
       {
-        "id": "be973c99-7ea2-4ef1-b201-bcf8c34d54e8",
+        "id": "a217d557-ad88-43ad-81d5-62d114958d4d",
         "name": "Example World ETF",
         "kind": "etf",
         "isin": "EX0000000013",
@@ -139,11 +141,11 @@
     ],
     "institutions": [
       {
-        "id": "07e1fa6c-50ec-4805-8d36-2013a9cf8963",
+        "id": "0c320f11-40b2-46d1-a815-d1ea67c2e416",
         "name": "Example Bank"
       },
       {
-        "id": "bb7ec956-353b-40fd-a197-40da32b089a0",
+        "id": "9feb3805-2382-4fe4-a094-5edbfda2f29c",
         "name": "Example Broker"
       }
     ],
@@ -164,7 +166,7 @@
     },
     "categories": [
       {
-        "id": "53a45ccf-ada7-46d8-a8da-a418123df2ca",
+        "id": "cb9fc187-d60c-4d25-9cea-2c2b55da99aa",
         "name": "Donations",
         "parentId": null,
         "kind": "expense",
@@ -172,7 +174,7 @@
         "icon": "gift"
       },
       {
-        "id": "f6f6b7c5-2a29-4198-9b0c-2543fd1ee2a5",
+        "id": "e10dc4b7-7d3c-46b2-b721-fea02f669522",
         "name": "Food",
         "parentId": null,
         "kind": "expense",
@@ -180,23 +182,23 @@
         "icon": "utensils"
       },
       {
-        "id": "deed2249-9cb5-4ddf-8c3f-b6836c4c2eba",
+        "id": "9174b884-c0da-45f6-87bc-50da27bbf5f6",
         "name": "Groceries",
-        "parentId": "f6f6b7c5-2a29-4198-9b0c-2543fd1ee2a5",
+        "parentId": "e10dc4b7-7d3c-46b2-b721-fea02f669522",
         "kind": "expense",
         "color": "#ef6c00",
         "icon": "shopping-cart"
       },
       {
-        "id": "8db71f8a-0124-409a-92a7-9045544a4395",
+        "id": "8c392ee8-0383-4709-8a7a-51d718af5152",
         "name": "Restaurants",
-        "parentId": "f6f6b7c5-2a29-4198-9b0c-2543fd1ee2a5",
+        "parentId": "e10dc4b7-7d3c-46b2-b721-fea02f669522",
         "kind": "expense",
         "color": null,
         "icon": null
       },
       {
-        "id": "d7e31f17-470f-482b-b8aa-07ea6f48d18f",
+        "id": "c9570d74-255f-499f-a0fc-ef30491b444e",
         "name": "Gifts received",
         "parentId": null,
         "kind": "income",
@@ -204,7 +206,7 @@
         "icon": "gift"
       },
       {
-        "id": "f608aa32-454c-4272-8992-a1f4767d7805",
+        "id": "5bed65b4-5475-4939-84be-153e83f03933",
         "name": "Health",
         "parentId": null,
         "kind": "expense",
@@ -212,15 +214,15 @@
         "icon": "heart-pulse"
       },
       {
-        "id": "94785e1f-b6a1-4515-9f36-1d316434182e",
+        "id": "a9c6683b-7ff6-4f28-a7d0-effbde9e8c3e",
         "name": "Pharmacy",
-        "parentId": "f608aa32-454c-4272-8992-a1f4767d7805",
+        "parentId": "5bed65b4-5475-4939-84be-153e83f03933",
         "kind": "expense",
         "color": "#ad1457",
         "icon": "heart-pulse"
       },
       {
-        "id": "29a04967-97b0-442c-a0f5-fc6a98a175f0",
+        "id": "1c49ae63-806d-4f8e-9a3d-d1c1b020697e",
         "name": "Housing",
         "parentId": null,
         "kind": "expense",
@@ -228,7 +230,7 @@
         "icon": "house"
       },
       {
-        "id": "fc4d59dd-3c54-476a-828f-b1e2097a301c",
+        "id": "4f24e690-2f9a-44fd-a428-1d54559c326c",
         "name": "Insurance",
         "parentId": null,
         "kind": "expense",
@@ -236,7 +238,7 @@
         "icon": "shield"
       },
       {
-        "id": "cf184280-dfd0-4997-8dbd-708a96b3a651",
+        "id": "da70ed36-7040-42e7-a869-f35bd04a17e2",
         "name": "Salary",
         "parentId": null,
         "kind": "income",
@@ -244,7 +246,7 @@
         "icon": "wallet"
       },
       {
-        "id": "79565663-7b14-4214-bd6b-45bc9dca776c",
+        "id": "a04b9011-7055-4c72-b93b-5f31c54c22b8",
         "name": "Subscriptions",
         "parentId": null,
         "kind": "expense",
@@ -252,7 +254,7 @@
         "icon": null
       },
       {
-        "id": "1625f1bf-8695-420b-a287-a63ca54d2a7d",
+        "id": "450ebd85-d967-4044-8971-04846f4a8d0f",
         "name": "Transport",
         "parentId": null,
         "kind": "expense",

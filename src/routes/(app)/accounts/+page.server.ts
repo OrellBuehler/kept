@@ -22,7 +22,7 @@ import {
 } from "$lib/server/ledger/schemas";
 import type { Actions, PageServerLoad } from "./$types";
 
-const institutionFields = ["name", "bic", "color"] as const;
+const institutionFields = ["name", "bic", "color", "websiteUrl"] as const;
 const accountFields = [
   "institutionId",
   "name",
@@ -30,6 +30,7 @@ const accountFields = [
   "currency",
   "iban",
   "contractNumber",
+  "websiteUrl",
   "depositIban",
   "openingBalance",
   "openingDate",

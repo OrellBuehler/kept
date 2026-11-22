@@ -57,6 +57,13 @@
       "when": 1795352325019,
       "tag": "0007_lush_monster_badoon",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1795358873829,
+      "tag": "0008_amazing_saracen",
+      "breakpoints": true
     }
   ]
 }

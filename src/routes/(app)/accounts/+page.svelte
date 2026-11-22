@@ -18,6 +18,7 @@
   import InstitutionFormDialog from "$lib/components/InstitutionFormDialog.svelte";
   import { daysSince, formatAgo } from "$lib/format";
   import { FULL_SHARE_BPS, minor, type Minor } from "$lib/money";
+  import ExternalLinkIcon from "@lucide/svelte/icons/external-link";
   import LandmarkIcon from "@lucide/svelte/icons/landmark";
   import MoreHorizontalIcon from "@lucide/svelte/icons/ellipsis";
   import PencilIcon from "@lucide/svelte/icons/pencil";
@@ -201,6 +202,17 @@
                 {group.institution.bic}
               </span>
             {/if}
+            {#if group.institution?.websiteUrl}
+              <a
+                href={group.institution.websiteUrl}
+                target="_blank"
+                rel="external noopener noreferrer"
+                class="text-muted-foreground hover:text-foreground shrink-0"
+                aria-label="Open {group.institution.name} website"
+              >
+                <ExternalLinkIcon class="size-3.5" />
+              </a>
+            {/if}
           </h2>
           {#if group.institution}
             {@const institution = group.institution}
@@ -251,10 +263,12 @@
           <ul class="divide-y rounded-lg border">
             {#each group.accounts as account (account.id)}
               {@const ago = staleAgo(account)}
-              <li>
+              {@const portalUrl =
+                account.websiteUrl ?? account.institution?.websiteUrl ?? null}
+              <li class="flex items-stretch">
                 <a
                   href={resolve("/(app)/accounts/[id]", { id: account.id })}
-                  class="hover:bg-muted/50 focus-visible:ring-ring/50 flex items-start justify-between gap-4 p-4 outline-none focus-visible:ring-[3px]"
+                  class="hover:bg-muted/50 focus-visible:ring-ring/50 flex min-w-0 flex-1 items-start justify-between gap-4 p-4 outline-none focus-visible:ring-[3px]"
                 >
                   <div class="flex min-w-0 items-start gap-3">
                     {#if account.institution}
@@ -321,6 +335,17 @@
                     {/if}
                   </div>
                 </a>
+                {#if portalUrl}
+                  <a
+                    href={portalUrl}
+                    target="_blank"
+                    rel="external noopener noreferrer"
+                    class="text-muted-foreground hover:bg-muted/50 hover:text-foreground focus-visible:ring-ring/50 flex items-center px-3 outline-none focus-visible:ring-[3px]"
+                    aria-label="Open website of {account.name}"
+                  >
+                    <ExternalLinkIcon class="size-4" />
+                  </a>
+                {/if}
               </li>
             {/each}
           </ul>

@@ -29,7 +29,7 @@
           "buyIn": 0,
           "gap": 150000,
           "overLimit": 0,
-          "closedBy": "e9004ed8-7943-4df3-b604-b844bc1d2b40",
+          "closedBy": "95a72861-6937-4e39-bc3b-91a899ec547c",
           "buyInEligible": false
         }
       ],
@@ -40,13 +40,13 @@
           "unconfirmed": false,
           "ordinary": 575800,
           "gap": 150000,
-          "closedBy": "e9004ed8-7943-4df3-b604-b844bc1d2b40"
+          "closedBy": "95a72861-6937-4e39-bc3b-91a899ec547c"
         }
       ],
       "portfolios": [
         {
-          "portfolioId": "e9f137c2-c693-4f19-bd33-910b88e790a0",
-          "accountId": "1a564118-6659-4918-b51c-0916c67288c1",
+          "portfolioId": "10234320-15d2-4f3f-b744-24cf9b33dcea",
+          "accountId": "1edd858c-af1f-4910-84c4-859409bbd141",
           "accountName": "Example Pillar 3a",
           "archived": false,
           "name": "Example Portfolio A",
@@ -62,8 +62,8 @@
           "returnBps": 1244
         },
         {
-          "portfolioId": "6b393632-aab2-4cf6-836a-d3ca602f10e4",
-          "accountId": "1a564118-6659-4918-b51c-0916c67288c1",
+          "portfolioId": "7acb8d01-f53f-4a50-814c-bb5f871708b4",
+          "accountId": "1edd858c-af1f-4910-84c4-859409bbd141",
           "accountName": "Example Pillar 3a",
           "archived": false,
           "name": "Example Portfolio B",
@@ -88,9 +88,9 @@
       "ageBenefitDrawn": false,
       "orphanAnnotations": [
         {
-          "id": "3055974c-1204-48df-8430-75184f52ea28",
-          "transactionId": "1cc78a2f-a482-42a8-8098-3071060976b0",
-          "portfolioId": "e9f137c2-c693-4f19-bd33-910b88e790a0",
+          "id": "81b4cc3c-ceef-4ead-8988-4b6e93b645a4",
+          "transactionId": "87c38535-5e3a-49d3-aadc-24b000af7d88",
+          "portfolioId": "10234320-15d2-4f3f-b744-24cf9b33dcea",
           "portfolioName": "Example Portfolio A",
           "date": "2026-01-10",
           "kind": "ordinary",
@@ -101,14 +101,14 @@
     },
     "contributions": [
       {
-        "key": "tx:b301f855-568c-4cc1-a103-762feaf915c0",
-        "id": "e9004ed8-7943-4df3-b604-b844bc1d2b40",
-        "transactionId": "b301f855-568c-4cc1-a103-762feaf915c0",
+        "key": "tx:a50d8492-c509-489e-b731-8f03387470ff",
+        "id": "95a72861-6937-4e39-bc3b-91a899ec547c",
+        "transactionId": "a50d8492-c509-489e-b731-8f03387470ff",
         "source": "detected",
-        "portfolioId": "e9f137c2-c693-4f19-bd33-910b88e790a0",
+        "portfolioId": "10234320-15d2-4f3f-b744-24cf9b33dcea",
         "portfolioName": "Example Portfolio A",
-        "accountId": "1a564118-6659-4918-b51c-0916c67288c1",
-        "paidFromAccountId": "b2fed639-2d20-4ed6-860a-342e8fc70346",
+        "accountId": "1edd858c-af1f-4910-84c4-859409bbd141",
+        "paidFromAccountId": "3486d393-2f40-42b8-90c5-ffd2a5bddb26",
         "bookingDate": "2026-01-20",
         "date": "2026-01-20",
         "year": 2026,
@@ -122,14 +122,14 @@
         "lateDecemberWarning": null
       },
       {
-        "key": "tx:a2192827-674f-4042-aa7c-9fe729c07b22",
-        "id": "a084c42a-fe26-43c7-8a5a-641792763e36",
-        "transactionId": "a2192827-674f-4042-aa7c-9fe729c07b22",
+        "key": "tx:648cdf79-769a-4576-a242-75682957096c",
+        "id": "bb6cf631-5299-456b-abb5-6f7bd7be2433",
+        "transactionId": "648cdf79-769a-4576-a242-75682957096c",
         "source": "detected",
-        "portfolioId": "e9f137c2-c693-4f19-bd33-910b88e790a0",
+        "portfolioId": "10234320-15d2-4f3f-b744-24cf9b33dcea",
         "portfolioName": "Example Portfolio A",
-        "accountId": "1a564118-6659-4918-b51c-0916c67288c1",
-        "paidFromAccountId": "b2fed639-2d20-4ed6-860a-342e8fc70346",
+        "accountId": "1edd858c-af1f-4910-84c4-859409bbd141",
+        "paidFromAccountId": "3486d393-2f40-42b8-90c5-ffd2a5bddb26",
         "bookingDate": "2026-01-15",
         "date": "2026-01-15",
         "year": 2026,
@@ -141,14 +141,14 @@
         "lateDecemberWarning": null
       },
       {
-        "key": "tx:4f71a1ee-24c4-484b-a12d-703eb00a8dcd",
+        "key": "tx:ec0f33f4-1eea-4e81-9d77-95258f12cd10",
         "id": null,
-        "transactionId": "4f71a1ee-24c4-484b-a12d-703eb00a8dcd",
+        "transactionId": "ec0f33f4-1eea-4e81-9d77-95258f12cd10",
         "source": "detected",
-        "portfolioId": "e9f137c2-c693-4f19-bd33-910b88e790a0",
+        "portfolioId": "10234320-15d2-4f3f-b744-24cf9b33dcea",
         "portfolioName": "Example Portfolio A",
-        "accountId": "1a564118-6659-4918-b51c-0916c67288c1",
-        "paidFromAccountId": "b2fed639-2d20-4ed6-860a-342e8fc70346",
+        "accountId": "1edd858c-af1f-4910-84c4-859409bbd141",
+        "paidFromAccountId": "3486d393-2f40-42b8-90c5-ffd2a5bddb26",
         "bookingDate": "2025-12-23",
         "date": "2025-12-23",
         "year": 2025,
@@ -160,13 +160,13 @@
         "lateDecemberWarning": "Booked after 20 December: the provider may credit it in January, which changes the tax year."
       },
       {
-        "key": "c:95aad55e-29aa-4e5c-b7f6-20f72d63e7df",
-        "id": "95aad55e-29aa-4e5c-b7f6-20f72d63e7df",
+        "key": "c:3e2fd76b-9771-4345-86de-f1b0f59cd30e",
+        "id": "3e2fd76b-9771-4345-86de-f1b0f59cd30e",
         "transactionId": null,
         "source": "manual",
-        "portfolioId": "e9f137c2-c693-4f19-bd33-910b88e790a0",
+        "portfolioId": "10234320-15d2-4f3f-b744-24cf9b33dcea",
         "portfolioName": "Example Portfolio A",
-        "accountId": "1a564118-6659-4918-b51c-0916c67288c1",
+        "accountId": "1edd858c-af1f-4910-84c4-859409bbd141",
         "paidFromAccountId": null,
         "bookingDate": null,
         "date": "2025-12-10",
@@ -181,7 +181,7 @@
     ],
     "performance": [
       {
-        "portfolioId": "e9f137c2-c693-4f19-bd33-910b88e790a0",
+        "portfolioId": "10234320-15d2-4f3f-b744-24cf9b33dcea",
         "points": [
           {
             "date": "2026-09-23",
@@ -200,7 +200,7 @@
     ],
     "accounts": [
       {
-        "id": "1a564118-6659-4918-b51c-0916c67288c1",
+        "id": "1edd858c-af1f-4910-84c4-859409bbd141",
         "name": "Example Pillar 3a",
         "archived": false
       }

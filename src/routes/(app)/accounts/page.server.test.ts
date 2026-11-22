@@ -38,6 +38,7 @@ describe("accounts page", () => {
         bic: null,
         color: null,
         logoVersion: null,
+        websiteUrl: null,
         accountCount: 1,
       },
     ]);
@@ -52,6 +53,7 @@ describe("accounts page", () => {
           name: "Inst A",
           color: null,
           logoVersion: null,
+          websiteUrl: null,
         },
         lastBookingDate: null,
         lastImportAt: null,
@@ -122,7 +124,7 @@ describe("accounts page", () => {
           name: ["Name is required."],
           bic: ["BIC must be 8 or 11 characters."],
         },
-        values: { name: "", bic: "x", color: "" },
+        values: { name: "", bic: "x", color: "", websiteUrl: "" },
       },
     });
   });

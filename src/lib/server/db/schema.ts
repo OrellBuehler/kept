@@ -299,6 +299,8 @@ export const institutions = table(
     logo: bytes("logo"),
     logoMime: text("logo_mime"),
     logoVersion: text("logo_version"),
+    /** The provider's web portal (absolute http(s) URL). */
+    websiteUrl: text("website_url"),
     ...timestamps(),
   },
   (t) => [
@@ -333,6 +335,8 @@ export const accounts = table(
     sharedWith: text("shared_with"),
     /** Provider contract number of a pillar 3a account (free text). */
     contractNumber: text("contract_number"),
+    /** The account's own web portal (absolute http(s) URL); the institution's link is the fallback. */
+    websiteUrl: text("website_url"),
     /** IBAN to pay into when the account itself has none (a pillar 3a QR-IBAN); not unique, providers share it. */
     depositIban: text("deposit_iban"),
     /** Months of notice before the balance can be withdrawn; null means available now. */
