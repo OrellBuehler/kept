@@ -11,6 +11,7 @@ import {
   transaction,
 } from "$lib/server/db";
 import { recordUpdate } from "$lib/server/audit/record";
+import { categoryTreeLock } from "$lib/server/categories/categories";
 import { LedgerError, notFound } from "$lib/server/ledger/errors";
 import { updateUnlessMirror } from "$lib/server/transfers/guard";
 import { PILLAR_3A_CURRENCY } from "$lib/pillar-3a";
@@ -143,58 +144,61 @@ export async function setCategoryDeduction(
   type: DeductionType | null,
 ): Promise<void> {
   // The ownership check and the write are one unit, so the category cannot go in between.
-  await transaction(async (tx) => {
-    const category = await first(
-      tx
-        .select({ id: categories.id, name: categories.name })
-        .from(categories)
-        .where(
-          and(eq(categories.userId, userId), eq(categories.id, categoryId)),
-        )
-        .limit(1),
-    );
-    if (!category) throw notFound("Category");
-    const previous = await first(
-      tx
-        .select({ type: deductionMappings.deductionType })
-        .from(deductionMappings)
-        .where(
-          and(
-            eq(deductionMappings.userId, userId),
-            eq(deductionMappings.categoryId, categoryId),
-          ),
-        )
-        .limit(1),
-    );
-    await recordUpdate(
-      {
-        userId,
-        action: "deduction_mapping.update",
-        entityId: categoryId,
-        summary: category.name,
-      },
-      { deductionType: previous?.type ?? null },
-      { deductionType: type },
-    );
-    if (type === null) {
+  await transaction(
+    async (tx) => {
+      const category = await first(
+        tx
+          .select({ id: categories.id, name: categories.name })
+          .from(categories)
+          .where(
+            and(eq(categories.userId, userId), eq(categories.id, categoryId)),
+          )
+          .limit(1),
+      );
+      if (!category) throw notFound("Category");
+      const previous = await first(
+        tx
+          .select({ type: deductionMappings.deductionType })
+          .from(deductionMappings)
+          .where(
+            and(
+              eq(deductionMappings.userId, userId),
+              eq(deductionMappings.categoryId, categoryId),
+            ),
+          )
+          .limit(1),
+      );
+      await recordUpdate(
+        {
+          userId,
+          action: "deduction_mapping.update",
+          entityId: categoryId,
+          summary: category.name,
+        },
+        { deductionType: previous?.type ?? null },
+        { deductionType: type },
+      );
+      if (type === null) {
+        await tx
+          .delete(deductionMappings)
+          .where(
+            and(
+              eq(deductionMappings.userId, userId),
+              eq(deductionMappings.categoryId, categoryId),
+            ),
+          );
+        return;
+      }
       await tx
-        .delete(deductionMappings)
-        .where(
-          and(
-            eq(deductionMappings.userId, userId),
-            eq(deductionMappings.categoryId, categoryId),
-          ),
-        );
-      return;
-    }
-    await tx
-      .insert(deductionMappings)
-      .values({ userId, categoryId, deductionType: type })
-      .onConflictDoUpdate({
-        target: [deductionMappings.userId, deductionMappings.categoryId],
-        set: { deductionType: type, updatedAt: new Date() },
-      });
-  });
+        .insert(deductionMappings)
+        .values({ userId, categoryId, deductionType: type })
+        .onConflictDoUpdate({
+          target: [deductionMappings.userId, deductionMappings.categoryId],
+          set: { deductionType: type, updatedAt: new Date() },
+        });
+    },
+    { lock: categoryTreeLock(userId) },
+  );
 }
 
 export async function setTransactionDeductionExcluded(

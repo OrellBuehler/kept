@@ -20,6 +20,9 @@ export {
 } from "./revert";
 export {
   CHANGE_ACTIONS,
+  isTruncatedList,
+  LIST_ARRAY_LIMIT,
+  MAX_REVERTIBLE_IDS,
   RevertError,
   type ChangeAction,
   type ChangeEntry,
@@ -28,4 +31,5 @@ export {
   type RevertFailure,
   type RevertResult,
   type Snapshot,
+  type TruncatedList,
 } from "./types";

@@ -452,6 +452,8 @@ export async function updateTransaction(
   const where = and(eq(transactions.userId, userId), eq(transactions.id, id));
   if (current.source !== "manual") {
     await transaction(async (tx) => {
+      // The row's write lock first, so the note recorded as "before" is the committed one.
+      await lockTransactionRowInTx(tx, userId, id);
       const previous = await getTransactionRowInTx(tx, userId, id);
       await tx.update(transactions).set({ note: input.note }).where(where);
       await recordUpdate(

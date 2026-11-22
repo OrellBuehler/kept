@@ -46,6 +46,7 @@ import {
 } from "$lib/server/categories/rules";
 import {
   billAllocations,
+  bills,
   getDB,
   matchDismissals,
   transaction,
@@ -338,6 +339,27 @@ describe("revert: bills", () => {
     expect((await all(u.id)).map((e) => e.action)).toEqual(["bill.create"]);
   });
 
+  it("ignores the address an integration rewrote when the document server moved", async () => {
+    const u = await createTestUser();
+    const bill = await createBill(u.id, billInput(), {
+      external: {
+        externalSource: "docs",
+        externalRef: "7",
+        externalUrl: "https://old.example.org/doc/7",
+      },
+    });
+    const created = await newest(u.id);
+    expect(created.after).toMatchObject({
+      externalUrl: "https://old.example.org/doc/7",
+    });
+    await getDB()
+      .update(bills)
+      .set({ externalUrl: "https://new.example.org/doc/7" })
+      .where(eq(bills.id, bill.id));
+    await revertChange(u.id, created.id);
+    expect(await listBills(u.id)).toEqual([]);
+  });
+
   it("reverts a bill create under the bills lock", async () => {
     const u = await createTestUser();
     await seedBill(u.id);
@@ -546,7 +568,7 @@ describe("revert: payments", () => {
       bookingDate: "2026-09-01",
       valueDate: null,
       amount: minor(-500),
-      counterpartyName: "Kiosk",
+      counterpartyName: "Example Kiosk",
       counterpartyIban: null,
       description: null,
       reference: null,
@@ -561,7 +583,7 @@ describe("revert: payments", () => {
       bookingDate: "2026-09-02",
       valueDate: null,
       amount: minor(-700),
-      counterpartyName: "Kiosk",
+      counterpartyName: "Example Kiosk",
       counterpartyIban: null,
       description: null,
       reference: null,
@@ -583,7 +605,7 @@ describe("revert: payments", () => {
       bookingDate: "2026-09-02",
       valueDate: null,
       amount: minor(-700),
-      counterpartyName: "Kiosk",
+      counterpartyName: "Example Kiosk",
       counterpartyIban: null,
       description: null,
       reference: null,
@@ -688,6 +710,22 @@ describe("revert: categories and rules", () => {
 
     await createCategory(u.id, cat("Food"));
     await refused(revertChange(u.id, deletion.id), "conflict");
+  });
+
+  it("refuses to restore a deleted category when a subcategory changed its type since", async () => {
+    const u = await createTestUser();
+    const food = await createCategory(u.id, cat("Food"));
+    const lunch = await createCategory(
+      u.id,
+      cat("Lunch", { parentId: food.id }),
+    );
+    await deleteCategory(u.id, food.id);
+    const deletion = await newest(u.id);
+    await updateCategory(u.id, lunch.id, cat("Lunch", { kind: "income" }));
+    const err = await refused(revertChange(u.id, deletion.id), "conflict");
+    expect(err.message).toMatch(/subcategory/);
+    expect(await listCategories(u.id)).toHaveLength(1);
+    expect((await getCategory(u.id, lunch.id)).parentId).toBeNull();
   });
 
   it("undoes creating, editing and deleting a rule", async () => {

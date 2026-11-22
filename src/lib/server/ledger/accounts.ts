@@ -8,6 +8,7 @@ import { shareOf, type Minor } from "$lib/money";
 import {
   accounts,
   balanceSnapshots,
+  bills,
   getDB,
   imports,
   institutions,
@@ -650,6 +651,16 @@ export async function deleteAccount(userId: string, id: string): Promise<void> {
         userId,
         eq(transactions.accountId, id),
       );
+      // The foreign key clears the account a bill expected; the log says so.
+      const expecting = await tx
+        .select({
+          id: bills.id,
+          creditorName: bills.creditorName,
+          invoiceNumber: bills.invoiceNumber,
+        })
+        .from(bills)
+        .where(and(eq(bills.userId, userId), eq(bills.expectedAccountId, id)))
+        .orderBy(asc(bills.id));
       await tx
         .delete(accounts)
         .where(and(eq(accounts.userId, userId), eq(accounts.id, id)));
@@ -660,6 +671,16 @@ export async function deleteAccount(userId: string, id: string): Promise<void> {
         summary: before.name,
         before: { ...before.fields, transactionCount },
       });
+      for (const bill of expecting) {
+        await recordChange({
+          userId,
+          action: "bill.update",
+          entityId: bill.id,
+          summary: bill.creditorName ?? bill.invoiceNumber ?? null,
+          before: { expectedAccountId: id },
+          after: { expectedAccountId: null },
+        });
+      }
       announceBills(userId, billIds);
     },
     { lock: ledgerLock(userId) },

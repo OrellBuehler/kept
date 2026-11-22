@@ -2,7 +2,12 @@ import { and, desc, eq, lt, or } from "drizzle-orm";
 import { z } from "zod";
 import { ACTOR_KINDS, changeLog, first, getDB, type DB } from "$lib/server/db";
 import { LedgerError, notFound } from "$lib/server/ledger/errors";
-import type { ChangeEntry, Snapshot } from "./types";
+import {
+  LIST_ARRAY_LIMIT,
+  type ChangeEntry,
+  type Snapshot,
+  type TruncatedList,
+} from "./types";
 
 export const DEFAULT_CHANGE_LIMIT = 50;
 export const MAX_CHANGE_LIMIT = 200;
@@ -66,6 +71,35 @@ export function toEntry(row: Row): ChangeEntry {
   };
 }
 
+/** Lists above `LIST_ARRAY_LIMIT` items become a `TruncatedList`, at any depth. */
+function bounded(value: unknown): unknown {
+  if (Array.isArray(value)) {
+    if (value.length > LIST_ARRAY_LIMIT) {
+      return { count: value.length, truncated: true } satisfies TruncatedList;
+    }
+    return value.map(bounded);
+  }
+  if (typeof value === "object" && value !== null) {
+    return Object.fromEntries(
+      Object.entries(value).map(([k, v]) => [k, bounded(v)]),
+    );
+  }
+  return value;
+}
+
+const boundedSnapshot = (s: Snapshot | null) =>
+  s === null ? null : (bounded(s) as Snapshot);
+
+/** The entry as a listing shows it: long lists in `before` / `after` replaced by their count. */
+export function toListedEntry(row: Row): ChangeEntry {
+  const entry = toEntry(row);
+  return {
+    ...entry,
+    before: boundedSnapshot(entry.before),
+    after: boundedSnapshot(entry.after),
+  };
+}
+
 const cursorOf = (e: Pick<ChangeEntry, "seq" | "id">) => `${e.seq}:${e.id}`;
 
 const cursorSchema = z
@@ -90,7 +124,8 @@ type Reader = Pick<DB, "select">;
 /**
  * The user's changes, newest first, `limit` at a time (keyset pagination: pass
  * `nextCursor` back as `before`). Only the user's own entries are ever
- * returned. A malformed filter or cursor is an `invalid` LedgerError.
+ * returned. Lists inside `before` / `after` longer than `LIST_ARRAY_LIMIT` are
+ * replaced by a `TruncatedList`; `getChange` has them whole. A malformed filter or cursor is an `invalid` LedgerError.
  */
 export async function listChanges(
   userId: string,
@@ -128,7 +163,7 @@ export async function listChanges(
     )
     .orderBy(desc(changeLog.seq), desc(changeLog.id))
     .limit(limit + 1);
-  const items = rows.slice(0, limit).map(toEntry);
+  const items = rows.slice(0, limit).map(toListedEntry);
   const last = items[items.length - 1];
   return {
     items,

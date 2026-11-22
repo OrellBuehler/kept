@@ -211,6 +211,12 @@ async function exists(
   return row !== undefined;
 }
 
+/**
+ * Bill fields that an integration rewrites on its own (the document server
+ * moved to a new address): a revert neither compares nor depends on them.
+ */
+const SYSTEM_BILL_FIELDS = ["externalUrl"];
+
 type BillInsert = typeof bills.$inferInsert;
 
 /** The columns of a bill snapshot's fields (the extraction is stored as JSON text). */
@@ -247,7 +253,11 @@ async function revertBillCreate({
   if (!current) throw conflict("The bill no longer exists.");
   assertUnchanged(
     billFields(current),
-    without(snapshotOf(entry.after, "state"), "createdAt"),
+    without(
+      snapshotOf(entry.after, "state"),
+      "createdAt",
+      ...SYSTEM_BILL_FIELDS,
+    ),
     "The bill",
   );
   const links = await billLinks(tx, userId, current.id);
@@ -294,7 +304,11 @@ async function revertBillUpdate({
     .where(and(eq(bills.userId, userId), eq(bills.id, entry.entityId)));
   const current = await findBill(tx, userId, entry.entityId);
   if (!current) throw conflict("The bill no longer exists.");
-  assertUnchanged(billFields(current), after, "The bill");
+  assertUnchanged(
+    billFields(current),
+    without(after, ...SYSTEM_BILL_FIELDS),
+    "The bill",
+  );
   if (
     (keys.includes("kind") || keys.includes("currency")) &&
     (await billLinks(tx, userId, current.id)).allocations > 0
@@ -667,7 +681,7 @@ const transactionHandler: RevertHandler = {
           deductionYear: transactions.deductionYear,
           deductionExcluded: transactions.deductionExcluded,
           counterpartyName: transactions.counterpartyName,
-          description: transactions.description,
+          bookingDate: transactions.bookingDate,
         })
         .from(transactions)
         .where(where)
@@ -801,9 +815,15 @@ function chunks<T>(items: readonly T[]): T[][] {
   return out;
 }
 
+const TOO_LARGE =
+  "This change touched too many payments to be saved for undoing. Make the change again by hand if you want it back.";
+
 const categoryHandler: RevertHandler = {
   lock: (userId) => categoryTreeLock(userId),
-  blocker: () => null,
+  blocker: (entry) =>
+    entry.action === "category.delete" && entry.before?.tooLarge === true
+      ? TOO_LARGE
+      : null,
   async revert({ tx, userId, entry }) {
     const id = entry.entityId;
     switch (opOf(entry.action)) {
@@ -901,6 +921,11 @@ async function revertCategoryDelete({
     if (!child) continue;
     if (child.parentId !== null) {
       throw conflict("A subcategory was moved to another parent since.");
+    }
+    if (child.kind !== input.kind) {
+      throw conflict(
+        "A subcategory was changed to another type since, so it cannot go back under this category.",
+      );
     }
     await tx
       .update(categories)
@@ -1010,7 +1035,7 @@ async function revertRuleApply({
   const byCategory = saved.byCategory ?? {};
   let total = 0;
   let changed = 0;
-  const targets: string[] = [];
+  const targets: Array<{ categoryId: string; ids: string[] }> = [];
   for (const [categoryId, ids] of Object.entries(byCategory)) {
     for (const part of chunks(ids)) {
       const rows = await tx
@@ -1021,10 +1046,12 @@ async function revertRuleApply({
         )
         .orderBy(asc(transactions.id));
       total += part.length;
+      const still: string[] = [];
       for (const r of rows) {
-        if (r.categoryId === categoryId) targets.push(r.id);
+        if (r.categoryId === categoryId) still.push(r.id);
         else changed++;
       }
+      targets.push({ categoryId, ids: still });
     }
   }
   if (changed > 0) {
@@ -1032,19 +1059,35 @@ async function revertRuleApply({
       `${plural(changed, "payment")} of ${total} were filed differently since. Revert refused so that those edits are not lost.`,
     );
   }
-  for (const part of chunks(targets)) {
-    await tx
+  // The rows were read without a row lock (assigning a category does not take
+  // the ledger lock), so the write only touches rows still in the category it
+  // reads and compares what it changed with what it found.
+  let cleared = 0;
+  for (const { categoryId, ids } of targets) {
+    if (ids.length === 0) continue;
+    const updated = await tx
       .update(transactions)
       .set({ categoryId: null })
       .where(
-        and(eq(transactions.userId, userId), inArray(transactions.id, part)),
+        and(
+          eq(transactions.userId, userId),
+          inArray(transactions.id, ids),
+          eq(transactions.categoryId, categoryId),
+        ),
+      )
+      .returning({ id: transactions.id });
+    if (updated.length !== ids.length) {
+      throw conflict(
+        `${plural(ids.length - updated.length, "payment")} were filed differently while reverting. Revert refused so that those edits are not lost.`,
       );
+    }
+    cleared += updated.length;
   }
   return {
     action: "category_rule.apply",
     entityId: "*",
-    summary: `Uncategorized ${plural(targets.length, "transaction")}`,
-    before: { categorized: targets.length, byCategory },
+    summary: `Uncategorized ${plural(cleared, "transaction")}`,
+    before: { categorized: cleared, byCategory },
     after: { categorized: 0, byCategory: {} },
   };
 }
@@ -1054,7 +1097,10 @@ const ruleHandler: RevertHandler = {
     entry.action === "category_rule.apply"
       ? ledgerLock(userId)
       : categoryTreeLock(userId),
-  blocker: () => null,
+  blocker: (entry) =>
+    entry.action === "category_rule.apply" && entry.after?.tooLarge === true
+      ? TOO_LARGE
+      : null,
   async revert(ctx) {
     const { tx, userId, entry } = ctx;
     const id = entry.entityId;

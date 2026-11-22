@@ -56,6 +56,7 @@ import {
 import { runAsActor } from "./context";
 import { getChange, listChanges, MAX_CHANGE_LIMIT } from "./list";
 import { recordChange } from "./record";
+import { revertChange } from "./revert";
 
 useTestDB();
 
@@ -305,7 +306,7 @@ describe("through the external API", () => {
     const user = await createTestUser();
     const bill = await seedBill(user.id);
     const { token, info } = await seedToken(user.id, API_SCOPES, {
-      name: "Hauswart",
+      name: "Household app",
     });
     const res = await callApi(
       token,
@@ -313,7 +314,7 @@ describe("through the external API", () => {
       {
         method: "POST",
         body: {
-          source: "hauswart",
+          source: "example-app",
           label: "Costs",
           url: "https://home.example.org/costs/1",
         },
@@ -326,7 +327,36 @@ describe("through the external API", () => {
     expect(entry.actor).toEqual({
       kind: "api",
       tokenId: info.id,
-      label: "Hauswart",
+      label: "Household app",
+    });
+  });
+
+  it("relabelling an existing link is logged as an update of it", async () => {
+    const user = await createTestUser();
+    const bill = await seedBill(user.id);
+    const { token } = await seedToken(user.id, API_SCOPES, {
+      name: "Household app",
+    });
+    const post = (label: string) =>
+      callApi(token, `/api/external/v1/bills/${bill.id}/links`, {
+        method: "POST",
+        body: {
+          source: "example-app",
+          label,
+          url: "https://home.example.org/costs/1",
+        },
+      });
+    expect((await post("Costs")).status).toBe(201);
+    expect((await post("Running costs")).status).toBe(200);
+    const items = (await listChanges(user.id, { entityType: "external_link" }))
+      .items;
+    expect(items.map((e) => e.action)).toEqual([
+      "external_link.update",
+      "external_link.create",
+    ]);
+    expect(items[0]).toMatchObject({
+      before: { label: "Costs" },
+      after: { label: "Running costs" },
     });
   });
 });
@@ -346,6 +376,28 @@ describe("deleting a user", () => {
         .where(eq(changeLog.userId, target.id)),
     ).toEqual([]);
     expect((await listChanges(other.id)).items).toHaveLength(1);
+  });
+});
+
+describe("side effects of deleting an account", () => {
+  it("logs the bills that no longer expect it, and cannot undo that", async () => {
+    const u = await createTestUser();
+    const account = await seedAccount(u.id);
+    const bill = await seedBill(u.id, { expectedAccountId: account.id });
+    const untouched = await seedBill(u.id);
+    await deleteAccount(u.id, account.id);
+    const items = (await listChanges(u.id, { entityType: "bill" })).items;
+    const update = items.find((e) => e.action === "bill.update")!;
+    expect(update).toMatchObject({
+      entityId: bill.id,
+      summary: "Example Supplier",
+      before: { expectedAccountId: account.id },
+      after: { expectedAccountId: null },
+    });
+    expect(items.filter((e) => e.entityId === untouched.id)).toHaveLength(1);
+    await expect(revertChange(u.id, update.id)).rejects.toMatchObject({
+      reason: "conflict",
+    });
   });
 });
 

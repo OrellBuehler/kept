@@ -27,6 +27,7 @@ import { pick } from "$lib/server/audit/snapshots";
 import { LedgerError, notFound } from "$lib/server/ledger/errors";
 import { monthBounds } from "$lib/server/dashboard/dates";
 import { notInLinkedTransfer } from "$lib/server/transfers/exclusion";
+import { categoryTreeLock } from "./categories";
 import type { BudgetInput } from "./schemas";
 
 export interface BudgetView {
@@ -136,23 +137,26 @@ export async function createBudget(
   input: BudgetInput,
 ): Promise<BudgetView> {
   try {
-    return await transaction(async (tx) => {
-      await assertBudgetable(tx, userId, input.categoryId);
-      await assertUnique(tx, userId, input);
-      const created = (await first(
-        tx
-          .insert(budgets)
-          .values({ userId, ...input })
-          .returning(columns),
-      ))!;
-      await recordChange({
-        userId,
-        action: "budget.create",
-        entityId: created.id,
-        after: pick(created, AUDIT_FIELDS),
-      });
-      return created;
-    });
+    return await transaction(
+      async (tx) => {
+        await assertBudgetable(tx, userId, input.categoryId);
+        await assertUnique(tx, userId, input);
+        const created = (await first(
+          tx
+            .insert(budgets)
+            .values({ userId, ...input })
+            .returning(columns),
+        ))!;
+        await recordChange({
+          userId,
+          action: "budget.create",
+          entityId: created.id,
+          after: pick(created, AUDIT_FIELDS),
+        });
+        return created;
+      },
+      { lock: categoryTreeLock(userId) },
+    );
   } catch (err) {
     mapBudgetViolation(err);
   }
@@ -164,27 +168,30 @@ export async function updateBudget(
   input: BudgetInput,
 ): Promise<BudgetView> {
   try {
-    await transaction(async (tx) => {
-      const found = await first(
-        tx
-          .select(columns)
-          .from(budgets)
-          .where(and(eq(budgets.userId, userId), eq(budgets.id, id)))
-          .limit(1),
-      );
-      if (!found) throw notFound("Budget");
-      await assertBudgetable(tx, userId, input.categoryId);
-      await assertUnique(tx, userId, input, id);
-      await tx
-        .update(budgets)
-        .set(input)
-        .where(and(eq(budgets.userId, userId), eq(budgets.id, id)));
-      await recordUpdate(
-        { userId, action: "budget.update", entityId: id },
-        pick(found, AUDIT_FIELDS),
-        pick(input, AUDIT_FIELDS),
-      );
-    });
+    await transaction(
+      async (tx) => {
+        const found = await first(
+          tx
+            .select(columns)
+            .from(budgets)
+            .where(and(eq(budgets.userId, userId), eq(budgets.id, id)))
+            .limit(1),
+        );
+        if (!found) throw notFound("Budget");
+        await assertBudgetable(tx, userId, input.categoryId);
+        await assertUnique(tx, userId, input, id);
+        await tx
+          .update(budgets)
+          .set(input)
+          .where(and(eq(budgets.userId, userId), eq(budgets.id, id)));
+        await recordUpdate(
+          { userId, action: "budget.update", entityId: id },
+          pick(found, AUDIT_FIELDS),
+          pick(input, AUDIT_FIELDS),
+        );
+      },
+      { lock: categoryTreeLock(userId) },
+    );
   } catch (err) {
     mapBudgetViolation(err);
   }

@@ -3,6 +3,7 @@ import type { AmountSign } from "$lib/category-types";
 import { normalizeIban } from "$lib/iban";
 import { recordChange, recordUpdate } from "$lib/server/audit/record";
 import { ruleFields } from "$lib/server/audit/snapshots";
+import { MAX_REVERTIBLE_IDS } from "$lib/server/audit/types";
 import {
   categories,
   categoryRules,
@@ -13,6 +14,7 @@ import {
   transaction,
 } from "$lib/server/db";
 import { LedgerError, notFound } from "$lib/server/ledger/errors";
+import { categoryTreeLock } from "./categories";
 import type { RuleInput } from "./schemas";
 
 export interface CategoryRule {
@@ -175,23 +177,26 @@ export async function createRule(
   userId: string,
   input: RuleInput,
 ): Promise<CategoryRule> {
-  return await transaction(async (tx) => {
-    await assertCategory(tx, userId, input.categoryId);
-    const created = (await first(
-      tx
-        .insert(categoryRules)
-        .values({ userId, ...normalized(input) })
-        .returning(ruleColumns),
-    ))!;
-    await recordChange({
-      userId,
-      action: "category_rule.create",
-      entityId: created.id,
-      summary: await categoryName(tx, userId, created.categoryId),
-      after: ruleFields(created),
-    });
-    return created;
-  });
+  return await transaction(
+    async (tx) => {
+      await assertCategory(tx, userId, input.categoryId);
+      const created = (await first(
+        tx
+          .insert(categoryRules)
+          .values({ userId, ...normalized(input) })
+          .returning(ruleColumns),
+      ))!;
+      await recordChange({
+        userId,
+        action: "category_rule.create",
+        entityId: created.id,
+        summary: await categoryName(tx, userId, created.categoryId),
+        after: ruleFields(created),
+      });
+      return created;
+    },
+    { lock: categoryTreeLock(userId) },
+  );
 }
 
 /**
@@ -226,47 +231,55 @@ export async function updateRule(
   id: string,
   input: RuleInput,
 ): Promise<CategoryRule> {
-  await transaction(async (tx) => {
-    const { before, after } = await updateRuleInTx(tx, userId, id, input);
-    await recordUpdate(
-      {
-        userId,
-        action: "category_rule.update",
-        entityId: id,
-        summary: await categoryName(tx, userId, after.categoryId),
-      },
-      ruleFields(before),
-      ruleFields(after),
-    );
-  });
+  await transaction(
+    async (tx) => {
+      const { before, after } = await updateRuleInTx(tx, userId, id, input);
+      await recordUpdate(
+        {
+          userId,
+          action: "category_rule.update",
+          entityId: id,
+          summary: await categoryName(tx, userId, after.categoryId),
+        },
+        ruleFields(before),
+        ruleFields(after),
+      );
+    },
+    { lock: categoryTreeLock(userId) },
+  );
   return await getRule(userId, id);
 }
 
 export async function deleteRule(userId: string, id: string): Promise<void> {
-  await transaction(async (tx) => {
-    const before = await first(
-      tx
-        .select()
-        .from(categoryRules)
-        .where(and(eq(categoryRules.userId, userId), eq(categoryRules.id, id)))
-        .limit(1),
-    );
-    if (!before) throw notFound("Rule");
-    await tx
-      .delete(categoryRules)
-      .where(and(eq(categoryRules.userId, userId), eq(categoryRules.id, id)));
-    await recordChange({
-      userId,
-      action: "category_rule.delete",
-      entityId: id,
-      summary: await categoryName(tx, userId, before.categoryId),
-      before: {
-        ...ruleFields(before),
-        seq: before.seq,
-        createdAt: before.createdAt.getTime(),
-      },
-    });
-  });
+  await transaction(
+    async (tx) => {
+      const before = await first(
+        tx
+          .select()
+          .from(categoryRules)
+          .where(
+            and(eq(categoryRules.userId, userId), eq(categoryRules.id, id)),
+          )
+          .limit(1),
+      );
+      if (!before) throw notFound("Rule");
+      await tx
+        .delete(categoryRules)
+        .where(and(eq(categoryRules.userId, userId), eq(categoryRules.id, id)));
+      await recordChange({
+        userId,
+        action: "category_rule.delete",
+        entityId: id,
+        summary: await categoryName(tx, userId, before.categoryId),
+        before: {
+          ...ruleFields(before),
+          seq: before.seq,
+          createdAt: before.createdAt.getTime(),
+        },
+      });
+    },
+    { lock: categoryTreeLock(userId) },
+  );
 }
 
 export interface ApplyResult {
@@ -329,7 +342,11 @@ export async function applyRulesToUncategorized(
         action: "category_rule.apply",
         entityId: "*",
         summary: `Categorized ${categorized} transaction${categorized === 1 ? "" : "s"}`,
-        after: { categorized, byCategory },
+        // Past the cap only the count is kept and the entry cannot be reverted.
+        after:
+          categorized > MAX_REVERTIBLE_IDS
+            ? { categorized, tooLarge: true }
+            : { categorized, byCategory },
       });
     }
     return { scanned: rows.length, categorized };

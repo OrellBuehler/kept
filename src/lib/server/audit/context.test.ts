@@ -129,9 +129,9 @@ describe("actor context", () => {
     ],
     [
       "mcp",
-      { kind: "mcp" as const, tokenId: "c-1", label: "Claude connection" },
+      { kind: "mcp" as const, tokenId: "c-1", label: "Assistant connection" },
       "c-1",
-      "Claude connection",
+      "Assistant connection",
     ],
   ])("attributes an entry to a %s actor", async (kind, extra, token, label) => {
     const user = await createTestUser();

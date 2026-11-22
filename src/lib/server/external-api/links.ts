@@ -207,7 +207,7 @@ export async function createLink(
         await recordUpdate(
           {
             userId,
-            action: "external_link.create",
+            action: "external_link.update",
             entityId: existing.id,
             summary: body.label,
           },

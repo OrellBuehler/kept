@@ -1,4 +1,4 @@
-import { and, eq, ne } from "drizzle-orm";
+import { and, eq, ne, sql } from "drizzle-orm";
 import { recordUpdate } from "$lib/server/audit/record";
 import { transactionSummary } from "$lib/server/audit/snapshots";
 import { first, getDB, transaction, transactions } from "$lib/server/db";
@@ -49,6 +49,11 @@ export async function updateUnlessMirror(
       eq(transactions.id, transactionId),
       ne(transactions.source, "mirror"),
     );
+    // The row's write lock first, so the values recorded as "before" are the committed ones.
+    await tx
+      .update(transactions)
+      .set({ updatedAt: sql`${transactions.updatedAt}` })
+      .where(where);
     const before = await first(
       tx
         .select({
@@ -56,7 +61,7 @@ export async function updateUnlessMirror(
           deductionYear: transactions.deductionYear,
           deductionExcluded: transactions.deductionExcluded,
           counterpartyName: transactions.counterpartyName,
-          description: transactions.description,
+          bookingDate: transactions.bookingDate,
         })
         .from(transactions)
         .where(where)

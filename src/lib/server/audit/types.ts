@@ -57,6 +57,7 @@ export const CHANGE_ACTIONS = {
   "import.confirm": "other",
   "import.undo": "other",
   "external_link.create": "create",
+  "external_link.update": "update",
   "external_link.delete": "delete",
 } as const satisfies Record<string, ChangeOp>;
 
@@ -72,6 +73,35 @@ export function entityTypeOf(action: ChangeAction): string {
 
 /** A JSON object of values: minor units, `YYYY-MM-DD` strings, epoch milliseconds, booleans, ids. */
 export type Snapshot = Record<string, unknown>;
+
+/**
+ * What `listChanges` shows in place of a list inside `before` / `after` that
+ * has more than `LIST_ARRAY_LIMIT` items (the ids of the payments a rule run
+ * filed, say). `getChange` returns the whole list.
+ */
+export interface TruncatedList {
+  count: number;
+  truncated: true;
+}
+
+/** Lists longer than this are shown as a `TruncatedList` by `listChanges`. */
+export const LIST_ARRAY_LIMIT = 20;
+
+/**
+ * The most payment ids one entry stores so that it can be reverted. A rule run
+ * or a category delete that touches more records only their number; such an
+ * entry is not revertible.
+ */
+export const MAX_REVERTIBLE_IDS = 10_000;
+
+export function isTruncatedList(value: unknown): value is TruncatedList {
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    (value as TruncatedList).truncated === true &&
+    typeof (value as TruncatedList).count === "number"
+  );
+}
 
 export interface ChangeActor {
   kind: ActorKind;

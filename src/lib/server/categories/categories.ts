@@ -1,6 +1,7 @@
 import { and, asc, count, eq, ne } from "drizzle-orm";
 import type { CategoryKind } from "$lib/category-types";
 import { recordChange, recordUpdate } from "$lib/server/audit/record";
+import { MAX_REVERTIBLE_IDS } from "$lib/server/audit/types";
 import {
   categoryFields,
   ruleFields,
@@ -19,6 +20,7 @@ import {
   transaction,
 } from "$lib/server/db";
 import { LedgerError, notFound } from "$lib/server/ledger/errors";
+import { lockTransactionRowInTx } from "$lib/server/ledger/transactions";
 import type { CategoryInput } from "./schemas";
 
 export interface CategoryView {
@@ -399,7 +401,10 @@ export async function deleteCategory(
           ...categoryFields(row),
           createdAt: row.createdAt.getTime(),
           childIds: children.map((c) => c.id),
-          transactionIds: categorized.map((t) => t.id),
+          // Past the cap only the count is kept and the entry cannot be reverted.
+          ...(categorized.length > MAX_REVERTIBLE_IDS
+            ? { transactionCount: categorized.length, tooLarge: true }
+            : { transactionIds: categorized.map((t) => t.id) }),
           rules: rules.map((r) => ({
             id: r.id,
             ...ruleFields(r),
@@ -430,55 +435,60 @@ export async function assignCategory(
   transactionId: string,
   categoryId: string | null,
 ): Promise<void> {
-  await transaction(async (tx) => {
-    const found = await first(
-      tx
-        .select({
-          id: transactions.id,
-          categoryId: transactions.categoryId,
-          counterpartyName: transactions.counterpartyName,
-          description: transactions.description,
-        })
-        .from(transactions)
+  await transaction(
+    async (tx) => {
+      // The row's write lock first, so the category recorded as "before" is the committed one.
+      await lockTransactionRowInTx(tx, userId, transactionId);
+      const found = await first(
+        tx
+          .select({
+            id: transactions.id,
+            categoryId: transactions.categoryId,
+            counterpartyName: transactions.counterpartyName,
+            bookingDate: transactions.bookingDate,
+          })
+          .from(transactions)
+          .where(
+            and(
+              eq(transactions.userId, userId),
+              eq(transactions.id, transactionId),
+            ),
+          )
+          .limit(1),
+      );
+      if (!found) throw notFound("Transaction");
+      if (categoryId !== null) {
+        const category = await first(
+          tx
+            .select({ id: categories.id })
+            .from(categories)
+            .where(
+              and(eq(categories.userId, userId), eq(categories.id, categoryId)),
+            )
+            .limit(1),
+        );
+        if (!category) throw notFound("Category");
+      }
+      await tx
+        .update(transactions)
+        .set({ categoryId })
         .where(
           and(
             eq(transactions.userId, userId),
             eq(transactions.id, transactionId),
           ),
-        )
-        .limit(1),
-    );
-    if (!found) throw notFound("Transaction");
-    if (categoryId !== null) {
-      const category = await first(
-        tx
-          .select({ id: categories.id })
-          .from(categories)
-          .where(
-            and(eq(categories.userId, userId), eq(categories.id, categoryId)),
-          )
-          .limit(1),
+        );
+      await recordUpdate(
+        {
+          userId,
+          action: "transaction.update",
+          entityId: transactionId,
+          summary: transactionSummary(found),
+        },
+        { categoryId: found.categoryId },
+        { categoryId },
       );
-      if (!category) throw notFound("Category");
-    }
-    await tx
-      .update(transactions)
-      .set({ categoryId })
-      .where(
-        and(
-          eq(transactions.userId, userId),
-          eq(transactions.id, transactionId),
-        ),
-      );
-    await recordUpdate(
-      {
-        userId,
-        action: "transaction.update",
-        entityId: transactionId,
-        summary: transactionSummary(found),
-      },
-      { categoryId: found.categoryId },
-      { categoryId },
-    );
-  });
+    },
+    { lock: categoryTreeLock(userId) },
+  );
 }

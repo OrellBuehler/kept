@@ -111,14 +111,18 @@ export const REVERTIBLE_TRANSACTION_FIELDS = [
 export type TransactionFieldName =
   (typeof REVERTIBLE_TRANSACTION_FIELDS)[number];
 
-/** Short text for the `summary` of a transaction entry: the counterparty, else the start of the description. */
+/**
+ * Short text for the `summary` of a transaction entry: the counterparty, else
+ * the booking date. Never the description (it often carries amounts or IBANs)
+ * and never an amount; the details are in the snapshot.
+ */
 export function transactionSummary(t: {
   counterpartyName: string | null;
-  description: string | null;
-}): string | null {
-  const text = t.counterpartyName ?? t.description;
-  if (text === null) return null;
-  return text.length > 80 ? `${text.slice(0, 79)}…` : text;
+  bookingDate: string;
+}): string {
+  const name = t.counterpartyName?.trim();
+  if (!name) return `Payment of ${t.bookingDate}`;
+  return name.length > 80 ? `${name.slice(0, 79)}…` : name;
 }
 
 /** The named fields of a row, `undefined` as `null`: a snapshot of a simple entity. */
