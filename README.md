@@ -361,7 +361,9 @@ everything it changes is recorded in the change log and can be reverted. See
 
 Kept has native apps for Android and iOS that talk to your own server: enter its address on first
 start, then sign in with your Kept account. They do what the web does and can remind you of bills
-that are due, without a push service. See [mobile/README.md](mobile/README.md) for what they
+that are due, without a push service. The Android APK is attached to the
+[releases](https://github.com/OrellBuehler/kept/releases); the iPhone app is in public beta on
+[TestFlight](https://testflight.apple.com/join/qVyFqZ15). See [mobile/README.md](mobile/README.md) for what they
 cover, how to build them and how they are released, and [docs/app-api.md](docs/app-api.md) for the
 API they use.
 
