@@ -285,7 +285,11 @@ export async function listBillAllocations(
         eq(billAllocations.billId, billId),
       ),
     )
-    .orderBy(desc(transactions.bookingDate), desc(billAllocations.createdAt));
+    .orderBy(
+      desc(transactions.bookingDate),
+      desc(billAllocations.createdAt),
+      desc(billAllocations.id),
+    );
   return rows.map((r) => ({
     id: r.allocationId,
     billId,

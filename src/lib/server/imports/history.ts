@@ -26,6 +26,10 @@ import {
   transaction,
 } from "$lib/server/db";
 import { getAccount } from "$lib/server/ledger/accounts";
+import {
+  announceBills,
+  billsAllocatedIn,
+} from "$lib/server/ledger/allocated-bills";
 import { notFound } from "$lib/server/ledger/errors";
 import { linkTransfersInTx } from "$lib/server/transfers/link";
 
@@ -241,7 +245,7 @@ export async function getImportImpact(
  * import's closing snapshot disappears, it is restored from the latest
  * remaining import of the account with the same closing date, so balance
  * anchors survive. Bill allocations that reference the removed transactions
- * will cascade as well once bills exist. Mirrors created from the removed
+ * cascade as well, and their bills are announced. Mirrors created from the removed
  * rows go with them; mirrors that the removed rows had replaced come back
  * when the account is filled from transfers.
  * `accountId`, when given, must be the import's account.
@@ -270,9 +274,16 @@ export async function undoImport(
       ) {
         throw notFound("Import");
       }
+      // The removed rows take their bill allocations with them (cascade).
+      const billIds = await billsAllocatedIn(
+        tx,
+        userId,
+        eq(transactions.importId, importId),
+      );
       await tx
         .delete(imports)
         .where(and(eq(imports.id, importId), eq(imports.userId, userId)));
+      announceBills(userId, billIds);
 
       if (found.closingDate !== null) {
         const present = await first(

@@ -11,7 +11,12 @@ import {
 import { seedAccount, seedImportedTransaction } from "$lib/testing/ledger";
 import { LedgerError } from "$lib/server/ledger/errors";
 import { allocate, listBillAllocations } from "./allocations";
-import { getDB, matchDismissals, transactions } from "$lib/server/db";
+import {
+  billAllocations,
+  getDB,
+  matchDismissals,
+  transactions,
+} from "$lib/server/db";
 import { clearEventListeners, onBillChanged } from "$lib/server/events";
 import { billView } from "./status";
 import {
@@ -134,6 +139,22 @@ describe("auto matching", () => {
         amount: -10000,
       }),
     });
+  });
+
+  it("loads payments back to the start of the window of a bill that only has a due date", async () => {
+    const { u, account } = await setup();
+    const bill = await seedBill(u.id, {
+      creditorIban: EXAMPLE_IBAN,
+      dueDate: "2026-10-01",
+    });
+    // 63 days before the due date: inside the engine window (due - 60 - 5 days).
+    const tx = await payment(u.id, account.id, 10000, {
+      counterpartyIban: EXAMPLE_IBAN,
+      bookingDate: "2026-07-30",
+    });
+    expect(await getSuggestions(u.id)).toEqual([
+      expect.objectContaining({ billId: bill.id, transactionId: tx.id }),
+    ]);
   });
 
   it("leaves ambiguous reference matches (instalments) to the user", async () => {
@@ -491,5 +512,33 @@ describe("auto matching write", () => {
       ]),
     ).toEqual([]);
     expect(await listBillAllocations(u.id, bill.id)).toEqual([]);
+  });
+});
+
+describe("listing a bill's allocations", () => {
+  useTestDB();
+
+  it("orders payments booked on the same day and allocated at the same instant by id", async () => {
+    const { u, account } = await setup();
+    const bill = await seedBill(u.id, { amount: minor(30000) });
+    const at = new Date("2026-09-15T10:00:00Z");
+    for (const id of ["a1", "c3", "b2", "d4"]) {
+      const tx = await payment(u.id, account.id, 1000);
+      await getDB()
+        .insert(billAllocations)
+        .values({
+          id,
+          userId: u.id,
+          billId: bill.id,
+          transactionId: tx.id,
+          amount: minor(1000),
+          origin: "user",
+          createdAt: at,
+          updatedAt: at,
+        });
+    }
+    expect((await listBillAllocations(u.id, bill.id)).map((a) => a.id)).toEqual(
+      ["d4", "c3", "b2", "a1"],
+    );
   });
 });

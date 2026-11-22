@@ -24,6 +24,7 @@ import {
   revalidateLinks,
   type Tx,
 } from "$lib/server/transfers";
+import { announceBills, billsAllocatedIn } from "./allocated-bills";
 import { currentValues, type CurrentValue } from "./balances";
 import { LedgerError, notFound } from "./errors";
 import type { AccountInput } from "./schemas";
@@ -564,9 +565,15 @@ export async function deleteAccount(userId: string, id: string): Promise<void> {
   // while it checks the account, so none can be mid-write when the account goes.
   await transaction(
     async (tx) => {
+      const billIds = await billsAllocatedIn(
+        tx,
+        userId,
+        eq(transactions.accountId, id),
+      );
       await tx
         .delete(accounts)
         .where(and(eq(accounts.userId, userId), eq(accounts.id, id)));
+      announceBills(userId, billIds);
     },
     { lock: ledgerLock(userId) },
   );

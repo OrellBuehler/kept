@@ -33,6 +33,7 @@ import { transactionDisplayColumns, type TransactionDisplay } from "./display";
 import {
   autoConfirmable,
   computeBillStatus,
+  DEFAULT_MATCH_OPTIONS,
   suggestMatches,
   type Allocation,
   type MatchBill,
@@ -41,7 +42,9 @@ import {
 } from "./matching";
 
 export const MAX_SUGGESTION_TRANSACTIONS = 5000;
-const WINDOW_LEAD_DAYS = 60;
+/** A bill with only a due date accepts payments from due - defaultTermDays - daysBeforeIssue on. */
+const WINDOW_LEAD_DAYS =
+  DEFAULT_MATCH_OPTIONS.defaultTermDays + DEFAULT_MATCH_OPTIONS.daysBeforeIssue;
 
 export interface SuggestionView {
   billId: string;
