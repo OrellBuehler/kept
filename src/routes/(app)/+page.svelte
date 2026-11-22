@@ -27,12 +27,17 @@
   import MinusIcon from "@lucide/svelte/icons/minus";
   import ArrowLeftRightIcon from "@lucide/svelte/icons/arrow-left-right";
   import type { PageProps } from "./$types";
+  import { enhance } from "$app/forms";
+  import { toast } from "svelte-sonner";
+  import { submitHandler } from "$lib/form-submit";
   import { usePreferences } from "$lib/preferences.svelte";
 
   const prefs = usePreferences();
 
   let { data }: PageProps = $props();
   const d = $derived(data.dashboard);
+  /** Id of the account whose "no new transactions" confirmation is being saved. */
+  let checking = $state<string | null>(null);
 
   const BASES = [
     { value: "total", label: "Total" },
@@ -170,6 +175,14 @@
   ]);
 
   function staleText(a: (typeof d.accounts)[number]) {
+    if (
+      a.lastImportAt !== null &&
+      a.lastCheckedAt !== null &&
+      a.lastCheckedAt > a.lastImportAt &&
+      a.staleDays !== null
+    ) {
+      return `Last checked ${plural(a.staleDays, "day")} ago`;
+    }
     if (a.lastImportAt !== null && a.staleDays !== null) {
       return `Last import ${plural(a.staleDays, "day")} ago`;
     }
@@ -966,11 +979,11 @@
                   </a>
                 </p>
               {:else if a.stale}
-                <p
+                <div
                   class="mt-1.5 flex items-start gap-1.5 text-xs text-amber-700 dark:text-amber-400"
                 >
                   <TriangleAlertIcon class="mt-0.5 size-3.5 shrink-0" />
-                  <span>
+                  <div>
                     {staleText(a)}.
                     <a
                       href="{resolve('/(app)/import')}?account={a.id}"
@@ -978,8 +991,34 @@
                     >
                       Import a new statement
                     </a>
-                  </span>
-                </p>
+                    {#if a.lastImportAt !== null}
+                      <form
+                        method="POST"
+                        action="?/markChecked"
+                        class="inline"
+                        use:enhance={submitHandler({
+                          setPending: (v) => (checking = v ? a.id : null),
+                          setErrors: (e) => {
+                            const message = Object.values(e).flat()[0];
+                            if (message) toast.error(message);
+                          },
+                          successMessage: `${a.name} marked as up to date`,
+                        })}
+                      >
+                        <input type="hidden" name="accountId" value={a.id} />
+                        or
+                        <button
+                          type="submit"
+                          class="cursor-pointer underline underline-offset-2 disabled:opacity-60"
+                          disabled={checking === a.id}
+                          title="The account is up to date: there was nothing to import."
+                        >
+                          confirm there are no new transactions
+                        </button>
+                      </form>
+                    {/if}
+                  </div>
+                </div>
               {/if}
             </li>
           {/each}

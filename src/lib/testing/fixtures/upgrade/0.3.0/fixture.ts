@@ -150,6 +150,7 @@ export const expected: Expected = {
   newColumns: {
     accounts: [
       "archived_at",
+      "checked_at",
       "contract_number",
       "deposit_iban",
       "fill_from_transfers",
@@ -174,6 +175,7 @@ export const expected: Expected = {
         return {
           archived_at:
             id in archivedAccounts ? int(archivedAccounts[id]) : none,
+          checked_at: none,
           contract_number: none,
           deposit_iban: none,
           fill_from_transfers: int(0),

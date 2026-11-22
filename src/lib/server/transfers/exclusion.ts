@@ -29,7 +29,7 @@ export interface TransferExclusion {
  * The one place that decides what counts as an own-account transfer for
  * income and expense totals. A row in a `linked` transfer is a transfer.
  * Rows that are not linked fall back to a heuristic: the counterparty IBAN is
- * the IBAN (or pillar 3a deposit IBAN) of another account of the user, archived
+ * the IBAN (or deposit or top-up IBAN) of another account of the user, archived
  * ones included, or an outgoing payment carries a pillar 3a portfolio's
  * deposit reference. A row the user unlinked (a `dismissed` transfer) is no
  * transfer to the IBAN heuristic either: "this is not a transfer" wins.
@@ -57,7 +57,14 @@ export async function loadTransferExclusion(
     if (r.out) into.add(r.out);
     if (r.in) into.add(r.in);
   }
-  const ibanOwner = new Map<string, string>();
+  // An IBAN can name several accounts: two accounts may be topped up through the same one.
+  const ibanOwners = new Map<string, Set<string>>();
+  const own = (iban: string, accountId: string) => {
+    const key = normalizeIban(iban);
+    const owners = ibanOwners.get(key);
+    if (owners) owners.add(accountId);
+    else ibanOwners.set(key, new Set([accountId]));
+  };
   for (const a of await db
     .select({
       id: accounts.id,
@@ -66,16 +73,18 @@ export async function loadTransferExclusion(
     })
     .from(accounts)
     .where(eq(accounts.userId, userId))) {
-    if (a.iban) ibanOwner.set(normalizeIban(a.iban), a.id);
-    if (a.depositIban) ibanOwner.set(normalizeIban(a.depositIban), a.id);
+    if (a.iban) own(a.iban, a.id);
+    if (a.depositIban) own(a.depositIban, a.id);
   }
   const depositReferences = await portfolioDepositReferences(userId);
   return {
     isTransfer(row) {
       if (linked.has(row.id)) return true;
       if (row.counterpartyIban && !dismissed.has(row.id)) {
-        const owner = ibanOwner.get(normalizeIban(row.counterpartyIban));
-        if (owner !== undefined && owner !== row.accountId) return true;
+        const owners = ibanOwners.get(normalizeIban(row.counterpartyIban));
+        if (owners && [...owners].some((id) => id !== row.accountId)) {
+          return true;
+        }
       }
       return (
         !dismissed.has(row.id) && isContributionPayment(depositReferences, row)

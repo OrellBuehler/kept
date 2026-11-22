@@ -2,47 +2,47 @@
   "data": {
     "accounts": [
       {
-        "id": "3486d393-2f40-42b8-90c5-ffd2a5bddb26",
+        "id": "09d4adeb-6055-4732-9aa7-55fcf812b195",
         "name": "Example Checking",
         "currency": "CHF"
       },
       {
-        "id": "258d6028-d2f3-4ec4-961d-61ebc4c915cd",
+        "id": "deff505a-857f-49e6-818c-9e9905326f2a",
         "name": "Example Savings",
         "currency": "CHF"
       },
       {
-        "id": "58f7cd50-c58c-44d6-8f61-42310e0d0aca",
+        "id": "72b10af8-5a5b-4141-acaa-25c24a06aa91",
         "name": "Example Credit Card",
         "currency": "CHF"
       },
       {
-        "id": "94aa557c-b095-4d45-a191-b3191548225b",
+        "id": "6faa4697-2b8e-44c5-987f-7504c19e6db0",
         "name": "Example Brokerage",
         "currency": "CHF"
       },
       {
-        "id": "1edd858c-af1f-4910-84c4-859409bbd141",
+        "id": "e830d6db-f28b-46e9-b3ed-865186f49705",
         "name": "Example Pillar 3a",
         "currency": "CHF"
       },
       {
-        "id": "74f1e5be-630c-4e2b-b1c3-2aa178ef8e02",
+        "id": "00c8febf-2a63-4e4d-9308-a538bdf99a12",
         "name": "Example Pension Fund",
         "currency": "CHF"
       },
       {
-        "id": "f94ecd48-dc50-45ea-9517-7c45ede0f286",
+        "id": "5d4c0dbe-cff7-4a0c-bf61-4abf5e369332",
         "name": "Example Euro Account",
         "currency": "EUR"
       },
       {
-        "id": "08b2c1a0-6b0b-4978-864a-332697bc6ffb",
+        "id": "e21427ce-594e-4e99-895e-8af59e193ded",
         "name": "Example Joint Account",
         "currency": "CHF"
       },
       {
-        "id": "df17c54a-a84b-448c-9b4a-bb1a5a8355a4",
+        "id": "7716fa56-e09a-452c-bbd0-777845cb71aa",
         "name": "Example Wallet",
         "currency": "CHF"
       }

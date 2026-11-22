@@ -18,6 +18,15 @@
   matches, payment categories and notes, categories and rules can be reverted one by one, or all
   changes of one connection at once. A revert is refused when the data has changed since.
 - **Connected apps** on the API tokens page: rename or revoke what you connected by signing in.
+- **Top-up IBAN** for accounts without an IBAN of their own (e-money and card accounts): the
+  IBAN you send money to when you top the account up, shown as such and not as the account's
+  IBAN. A payment to it from another of your accounts is recognised as a transfer and linked to
+  the credit on that account, or creates it when the account is filled from transfers. Web only
+  for now; the apps keep the value when they edit an account.
+- **"No new transactions"** on an account (account menu, and next to the warning on the
+  dashboard): confirms that the account is up to date although there was nothing to import, for
+  banks that issue no statement for a period without transactions. It quiets the "last import"
+  warnings and the notification like an import does. Web only for now.
 
 ### Changed
 

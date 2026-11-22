@@ -20,6 +20,7 @@
   import { outcomeFromParams, transferSummary } from "$lib/transfer-ui";
   import ArchiveIcon from "@lucide/svelte/icons/archive";
   import ArchiveRestoreIcon from "@lucide/svelte/icons/archive-restore";
+  import CheckIcon from "@lucide/svelte/icons/check";
   import ChevronLeftIcon from "@lucide/svelte/icons/chevron-left";
   import CopyIcon from "@lucide/svelte/icons/copy";
   import ExternalLinkIcon from "@lucide/svelte/icons/external-link";
@@ -64,6 +65,7 @@
   let deletingTxId = $state("");
   let deletingMirror = $state(false);
   let archiveForm = $state<HTMLFormElement | null>(null);
+  let checkedForm = $state<HTMLFormElement | null>(null);
   let archiving = $state(false);
 
   const selected = $derived(
@@ -101,16 +103,20 @@
     }
   });
 
-  async function copyIban() {
-    if (!account.iban) return;
+  async function copyIban(iban: string | null, copied = "IBAN copied") {
+    if (!iban) return;
     try {
-      await navigator.clipboard.writeText(account.iban);
-      toast.success("IBAN copied");
+      await navigator.clipboard.writeText(iban);
+      toast.success(copied);
     } catch (err) {
       console.error("clipboard write failed", err);
       toast.error("Could not copy the IBAN.");
     }
   }
+  /** The IBAN the account is topped up through; pillar 3a shows its deposit IBAN with the portfolios. */
+  const topUpIban = $derived(
+    account.type === "pillar_3a" ? null : account.depositIban,
+  );
 </script>
 
 <svelte:head>
@@ -177,8 +183,26 @@
                 variant="ghost"
                 size="icon-sm"
                 class="size-7"
-                onclick={copyIban}
+                onclick={() => copyIban(account.iban)}
                 aria-label="Copy IBAN"
+              >
+                <CopyIcon />
+              </Button>
+            </span>
+          {/if}
+          {#if topUpIban && prefs.ibanDisplay !== "hidden"}
+            <span
+              class="flex items-center gap-1"
+              title="The IBAN you send money to when you top this account up. It is not this account's own IBAN."
+            >
+              <span>Top up via</span>
+              <span class="font-mono">{prefs.iban(topUpIban)}</span>
+              <Button
+                variant="ghost"
+                size="icon-sm"
+                class="size-7"
+                onclick={() => copyIban(topUpIban, "Top-up IBAN copied")}
+                aria-label="Copy top-up IBAN"
               >
                 <CopyIcon />
               </Button>
@@ -282,6 +306,14 @@
                 </a>
               {/snippet}
             </DropdownMenu.Item>
+            {#if account.lastImportAt !== null && !account.archived}
+              <DropdownMenu.Item
+                onSelect={() => checkedForm?.requestSubmit()}
+                title="The account is up to date: there was nothing to import."
+              >
+                <CheckIcon /> No new transactions
+              </DropdownMenu.Item>
+            {/if}
             <DropdownMenu.Separator />
             <DropdownMenu.Item onSelect={() => archiveForm?.requestSubmit()}>
               {#if account.archived}
@@ -352,6 +384,21 @@
     portfolios={data.showPortfolios}
   />
 </div>
+
+<form
+  method="POST"
+  action="?/markChecked"
+  bind:this={checkedForm}
+  class="hidden"
+  use:enhance={submitHandler({
+    setPending: (v) => (archiving = v),
+    setErrors: (e) => {
+      const message = Object.values(e).flat()[0];
+      if (message) toast.error(message);
+    },
+    successMessage: "Marked as up to date",
+  })}
+></form>
 
 <form
   method="POST"

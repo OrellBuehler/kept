@@ -312,6 +312,24 @@
             />
           </FormField>
         </div>
+      {:else}
+        <input type="hidden" name="depositIbanField" value="1" />
+        <FormField
+          label="Top-up IBAN (optional)"
+          for="{uid}-deposit-iban"
+          errors={errors.depositIban}
+          hint="For an account without an IBAN of its own: the IBAN you send money to when you top it up. It is not this account's IBAN. Transfers to it from your other accounts are matched to this account."
+        >
+          <Input
+            id="{uid}-deposit-iban"
+            name="depositIban"
+            class="font-mono"
+            autocomplete="off"
+            placeholder="Spaces are fine"
+            value={account?.depositIban ?? ""}
+            aria-invalid={!!errors.depositIban}
+          />
+        </FormField>
       {/if}
 
       <div class="grid gap-4 sm:grid-cols-2">
@@ -508,7 +526,7 @@
                 <p id="{uid}-fill-hint" class="text-muted-foreground text-xs">
                   For accounts without statement exports. Kept creates the
                   counter-transaction when an imported account shows a transfer
-                  to or from this IBAN.
+                  to or from this IBAN, or to its top-up IBAN.
                 </p>
                 {#if errors.fillFromTransfers?.length}
                   <p class="text-destructive text-sm" role="alert">

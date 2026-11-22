@@ -89,7 +89,7 @@ describe("pillar_3a account input", () => {
     expect(invalidShare.ok).toBe(true);
   });
 
-  it("ignores both fields on other account types", () => {
+  it("ignores the contract number on other account types and leaves the deposit IBAN alone unless the form shows it", () => {
     const r = parseForm(
       accountInputSchema,
       form({
@@ -103,8 +103,11 @@ describe("pillar_3a account input", () => {
     );
     expect(r).toMatchObject({
       ok: true,
-      data: { contractNumber: null, depositIban: null, shareBps: 5000 },
+      data: { contractNumber: null, depositIban: undefined, shareBps: 5000 },
     });
+    expect(r.ok && "depositIban" in r.data && r.data.depositIban).toBe(
+      undefined,
+    );
   });
 });
 

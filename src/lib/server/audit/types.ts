@@ -33,6 +33,7 @@ export const CHANGE_ACTIONS = {
   "account.update": "update",
   "account.archive": "update",
   "account.unarchive": "update",
+  "account.check": "update",
   "account.delete": "delete",
   "institution.create": "create",
   "institution.update": "update",

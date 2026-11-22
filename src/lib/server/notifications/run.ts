@@ -36,15 +36,22 @@ async function accountFacts(userId: string): Promise<AccountFact[]> {
         id: accounts.id,
         name: accounts.name,
         createdAt: accounts.createdAt,
+        checkedAt: accounts.checkedAt,
       })
       .from(accounts)
       .where(and(eq(accounts.userId, userId), eq(accounts.archived, false)))
   ).map((a) => {
-    const last = lastImports.get(a.id);
+    const imported = lastImports.get(a.id) ?? null;
+    // "Nothing new to import", confirmed by the user, counts like an import
+    // for an account that is imported at all.
+    const last =
+      imported !== null && a.checkedAt !== null && a.checkedAt > imported
+        ? a.checkedAt
+        : imported;
     return {
       id: a.id,
       name: a.name,
-      lastImportDate: todayLocal(last ? new Date(last) : a.createdAt),
+      lastImportDate: todayLocal(last ?? a.createdAt),
     };
   });
 }

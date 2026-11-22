@@ -97,6 +97,7 @@ import {
   transferCandidates,
   unlink,
 } from "./index";
+import { loadTransferExclusion } from "./exclusion";
 
 useTestDB();
 
@@ -2103,5 +2104,156 @@ describe("the in-transaction variants", () => {
     expect(await allTransfers()).toEqual([]);
     expect(await linkTransfers(user.id)).toMatchObject({ mirrored: 1 });
     expect(await allTransfers()).toHaveLength(1);
+  });
+});
+
+describe("top-up IBAN", () => {
+  const TOP_UP = EXAMPLE_IBAN_THIRD;
+
+  async function wallet(
+    over: { fill?: boolean; depositIban?: string | null } = {},
+  ) {
+    const user = await createTestUser();
+    const a = await seedAccount(user.id, { name: "Main", iban: EXAMPLE_IBAN });
+    const w = await seedAccount(user.id, {
+      name: "Wallet",
+      depositIban: over.depositIban === undefined ? TOP_UP : over.depositIban,
+      fillFromTransfers: over.fill ?? false,
+    });
+    const send = async () =>
+      seedImportedTransaction(user.id, a.id, {
+        bookingDate: "2026-03-10",
+        amount: m(-5000),
+        counterpartyIban: TOP_UP,
+        description: "Top up",
+      });
+    const arrive = async () =>
+      seedImportedTransaction(user.id, w.id, {
+        bookingDate: "2026-03-11",
+        amount: m(5000),
+        description: "Top up received",
+      });
+    return { user, a, w, send, arrive };
+  }
+
+  it("pairs a payment to the top-up IBAN with the credit on that account", async () => {
+    const { user, a, w, send, arrive } = await wallet();
+    const out = await send();
+    const into = await arrive();
+    expect(await linkTransfers(user.id, { transactionIds: [out.id] })).toEqual({
+      paired: 1,
+      mirrored: 0,
+      needsAmount: 0,
+    });
+    expect(await allTransfers()).toMatchObject([
+      {
+        status: "linked",
+        outTransactionId: out.id,
+        inTransactionId: into.id,
+        fromAccountId: a.id,
+        toAccountId: w.id,
+      },
+    ]);
+  });
+
+  it("mirrors the payment onto an account filled from transfers", async () => {
+    const { user, w, send } = await wallet({ fill: true });
+    const out = await send();
+    await linkTransfers(user.id, { transactionIds: [out.id] });
+    expect(await rowsOf(w.id)).toMatchObject([
+      { source: "mirror", amount: 5000, counterpartyIban: EXAMPLE_IBAN },
+    ]);
+  });
+
+  it("links earlier payments when the top-up IBAN is set later, and unlinks them when it goes", async () => {
+    const { user, w, send, arrive } = await wallet({ depositIban: null });
+    await send();
+    await arrive();
+    await linkTransfers(user.id);
+    expect(await allTransfers()).toEqual([]);
+
+    const view = await getAccount(user.id, w.id);
+    await updateAccount(user.id, w.id, {
+      ...inputOf(view),
+      depositIban: TOP_UP,
+    });
+    expect(await allTransfers()).toMatchObject([{ status: "linked" }]);
+
+    await updateAccount(user.id, w.id, { ...inputOf(view), depositIban: null });
+    expect(await allTransfers()).toEqual([]);
+  });
+
+  it("counts the payment as a transfer, not as spending", async () => {
+    const { user, send } = await wallet();
+    const out = await send();
+    const exclusion = await loadTransferExclusion(user.id);
+    expect(exclusion.isTransfer(out)).toBe(true);
+  });
+
+  it("keeps the stored top-up IBAN when an update does not send the field", async () => {
+    const { user, w } = await wallet();
+    const view = await getAccount(user.id, w.id);
+    await updateAccount(user.id, w.id, {
+      ...inputOf(view),
+      depositIban: undefined,
+    });
+    expect((await getAccount(user.id, w.id)).depositIban).toBe(TOP_UP);
+  });
+
+  it("refuses the IBAN of another account as a top-up IBAN", async () => {
+    const { user, w } = await wallet();
+    const view = await getAccount(user.id, w.id);
+    await expect(
+      updateAccount(user.id, w.id, {
+        ...inputOf(view),
+        depositIban: EXAMPLE_IBAN,
+      }),
+    ).rejects.toMatchObject({ field: "depositIban" });
+  });
+
+  it("refuses a top-up IBAN of another account as an account's own IBAN", async () => {
+    const { user, a } = await wallet();
+    const view = await getAccount(user.id, a.id);
+    await expect(
+      updateAccount(user.id, a.id, { ...inputOf(view), iban: TOP_UP }),
+    ).rejects.toMatchObject({ field: "iban" });
+  });
+
+  it("counts a payment to a top-up IBAN two accounts share as a transfer", async () => {
+    const { user, send } = await wallet();
+    await seedAccount(user.id, { name: "Second wallet", depositIban: TOP_UP });
+    const out = await send();
+    const exclusion = await loadTransferExclusion(user.id);
+    expect(exclusion.isTransfer(out)).toBe(true);
+    expect(await linkTransfers(user.id, { transactionIds: [out.id] })).toEqual({
+      paired: 0,
+      mirrored: 0,
+      needsAmount: 0,
+    });
+  });
+
+  it("reads the field only from forms that show it, and never as the account's own IBAN", () => {
+    const base = { name: "Wallet", type: "current", currency: "CHF" };
+    expect(
+      accountInputSchema.parse({ ...base, depositIban: TOP_UP }).depositIban,
+    ).toBeUndefined();
+    expect(
+      accountInputSchema.parse({
+        ...base,
+        depositIban: TOP_UP,
+        depositIbanField: "1",
+      }).depositIban,
+    ).toBe(TOP_UP);
+    expect(
+      accountInputSchema.parse({ ...base, depositIbanField: "1" }).depositIban,
+    ).toBeNull();
+    expect(
+      accountInputSchema.safeParse({
+        ...base,
+        iban: TOP_UP,
+        depositIban: TOP_UP,
+        depositIbanField: "1",
+      }).success,
+    ).toBe(false);
   });
 });

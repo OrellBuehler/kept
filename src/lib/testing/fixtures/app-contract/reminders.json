@@ -2,25 +2,25 @@
   "today": "2026-11-22",
   "events": [
     {
-      "key": "bill-due:bf4b28ad-dfa3-415d-871e-1d6279da9bb5:2026-11-27",
+      "key": "bill-due:f8ecf84e-c559-4056-882a-3b29c004f49d:2026-11-27",
       "title": "Bill due soon",
       "body": "Example Dental Clinic (CHF 350.00) is due in 5 days (2026-11-27).",
       "kind": "bill-due"
     },
     {
-      "key": "bill-overdue:9a21e5e2-a339-410e-8b91-5c04d3909702:2026-11-02",
+      "key": "bill-overdue:735a4e17-7b4f-4953-a491-d1cfa5fff79d:2026-11-02",
       "title": "Bill overdue",
       "body": "Example Utilities GmbH (CHF 85.50) was due on 2026-11-02 (20 days ago).",
       "kind": "bill-overdue"
     },
     {
-      "key": "bill-due:13b8f141-bd83-46f0-b554-232e4ffe9e95:2026-12-04",
+      "key": "bill-due:45dc014c-aad4-48d3-9c75-12c799843209:2026-12-04",
       "title": "Bill due soon",
       "body": "Example Supplier AG (CHF 1,949.75) is due in 12 days (2026-12-04).",
       "kind": "bill-due"
     },
     {
-      "key": "budget:35adf3ad-ccde-4f29-8ab3-1f5504abe49a:2026-11:50",
+      "key": "budget:ba06ecb7-6345-4345-8391-7413506549d2:2026-11:50",
       "title": "Budget nearly used",
       "body": "Housing: CHF 1,800.00 of CHF 2,000.00 spent in 2026-11.",
       "kind": "budget"
@@ -28,7 +28,7 @@
   ],
   "bills": [
     {
-      "id": "9a21e5e2-a339-410e-8b91-5c04d3909702",
+      "id": "735a4e17-7b4f-4953-a491-d1cfa5fff79d",
       "creditorName": "Example Utilities GmbH",
       "invoiceNumber": "U-77",
       "remaining": 8550,
@@ -36,7 +36,7 @@
       "dueDate": "2026-11-02"
     },
     {
-      "id": "bf4b28ad-dfa3-415d-871e-1d6279da9bb5",
+      "id": "f8ecf84e-c559-4056-882a-3b29c004f49d",
       "creditorName": "Example Dental Clinic",
       "invoiceNumber": null,
       "remaining": 35000,
@@ -44,7 +44,7 @@
       "dueDate": "2026-11-27"
     },
     {
-      "id": "13b8f141-bd83-46f0-b554-232e4ffe9e95",
+      "id": "45dc014c-aad4-48d3-9c75-12c799843209",
       "creditorName": "Example Supplier AG",
       "invoiceNumber": "2001",
       "remaining": 194975,

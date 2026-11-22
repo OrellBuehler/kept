@@ -328,6 +328,12 @@ export const accounts = table(
     archived: bool("archived").notNull().default(false),
     /** When the account was archived; past net worth still counts it before this instant. */
     archivedAt: instant("archived_at"),
+    /**
+     * When the user last confirmed that there is nothing new to import. Counts
+     * like an import for the "not imported for a while" warnings: a bank issues
+     * no statement for a period without transactions.
+     */
+    checkedAt: instant("checked_at"),
     sortOrder: int("sort_order").notNull().default(0),
     /** The user's ownership share in basis points (10000 = 100%). Never applied to stored amounts. */
     shareBps: int("share_bps").notNull().default(10000),

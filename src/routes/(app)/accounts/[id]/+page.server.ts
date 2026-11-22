@@ -20,6 +20,7 @@ import {
 import { accountValue, localToday } from "$lib/server/ledger";
 import {
   archiveAccount,
+  markAccountChecked,
   deleteAccount,
   getAccount,
   unarchiveAccount,
@@ -278,6 +279,17 @@ export const actions: Actions = {
     const user = requireUser(locals);
     await orNotFoundAsync(() => archiveAccount(user.id, params.id));
     return { success: true as const, action: "archive" as const };
+  },
+
+  markChecked: async ({ locals, params }) => {
+    const user = requireUser(locals);
+    await orNotFoundAsync(() => getAccount(user.id, params.id));
+    try {
+      await markAccountChecked(user.id, params.id);
+      return { success: true as const, action: "markChecked" as const };
+    } catch (err) {
+      return ledgerFailure("markChecked", err, {});
+    }
   },
 
   unarchive: async ({ locals, params }) => {

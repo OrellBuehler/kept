@@ -15,6 +15,7 @@ import {
 import {
   LINK_WINDOW_DAYS,
   accountsByIban,
+  ibansOf,
   planLinks,
   shiftDate,
   type PlanAccount,
@@ -41,6 +42,7 @@ function planAccountQueries(conn: Reader, userId: string) {
         currency: accounts.currency,
         type: accounts.type,
         iban: accounts.iban,
+        depositIban: accounts.depositIban,
         openingDate: accounts.openingDate,
         fillFromTransfers: accounts.fillFromTransfers,
         archived: accounts.archived,
@@ -52,14 +54,26 @@ function planAccountQueries(conn: Reader, userId: string) {
 
 function toPlanAccounts(
   portfolioRows: readonly { id: string }[],
-  accountRows: readonly Omit<PlanAccount, "hasPortfolios">[],
+  accountRows: readonly (Omit<PlanAccount, "hasPortfolios" | "topUpIban"> & {
+    depositIban: string | null;
+  })[],
 ): PlanAccount[] {
   const withPortfolios = new Set(portfolioRows.map((r) => r.id));
-  return accountRows.map((a) => ({
+  return accountRows.map(({ depositIban, ...a }) => ({
     ...a,
     iban: a.iban ? normalizeIban(a.iban) : null,
+    topUpIban:
+      depositIban && a.type !== "pillar_3a" ? normalizeIban(depositIban) : null,
     hasPortfolios: withPortfolios.has(a.id),
   }));
+}
+
+/** SQL condition: the row's counterparty IBAN is one of `ibans` (normalized, at least one). */
+export function counterpartyIbanIn(ibans: readonly string[]) {
+  return inArray(
+    sql`upper(replace(${transactions.counterpartyIban}, ' ', ''))`,
+    ibans as string[],
+  );
 }
 
 export async function loadPlanAccounts(userId: string): Promise<PlanAccount[]> {
@@ -78,8 +92,9 @@ export async function loadPlanAccountsInTx(
 
 /**
  * Normalized IBAN -> account id for the user's accounts, archived ones
- * included. Only `iban` counts: a deposit IBAN (a QR-IBAN) is shared by many
- * customers, and pillar 3a payments are recognised by their reference.
+ * included: an account's own IBAN and the IBAN it is topped up through. A
+ * pillar 3a deposit IBAN (a QR-IBAN) does not count: it is shared by many
+ * customers, and those payments are recognised by their reference.
  */
 export async function ownIbans(userId: string): Promise<Map<string, string>> {
   return new Map(
@@ -199,14 +214,9 @@ async function loadSources(
     add(await pick(eq(transactions.accountId, scope.sourceAccountId)));
   }
   if (scope.targetAccountId !== undefined) {
-    const iban = accountList.find((a) => a.id === scope.targetAccountId)?.iban;
-    if (iban) {
-      add(
-        await pick(
-          sql`upper(replace(${transactions.counterpartyIban}, ' ', '')) = ${iban}`,
-        ),
-      );
-    }
+    const target = accountList.find((a) => a.id === scope.targetAccountId);
+    const ibans = target ? ibansOf(target) : [];
+    if (ibans.length > 0) add(await pick(counterpartyIbanIn(ibans)));
   }
   return [...found.values()];
 }

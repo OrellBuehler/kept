@@ -1,0 +1,1 @@
+ALTER TABLE `accounts` ADD `checked_at` integer;
