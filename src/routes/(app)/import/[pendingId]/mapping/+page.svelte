@@ -330,492 +330,485 @@
     <ImportSteps current={3} />
   </div>
 
-  <div
-    class="grid items-start gap-6 lg:grid-cols-[minmax(0,24rem)_minmax(0,1fr)]"
-  >
-    <div class="grid min-w-0 gap-4">
-      {#if data.otherProfiles.length > 0}
-        <Card.Root>
-          <Card.Header>
-            <Card.Title class="text-base">
-              Start from a saved mapping
-            </Card.Title>
-            <Card.Description>
-              Copy the mapping of another account, for example one at the same
-              bank. Changes here only affect this account.
-            </Card.Description>
-          </Card.Header>
-          <Card.Content class="flex items-end gap-2">
-            <FormField label="Mapping" for="m-copy" class="min-w-0 flex-1">
-              <NativeSelect id="m-copy" bind:value={copyFrom} class="w-full">
-                <option value="">Choose a mapping</option>
-                {#each data.otherProfiles as p (p.accountId)}
-                  <option value={p.accountId}>
-                    {p.name} ({p.accountName})
-                  </option>
-                {/each}
-              </NativeSelect>
-            </FormField>
-            <Button
-              variant="secondary"
-              disabled={!copyable}
-              onclick={applyCopy}
-            >
-              Apply
-            </Button>
-          </Card.Content>
-        </Card.Root>
-      {/if}
+  <div class="grid min-w-0 gap-6">
+    {#if previewError}
+      <Alert.Root variant="destructive" class="border-destructive/40">
+        <CircleAlertIcon />
+        <Alert.Title>Preview unavailable</Alert.Title>
+        <Alert.Description>{previewError}</Alert.Description>
+      </Alert.Root>
+    {/if}
+    {#if result.errors.length > 0}
+      <Alert.Root variant="destructive" class="border-destructive/40">
+        <CircleAlertIcon />
+        <Alert.Title>This mapping is not valid yet</Alert.Title>
+        <Alert.Description>
+          <ul class="list-disc ps-4">
+            {#each result.errors as message (message)}
+              <li class="break-words">{message}</li>
+            {/each}
+          </ul>
+        </Alert.Description>
+      </Alert.Root>
+    {/if}
 
+    {#if data.otherProfiles.length > 0}
       <Card.Root>
         <Card.Header>
-          <Card.Title class="text-base">File layout</Card.Title>
+          <Card.Title class="text-base">Start from a saved mapping</Card.Title>
+          <Card.Description>
+            Copy the mapping of another account, for example one at the same
+            bank. Changes here only affect this account.
+          </Card.Description>
         </Card.Header>
-        <Card.Content class="grid gap-4 sm:grid-cols-2 lg:grid-cols-1">
-          {#if !isXlsx}
-            <FormField label="Delimiter" for="m-delimiter">
-              <NativeSelect
-                id="m-delimiter"
-                bind:value={ui.delimiter}
-                class="w-full"
-              >
-                {#each DELIMITERS as value (value)}
-                  <option {value}>{DELIMITER_LABELS[value]}</option>
-                {/each}
-              </NativeSelect>
-            </FormField>
-            <FormField label="Encoding" for="m-encoding">
-              <NativeSelect
-                id="m-encoding"
-                bind:value={ui.encoding}
-                class="w-full"
-              >
-                {#each ENCODINGS as value (value)}
-                  <option {value}>{ENCODING_LABELS[value]}</option>
-                {/each}
-              </NativeSelect>
-            </FormField>
-          {/if}
-          <FormField
-            label="Header row"
-            for="m-header"
-            errors={headerInvalid
-              ? ["Enter a whole number, 0 or more."]
-              : undefined}
-            hint="Line number of the column names. 0 = no header; columns are then numbered."
-          >
-            <Input
-              id="m-header"
-              type="number"
-              min="0"
-              step="1"
-              inputmode="numeric"
-              bind:value={ui.headerRow}
-            />
+        <Card.Content class="flex items-end gap-2">
+          <FormField label="Mapping" for="m-copy" class="min-w-0 flex-1">
+            <NativeSelect id="m-copy" bind:value={copyFrom} class="w-full">
+              <option value="">Choose a mapping</option>
+              {#each data.otherProfiles as p (p.accountId)}
+                <option value={p.accountId}>
+                  {p.name} ({p.accountName})
+                </option>
+              {/each}
+            </NativeSelect>
           </FormField>
-          <FormField
-            label="Footer rows to skip"
-            for="m-footer"
-            errors={footerInvalid
-              ? ["Enter a whole number, 0 or more."]
-              : undefined}
-            hint="Trailing lines such as totals."
-          >
-            <Input
-              id="m-footer"
-              type="number"
-              min="0"
-              step="1"
-              inputmode="numeric"
-              bind:value={ui.skipFooterRows}
-            />
-          </FormField>
+          <Button variant="secondary" disabled={!copyable} onclick={applyCopy}>
+            Apply
+          </Button>
         </Card.Content>
       </Card.Root>
+    {/if}
 
-      <Card.Root>
-        <Card.Header>
-          <Card.Title class="text-base">Dates, numbers, currency</Card.Title>
-        </Card.Header>
-        <Card.Content class="grid gap-4 sm:grid-cols-2 lg:grid-cols-1">
-          <FormField label="Date format" for="m-date">
-            <NativeSelect id="m-date" bind:value={ui.dateFormat} class="w-full">
-              {#each DATE_FORMATS as value (value)}
-                <option {value}>{value}</option>
-              {/each}
-            </NativeSelect>
-          </FormField>
-          <FormField label="Decimal separator" for="m-decimal">
-            <NativeSelect
-              id="m-decimal"
-              bind:value={ui.decimalSeparator}
-              class="w-full"
-            >
-              <option value=".">Period ( . )</option>
-              <option value=",">Comma ( , )</option>
-            </NativeSelect>
-          </FormField>
-          <FormField label="Thousands separator" for="m-thousands">
-            <NativeSelect
-              id="m-thousands"
-              bind:value={ui.thousandsSeparator}
-              class="w-full"
-            >
-              {#each THOUSANDS as [value, label] (value)}
-                <option {value}>{label}</option>
-              {/each}
-            </NativeSelect>
-          </FormField>
-          <FormField
-            label="Default currency"
-            for="m-currency-default"
-            hint="Used when there is no currency column or the cell is empty."
+    <Card.Root class="min-w-0">
+      <Card.Header>
+        <Card.Title class="text-base">File contents</Card.Title>
+        <Card.Description>
+          First {result.sampleRows.length} of {plural(result.rowCount, "line")}
+          as found in the file; the header row is highlighted.
+        </Card.Description>
+      </Card.Header>
+      <Card.Content class="min-w-0">
+        {#if result.sampleRows.length === 0}
+          <p
+            class="text-muted-foreground rounded-lg border border-dashed p-6 text-center text-sm"
           >
-            <Input
-              id="m-currency-default"
-              bind:value={ui.defaultCurrency}
-              maxlength={3}
-              autocomplete="off"
-              class="uppercase"
-              placeholder={data.account.currency}
-            />
-          </FormField>
-        </Card.Content>
-      </Card.Root>
-
-      <Card.Root>
-        <Card.Header>
-          <Card.Title class="text-base">Amount</Card.Title>
-        </Card.Header>
-        <Card.Content class="grid gap-4">
-          <FormField label="Amount layout" for="m-mode">
-            <NativeSelect id="m-mode" bind:value={ui.amountMode} class="w-full">
-              {#each MODES as [value, label] (value)}
-                <option {value}>{label}</option>
-              {/each}
-            </NativeSelect>
-          </FormField>
-          {#if modeCols.includes("amount")}
-            <ColumnSelect
-              id="m-amount"
-              label="Amount column"
-              bind:value={ui.columns.amount}
-              {detected}
-              {byIndex}
-              required
-            />
-          {/if}
-          {#if modeCols.includes("indicator")}
-            <ColumnSelect
-              id="m-indicator"
-              label="Credit/debit column"
-              bind:value={ui.columns.indicator}
-              {detected}
-              {byIndex}
-              required
-            />
-            <FormField
-              label="Values meaning credit"
-              for="m-credit-values"
-              hint="Comma separated, case-insensitive."
-            >
-              <Input id="m-credit-values" bind:value={ui.creditValues} />
-            </FormField>
-            <FormField
-              label="Values meaning debit"
-              for="m-debit-values"
-              hint="Comma separated, case-insensitive."
-            >
-              <Input id="m-debit-values" bind:value={ui.debitValues} />
-            </FormField>
-          {/if}
-          {#if modeCols.includes("credit")}
-            <ColumnSelect
-              id="m-credit"
-              label="Credit column"
-              bind:value={ui.columns.credit}
-              {detected}
-              {byIndex}
-            />
-            <ColumnSelect
-              id="m-debit"
-              label="Debit column"
-              bind:value={ui.columns.debit}
-              {detected}
-              {byIndex}
-            />
-          {/if}
-          <div class="flex items-center justify-between gap-3">
-            <Label for="m-invert">
-              Invert sign
-              <span class="text-muted-foreground font-normal">
-                (debits are positive in the file)
-              </span>
-            </Label>
-            <Switch id="m-invert" bind:checked={ui.invertSign} />
+            The file has no readable rows.
+          </p>
+        {:else}
+          <div
+            class="max-h-80 overflow-auto rounded-lg border [&_[data-slot=table-container]]:overflow-visible"
+          >
+            <Table.Root class="w-max min-w-full text-xs">
+              <Table.Body>
+                {#each result.sampleRows as cells, i (i)}
+                  <Table.Row
+                    class={i + 1 === ui.headerRow
+                      ? "bg-primary/10 font-semibold"
+                      : undefined}
+                  >
+                    <Table.Cell
+                      class="text-muted-foreground text-end tabular-nums"
+                    >
+                      {i + 1}
+                    </Table.Cell>
+                    {#each cells as cell, j (j)}
+                      <Table.Cell class="max-w-48 truncate" title={cell}>
+                        {cell}
+                      </Table.Cell>
+                    {/each}
+                  </Table.Row>
+                {/each}
+              </Table.Body>
+            </Table.Root>
           </div>
-        </Card.Content>
-      </Card.Root>
+        {/if}
+      </Card.Content>
+    </Card.Root>
 
-      <Card.Root>
-        <Card.Header>
-          <Card.Title class="text-base">Columns</Card.Title>
-        </Card.Header>
-        <Card.Content class="grid gap-4 sm:grid-cols-2 lg:grid-cols-1">
+    <Card.Root>
+      <Card.Header>
+        <Card.Title class="text-base">File layout</Card.Title>
+      </Card.Header>
+      <Card.Content
+        class="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4"
+      >
+        {#if !isXlsx}
+          <FormField label="Delimiter" for="m-delimiter">
+            <NativeSelect
+              id="m-delimiter"
+              bind:value={ui.delimiter}
+              class="w-full"
+            >
+              {#each DELIMITERS as value (value)}
+                <option {value}>{DELIMITER_LABELS[value]}</option>
+              {/each}
+            </NativeSelect>
+          </FormField>
+          <FormField label="Encoding" for="m-encoding">
+            <NativeSelect
+              id="m-encoding"
+              bind:value={ui.encoding}
+              class="w-full"
+            >
+              {#each ENCODINGS as value (value)}
+                <option {value}>{ENCODING_LABELS[value]}</option>
+              {/each}
+            </NativeSelect>
+          </FormField>
+        {/if}
+        <FormField
+          label="Header row"
+          for="m-header"
+          errors={headerInvalid
+            ? ["Enter a whole number, 0 or more."]
+            : undefined}
+          hint="Line number of the column names. 0 = no header; columns are then numbered."
+        >
+          <Input
+            id="m-header"
+            type="number"
+            min="0"
+            step="1"
+            inputmode="numeric"
+            bind:value={ui.headerRow}
+          />
+        </FormField>
+        <FormField
+          label="Footer rows to skip"
+          for="m-footer"
+          errors={footerInvalid
+            ? ["Enter a whole number, 0 or more."]
+            : undefined}
+          hint="Trailing lines such as totals."
+        >
+          <Input
+            id="m-footer"
+            type="number"
+            min="0"
+            step="1"
+            inputmode="numeric"
+            bind:value={ui.skipFooterRows}
+          />
+        </FormField>
+      </Card.Content>
+    </Card.Root>
+
+    <Card.Root>
+      <Card.Header>
+        <Card.Title class="text-base">Dates, numbers, currency</Card.Title>
+      </Card.Header>
+      <Card.Content
+        class="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4"
+      >
+        <FormField label="Date format" for="m-date">
+          <NativeSelect id="m-date" bind:value={ui.dateFormat} class="w-full">
+            {#each DATE_FORMATS as value (value)}
+              <option {value}>{value}</option>
+            {/each}
+          </NativeSelect>
+        </FormField>
+        <FormField label="Decimal separator" for="m-decimal">
+          <NativeSelect
+            id="m-decimal"
+            bind:value={ui.decimalSeparator}
+            class="w-full"
+          >
+            <option value=".">Period ( . )</option>
+            <option value=",">Comma ( , )</option>
+          </NativeSelect>
+        </FormField>
+        <FormField label="Thousands separator" for="m-thousands">
+          <NativeSelect
+            id="m-thousands"
+            bind:value={ui.thousandsSeparator}
+            class="w-full"
+          >
+            {#each THOUSANDS as [value, label] (value)}
+              <option {value}>{label}</option>
+            {/each}
+          </NativeSelect>
+        </FormField>
+        <FormField
+          label="Default currency"
+          for="m-currency-default"
+          hint="Used when there is no currency column or the cell is empty."
+        >
+          <Input
+            id="m-currency-default"
+            bind:value={ui.defaultCurrency}
+            maxlength={3}
+            autocomplete="off"
+            class="uppercase"
+            placeholder={data.account.currency}
+          />
+        </FormField>
+      </Card.Content>
+    </Card.Root>
+
+    <Card.Root>
+      <Card.Header>
+        <Card.Title class="text-base">Amount</Card.Title>
+      </Card.Header>
+      <Card.Content
+        class="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4"
+      >
+        <FormField label="Amount layout" for="m-mode">
+          <NativeSelect id="m-mode" bind:value={ui.amountMode} class="w-full">
+            {#each MODES as [value, label] (value)}
+              <option {value}>{label}</option>
+            {/each}
+          </NativeSelect>
+        </FormField>
+        {#if modeCols.includes("amount")}
           <ColumnSelect
-            id="m-booking"
-            label="Booking date"
-            bind:value={ui.columns.bookingDate}
+            id="m-amount"
+            label="Amount column"
+            bind:value={ui.columns.amount}
             {detected}
             {byIndex}
             required
           />
+        {/if}
+        {#if modeCols.includes("indicator")}
           <ColumnSelect
-            id="m-value"
-            label="Value date"
-            bind:value={ui.columns.valueDate}
+            id="m-indicator"
+            label="Credit/debit column"
+            bind:value={ui.columns.indicator}
             {detected}
             {byIndex}
+            required
           />
-          <ColumnSelect
-            id="m-currency"
-            label="Currency"
-            bind:value={ui.columns.currency}
-            {detected}
-            {byIndex}
-          />
-          <ColumnSelect
-            id="m-name"
-            label="Counterparty name"
-            bind:value={ui.columns.counterpartyName}
-            {detected}
-            {byIndex}
-          />
-          <ColumnSelect
-            id="m-iban"
-            label="Counterparty IBAN"
-            bind:value={ui.columns.counterpartyIban}
-            {detected}
-            {byIndex}
-          />
-          <ColumnSelect
-            id="m-reference"
-            label="Payment reference"
-            bind:value={ui.columns.reference}
-            {detected}
-            {byIndex}
-          />
-          <ColumnSelect
-            id="m-external"
-            label="Bank reference (unique id)"
-            bind:value={ui.columns.externalId}
-            {detected}
-            {byIndex}
-          />
-          <ColumnSelect
-            id="m-balance"
-            label="Balance after booking"
-            bind:value={ui.columns.balance}
-            {detected}
-            {byIndex}
-          />
-          <fieldset
-            class="grid content-start gap-1.5 sm:col-span-2 lg:col-span-1"
+          <FormField
+            label="Values meaning credit"
+            for="m-credit-values"
+            hint="Comma separated, case-insensitive."
           >
-            <legend class="text-sm leading-none font-medium">
-              Description
-            </legend>
-            <p class="text-muted-foreground text-xs">
-              Tick several columns to join them into one text.
-            </p>
-            <div
-              class="mt-1 grid max-h-44 gap-2 overflow-y-auto rounded-md border p-3"
-            >
-              {#each detected as column (column.index)}
-                {@const id = `m-desc-${column.index}`}
-                <div class="flex items-center gap-2">
-                  <Checkbox
-                    {id}
-                    checked={ui.description.includes(colKey(column))}
-                    onCheckedChange={(v) =>
-                      toggleDescription(colKey(column), v === true)}
-                  />
-                  <Label for={id} class="min-w-0 break-words">
-                    {column.name || `Column ${column.index + 1}`}
-                  </Label>
-                </div>
-              {:else}
-                <span class="text-muted-foreground text-sm">
-                  No columns detected.
-                </span>
-              {/each}
-            </div>
-          </fieldset>
-        </Card.Content>
-      </Card.Root>
-    </div>
+            <Input id="m-credit-values" bind:value={ui.creditValues} />
+          </FormField>
+          <FormField
+            label="Values meaning debit"
+            for="m-debit-values"
+            hint="Comma separated, case-insensitive."
+          >
+            <Input id="m-debit-values" bind:value={ui.debitValues} />
+          </FormField>
+        {/if}
+        {#if modeCols.includes("credit")}
+          <ColumnSelect
+            id="m-credit"
+            label="Credit column"
+            bind:value={ui.columns.credit}
+            {detected}
+            {byIndex}
+          />
+          <ColumnSelect
+            id="m-debit"
+            label="Debit column"
+            bind:value={ui.columns.debit}
+            {detected}
+            {byIndex}
+          />
+        {/if}
+        <div class="flex items-center justify-between gap-3 sm:col-span-full">
+          <Label for="m-invert">
+            Invert sign
+            <span class="text-muted-foreground font-normal">
+              (debits are positive in the file)
+            </span>
+          </Label>
+          <Switch id="m-invert" bind:checked={ui.invertSign} />
+        </div>
+      </Card.Content>
+    </Card.Root>
 
-    <div
-      class="grid min-w-0 gap-4 lg:sticky lg:top-16 lg:max-h-[calc(100dvh-9rem)] lg:overflow-y-auto"
-    >
-      {#if previewError}
-        <Alert.Root variant="destructive" class="border-destructive/40">
-          <CircleAlertIcon />
-          <Alert.Title>Preview unavailable</Alert.Title>
-          <Alert.Description>{previewError}</Alert.Description>
-        </Alert.Root>
-      {/if}
-      {#if result.errors.length > 0}
-        <Alert.Root variant="destructive" class="border-destructive/40">
-          <CircleAlertIcon />
-          <Alert.Title>This mapping is not valid yet</Alert.Title>
-          <Alert.Description>
-            <ul class="list-disc ps-4">
-              {#each result.errors as message (message)}
-                <li class="break-words">{message}</li>
-              {/each}
-            </ul>
-          </Alert.Description>
-        </Alert.Root>
-      {/if}
-
-      <Card.Root class="min-w-0" aria-live="polite" aria-busy={loading}>
-        <Card.Header>
-          <Card.Title class="flex items-center gap-2 text-base">
-            Preview
-            {#if loading}<Spinner
-                class="size-4"
-                aria-label="Updating preview"
-              />{/if}
-          </Card.Title>
-          <Card.Description>
-            {#if result.profile}
-              {okRows} of the first {result.preview.length} rows read{badRows >
-              0
-                ? `, ${badRows} with problems`
-                : ""}.
+    <Card.Root>
+      <Card.Header>
+        <Card.Title class="text-base">Columns</Card.Title>
+      </Card.Header>
+      <Card.Content
+        class="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4"
+      >
+        <ColumnSelect
+          id="m-booking"
+          label="Booking date"
+          bind:value={ui.columns.bookingDate}
+          {detected}
+          {byIndex}
+          required
+        />
+        <ColumnSelect
+          id="m-value"
+          label="Value date"
+          bind:value={ui.columns.valueDate}
+          {detected}
+          {byIndex}
+        />
+        <ColumnSelect
+          id="m-currency"
+          label="Currency"
+          bind:value={ui.columns.currency}
+          {detected}
+          {byIndex}
+        />
+        <ColumnSelect
+          id="m-name"
+          label="Counterparty name"
+          bind:value={ui.columns.counterpartyName}
+          {detected}
+          {byIndex}
+        />
+        <ColumnSelect
+          id="m-iban"
+          label="Counterparty IBAN"
+          bind:value={ui.columns.counterpartyIban}
+          {detected}
+          {byIndex}
+        />
+        <ColumnSelect
+          id="m-reference"
+          label="Payment reference"
+          bind:value={ui.columns.reference}
+          {detected}
+          {byIndex}
+        />
+        <ColumnSelect
+          id="m-external"
+          label="Bank reference (unique id)"
+          bind:value={ui.columns.externalId}
+          {detected}
+          {byIndex}
+        />
+        <ColumnSelect
+          id="m-balance"
+          label="Balance after booking"
+          bind:value={ui.columns.balance}
+          {detected}
+          {byIndex}
+        />
+        <fieldset class="grid content-start gap-1.5 sm:col-span-full">
+          <legend class="text-sm leading-none font-medium">
+            Description
+          </legend>
+          <p class="text-muted-foreground text-xs">
+            Tick several columns to join them into one text.
+          </p>
+          <div
+            class="mt-1 grid max-h-44 gap-2 overflow-y-auto rounded-md border p-3"
+          >
+            {#each detected as column (column.index)}
+              {@const id = `m-desc-${column.index}`}
+              <div class="flex items-center gap-2">
+                <Checkbox
+                  {id}
+                  checked={ui.description.includes(colKey(column))}
+                  onCheckedChange={(v) =>
+                    toggleDescription(colKey(column), v === true)}
+                />
+                <Label for={id} class="min-w-0 break-words">
+                  {column.name || `Column ${column.index + 1}`}
+                </Label>
+              </div>
             {:else}
-              Choose the columns to see how rows are read.
-            {/if}
-          </Card.Description>
-        </Card.Header>
-        <Card.Content class="min-w-0">
-          {#if result.preview.length === 0}
-            <p
-              class="text-muted-foreground rounded-lg border border-dashed p-6 text-center text-sm"
-            >
-              No rows to preview yet.
-            </p>
+              <span class="text-muted-foreground text-sm">
+                No columns detected.
+              </span>
+            {/each}
+          </div>
+        </fieldset>
+      </Card.Content>
+    </Card.Root>
+    <Card.Root class="min-w-0" aria-live="polite" aria-busy={loading}>
+      <Card.Header>
+        <Card.Title class="flex items-center gap-2 text-base">
+          Preview
+          {#if loading}<Spinner
+              class="size-4"
+              aria-label="Updating preview"
+            />{/if}
+        </Card.Title>
+        <Card.Description>
+          {#if result.profile}
+            {okRows} of the first {result.preview.length} rows read{badRows > 0
+              ? `, ${badRows} with problems`
+              : ""}.
           {:else}
-            <div class="max-h-96 overflow-auto rounded-lg border">
-              <Table.Root>
-                <Table.Header class="bg-muted/50 sticky top-0">
-                  <Table.Row>
-                    <Table.Head class="w-12 text-end">#</Table.Head>
-                    <Table.Head>Date</Table.Head>
-                    <Table.Head class="text-end">Amount</Table.Head>
-                    <Table.Head>Counterparty</Table.Head>
-                    <Table.Head>Description</Table.Head>
+            Choose the columns to see how rows are read.
+          {/if}
+        </Card.Description>
+      </Card.Header>
+      <Card.Content class="min-w-0">
+        {#if result.preview.length === 0}
+          <p
+            class="text-muted-foreground rounded-lg border border-dashed p-6 text-center text-sm"
+          >
+            No rows to preview yet.
+          </p>
+        {:else}
+          <div
+            class="max-h-96 overflow-auto rounded-lg border [&_[data-slot=table-container]]:overflow-visible"
+          >
+            <Table.Root class="w-max min-w-full">
+              <Table.Header class="bg-muted/50">
+                <Table.Row>
+                  <Table.Head class="w-12 text-end">#</Table.Head>
+                  <Table.Head>Date</Table.Head>
+                  <Table.Head class="text-end">Amount</Table.Head>
+                  <Table.Head>Counterparty</Table.Head>
+                  <Table.Head>Description</Table.Head>
+                </Table.Row>
+              </Table.Header>
+              <Table.Body>
+                {#each result.preview as row (row.rowNumber)}
+                  {@const tx = row.transaction}
+                  <Table.Row
+                    class={row.error ? "bg-destructive/10" : undefined}
+                  >
+                    <Table.Cell
+                      class="text-muted-foreground text-end tabular-nums"
+                    >
+                      {row.rowNumber}
+                    </Table.Cell>
+                    {#if tx}
+                      <Table.Cell class="whitespace-nowrap">
+                        {prefs.date(tx.bookingDate)}
+                      </Table.Cell>
+                      <Table.Cell class="text-end">
+                        <Amount value={tx.amount} currency={tx.currency} flow />
+                      </Table.Cell>
+                      <Table.Cell
+                        class="max-w-48 truncate"
+                        title={tx.counterpartyName ?? ""}
+                      >
+                        {tx.counterpartyName ?? "—"}
+                      </Table.Cell>
+                      <Table.Cell
+                        class="max-w-64 truncate"
+                        title={tx.description ?? ""}
+                      >
+                        {tx.description ?? "—"}
+                      </Table.Cell>
+                    {:else}
+                      <Table.Cell
+                        colspan={4}
+                        class="text-destructive whitespace-normal"
+                      >
+                        {row.error ?? "Row could not be read."}
+                      </Table.Cell>
+                    {/if}
                   </Table.Row>
-                </Table.Header>
-                <Table.Body>
-                  {#each result.preview as row (row.rowNumber)}
-                    {@const tx = row.transaction}
-                    <Table.Row
-                      class={row.error ? "bg-destructive/10" : undefined}
-                    >
-                      <Table.Cell
-                        class="text-muted-foreground text-end tabular-nums"
-                      >
-                        {row.rowNumber}
-                      </Table.Cell>
-                      {#if tx}
-                        <Table.Cell class="whitespace-nowrap">
-                          {prefs.date(tx.bookingDate)}
-                        </Table.Cell>
-                        <Table.Cell class="text-end">
-                          <Amount
-                            value={tx.amount}
-                            currency={tx.currency}
-                            flow
-                          />
-                        </Table.Cell>
-                        <Table.Cell class="max-w-48 truncate">
-                          {tx.counterpartyName ?? "—"}
-                        </Table.Cell>
-                        <Table.Cell class="max-w-64 truncate">
-                          {tx.description ?? "—"}
-                        </Table.Cell>
-                      {:else}
-                        <Table.Cell
-                          colspan={4}
-                          class="text-destructive whitespace-normal"
-                        >
-                          {row.error ?? "Row could not be read."}
-                        </Table.Cell>
-                      {/if}
-                    </Table.Row>
-                  {/each}
-                </Table.Body>
-              </Table.Root>
-            </div>
-          {/if}
-        </Card.Content>
-      </Card.Root>
-
-      <Card.Root class="min-w-0">
-        <Card.Header>
-          <Card.Title class="text-base">File contents</Card.Title>
-          <Card.Description>
-            First {result.sampleRows.length} of {plural(
-              result.rowCount,
-              "line",
-            )}
-            as found in the file; the header row is highlighted.
-          </Card.Description>
-        </Card.Header>
-        <Card.Content class="min-w-0">
-          {#if result.sampleRows.length === 0}
-            <p
-              class="text-muted-foreground rounded-lg border border-dashed p-6 text-center text-sm"
-            >
-              The file has no readable rows.
-            </p>
-          {:else}
-            <div class="max-h-80 overflow-auto rounded-lg border">
-              <Table.Root class="text-xs">
-                <Table.Body>
-                  {#each result.sampleRows as cells, i (i)}
-                    <Table.Row
-                      class={i + 1 === ui.headerRow
-                        ? "bg-primary/10 font-semibold"
-                        : undefined}
-                    >
-                      <Table.Cell
-                        class="text-muted-foreground text-end tabular-nums"
-                      >
-                        {i + 1}
-                      </Table.Cell>
-                      {#each cells as cell, j (j)}
-                        <Table.Cell class="max-w-48 truncate">
-                          {cell}
-                        </Table.Cell>
-                      {/each}
-                    </Table.Row>
-                  {/each}
-                </Table.Body>
-              </Table.Root>
-            </div>
-          {/if}
-        </Card.Content>
-      </Card.Root>
-    </div>
+                {/each}
+              </Table.Body>
+            </Table.Root>
+          </div>
+        {/if}
+      </Card.Content>
+    </Card.Root>
   </div>
 
   <form
     method="POST"
     action="?/save"
-    class="bg-background/95 sticky bottom-0 z-10 -mx-4 grid gap-2 border-t px-4 py-3 backdrop-blur md:-mx-6 md:px-6"
+    class="bg-background sticky bottom-0 z-10 -mx-4 grid gap-2 border-t px-4 py-3 md:-mx-8 md:px-8"
     use:enhance={submitHandler({
       setPending: (v) => (saving = v),
       setErrors: (e) => (saveErrors = e),
