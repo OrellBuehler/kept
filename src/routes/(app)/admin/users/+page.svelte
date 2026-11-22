@@ -113,9 +113,9 @@
           <Table.Head>Display name</Table.Head>
           <Table.Head>Role</Table.Head>
           <Table.Head>Created</Table.Head>
-          <Table.Head class="w-24"
-            ><span class="sr-only">Actions</span></Table.Head
-          >
+          <Table.Head class="w-24">
+            <span class="sr-only">Actions</span>
+          </Table.Head>
         </Table.Row>
       </Table.Header>
       <Table.Body>
@@ -124,18 +124,18 @@
             <Table.Cell class="font-medium">{user.username}</Table.Cell>
             <Table.Cell>
               {#if user.displayName}{user.displayName}{:else}<span
-                  class="text-muted-foreground">—</span
-                >{/if}
+                  class="text-muted-foreground"
+                >
+                  —
+                </span>{/if}
             </Table.Cell>
             <Table.Cell>{@render roleBadge(user.role)}</Table.Cell>
-            <Table.Cell class="tabular-nums"
-              >{formatDate(user.createdAt)}</Table.Cell
-            >
-            <Table.Cell class="text-end whitespace-nowrap"
-              >{@render resetButton(user)}{@render deleteButton(
-                user,
-              )}</Table.Cell
-            >
+            <Table.Cell class="tabular-nums">
+              {formatDate(user.createdAt)}
+            </Table.Cell>
+            <Table.Cell class="text-end whitespace-nowrap">
+              {@render resetButton(user)}{@render deleteButton(user)}
+            </Table.Cell>
           </Table.Row>
         {/each}
       </Table.Body>
@@ -157,9 +157,9 @@
             {/if}
             <div class="mt-2 flex items-center gap-2 text-xs">
               {@render roleBadge(user.role)}
-              <span class="text-muted-foreground tabular-nums"
-                >Created {formatDate(user.createdAt)}</span
-              >
+              <span class="text-muted-foreground tabular-nums">
+                Created {formatDate(user.createdAt)}
+              </span>
             </div>
           </div>
           {@render resetButton(user)}
@@ -381,9 +381,9 @@
         errors={undefined}
       />
       <AlertDialog.Footer>
-        <AlertDialog.Cancel type="button" disabled={deleting}
-          >Cancel</AlertDialog.Cancel
-        >
+        <AlertDialog.Cancel type="button" disabled={deleting}>
+          Cancel
+        </AlertDialog.Cancel>
         <Button type="submit" variant="destructive" disabled={deleting}>
           {#if deleting}<Spinner />Deleting…{:else}Delete user{/if}
         </Button>
@@ -445,9 +445,9 @@
         errors={undefined}
       />
       <AlertDialog.Footer>
-        <AlertDialog.Cancel type="button" disabled={resetting}
-          >Cancel</AlertDialog.Cancel
-        >
+        <AlertDialog.Cancel type="button" disabled={resetting}>
+          Cancel
+        </AlertDialog.Cancel>
         <Button type="submit" variant="destructive" disabled={resetting}>
           {#if resetting}<Spinner />Resetting…{:else}Reset two-factor{/if}
         </Button>

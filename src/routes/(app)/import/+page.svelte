@@ -231,8 +231,10 @@
                   <button
                     type="button"
                     class="text-primary font-medium underline underline-offset-4"
-                    onclick={() => fileInput?.click()}>browse</button
+                    onclick={() => fileInput?.click()}
                   >
+                    browse
+                  </button>
                 </p>
               {/if}
               <input
@@ -322,18 +324,18 @@
               >
                 {#if entry.accountName}<span>{entry.accountName}</span>{/if}
                 {#if entry.status === "imported"}
-                  <span class="tabular-nums"
-                    >{entry.newCount ?? 0} new · {entry.duplicateCount ?? 0} duplicate</span
-                  >
+                  <span class="tabular-nums">
+                    {entry.newCount ?? 0} new · {entry.duplicateCount ?? 0} duplicate
+                  </span>
                 {:else if entry.reason}
                   <span>{entry.reason}</span>
                 {/if}
                 {#if entry.status === "review"}
                   <form method="POST" action="?/reviewInbox" class="sm:ms-auto">
                     <input type="hidden" name="entryId" value={entry.id} />
-                    <Button type="submit" size="sm" variant="outline"
-                      >Review</Button
-                    >
+                    <Button type="submit" size="sm" variant="outline">
+                      Review
+                    </Button>
                   </form>
                 {/if}
               </div>
@@ -383,22 +385,20 @@
               class="text-muted-foreground flex flex-wrap items-center gap-x-4 gap-y-1"
             >
               <span>{imp.accountName}</span>
-              <span
-                >{formatPeriod(
-                  imp.statementFrom,
-                  imp.statementTo,
-                  prefs.locale,
-                )}</span
-              >
-              <span class="tabular-nums"
-                >{imp.newCount} new · {imp.duplicateCount} duplicate</span
-              >
+              <span>
+                {formatPeriod(imp.statementFrom, imp.statementTo, prefs.locale)}
+              </span>
+              <span class="tabular-nums">
+                {imp.newCount} new · {imp.duplicateCount} duplicate
+              </span>
               <a
                 class="text-foreground underline underline-offset-4 sm:ms-auto"
                 href={resolve("/(app)/accounts/[id]/imports", {
                   id: imp.accountId,
-                })}>History</a
+                })}
               >
+                History
+              </a>
             </div>
           </li>
         {/each}

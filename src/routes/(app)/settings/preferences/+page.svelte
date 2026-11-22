@@ -102,9 +102,9 @@
                   id="iban-{option.value}"
                 />
                 <Field.Content>
-                  <Field.Label for="iban-{option.value}"
-                    >{option.label}</Field.Label
-                  >
+                  <Field.Label for="iban-{option.value}">
+                    {option.label}
+                  </Field.Label>
                   <Field.Description>{option.hint}</Field.Description>
                 </Field.Content>
               </Field.Field>

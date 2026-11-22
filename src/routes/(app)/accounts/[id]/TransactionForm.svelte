@@ -140,15 +140,19 @@
             variant={direction === "out" ? "default" : "outline"}
             class="rounded-e-none"
             aria-pressed={direction === "out"}
-            onclick={() => (direction = "out")}>Out</Button
+            onclick={() => (direction = "out")}
           >
+            Out
+          </Button>
           <Button
             type="button"
             variant={direction === "in" ? "default" : "outline"}
             class={cn("rounded-s-none border-s-0")}
             aria-pressed={direction === "in"}
-            onclick={() => (direction = "in")}>In</Button
+            onclick={() => (direction = "in")}
           >
+            In
+          </Button>
         </div>
         <Input
           id="{uid}-amount"
@@ -240,8 +244,10 @@
         type="button"
         variant="outline"
         onclick={onCancel}
-        disabled={pending}>Cancel</Button
+        disabled={pending}
       >
+        Cancel
+      </Button>
     {/if}
     <Button type="submit" disabled={pending}>
       {#if pending}<Spinner />{/if}

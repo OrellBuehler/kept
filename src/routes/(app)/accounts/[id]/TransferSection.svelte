@@ -149,8 +149,10 @@
             type="button"
             variant="ghost"
             size="sm"
-            onclick={() => (pickerOpen = false)}>Cancel</Button
+            onclick={() => (pickerOpen = false)}
           >
+            Cancel
+          </Button>
         </div>
         {#if loading || (candidates === null && !loadErrors.form?.length)}
           <p
@@ -168,8 +170,10 @@
               type="button"
               variant="outline"
               size="sm"
-              onclick={openPicker}>Try again</Button
+              onclick={openPicker}
             >
+              Try again
+            </Button>
           </div>
         {:else if candidates && candidates.length === 0}
           <p class="text-muted-foreground text-sm">

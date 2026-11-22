@@ -272,9 +272,9 @@
           <p class="text-muted-foreground text-sm">
             Or enter this key manually:
           </p>
-          <code class="bg-muted rounded px-2 py-1 text-sm break-all"
-            >{data.enrolment.secret}</code
-          >
+          <code class="bg-muted rounded px-2 py-1 text-sm break-all">
+            {data.enrolment.secret}
+          </code>
         </div>
         <form
           method="POST"

@@ -229,8 +229,9 @@
               {i > 0 ? ", " : ""}<a
                 href={resolve("/(app)/accounts/[id]", { id: t.id })}
                 class="text-foreground font-medium underline underline-offset-2"
-                >{t.name}</a
-              >{#if t.count > 1}
+              >
+                {t.name}
+              </a>{#if t.count > 1}
                 ({t.count}){/if}
             {/each}.
           </p>
@@ -261,8 +262,10 @@
                   d.range === r.value
                     ? "bg-background text-foreground shadow-sm"
                     : "text-muted-foreground hover:text-foreground",
-                )}>{r.label}</a
+                )}
               >
+                {r.label}
+              </a>
             {/each}
           </nav>
         </Card.Action>
@@ -694,8 +697,10 @@
                   class={cn(
                     "text-sm font-medium hover:underline",
                     isAlert && "text-destructive",
-                  )}>{row.label}</a
+                  )}
                 >
+                  {row.label}
+                </a>
                 <p class="text-muted-foreground text-xs">
                   {plural(row.bucket.count, "bill")}
                   {#if row.bucket.openAmountCount > 0}
@@ -818,8 +823,10 @@
                     spendBasis === b.value
                       ? "bg-background text-foreground shadow-sm"
                       : "text-muted-foreground hover:text-foreground",
-                  )}>{b.label}</button
+                  )}
                 >
+                  {b.label}
+                </button>
               {/each}
             </div>
           {/if}
@@ -877,8 +884,9 @@
             <a
               href={resolve("/(app)/settings/categories")}
               class="text-primary underline-offset-2 hover:underline"
-              >Set up categories</a
             >
+              Set up categories
+            </a>
           </p>
         {/each}
         {#if spendingView.uncategorizedCount > 0}
@@ -953,8 +961,9 @@
                   <a
                     href="{resolve('/(app)/import')}?account={a.id}"
                     class="text-primary underline-offset-2 hover:underline"
-                    >Import a statement</a
                   >
+                    Import a statement
+                  </a>
                 </p>
               {:else if a.stale}
                 <p
@@ -966,8 +975,9 @@
                     <a
                       href="{resolve('/(app)/import')}?account={a.id}"
                       class="underline underline-offset-2"
-                      >Import a new statement</a
                     >
+                      Import a new statement
+                    </a>
                   </span>
                 </p>
               {/if}

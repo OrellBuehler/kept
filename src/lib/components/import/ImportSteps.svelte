@@ -29,8 +29,10 @@
           n === current
             ? "font-medium"
             : "text-muted-foreground hidden sm:inline",
-        )}>{label}</span
+        )}
       >
+        {label}
+      </span>
       {#if n < steps.length}
         <span class="bg-border h-px w-3 sm:w-8" aria-hidden="true"></span>
       {/if}

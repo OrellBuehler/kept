@@ -105,9 +105,9 @@
             <Table.Head>Period</Table.Head>
             <Table.Head class="text-end">Opening → closing</Table.Head>
             <Table.Head class="text-end">New / duplicate</Table.Head>
-            <Table.Head class="w-24"
-              ><span class="sr-only">Actions</span></Table.Head
-            >
+            <Table.Head class="w-24">
+              <span class="sr-only">Actions</span>
+            </Table.Head>
           </Table.Row>
         </Table.Header>
         <Table.Body>
@@ -213,9 +213,9 @@
             </div>
           {/if}
           <div class="flex items-center justify-between gap-2">
-            <span class="tabular-nums"
-              >{imp.newCount} new · {imp.duplicateCount} duplicate</span
-            >
+            <span class="tabular-nums">
+              {imp.newCount} new · {imp.duplicateCount} duplicate
+            </span>
             <Button variant="outline" size="sm" onclick={() => askUndo(imp)}>
               <UndoIcon />Undo
             </Button>

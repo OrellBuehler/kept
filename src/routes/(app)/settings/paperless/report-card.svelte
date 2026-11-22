@@ -87,9 +87,9 @@
                 required
                 aria-invalid={!!errors.account}
               >
-                <NativeSelect.Option value="" disabled
-                  >Choose an account…</NativeSelect.Option
-                >
+                <NativeSelect.Option value="" disabled>
+                  Choose an account…
+                </NativeSelect.Option>
                 {#each accounts as a (a.id)}
                   <NativeSelect.Option value={a.id}>
                     {a.name}{a.archived ? " (archived)" : ""}

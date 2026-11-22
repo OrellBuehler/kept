@@ -34,5 +34,7 @@
       "cursor-default blur-sm transition select-none hover:blur-none focus:blur-none",
     className,
   )}
-  tabindex={prefs.blur ? 0 : undefined}>{text}</span
+  tabindex={prefs.blur ? 0 : undefined}
 >
+  {text}
+</span>

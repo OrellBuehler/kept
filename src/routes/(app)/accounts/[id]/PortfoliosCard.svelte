@@ -393,8 +393,10 @@
           type="button"
           variant="outline"
           onclick={() => (closeOpen = false)}
-          disabled={closePending}>Cancel</Button
+          disabled={closePending}
         >
+          Cancel
+        </Button>
         <Button type="submit" disabled={closePending}>
           {#if closePending}<Spinner />{/if}
           Close portfolio

@@ -110,9 +110,9 @@
               aria-describedby={mismatch ? "confirm-error" : undefined}
             />
             {#if mismatch}
-              <Field.Error id="confirm-error"
-                >Passwords do not match.</Field.Error
-              >
+              <Field.Error id="confirm-error">
+                Passwords do not match.
+              </Field.Error>
             {/if}
           </Field.Field>
         </Field.Group>

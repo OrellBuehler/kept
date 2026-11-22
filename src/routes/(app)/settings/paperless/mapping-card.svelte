@@ -242,9 +242,9 @@
                         value={saved}
                         class="w-full"
                       >
-                        <NativeSelect.Option value=""
-                          >Do not write</NativeSelect.Option
-                        >
+                        <NativeSelect.Option value="">
+                          Do not write
+                        </NativeSelect.Option>
                         {#if saved !== "" && !field.options.some((o) => o.id === saved)}
                           <NativeSelect.Option value={saved}>
                             {saved} (unknown option)

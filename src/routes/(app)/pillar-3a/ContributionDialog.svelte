@@ -203,8 +203,9 @@
         <div
           class="flex flex-wrap items-baseline justify-between gap-2 text-sm"
         >
-          <span class="text-muted-foreground">{contribution.portfolioName}</span
-          >
+          <span class="text-muted-foreground">
+            {contribution.portfolioName}
+          </span>
           <Amount
             value={contribution.amount}
             {currency}
@@ -367,8 +368,10 @@
           type="button"
           variant="outline"
           onclick={() => (open = false)}
-          disabled={pending}>Cancel</Button
+          disabled={pending}
         >
+          Cancel
+        </Button>
         <Button type="submit" disabled={pending}>
           {#if pending}<Spinner />{/if}
           {editing ? "Save" : "Add contribution"}

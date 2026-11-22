@@ -363,8 +363,10 @@
         type="button"
         variant="outline"
         onclick={onCancel}
-        disabled={pending}>Cancel</Button
+        disabled={pending}
       >
+        Cancel
+      </Button>
     {/if}
     <Button type="submit" disabled={pending}>
       {#if pending}<Spinner />{/if}

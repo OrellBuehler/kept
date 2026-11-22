@@ -66,8 +66,10 @@
     Generate PDF reports to keep or share. More options in
     <a
       class="underline underline-offset-2"
-      href={resolve("/(app)/settings/account")}>Settings</a
-    > can file these reports automatically.
+      href={resolve("/(app)/settings/account")}
+    >
+      Settings
+    </a> can file these reports automatically.
   {/snippet}
 </PageHeader>
 

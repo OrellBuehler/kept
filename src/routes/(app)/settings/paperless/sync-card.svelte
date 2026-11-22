@@ -179,14 +179,17 @@
                   {#if doc.billId}
                     <a
                       href={resolve("/(app)/bills/[id]", { id: doc.billId })}
-                      class="underline-offset-4 hover:underline">Open bill</a
+                      class="underline-offset-4 hover:underline"
                     >
+                      Open bill
+                    </a>
                   {/if}
                   {#if doc.error}
                     <span
                       class="text-muted-foreground block text-xs break-words"
-                      >{doc.error}</span
                     >
+                      {doc.error}
+                    </span>
                   {/if}
                   {#if !doc.billId && !doc.error}
                     <span class="text-muted-foreground">-</span>
@@ -220,9 +223,9 @@
             <li
               class="flex flex-wrap items-center gap-x-3 gap-y-1 px-3 py-2 text-sm"
             >
-              <span class="font-medium"
-                >{REPORT_KINDS[upload.reportKind] ?? upload.reportKind}</span
-              >
+              <span class="font-medium">
+                {REPORT_KINDS[upload.reportKind] ?? upload.reportKind}
+              </span>
               <Badge variant="outline" class={cn(UPLOAD_STATUS[upload.status])}>
                 {upload.status}
               </Badge>
@@ -239,9 +242,9 @@
                 </a>
               {/if}
               {#if upload.error}
-                <span class="text-muted-foreground min-w-0 text-xs break-words"
-                  >{upload.error}</span
-                >
+                <span class="text-muted-foreground min-w-0 text-xs break-words">
+                  {upload.error}
+                </span>
               {/if}
               <span class="text-muted-foreground ms-auto text-xs">
                 <LocalTime ms={upload.createdAt} />

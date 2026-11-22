@@ -108,8 +108,10 @@
             data.days === h
               ? "bg-background text-foreground shadow-sm"
               : "text-muted-foreground hover:text-foreground",
-          )}>{h} days</a
+          )}
         >
+          {h} days
+        </a>
       {/each}
     </nav>
     <Button size="sm" onclick={() => openPlanned(null)}>

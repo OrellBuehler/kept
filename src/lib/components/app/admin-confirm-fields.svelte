@@ -32,9 +32,9 @@
 </Field.Field>
 {#if mode === "totp"}
   <Field.Field>
-    <Field.Label for="{idPrefix}-adminCode"
-      >Authenticator or recovery code</Field.Label
-    >
+    <Field.Label for="{idPrefix}-adminCode">
+      Authenticator or recovery code
+    </Field.Label>
     <Input
       id="{idPrefix}-adminCode"
       name="adminCode"
@@ -48,8 +48,8 @@
 {:else if mode === "passkey"}
   <Field.Description>
     Your account uses passkeys: confirm with a passkey on the
-    <a href={resolve("/(app)/settings/security")} class="underline"
-      >security page</a
-    > first, then submit this form within five minutes.
+    <a href={resolve("/(app)/settings/security")} class="underline">
+      security page
+    </a> first, then submit this form within five minutes.
   </Field.Description>
 {/if}

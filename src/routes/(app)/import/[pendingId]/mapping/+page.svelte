@@ -337,8 +337,9 @@
       {#if data.otherProfiles.length > 0}
         <Card.Root>
           <Card.Header>
-            <Card.Title class="text-base">Start from a saved mapping</Card.Title
-            >
+            <Card.Title class="text-base">
+              Start from a saved mapping
+            </Card.Title>
             <Card.Description>
               Copy the mapping of another account, for example one at the same
               bank. Changes here only affect this account.
@@ -796,8 +797,9 @@
                         {i + 1}
                       </Table.Cell>
                       {#each cells as cell, j (j)}
-                        <Table.Cell class="max-w-48 truncate">{cell}</Table.Cell
-                        >
+                        <Table.Cell class="max-w-48 truncate">
+                          {cell}
+                        </Table.Cell>
                       {/each}
                     </Table.Row>
                   {/each}
@@ -844,8 +846,10 @@
         <Button
           variant="outline"
           href={resolve("/(app)/import")}
-          disabled={saving}>Back</Button
+          disabled={saving}
         >
+          Back
+        </Button>
         <Button type="submit" disabled={saving || loading || !valid}>
           {#if saving}<Spinner />Saving…{:else}Save mapping and continue{/if}
         </Button>

@@ -542,8 +542,10 @@
           type="button"
           variant="outline"
           onclick={() => (open = false)}
-          disabled={pending}>Cancel</Button
+          disabled={pending}
         >
+          Cancel
+        </Button>
         <Button
           type={turningOff ? "button" : "submit"}
           disabled={pending}

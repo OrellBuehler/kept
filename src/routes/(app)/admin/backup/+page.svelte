@@ -111,9 +111,9 @@
         <Card.Title>Scheduled backups</Card.Title>
         <Card.Description>
           {#if data.scheduled}
-            A backup is written to <code class="font-mono text-xs"
-              >{data.scheduled.dir}</code
-            >
+            A backup is written to <code class="font-mono text-xs">
+              {data.scheduled.dir}
+            </code>
             once a day. The newest {data.scheduled.keep} are kept.
           {:else}
             Off. Set <code class="font-mono text-xs">KEPT_BACKUP_DIR</code> (and
@@ -143,12 +143,12 @@
               <Table.Body>
                 {#each data.scheduled.backups as backup (backup.name)}
                   <Table.Row>
-                    <Table.Cell class="font-mono text-xs"
-                      >{backup.name}</Table.Cell
-                    >
-                    <Table.Cell class="text-end tabular-nums"
-                      >{formatSize(backup.size)}</Table.Cell
-                    >
+                    <Table.Cell class="font-mono text-xs">
+                      {backup.name}
+                    </Table.Cell>
+                    <Table.Cell class="text-end tabular-nums">
+                      {formatSize(backup.size)}
+                    </Table.Cell>
                     <Table.Cell class="text-end text-xs whitespace-nowrap">
                       <LocalTime ms={backup.createdAt} />
                     </Table.Cell>

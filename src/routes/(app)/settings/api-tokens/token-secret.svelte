@@ -34,8 +34,9 @@
   </div>
   <code
     class="bg-background block rounded-md border px-3 py-2 font-mono text-xs break-all select-all"
-    >{secret}</code
   >
+    {secret}
+  </code>
   <div class="flex flex-wrap gap-2">
     <CopyButton
       value={secret}
