@@ -1,6 +1,8 @@
 import { and, eq } from "drizzle-orm";
 import { minor, type Minor } from "$lib/money";
-import { first, getDB, plannedItems } from "$lib/server/db";
+import { recordChange, recordUpdate } from "$lib/server/audit/record";
+import { pick } from "$lib/server/audit/snapshots";
+import { first, getDB, plannedItems, transaction } from "$lib/server/db";
 import { getAccount } from "$lib/server/ledger/accounts";
 import { LedgerError, notFound } from "$lib/server/ledger/errors";
 import { parseMoneyInput } from "$lib/server/ledger/schemas";
@@ -89,17 +91,35 @@ async function toValues(userId: string, input: PlannedItemInput) {
   };
 }
 
+const AUDIT_FIELDS = [
+  "accountId",
+  "date",
+  "amount",
+  "currency",
+  "label",
+] as const;
+
 export async function createPlannedItem(
   userId: string,
   input: PlannedItemInput,
 ): Promise<PlannedItemView> {
   const values = await toValues(userId, input);
-  return (
-    await getDB()
-      .insert(plannedItems)
-      .values({ userId, ...values })
-      .returning(columns)
-  )[0]!;
+  return await transaction(async (tx) => {
+    const created = (
+      await tx
+        .insert(plannedItems)
+        .values({ userId, ...values })
+        .returning(columns)
+    )[0]!;
+    await recordChange({
+      userId,
+      action: "planned_item.create",
+      entityId: created.id,
+      summary: created.label,
+      after: pick(created, AUDIT_FIELDS),
+    });
+    return created;
+  });
 }
 
 export async function updatePlannedItem(
@@ -107,26 +127,47 @@ export async function updatePlannedItem(
   id: string,
   input: PlannedItemInput,
 ): Promise<PlannedItemView> {
-  await getPlannedItem(userId, id);
+  const previous = await getPlannedItem(userId, id);
   const values = await toValues(userId, input);
-  const updated = await getDB()
-    .update(plannedItems)
-    .set(values)
-    .where(and(eq(plannedItems.userId, userId), eq(plannedItems.id, id)))
-    .returning(columns);
-  if (updated.length === 0) throw notFound("Planned item");
-  return updated[0]!;
+  return await transaction(async (tx) => {
+    const updated = await tx
+      .update(plannedItems)
+      .set(values)
+      .where(and(eq(plannedItems.userId, userId), eq(plannedItems.id, id)))
+      .returning(columns);
+    if (updated.length === 0) throw notFound("Planned item");
+    await recordUpdate(
+      {
+        userId,
+        action: "planned_item.update",
+        entityId: id,
+        summary: updated[0]!.label,
+      },
+      pick(previous, AUDIT_FIELDS),
+      pick(updated[0]!, AUDIT_FIELDS),
+    );
+    return updated[0]!;
+  });
 }
 
 export async function deletePlannedItem(
   userId: string,
   id: string,
 ): Promise<void> {
-  const deleted = await getDB()
-    .delete(plannedItems)
-    .where(and(eq(plannedItems.userId, userId), eq(plannedItems.id, id)))
-    .returning({ id: plannedItems.id });
-  if (deleted.length === 0) throw notFound("Planned item");
+  await transaction(async (tx) => {
+    const deleted = await tx
+      .delete(plannedItems)
+      .where(and(eq(plannedItems.userId, userId), eq(plannedItems.id, id)))
+      .returning(columns);
+    if (deleted.length === 0) throw notFound("Planned item");
+    await recordChange({
+      userId,
+      action: "planned_item.delete",
+      entityId: id,
+      summary: deleted[0]!.label,
+      before: pick(deleted[0]!, AUDIT_FIELDS),
+    });
+  });
 }
 
 export function plannedToItems(

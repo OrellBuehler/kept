@@ -8,6 +8,7 @@ import {
   first,
   transaction,
 } from "$lib/server/db";
+import { recordChange } from "$lib/server/audit/record";
 import type { CsvMappingProfile } from "$lib/server/importers/mapping";
 import { categorize, loadRules } from "$lib/server/categories/rules";
 import { LedgerError, notFound } from "$lib/server/ledger/errors";
@@ -255,6 +256,22 @@ export async function confirmImport(
           .filter((r) => idOf.has(r.tx.externalId))
           .map((r) => r.tx.bookingDate),
       );
+      // One entry for the whole import; its rows are undone with `undoImport`.
+      await recordChange({
+        userId,
+        action: "import.confirm",
+        entityId: imp.id,
+        summary: `${preview.format} import`,
+        after: {
+          accountId,
+          format: preview.format,
+          fileName: preview.fileName,
+          statementFrom: statement.fromDate,
+          statementTo: statement.toDate,
+          newCount: inserted,
+          duplicateCount,
+        },
+      });
       return {
         importId: imp.id,
         accountId,

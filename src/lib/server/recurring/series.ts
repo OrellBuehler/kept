@@ -8,6 +8,8 @@ import {
   transaction,
   transactions,
 } from "$lib/server/db";
+import { recordUpdate } from "$lib/server/audit/record";
+import { pick } from "$lib/server/audit/snapshots";
 import { addDays } from "$lib/server/dashboard/dates";
 import { localToday } from "$lib/server/ledger/balances";
 import { LedgerError, notFound } from "$lib/server/ledger/errors";
@@ -294,12 +296,35 @@ export function recurringTotals(series: RecurringView[]): RecurringTotals[] {
 }
 
 async function setStatus(userId: string, id: string, status: SeriesStatus) {
-  const updated = await getDB()
-    .update(recurringSeries)
-    .set({ status })
-    .where(and(eq(recurringSeries.userId, userId), eq(recurringSeries.id, id)))
-    .returning({ id: recurringSeries.id });
-  if (updated.length === 0) throw notFound("Recurring payment");
+  await transaction(async (tx) => {
+    const [row] = await tx
+      .select({
+        status: recurringSeries.status,
+        name: recurringSeries.name,
+      })
+      .from(recurringSeries)
+      .where(
+        and(eq(recurringSeries.userId, userId), eq(recurringSeries.id, id)),
+      )
+      .limit(1);
+    if (!row) throw notFound("Recurring payment");
+    await tx
+      .update(recurringSeries)
+      .set({ status })
+      .where(
+        and(eq(recurringSeries.userId, userId), eq(recurringSeries.id, id)),
+      );
+    await recordUpdate(
+      {
+        userId,
+        action: "recurring_series.update",
+        entityId: id,
+        summary: row.name,
+      },
+      { status: row.status },
+      { status },
+    );
+  });
 }
 
 export const confirmSeries = (userId: string, id: string) =>
@@ -330,17 +355,27 @@ export async function editSeries(
     if (!row) throw notFound("Recurring payment");
     const parsed = parseEditedAmount(input.amount, row.currency);
     if (!parsed.ok) throw new LedgerError("invalid", parsed.message, "amount");
+    const edit = {
+      name: input.name,
+      cadence: input.cadence,
+      amount: minor(row.amount < 0 ? -parsed.value : parsed.value),
+    };
     await tx
       .update(recurringSeries)
-      .set({
-        name: input.name,
-        cadence: input.cadence,
-        amount: minor(row.amount < 0 ? -parsed.value : parsed.value),
-        edited: true,
-      })
+      .set({ ...edit, edited: true })
       .where(
         and(eq(recurringSeries.userId, userId), eq(recurringSeries.id, id)),
       );
+    await recordUpdate(
+      {
+        userId,
+        action: "recurring_series.update",
+        entityId: id,
+        summary: edit.name,
+      },
+      pick(row, ["name", "cadence", "amount"] as const),
+      edit,
+    );
   });
 }
 

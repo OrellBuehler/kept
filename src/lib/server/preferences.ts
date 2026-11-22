@@ -4,6 +4,7 @@ import {
   preferencesSchema,
   type Preferences,
 } from "$lib/preferences";
+import { recordUpdate } from "$lib/server/audit/record";
 import { first, getDB, userPreferences, transaction } from "$lib/server/db";
 
 type PreferencesRow = typeof userPreferences.$inferSelect;
@@ -59,7 +60,8 @@ export async function updatePreferences(
           .where(eq(userPreferences.userId, userId))
           .limit(1),
       );
-      const next = { ...toPreferences(row), ...patch };
+      const previous = toPreferences(row);
+      const next = { ...previous, ...patch };
       await tx
         .insert(userPreferences)
         .values({ userId, ...next })
@@ -67,6 +69,11 @@ export async function updatePreferences(
           target: userPreferences.userId,
           set: { ...next, updatedAt: new Date() },
         });
+      await recordUpdate(
+        { userId, action: "preference.update", entityId: userId },
+        { ...previous },
+        { ...next },
+      );
       return next;
       // Under PostgreSQL two transactions can read the same old row; the lock
       // makes the second one merge into the first one's result.

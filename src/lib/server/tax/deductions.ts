@@ -10,6 +10,7 @@ import {
   first,
   transaction,
 } from "$lib/server/db";
+import { recordUpdate } from "$lib/server/audit/record";
 import { LedgerError, notFound } from "$lib/server/ledger/errors";
 import { updateUnlessMirror } from "$lib/server/transfers/guard";
 import { PILLAR_3A_CURRENCY } from "$lib/pillar-3a";
@@ -145,7 +146,7 @@ export async function setCategoryDeduction(
   await transaction(async (tx) => {
     const category = await first(
       tx
-        .select({ id: categories.id })
+        .select({ id: categories.id, name: categories.name })
         .from(categories)
         .where(
           and(eq(categories.userId, userId), eq(categories.id, categoryId)),
@@ -153,6 +154,28 @@ export async function setCategoryDeduction(
         .limit(1),
     );
     if (!category) throw notFound("Category");
+    const previous = await first(
+      tx
+        .select({ type: deductionMappings.deductionType })
+        .from(deductionMappings)
+        .where(
+          and(
+            eq(deductionMappings.userId, userId),
+            eq(deductionMappings.categoryId, categoryId),
+          ),
+        )
+        .limit(1),
+    );
+    await recordUpdate(
+      {
+        userId,
+        action: "deduction_mapping.update",
+        entityId: categoryId,
+        summary: category.name,
+      },
+      { deductionType: previous?.type ?? null },
+      { deductionType: type },
+    );
     if (type === null) {
       await tx
         .delete(deductionMappings)
