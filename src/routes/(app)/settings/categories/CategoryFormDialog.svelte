@@ -214,8 +214,10 @@
           type="button"
           variant="outline"
           onclick={() => (open = false)}
-          disabled={pending}>Cancel</Button
+          disabled={pending}
         >
+          Cancel
+        </Button>
         <Button type="submit" disabled={pending}>
           {#if pending}<Spinner />{/if}
           {editing ? "Save" : "Add category"}

@@ -37,5 +37,6 @@
   datetime={iso}
   class={className}
   title={mounted ? new Date(ms).toLocaleString(prefs.locale) : undefined}
-  >{text}</time
 >
+  {text}
+</time>

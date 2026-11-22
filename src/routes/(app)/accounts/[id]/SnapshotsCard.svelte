@@ -102,9 +102,9 @@
             <Table.Head class="text-end">Balance</Table.Head>
             <Table.Head class="hidden sm:table-cell">Source</Table.Head>
             <Table.Head class="hidden sm:table-cell">Note</Table.Head>
-            <Table.Head class="w-10"
-              ><span class="sr-only">Actions</span></Table.Head
-            >
+            <Table.Head class="w-10">
+              <span class="sr-only">Actions</span>
+            </Table.Head>
           </Table.Row>
         </Table.Header>
         <Table.Body>
@@ -211,8 +211,10 @@
           type="button"
           variant="outline"
           onclick={() => (addOpen = false)}
-          disabled={pending}>Cancel</Button
+          disabled={pending}
         >
+          Cancel
+        </Button>
         <Button type="submit" disabled={pending}>
           {#if pending}<Spinner />{/if}
           Add snapshot

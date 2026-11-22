@@ -71,9 +71,9 @@
 <Dialog.Root bind:open>
   <Dialog.Content class="max-h-[90dvh] overflow-y-auto">
     <Dialog.Header>
-      <Dialog.Title
-        >{editing ? "Edit institution" : "Add institution"}</Dialog.Title
-      >
+      <Dialog.Title>
+        {editing ? "Edit institution" : "Add institution"}
+      </Dialog.Title>
       <Dialog.Description>
         A bank, broker or pension fund that holds your accounts.
       </Dialog.Description>
@@ -222,8 +222,10 @@
           type="button"
           variant="outline"
           onclick={() => (open = false)}
-          disabled={pending}>Cancel</Button
+          disabled={pending}
         >
+          Cancel
+        </Button>
         <Button type="submit" disabled={pending}>
           {#if pending}<Spinner />{/if}
           {editing ? "Save" : "Add institution"}

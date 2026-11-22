@@ -37,7 +37,8 @@
         Error id: <code class="font-mono">{errorId}</code>
       </p>
     {/if}
-    <Button href={resolve("/(app)")} variant="outline">Back to dashboard</Button
-    >
+    <Button href={resolve("/(app)")} variant="outline">
+      Back to dashboard
+    </Button>
   </Empty.Content>
 </Empty.Root>

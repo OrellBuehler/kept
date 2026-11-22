@@ -162,8 +162,10 @@
             <span
               class={bill.overdue
                 ? "text-destructive font-medium"
-                : "text-foreground font-medium"}>· {hint}</span
+                : "text-foreground font-medium"}
             >
+              · {hint}
+            </span>
           {/if}
         {:else}
           No due date
@@ -321,8 +323,8 @@
               {formatReference(bill.reference)}
               {#if bill.referenceType}
                 <span class="text-muted-foreground">
-                  ({bill.referenceType})</span
-                >
+                  ({bill.referenceType})
+                </span>
               {/if}
             </dd>
           {/if}
@@ -490,8 +492,10 @@
             type="button"
             variant="outline"
             size="sm"
-            onclick={() => (shownFor = bill.id)}>Show anyway</Button
+            onclick={() => (shownFor = bill.id)}
           >
+            Show anyway
+          </Button>
         </div>
       {:else}
         <form method="GET" class="flex gap-2" role="search">
@@ -523,8 +527,10 @@
                 <Button
                   variant="outline"
                   size="sm"
-                  href={pageHref(data.candidates.page - 1)}>Previous</Button
+                  href={pageHref(data.candidates.page - 1)}
                 >
+                  Previous
+                </Button>
               {:else}
                 <span></span>
               {/if}
@@ -535,8 +541,10 @@
                 <Button
                   variant="outline"
                   size="sm"
-                  href={pageHref(data.candidates.page + 1)}>Next</Button
+                  href={pageHref(data.candidates.page + 1)}
                 >
+                  Next
+                </Button>
               {:else}
                 <span></span>
               {/if}

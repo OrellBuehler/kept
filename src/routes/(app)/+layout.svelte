@@ -138,8 +138,9 @@
         />
         <span
           class="ms-2 text-lg font-semibold tracking-tight group-data-[collapsible=icon]:hidden"
-          >Kept</span
         >
+          Kept
+        </span>
       </a>
     </Sidebar.Header>
     <Sidebar.Content>
@@ -162,14 +163,16 @@
                 >
                   <span
                     class="from-brand to-chart-2 text-brand-foreground shadow-card flex size-8 shrink-0 items-center justify-center rounded-lg bg-linear-to-br text-sm font-semibold"
-                    aria-hidden="true">{initial}</span
+                    aria-hidden="true"
                   >
+                    {initial}
+                  </span>
                   <span class="grid min-w-0 flex-1 text-start leading-tight">
                     <span class="truncate text-sm font-medium">{name}</span>
                     {#if data.user.displayName}
-                      <span class="text-muted-foreground truncate text-xs"
-                        >{data.user.username}</span
-                      >
+                      <span class="text-muted-foreground truncate text-xs">
+                        {data.user.username}
+                      </span>
                     {/if}
                   </span>
                   <ChevronsUpDownIcon class="ms-auto size-4" />

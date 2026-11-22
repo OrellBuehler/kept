@@ -35,8 +35,9 @@
 <Dialog.Root bind:open>
   <Dialog.Content class="max-h-[90dvh] overflow-y-auto">
     <Dialog.Header>
-      <Dialog.Title>{editing ? "Edit portfolio" : "Add portfolio"}</Dialog.Title
-      >
+      <Dialog.Title>
+        {editing ? "Edit portfolio" : "Add portfolio"}
+      </Dialog.Title>
       <Dialog.Description>
         Each portfolio is its own pension relationship with its own payment
         reference.
@@ -170,8 +171,10 @@
           type="button"
           variant="outline"
           onclick={() => (open = false)}
-          disabled={pending}>Cancel</Button
+          disabled={pending}
         >
+          Cancel
+        </Button>
         <Button type="submit" disabled={pending}>
           {#if pending}<Spinner />{/if}
           {editing ? "Save" : "Add portfolio"}

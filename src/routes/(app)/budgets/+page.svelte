@@ -117,8 +117,10 @@
             data.basis === option.value
               ? "bg-background text-foreground shadow-sm"
               : "text-muted-foreground hover:text-foreground",
-          )}>{option.label}</a
+          )}
         >
+          {option.label}
+        </a>
       {/each}
     </nav>
     <p class="text-muted-foreground text-xs">
@@ -193,8 +195,9 @@
                   <div class="flex items-center justify-between gap-3">
                     <div class="flex min-w-0 items-center gap-2">
                       {#if row.parentName}
-                        <span class="text-muted-foreground ps-3 text-xs">↳</span
-                        >
+                        <span class="text-muted-foreground ps-3 text-xs">
+                          ↳
+                        </span>
                       {/if}
                       <CategoryBadge
                         name={row.categoryName}

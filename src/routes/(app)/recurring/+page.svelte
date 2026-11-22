@@ -187,9 +187,9 @@
               </p>
               {#if t.inflowAnnual > 0}
                 <p class="flex justify-between">
-                  <span class="text-muted-foreground"
-                    >Recurring income, annual</span
-                  >
+                  <span class="text-muted-foreground">
+                    Recurring income, annual
+                  </span>
                   <Amount value={t.inflowAnnual} currency={t.currency} />
                 </p>
               {/if}

@@ -100,15 +100,16 @@
     <Badge
       variant="outline"
       class="border-emerald-500/50 text-emerald-700 dark:text-emerald-400"
-      >{statusLabel[status]}</Badge
     >
+      {statusLabel[status]}
+    </Badge>
   {:else if status === "replaces_mirror"}
     <Badge
       variant="outline"
       class="border-sky-500/50 text-sky-700 dark:text-sky-400"
     >
-      <ArrowLeftRightIcon aria-hidden="true" />{statusLabel[status]}</Badge
-    >
+      <ArrowLeftRightIcon aria-hidden="true" />{statusLabel[status]}
+    </Badge>
     <div class="text-muted-foreground mt-1 text-xs">
       Takes over a transaction Kept created from a transfer.
     </div>
@@ -337,8 +338,10 @@
                 : "hover:text-foreground",
             )}
             data-sveltekit-noscroll
-            data-sveltekit-keepfocus>{tab.label} ({tab.count})</a
+            data-sveltekit-keepfocus
           >
+            {tab.label} ({tab.count})
+          </a>
         {/each}
       </nav>
     </div>

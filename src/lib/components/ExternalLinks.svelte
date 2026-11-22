@@ -42,9 +42,9 @@
           class="focus-visible:ring-ring/50 inline-flex min-w-0 items-center gap-1 rounded-sm underline underline-offset-2 outline-none focus-visible:ring-[3px]"
         >
           <span class="truncate">{link.label}</span>
-          <span class="text-muted-foreground shrink-0 text-xs"
-            >({link.host})</span
-          >
+          <span class="text-muted-foreground shrink-0 text-xs">
+            ({link.host})
+          </span>
           <ExternalLinkIcon class="size-3.5 shrink-0" aria-hidden="true" />
           <span class="sr-only">(opens in a new tab)</span>
         </a>

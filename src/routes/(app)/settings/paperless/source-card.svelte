@@ -48,15 +48,15 @@
       {#if connection.billSource}
         Currently:
         <Badge variant="secondary" class="ms-1 max-w-full">
-          <span class="truncate"
-            >{KIND_LABEL[connection.billSource.kind]}: {connection.billSource
-              .label}</span
-          >
+          <span class="truncate">
+            {KIND_LABEL[connection.billSource.kind]}: {connection.billSource
+              .label}
+          </span>
         </Badge>
       {:else}
-        <span class="text-muted-foreground"
-          >No source chosen yet. Nothing is imported until you pick one.</span
-        >
+        <span class="text-muted-foreground">
+          No source chosen yet. Nothing is imported until you pick one.
+        </span>
       {/if}
     </p>
 

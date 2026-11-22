@@ -39,9 +39,9 @@
             <Table.Row>
               <Table.Head>Date</Table.Head>
               <Table.Head class="text-end">Value</Table.Head>
-              <Table.Head class="w-10"
-                ><span class="sr-only">Actions</span></Table.Head
-              >
+              <Table.Head class="w-10">
+                <span class="sr-only">Actions</span>
+              </Table.Head>
             </Table.Row>
           </Table.Header>
           <Table.Body>

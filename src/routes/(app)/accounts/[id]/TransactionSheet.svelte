@@ -62,9 +62,9 @@
             >
               <ArrowLeftRightIcon aria-hidden="true" />
               mirrored
-              <span class="sr-only"
-                >from {transaction.mirrorOf.accountName}</span
-              >
+              <span class="sr-only">
+                from {transaction.mirrorOf.accountName}
+              </span>
             </Badge>
           {:else}
             <Badge variant={imported ? "outline" : "secondary"}>
@@ -127,8 +127,8 @@
                 {transaction.reference}
                 {#if transaction.referenceType}
                   <span class="text-muted-foreground">
-                    ({transaction.referenceType})</span
-                  >
+                    ({transaction.referenceType})
+                  </span>
                 {/if}
               </dd>
             {/if}

@@ -103,10 +103,10 @@
       <Card.Title>API tokens</Card.Title>
       <Card.Description>
         Let another app you run read your bills and payments, or attach links to
-        them. A token only works on <code class="text-xs"
-          >/api/external/v1/</code
-        >, can do exactly what you tick below, and can be revoked at any time.
-        It never grants access to your login or settings.
+        them. A token only works on <code class="text-xs">
+          /api/external/v1/
+        </code>, can do exactly what you tick below, and can be revoked at any
+        time. It never grants access to your login or settings.
       </Card.Description>
     </Card.Header>
     <Card.Content class="grid gap-4">
@@ -141,8 +141,9 @@
                   </p>
                   <code
                     class="text-muted-foreground font-mono text-xs break-all"
-                    >{token.prefix}…</code
                   >
+                    {token.prefix}…
+                  </code>
                 </div>
                 {#if status === "active"}
                   <Button
@@ -165,9 +166,9 @@
                 <dt class="text-muted-foreground">Can</dt>
                 <dd class="flex flex-wrap gap-1">
                   {#each token.scopes as scope (scope)}
-                    <Badge variant="outline" class="font-mono text-xs"
-                      >{scope}</Badge
-                    >
+                    <Badge variant="outline" class="font-mono text-xs">
+                      {scope}
+                    </Badge>
                   {/each}
                 </dd>
                 <dt class="text-muted-foreground">Categories</dt>
@@ -359,9 +360,9 @@
             value={failure?.values?.expires ?? ""}
             aria-invalid={hasError(errors, "expires")}
           />
-          <Field.Description
-            >Valid through the end of that day (UTC).</Field.Description
-          >
+          <Field.Description>
+            Valid through the end of that day (UTC).
+          </Field.Description>
           <Field.Error errors={fieldErrors(errors, "expires")} />
         </Field.Field>
 

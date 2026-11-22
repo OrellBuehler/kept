@@ -46,9 +46,9 @@
               <Table.Head class="w-20">Year</Table.Head>
               <Table.Head class="hidden md:table-cell">Authority</Table.Head>
               <Table.Head class="text-end">Paid by you</Table.Head>
-              <Table.Head class="hidden text-end sm:table-cell"
-                >Counted</Table.Head
-              >
+              <Table.Head class="hidden text-end sm:table-cell">
+                Counted
+              </Table.Head>
               <Table.Head class="text-end">Open</Table.Head>
               <Table.Head class="w-36">Status</Table.Head>
             </Table.Row>
@@ -61,8 +61,10 @@
                     class="underline-offset-4 hover:underline"
                     href={resolve("/(app)/taxes/[year]", {
                       year: String(y.year),
-                    })}>{y.year}</a
+                    })}
                   >
+                    {y.year}
+                  </a>
                 </Table.Cell>
                 <Table.Cell class="hidden md:table-cell">
                   {y.authority ?? "-"}

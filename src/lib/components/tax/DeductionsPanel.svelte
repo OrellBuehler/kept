@@ -190,8 +190,9 @@
               <a
                 class="underline underline-offset-2"
                 href={resolve("/(app)/settings/categories")}
-                >Create categories</a
-              > to map them to deduction types.
+              >
+                Create categories
+              </a> to map them to deduction types.
             </Empty.Description>
           </Empty.Header>
         </Empty.Root>

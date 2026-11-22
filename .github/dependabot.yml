@@ -15,6 +15,11 @@ updates:
       # 2.x needs node:module's findPackageJSON, which Bun does not have yet.
       - dependency-name: "@vite-pwa/sveltekit"
         update-types: ["version-update:semver-major"]
+      # 5.1.1 starts its workers with child.channel.unref(), which Bun does not have yet.
+      - dependency-name: "vitest"
+        versions: ["5.1.1"]
+      - dependency-name: "@vitest/coverage-v8"
+        versions: ["5.1.1"]
 
   - package-ecosystem: "github-actions"
     directory: "/"
