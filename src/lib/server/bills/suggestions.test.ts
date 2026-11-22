@@ -171,6 +171,81 @@ describe("auto matching", () => {
     expect(s.every((x) => x.ambiguous && !x.auto)).toBe(true);
   });
 
+  it("says why a suggestion is ambiguous: other payments for the bill", async () => {
+    const { u, account } = await setup();
+    const bill = await qrBill(u.id);
+    await payment(u.id, account.id, 5000, { reference: EXAMPLE_QRR });
+    await payment(u.id, account.id, 5000, {
+      reference: EXAMPLE_QRR,
+      bookingDate: "2026-09-12",
+    });
+    for (const list of [
+      await getSuggestions(u.id),
+      await getSuggestions(u.id, { billId: bill.id }),
+    ]) {
+      expect(list).toHaveLength(2);
+      for (const s of list) {
+        expect(s).toMatchObject({
+          ambiguous: true,
+          otherPayments: 1,
+          otherBills: 0,
+          ibanMismatch: false,
+        });
+      }
+    }
+  });
+
+  it("says why a suggestion is ambiguous: other bills for the payment, also on one bill's own list", async () => {
+    const { u, account } = await setup();
+    const first = await qrBill(u.id);
+    await qrBill(u.id, { dueDate: "2026-10-15" });
+    await payment(u.id, account.id, 10000, { reference: EXAMPLE_QRR });
+    const all = await getSuggestions(u.id);
+    expect(all).toHaveLength(2);
+    const own = await getSuggestions(u.id, { billId: first.id });
+    expect(own).toHaveLength(1);
+    for (const s of [...all, ...own]) {
+      expect(s).toMatchObject({
+        ambiguous: true,
+        otherBills: 1,
+        otherPayments: 0,
+        ibanMismatch: false,
+      });
+    }
+  });
+
+  it("says why a suggestion is ambiguous: paid to another account than the bill names", async () => {
+    const { u, account } = await setup();
+    await qrBill(u.id);
+    await payment(u.id, account.id, 10000, {
+      reference: EXAMPLE_QRR,
+      counterpartyIban: EXAMPLE_IBAN,
+    });
+    expect(await getSuggestions(u.id)).toEqual([
+      expect.objectContaining({
+        ambiguous: true,
+        auto: false,
+        ibanMismatch: true,
+        otherBills: 0,
+        otherPayments: 0,
+      }),
+    ]);
+  });
+
+  it("gives an unambiguous suggestion no reasons", async () => {
+    const { u, account } = await setup();
+    await qrBill(u.id);
+    await payment(u.id, account.id, 4000, { reference: EXAMPLE_QRR });
+    expect(await getSuggestions(u.id)).toEqual([
+      expect.objectContaining({
+        ambiguous: false,
+        ibanMismatch: false,
+        otherBills: 0,
+        otherPayments: 0,
+      }),
+    ]);
+  });
+
   it("ignores cancelled and already paid bills", async () => {
     const { u, account } = await setup();
     const bill = await qrBill(u.id);
@@ -230,7 +305,14 @@ describe("dismissals", () => {
     const left = await getSuggestions(u.id);
     expect(left.map((s) => s.transactionId)).toEqual([other.id]);
     // Shared ambiguity with the dismissed pair keeps it from auto-confirming.
-    expect(left[0]).toMatchObject({ ambiguous: true, auto: false });
+    expect(left[0]).toMatchObject({
+      ambiguous: true,
+      auto: false,
+      // The pair it competed with is hidden, so there is nothing to point at.
+      otherPayments: 0,
+      otherBills: 0,
+      ibanMismatch: false,
+    });
     expect(await getSuggestions(u.id, { billId: "nope" })).toEqual([]);
   });
 

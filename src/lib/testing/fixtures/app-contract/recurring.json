@@ -2,7 +2,7 @@
   "data": {
     "series": [
       {
-        "id": "9b7bea56-1063-4d15-b181-164ef0950883",
+        "id": "3b8da87c-f37c-473a-af58-a0f4be52fbbf",
         "status": "dismissed",
         "name": "Example Streaming SA",
         "counterpartyIban": null,
@@ -24,7 +24,7 @@
         }
       },
       {
-        "id": "aab7b4e4-03e9-48d2-a3ef-1a9d47690237",
+        "id": "cdcda239-017e-45e7-8db2-41b3332c4afd",
         "status": "confirmed",
         "name": "Example Employer AG",
         "counterpartyIban": "BE68539007547034",
@@ -42,7 +42,7 @@
         "priceChange": null
       },
       {
-        "id": "a9b40672-3714-4f00-a8b1-f4234f231e77",
+        "id": "c4db355b-581f-41b3-bb56-80c110d629e3",
         "status": "confirmed",
         "name": "Example Property Management AG",
         "counterpartyIban": "GB82WEST12345698765432",
@@ -60,7 +60,7 @@
         "priceChange": null
       },
       {
-        "id": "8ce6198c-65f8-4f3e-895a-0a4163864755",
+        "id": "0c3ffa6c-c5b9-43e6-ba16-7a0b9bde2e31",
         "status": "suggested",
         "name": "Example Tax Office",
         "counterpartyIban": null,
@@ -70,10 +70,10 @@
         "annualCost": -120000,
         "monthlyCost": -10000,
         "firstDate": "2025-11-02",
-        "lastDate": "2026-11-11",
+        "lastDate": "2026-11-12",
         "lastAmount": -120000,
         "occurrences": 2,
-        "nextExpected": "2027-11-11",
+        "nextExpected": "2027-11-12",
         "overdue": false,
         "priceChange": {
           "previous": -90000,

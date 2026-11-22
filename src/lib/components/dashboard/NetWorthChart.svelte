@@ -34,6 +34,9 @@
     })),
   );
 
+  // The axis follows the values, not zero. AreaChart's default baseline of 0 would then lie
+  // far below the plot and the fill would run down over whatever follows the chart, so the
+  // chart gets no baseline (`yBaseline={null}`) and the area ends at the bottom of the axis.
   const domain = $derived.by((): [number, number] => {
     const values = rows.map((r) => r.value);
     const min = Math.min(...values);
@@ -92,6 +95,7 @@
     x="date"
     y="value"
     yDomain={domain}
+    yBaseline={null}
     series={[{ key: "value", label: config.value.label, color }]}
     padding={{ left: 64, bottom: 24, top: 8, right: 8 }}
     props={{

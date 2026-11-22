@@ -1,26 +1,26 @@
 {
-  "today": "2026-11-21",
+  "today": "2026-11-22",
   "events": [
     {
-      "key": "bill-due:c4d7ba00-cfa6-44b1-b1a9-0cef22f7cd0a:2026-11-26",
+      "key": "bill-due:d3a438f1-0b6d-4cf1-963a-7cab2fb9d2f2:2026-11-27",
       "title": "Bill due soon",
-      "body": "Example Dental Clinic (CHF 350.00) is due in 5 days (2026-11-26).",
+      "body": "Example Dental Clinic (CHF 350.00) is due in 5 days (2026-11-27).",
       "kind": "bill-due"
     },
     {
-      "key": "bill-overdue:d165c4dd-e4c3-4c1e-bba6-38d5c36683fe:2026-11-01",
+      "key": "bill-overdue:ff9fff0e-fab8-4cef-8107-2296756aa624:2026-11-02",
       "title": "Bill overdue",
-      "body": "Example Utilities GmbH (CHF 85.50) was due on 2026-11-01 (20 days ago).",
+      "body": "Example Utilities GmbH (CHF 85.50) was due on 2026-11-02 (20 days ago).",
       "kind": "bill-overdue"
     },
     {
-      "key": "bill-due:d14bc2a5-606c-48ba-a724-a17b8a51b941:2026-12-03",
+      "key": "bill-due:fac6836c-77b9-4d02-b8c4-605280d01827:2026-12-04",
       "title": "Bill due soon",
-      "body": "Example Supplier AG (CHF 1,949.75) is due in 12 days (2026-12-03).",
+      "body": "Example Supplier AG (CHF 1,949.75) is due in 12 days (2026-12-04).",
       "kind": "bill-due"
     },
     {
-      "key": "budget:f37ec47e-0245-4a69-8f67-07e36786044b:2026-11:50",
+      "key": "budget:f5f32216-37f6-471f-aa50-20e1ddf75164:2026-11:50",
       "title": "Budget nearly used",
       "body": "Housing: CHF 1,800.00 of CHF 2,000.00 spent in 2026-11.",
       "kind": "budget"
@@ -28,28 +28,28 @@
   ],
   "bills": [
     {
-      "id": "d165c4dd-e4c3-4c1e-bba6-38d5c36683fe",
+      "id": "ff9fff0e-fab8-4cef-8107-2296756aa624",
       "creditorName": "Example Utilities GmbH",
       "invoiceNumber": "U-77",
       "remaining": 8550,
       "currency": "CHF",
-      "dueDate": "2026-11-01"
+      "dueDate": "2026-11-02"
     },
     {
-      "id": "c4d7ba00-cfa6-44b1-b1a9-0cef22f7cd0a",
+      "id": "d3a438f1-0b6d-4cf1-963a-7cab2fb9d2f2",
       "creditorName": "Example Dental Clinic",
       "invoiceNumber": null,
       "remaining": 35000,
       "currency": "CHF",
-      "dueDate": "2026-11-26"
+      "dueDate": "2026-11-27"
     },
     {
-      "id": "d14bc2a5-606c-48ba-a724-a17b8a51b941",
+      "id": "fac6836c-77b9-4d02-b8c4-605280d01827",
       "creditorName": "Example Supplier AG",
       "invoiceNumber": "2001",
       "remaining": 194975,
       "currency": "CHF",
-      "dueDate": "2026-12-03"
+      "dueDate": "2026-12-04"
     }
   ]
 }

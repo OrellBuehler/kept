@@ -1,7 +1,7 @@
 {
   "data": {
     "account": {
-      "id": "b0da608d-0c75-4473-954f-999f8a577658",
+      "id": "cd3805e2-5b8f-4a3b-857d-229780268ae6",
       "name": "Example Savings",
       "type": "savings",
       "currency": "CHF",
@@ -9,7 +9,7 @@
       "contractNumber": null,
       "depositIban": null,
       "openingBalance": 1200000,
-      "openingDate": "2026-07-24",
+      "openingDate": "2026-07-25",
       "noticeMonths": 3,
       "freeWithdrawal": 500000,
       "freeWithdrawalPeriod": "year",
@@ -20,7 +20,7 @@
       "shareBps": 10000,
       "sharedWith": null,
       "institution": {
-        "id": "1fd13a15-292d-4b4a-aba8-e6d033b536bb",
+        "id": "c87fa9ba-dce5-4f35-9390-109e84b2fe81",
         "name": "Example Bank",
         "color": "#1a73e8",
         "logoVersion": "fa25202f7fd431e3"
@@ -29,7 +29,7 @@
       "cashBalance": 1251000,
       "holdings": null,
       "shareBalance": 1251000,
-      "lastBookingDate": "2026-11-01",
+      "lastBookingDate": "2026-11-02",
       "lastImportAt": null
     },
     "balance": 1251000,
@@ -41,7 +41,7 @@
     "trades": [],
     "securities": [
       {
-        "id": "75997bd2-c5bb-4349-9ded-7f3d4dd89c4b",
+        "id": "bee97ca2-13bd-459b-b285-0bb0e3d76d5e",
         "name": "Example Bond Fund",
         "kind": "bond",
         "isin": "EX0000000021",
@@ -49,7 +49,7 @@
         "currency": "CHF"
       },
       {
-        "id": "f4d754a4-0ad5-4283-9a35-59b8059c0f09",
+        "id": "2c7978db-e30c-43fb-b257-a0796e24b3b3",
         "name": "Example Stock Corp",
         "kind": "stock",
         "isin": null,
@@ -57,7 +57,7 @@
         "currency": "USD"
       },
       {
-        "id": "bf2bedf0-1e28-48e9-b134-faf297f3289e",
+        "id": "5bfa1f54-4cd1-4486-ab00-5102cf716fa8",
         "name": "Example World ETF",
         "kind": "etf",
         "isin": "EX0000000013",
@@ -67,23 +67,23 @@
     ],
     "institutions": [
       {
-        "id": "1fd13a15-292d-4b4a-aba8-e6d033b536bb",
+        "id": "c87fa9ba-dce5-4f35-9390-109e84b2fe81",
         "name": "Example Bank"
       },
       {
-        "id": "98b8538b-76c4-4eaf-86b7-febbeaf40536",
+        "id": "fdf5f8cc-a1f7-4eaf-b6c8-168bffd9f361",
         "name": "Example Broker"
       }
     ],
     "transactions": {
       "items": [
         {
-          "id": "26fa5661-3b07-4dd1-b57a-ab1e3f371335",
-          "accountId": "b0da608d-0c75-4473-954f-999f8a577658",
+          "id": "5f0bd093-0fdd-4826-a5d0-77043cafa29b",
+          "accountId": "cd3805e2-5b8f-4a3b-857d-229780268ae6",
           "importId": null,
           "source": "mirror",
-          "externalId": "mirror:6a92f70b-0689-4250-9640-8c0a4712149b",
-          "bookingDate": "2026-11-01",
+          "externalId": "mirror:fa516f51-e926-4583-a8e0-e63514416aa7",
+          "bookingDate": "2026-11-02",
           "valueDate": null,
           "amount": 50000,
           "currency": "CHF",
@@ -99,21 +99,21 @@
           "categoryId": null,
           "taxYear": null,
           "deductionYear": null,
-          "createdAt": 1795292415933,
+          "createdAt": 1795354912335,
           "mirrorOf": {
-            "transactionId": "6a92f70b-0689-4250-9640-8c0a4712149b",
-            "accountId": "fac3616a-1a96-4171-ac3d-50b72d0d3cfb",
+            "transactionId": "fa516f51-e926-4583-a8e0-e63514416aa7",
+            "accountId": "2fb59d2c-369e-4a53-81b6-60e4d99e6a25",
             "accountName": "Example Checking",
             "noBankCounterpart": false
           },
           "transfer": {
-            "id": "56870fcd-a91e-455a-af67-776e69a248ad",
+            "id": "df5e9c1a-c15f-43fa-930e-58ca94cba663",
             "status": "linked",
             "method": "mirrored",
             "direction": "in",
-            "peerAccountId": "fac3616a-1a96-4171-ac3d-50b72d0d3cfb",
+            "peerAccountId": "2fb59d2c-369e-4a53-81b6-60e4d99e6a25",
             "peerAccountName": "Example Checking",
-            "peerTransactionId": "6a92f70b-0689-4250-9640-8c0a4712149b"
+            "peerTransactionId": "fa516f51-e926-4583-a8e0-e63514416aa7"
           }
         }
       ],
@@ -126,20 +126,20 @@
     "transactionLinks": {},
     "snapshots": [
       {
-        "id": "72dadde1-fca7-4c1a-ad4a-e310948bafda",
-        "accountId": "b0da608d-0c75-4473-954f-999f8a577658",
+        "id": "e72bba0f-dc61-4432-a137-59689fd47b12",
+        "accountId": "cd3805e2-5b8f-4a3b-857d-229780268ae6",
         "importId": null,
         "source": "manual",
-        "date": "2026-11-11",
+        "date": "2026-11-12",
         "amount": 1251000,
         "note": null
       },
       {
-        "id": "c2f9dfbe-7607-4b9b-98bb-a04cb36fde17",
-        "accountId": "b0da608d-0c75-4473-954f-999f8a577658",
+        "id": "8c282d11-6125-44d9-b321-8eed882f5af0",
+        "accountId": "cd3805e2-5b8f-4a3b-857d-229780268ae6",
         "importId": null,
         "source": "manual",
-        "date": "2026-09-22",
+        "date": "2026-09-23",
         "amount": 1200000,
         "note": "Year-end statement"
       }
@@ -151,7 +151,7 @@
     },
     "categories": [
       {
-        "id": "f8016c0c-c467-43d4-a2cb-1e584ee7f1ce",
+        "id": "ad42563d-19c0-4424-8789-e8f54c420975",
         "name": "Donations",
         "parentId": null,
         "kind": "expense",
@@ -159,7 +159,7 @@
         "icon": "gift"
       },
       {
-        "id": "a7bc1111-6e4d-4c4d-820f-46129f5c3ba9",
+        "id": "305b578c-be0c-4215-83be-60bf1e397b61",
         "name": "Food",
         "parentId": null,
         "kind": "expense",
@@ -167,23 +167,23 @@
         "icon": "utensils"
       },
       {
-        "id": "a2f4c14c-36c0-4a5d-bd53-367852e63cbc",
+        "id": "1127efd4-a5b2-446f-b3dd-48dbcd4a1392",
         "name": "Groceries",
-        "parentId": "a7bc1111-6e4d-4c4d-820f-46129f5c3ba9",
+        "parentId": "305b578c-be0c-4215-83be-60bf1e397b61",
         "kind": "expense",
         "color": "#ef6c00",
         "icon": "shopping-cart"
       },
       {
-        "id": "90250d12-2447-4be1-8ae5-e28c3e5e4a64",
+        "id": "22c45a3e-fbd7-4fd8-955a-2fca14de7c00",
         "name": "Restaurants",
-        "parentId": "a7bc1111-6e4d-4c4d-820f-46129f5c3ba9",
+        "parentId": "305b578c-be0c-4215-83be-60bf1e397b61",
         "kind": "expense",
         "color": null,
         "icon": null
       },
       {
-        "id": "9fe003f7-a76b-448f-a802-2effc6e9f88f",
+        "id": "9448e9a4-3f24-4682-8401-00db16c80ca3",
         "name": "Gifts received",
         "parentId": null,
         "kind": "income",
@@ -191,7 +191,7 @@
         "icon": "gift"
       },
       {
-        "id": "ebbdce98-3c02-42b8-943c-4024dab25b2e",
+        "id": "34ab8a24-5242-45f3-88c3-cbb34596eccf",
         "name": "Health",
         "parentId": null,
         "kind": "expense",
@@ -199,15 +199,15 @@
         "icon": "heart-pulse"
       },
       {
-        "id": "b2363bc4-ed98-4712-9497-12cd4bbbf62c",
+        "id": "14cea9ff-c4c7-4e32-84d3-280540642844",
         "name": "Pharmacy",
-        "parentId": "ebbdce98-3c02-42b8-943c-4024dab25b2e",
+        "parentId": "34ab8a24-5242-45f3-88c3-cbb34596eccf",
         "kind": "expense",
         "color": "#ad1457",
         "icon": "heart-pulse"
       },
       {
-        "id": "59627596-bc0f-48c1-ba8b-b7c86e7679d5",
+        "id": "99882159-314e-4d82-8fd8-fb5295b13636",
         "name": "Housing",
         "parentId": null,
         "kind": "expense",
@@ -215,7 +215,7 @@
         "icon": "house"
       },
       {
-        "id": "ed587f32-c0e7-4514-8d42-43d369bed898",
+        "id": "379f7f82-a8b9-4c17-b1e7-6a851c29d8c1",
         "name": "Insurance",
         "parentId": null,
         "kind": "expense",
@@ -223,7 +223,7 @@
         "icon": "shield"
       },
       {
-        "id": "665559ec-48cd-4672-a049-5dd7269946a7",
+        "id": "60599f00-f65a-4f19-8faa-35ed5ffbbc45",
         "name": "Salary",
         "parentId": null,
         "kind": "income",
@@ -231,7 +231,7 @@
         "icon": "wallet"
       },
       {
-        "id": "8e22ae36-8dc7-4a8b-8512-b2184c8c83b0",
+        "id": "53da868f-4e4a-4caa-9298-2990790f1169",
         "name": "Subscriptions",
         "parentId": null,
         "kind": "expense",
@@ -239,7 +239,7 @@
         "icon": null
       },
       {
-        "id": "65a11245-3a6e-4881-96cd-bd66131b1b24",
+        "id": "fa8064dd-1540-48b2-882e-8b8505486fdf",
         "name": "Transport",
         "parentId": null,
         "kind": "expense",
