@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+### Fixed
+
+- **Android app**: the title of every screen was drawn underneath the status bar.
+
 ## 0.7.1
 
 ### Added
