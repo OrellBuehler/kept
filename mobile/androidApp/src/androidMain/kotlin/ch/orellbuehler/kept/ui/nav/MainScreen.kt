@@ -1,6 +1,7 @@
 package ch.orellbuehler.kept.ui.nav
 
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.consumeWindowInsets
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
@@ -125,7 +126,8 @@ fun MainScreen(app: AppViewModel) {
         },
     ) { inner ->
         // Screens bring their own top bar and handle the top inset; only the bottom bar's space is taken here.
-        Box(Modifier.padding(bottom = inner.calculateBottomPadding()).consumeWindowInsets(inner)) {
+        val bottom = PaddingValues(bottom = inner.calculateBottomPadding())
+        Box(Modifier.padding(bottom).consumeWindowInsets(bottom)) {
             NavHost(navController = controller, startDestination = Routes.OVERVIEW) { destinations(nav, app) }
         }
     }
