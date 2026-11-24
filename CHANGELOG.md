@@ -1,5 +1,15 @@
 # Changelog
 
+## Unreleased
+
+### Added
+
+- **Android and iOS apps**: the top-up IBAN (account form, account page, accounts list), "No new
+  transactions" (account menu and next to the warning on the dashboard), the website link of
+  institutions and accounts, and the reported gain and return of pillar 3a portfolios (update
+  values, portfolio rows, value history, and the latest return of each portfolio on the pillar 3a
+  screen).
+
 ## 0.7.0
 
 ### Added

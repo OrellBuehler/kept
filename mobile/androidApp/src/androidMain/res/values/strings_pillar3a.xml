@@ -6,6 +6,10 @@
     <string name="pillar3a_value">Value</string>
     <string name="pillar3a_contributed">Contributed</string>
     <string name="pillar3a_gain">Gain</string>
+    <string name="pillar3a_reported_gain">Reported gain</string>
+    <string name="pillar3a_return">Return</string>
+    <string name="pillar3a_performance">Performance</string>
+    <string name="pillar3a_performance_hint">Total return of each portfolio, from the gains entered with its values: your provider\'s percentage, or else the gain over the capital it grew from.</string>
     <string name="pillar3a_locked_hint">Locked until withdrawal, and not subject to wealth tax. Open portfolios only.</string>
     <string name="pillar3a_years">Years</string>
     <string name="pillar3a_years_hint">Limits are per person, across all your 3a accounts. A payment counts for the year it is credited. Missed years from 2025 on can be bought in later.</string>
@@ -32,7 +36,7 @@
     <string name="pillar3a_deduction_none">No deduction</string>
     <string name="pillar3a_earned_income">Net earned income (CHF)</string>
     <string name="pillar3a_portfolios">Portfolios</string>
-    <string name="pillar3a_portfolios_hint">Values are entered by hand on the account page.</string>
+    <string name="pillar3a_portfolios_hint">Values and gains are entered by hand on the account page. A reported gain is your provider\'s figure; otherwise the gain is the value minus your contributions, as in the total above.</string>
     <string name="pillar3a_no_portfolios_title">No portfolios</string>
     <string name="pillar3a_no_portfolios_text">Open your Pillar 3a account and add its portfolios.</string>
     <string name="pillar3a_closed_on">Closed %1$s</string>

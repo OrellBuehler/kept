@@ -23,6 +23,33 @@ final class Pillar3aContractTests: XCTestCase {
         XCTAssertTrue(page.contributions.contains { $0.kind == "buy_in" && !$0.gapYears.isEmpty })
         XCTAssertTrue(page.contributions.contains { $0.lateDecemberWarning != nil })
         XCTAssertEqual(page.accounts.count, 1)
+        XCTAssertTrue(page.overview.portfolios.contains { $0.reportedGain != nil && $0.returnBps != nil })
+        XCTAssertTrue(page.overview.portfolios.contains { $0.reportedGain == nil && $0.returnBps == nil })
+        let performance = try XCTUnwrap(page.performance)
+        XCTAssertEqual(performance.count, 1)
+        XCTAssertEqual(performance.first?.points.count, 2)
+        XCTAssertEqual(performance.first?.points.last?.gainBps, 1244)
+        XCTAssertEqual(performance.first?.points.last?.gain, 96_000)
+    }
+
+    func testLatestReturns() throws {
+        let page = try ContractTests.decode(Pillar3aPage.self, "pillar-3a")
+        let latest = Pillar3aText.latestReturns(page)
+        XCTAssertEqual(latest.count, 1)
+        let item = try XCTUnwrap(latest.first)
+        XCTAssertEqual(item.name, "Example Portfolio A")
+        XCTAssertEqual(item.basisPoints, 1244)
+        XCTAssertEqual(item.gain, 96_000)
+        XCTAssertEqual(item.date, "2026-11-18")
+    }
+
+    func testPerformanceIsOptional() throws {
+        var object = try XCTUnwrap(JSONSerialization.jsonObject(with: ContractTests.fixture("pillar-3a")) as? [String: Any])
+        object["performance"] = nil
+        let data = try JSONSerialization.data(withJSONObject: object)
+        let page = try JSONDecoder().decode(Pillar3aPage.self, from: data)
+        XCTAssertNil(page.performance)
+        XCTAssertTrue(Pillar3aText.latestReturns(page).isEmpty)
     }
 
     func testBuyInCheckDecodes() throws {

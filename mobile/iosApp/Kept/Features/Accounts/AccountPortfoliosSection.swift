@@ -44,7 +44,7 @@ struct AccountPortfoliosSection: View {
         } header: {
             Text("Portfolios")
         } footer: {
-            Text("Each portfolio is valued by hand from your provider's statement. Their values are added to the cash balance of this account.")
+            Text("Each portfolio is valued by hand from your provider's statement, with its gain if you enter it. Their values are added to the cash balance of this account.")
         }
     }
 
@@ -76,6 +76,7 @@ struct AccountPortfoliosSection: View {
             ValueRow(portfolio.name, subtitle: subtitle(portfolio)) {
                 if let value = portfolio.latestValue {
                     AmountText(value, page.account.currency).font(.headline)
+                    AccountGainLine(gain: portfolio.latestGain, basisPoints: portfolio.latestGainBps, currency: page.account.currency)
                     if let date = portfolio.latestValueDate {
                         Text("as of \(formats.date(date))").font(.caption2).foregroundStyle(.secondary)
                     }
@@ -164,6 +165,32 @@ struct AccountPortfoliosSection: View {
                 .buttonStyle(.borderless)
                 .accessibilityLabel("Copy deposit IBAN")
             }
+        }
+    }
+}
+
+/// The reported gain of a portfolio value and its total return, on one line; nothing when none was reported.
+struct AccountGainLine: View {
+    let gain: Int64?
+    let basisPoints: Int?
+    let currency: String
+
+    @Environment(\.formats) private var formats
+
+    var body: some View {
+        if gain != nil || basisPoints != nil {
+            HStack(spacing: 4) {
+                if let gain {
+                    AmountText(gain, currency, tone: .signed, showPlus: true)
+                }
+                if gain != nil && basisPoints != nil {
+                    Text("\u{00B7}").foregroundStyle(.secondary)
+                }
+                if let basisPoints {
+                    Text(formats.signedPercent(basisPoints: basisPoints)).monospacedDigit().foregroundStyle(.secondary)
+                }
+            }
+            .font(.caption)
         }
     }
 }

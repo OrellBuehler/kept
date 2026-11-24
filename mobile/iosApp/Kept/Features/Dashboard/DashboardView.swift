@@ -218,13 +218,47 @@ struct DashboardView: View {
                                 Image(systemName: "exclamationmark.triangle")
                                     .font(.caption)
                                     .foregroundStyle(KeptColor.warning)
-                                    .accessibilityLabel("No recent import")
+                                    .accessibilityLabel(staleText(account))
                             }
                         }
+                    }
+                    if account.stale && account.lastImportAt != nil {
+                        staleRow(account)
                     }
                 }
             }
         }
+    }
+
+    private func staleText(_ account: Dashboard.Account) -> String {
+        let label = AccountsLogic.staleDaysLabel(
+            lastImportAt: account.lastImportAt,
+            lastCheckedAt: account.lastCheckedAt,
+            staleDays: account.staleDays
+        )
+        return label ?? "No recent import"
+    }
+
+    private func staleRow(_ account: Dashboard.Account) -> some View {
+        HStack(spacing: 8) {
+            Label(staleText(account), systemImage: "exclamationmark.triangle")
+                .font(.caption)
+                .foregroundStyle(KeptColor.warning)
+            Spacer(minLength: 8)
+            Button("No new transactions") {
+                Task { await markChecked(account) }
+            }
+            .font(.caption)
+            .buttonStyle(.borderless)
+            .disabled(store.busy)
+        }
+    }
+
+    private func markChecked(_ account: Dashboard.Account) async {
+        var form = FormFields()
+        form.set("accountId", account.id)
+        let result = await store.submit("markChecked", form: form, showRefusal: true)
+        if result != nil { store.message = "\(account.name) marked as up to date" }
     }
 }
 

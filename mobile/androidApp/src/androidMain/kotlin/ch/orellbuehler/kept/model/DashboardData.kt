@@ -87,6 +87,7 @@ data class InstitutionRef(
     val name: String = "",
     val color: String? = null,
     val logoVersion: String? = null,
+    val websiteUrl: String? = null,
 )
 
 @Serializable
@@ -100,6 +101,8 @@ data class DashboardAccount(
     val shareBps: Int = 10_000,
     val shareBalance: Long = 0,
     val lastBookingDate: String? = null,
+    val lastImportAt: Long? = null,
+    val lastCheckedAt: Long? = null,
     val stale: Boolean = false,
     val noData: Boolean = false,
     val staleDays: Int? = null,

@@ -30,6 +30,11 @@
     <string name="accounts_last_booking">Last booking %1$s</string>
     <string name="accounts_no_transactions">No transactions yet</string>
     <string name="accounts_last_import">Last import %1$s</string>
+    <string name="accounts_last_checked">Last checked %1$s</string>
+    <string name="accounts_top_up_via">Top up via %1$s</string>
+    <string name="accounts_open_website">Open website of %1$s</string>
+    <string name="accounts_open_institution_website">Open %1$s website</string>
+    <string name="accounts_no_browser">No browser is installed to open this link.</string>
     <string name="accounts_shared_badge">Shared · %1$s</string>
     <string name="accounts_notice_free">%1$s · %2$s/%3$s free</string>
     <string name="accounts_period_month_lower">month</string>
@@ -67,6 +72,12 @@
     <string name="accounts_field_contract">Contract number (optional)</string>
     <string name="accounts_field_deposit_iban">Deposit IBAN (QR-IBAN)</string>
     <string name="accounts_field_deposit_iban_hint">The IBAN you pay contributions into. Spaces are fine.</string>
+    <string name="accounts_field_top_up_iban">Top-up IBAN (optional)</string>
+    <string name="accounts_field_top_up_iban_hint">For an account without an IBAN of its own: the IBAN you send money to when you top it up. It is not this account\'s IBAN. Transfers to it from your other accounts are matched to this account.</string>
+    <string name="accounts_field_website">Website (optional)</string>
+    <string name="accounts_field_website_account_hint">Link to the account\'s portal; the institution\'s link is used when empty.</string>
+    <string name="accounts_field_website_institution_hint">Link to the e-banking or provider portal.</string>
+    <string name="accounts_field_website_placeholder">https://www.example.com</string>
     <string name="accounts_field_opening_balance">Opening balance</string>
     <string name="accounts_field_opening_balance_hint">Negative for debt, e.g. -120.50.</string>
     <string name="accounts_field_opening_date">Opening date (balance applies from this day)</string>
@@ -84,7 +95,7 @@
     <string name="accounts_period_year">Year</string>
     <string name="accounts_statements">Statements</string>
     <string name="accounts_fill_from_transfers">Fill from transfers in my other accounts</string>
-    <string name="accounts_fill_from_transfers_text">For accounts without statement exports. Kept creates the counter-transaction when an imported account shows a transfer to or from this IBAN.</string>
+    <string name="accounts_fill_from_transfers_text">For accounts without statement exports. Kept creates the counter-transaction when an imported account shows a transfer to or from this IBAN, or to its top-up IBAN.</string>
     <string name="accounts_trades_move_cash">Trades move cash</string>
     <string name="accounts_trades_move_cash_text">A buy lowers the cash balance and a sell raises it by the trade amount. Use it when you have no broker statements, so cash and holdings are not counted twice.</string>
     <string name="accounts_stop_filling">Stop filling this account?</string>
@@ -108,6 +119,11 @@
     <string name="accounts_unarchive">Unarchive</string>
     <string name="accounts_copy_iban">Copy IBAN</string>
     <string name="accounts_iban_copied">IBAN copied</string>
+    <string name="accounts_copy_top_up_iban">Copy top-up IBAN</string>
+    <string name="accounts_top_up_iban_copied">Top-up IBAN copied</string>
+    <string name="accounts_website">Website</string>
+    <string name="accounts_no_new_transactions">No new transactions</string>
+    <string name="accounts_marked_checked">Marked as up to date</string>
     <string name="accounts_total_label">Total</string>
     <string name="accounts_current_balance">Current balance</string>
     <string name="accounts_cash">Cash</string>
@@ -317,7 +333,7 @@
     <string name="accounts_delete_trade_text">The trade of %1$s on %2$s will be removed and the holdings recalculated. Your transactions are not affected.</string>
 
     <!-- Pillar 3a portfolios -->
-    <string name="accounts_portfolios_text">Each portfolio is valued by hand from your provider\'s statement. Their values are added to the cash balance of this account.</string>
+    <string name="accounts_portfolios_text">Each portfolio is valued by hand from your provider\'s statement, with its gain if you enter it. Their values are added to the cash balance of this account.</string>
     <string name="accounts_update_values">Update values</string>
     <string name="accounts_add_portfolio">Add portfolio</string>
     <string name="accounts_edit_portfolio">Edit portfolio</string>
@@ -356,7 +372,12 @@
     <string name="accounts_portfolio_opened">Opened on (optional)</string>
     <string name="accounts_portfolio_sort">Sort order (optional)</string>
     <string name="accounts_portfolio_sort_hint">Lower numbers come first.</string>
-    <string name="accounts_values_text">Enter the current value of your portfolios as shown by your provider. Leave a portfolio blank to skip it.</string>
+    <string name="accounts_values_text">Enter the current value of your portfolios as shown by your provider, and its total gain if you want to follow the performance. Leave a portfolio blank to skip it.</string>
+    <string name="accounts_value">Value</string>
+    <string name="accounts_gain_field">Gain (%1$s)</string>
+    <string name="accounts_return_field">Return (%)</string>
+    <string name="accounts_optional">optional</string>
+    <string name="accounts_values_gain_note">Gain and return are the totals since the portfolio was opened, negative for a loss. With only the gain, the return is worked out from it.</string>
     <string name="accounts_save_values">Save values</string>
     <string name="accounts_close_portfolio">Close %1$s</string>
     <string name="accounts_close_portfolio_action">Close portfolio</string>

@@ -16,6 +16,7 @@ data class AccountsInstitution(
     val bic: String? = null,
     val color: String? = null,
     val logoVersion: String? = null,
+    val websiteUrl: String? = null,
     val accountCount: Int = 0,
 )
 
@@ -28,6 +29,8 @@ data class AccountsAccount(
     val currency: String = "",
     val iban: String? = null,
     val contractNumber: String? = null,
+    val websiteUrl: String? = null,
+    /** Pillar 3a: the QR-IBAN payments go to; any other type: the IBAN the account is topped up through. */
     val depositIban: String? = null,
     val openingBalance: Long = 0,
     val openingDate: String? = null,
@@ -47,6 +50,8 @@ data class AccountsAccount(
     val shareBalance: Long = 0,
     val lastBookingDate: String? = null,
     val lastImportAt: Long? = null,
+    /** When the user last confirmed there is nothing new to import. */
+    val lastCheckedAt: Long? = null,
 )
 
 @Serializable

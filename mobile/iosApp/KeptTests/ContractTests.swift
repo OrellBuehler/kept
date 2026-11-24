@@ -41,6 +41,21 @@ final class ContractTests: XCTestCase {
         XCTAssertFalse(page.dashboard.bills.upcoming.isEmpty)
         XCTAssertFalse(page.forecastAlerts.isEmpty)
         XCTAssertFalse(page.needsAmount.isEmpty)
+        XCTAssertTrue(page.dashboard.accounts.contains { $0.lastImportAt != nil })
+        XCTAssertTrue(page.dashboard.accounts.contains { $0.staleDays != nil })
+        XCTAssertTrue(page.dashboard.accounts.contains { $0.staleDays == nil })
+    }
+
+    func testDashboardAccountChecked() throws {
+        let json = """
+        {"id": "a", "name": "Example Wallet", "type": "current", "currency": "CHF", "balance": 100, "shareBalance": 100,
+         "stale": true, "staleDays": 50, "lastImportAt": 1795372853185, "lastCheckedAt": 1795900000000}
+        """
+        let account = try JSONDecoder().decode(Dashboard.Account.self, from: Data(json.utf8))
+        XCTAssertEqual(account.staleDays, 50)
+        XCTAssertEqual(account.lastImportAt, 1_795_372_853_185)
+        XCTAssertEqual(account.lastCheckedAt, 1_795_900_000_000)
+        XCTAssertNil(account.institution)
     }
 
     func testRoutesFollowWebPaths() {

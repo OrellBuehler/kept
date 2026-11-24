@@ -74,6 +74,9 @@ struct Dashboard: Decodable, Sendable {
         var balance: Int64 = 0
         var shareBalance: Int64 = 0
         var stale: Bool = false
+        var staleDays: Int?
+        var lastImportAt: Int64?
+        var lastCheckedAt: Int64?
     }
 
     struct MonthSummary: Decodable, Sendable {
@@ -142,4 +145,5 @@ struct InstitutionRef: Decodable, Sendable, Hashable {
     var name: String = ""
     var color: String?
     var logoVersion: String?
+    var websiteUrl: String?
 }

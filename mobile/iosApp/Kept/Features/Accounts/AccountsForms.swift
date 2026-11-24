@@ -6,13 +6,14 @@ struct AccountFormInstitution: Identifiable {
     let name: String
 }
 
-/// Add or edit an institution (name, BIC, colour). The logo is uploaded in the browser.
+/// Add or edit an institution (name, BIC, website, colour). The logo is uploaded in the browser.
 struct AccountsInstitutionSheet: View {
     let store: PageStore<AccountsPage>
     let institution: AccountsPage.Institution?
 
     @State private var name: String
     @State private var bic: String
+    @State private var websiteUrl: String
     @State private var color: String
 
     private static let palette: [String] = [
@@ -24,6 +25,7 @@ struct AccountsInstitutionSheet: View {
         self.institution = institution
         _name = State(initialValue: institution?.name ?? "")
         _bic = State(initialValue: institution?.bic ?? "")
+        _websiteUrl = State(initialValue: institution?.websiteUrl ?? "")
         _color = State(initialValue: institution?.color ?? "")
     }
 
@@ -43,6 +45,15 @@ struct AccountsInstitutionSheet: View {
                     .textInputAutocapitalization(.characters)
                     .autocorrectionDisabled()
                 FieldError(store.formErrors["bic"])
+            }
+            Section {
+                TextField("Website (optional)", text: $websiteUrl)
+                    .keyboardType(.URL)
+                    .textInputAutocapitalization(.never)
+                    .autocorrectionDisabled()
+                FieldError(store.formErrors["websiteUrl"])
+            } footer: {
+                Text("Link to the e-banking or provider portal.")
             }
             Section("Colour") {
                 colors
@@ -84,6 +95,7 @@ struct AccountsInstitutionSheet: View {
         var form = FormFields()
         form.set("name", name)
         form.set("bic", bic)
+        form.set("websiteUrl", websiteUrl)
         form.set("color", color)
         var action = "createInstitution"
         if let institution {
@@ -115,6 +127,7 @@ struct AccountFormSheet<Page: Decodable & Sendable>: View {
     @State private var iban: String
     @State private var contractNumber: String
     @State private var depositIban: String
+    @State private var websiteUrl: String
     @State private var openingBalance: String
     @State private var openingDate: String
     @State private var share: String
@@ -154,6 +167,7 @@ struct AccountFormSheet<Page: Decodable & Sendable>: View {
         _iban = State(initialValue: account?.iban ?? "")
         _contractNumber = State(initialValue: account?.contractNumber ?? "")
         _depositIban = State(initialValue: account?.depositIban ?? "")
+        _websiteUrl = State(initialValue: account?.websiteUrl ?? "")
         var opening = ""
         if let account, account.openingBalance != 0 {
             opening = Formats.amountInput(account.openingBalance, account.currency)
@@ -196,8 +210,10 @@ struct AccountFormSheet<Page: Decodable & Sendable>: View {
             await save()
         } content: {
             identitySection
+            if !is3a { topUpSection }
             moneySection
             if !is3a { shareSection }
+            websiteSection
             if hasNotice { noticeSection }
             if showFill || showTradesCash { statementsSection }
         }
@@ -252,6 +268,18 @@ struct AccountFormSheet<Page: Decodable & Sendable>: View {
     }
 
     @ViewBuilder
+    private var topUpSection: some View {
+        Section {
+            TextField("Top-up IBAN (optional)", text: $depositIban)
+                .textInputAutocapitalization(.characters)
+                .autocorrectionDisabled()
+            FieldError(store.formErrors["depositIban"])
+        } footer: {
+            Text("For an account without an IBAN of its own: the IBAN you send money to when you top it up. It is not this account's IBAN. Transfers to it from your other accounts are matched to this account.")
+        }
+    }
+
+    @ViewBuilder
     private var moneySection: some View {
         Section {
             if is3a {
@@ -285,6 +313,19 @@ struct AccountFormSheet<Page: Decodable & Sendable>: View {
             FieldError(store.formErrors["sharedWith"])
         } footer: {
             Text("Your ownership share if you co-own this account, e.g. 50 or 33.33. Leave at 100 otherwise.")
+        }
+    }
+
+    @ViewBuilder
+    private var websiteSection: some View {
+        Section {
+            TextField("Website (optional)", text: $websiteUrl)
+                .keyboardType(.URL)
+                .textInputAutocapitalization(.never)
+                .autocorrectionDisabled()
+            FieldError(store.formErrors["websiteUrl"])
+        } footer: {
+            Text("Link to the account's portal; the institution's link is used when empty.")
         }
     }
 
@@ -342,11 +383,11 @@ struct AccountFormSheet<Page: Decodable & Sendable>: View {
         form.set("openingDate", openingDate)
         if is3a {
             form.set("contractNumber", contractNumber)
-            form.set("depositIban", depositIban)
         } else {
             form.set("share", share)
             form.set("sharedWith", sharedWith)
         }
+        AccountsLogic.setIbanAndLinkFields(&form, is3a: is3a, depositIban: depositIban, websiteUrl: websiteUrl)
         if hasNotice {
             form.set("noticeMonths", noticeMonths)
             form.set("freeWithdrawal", freeWithdrawal)

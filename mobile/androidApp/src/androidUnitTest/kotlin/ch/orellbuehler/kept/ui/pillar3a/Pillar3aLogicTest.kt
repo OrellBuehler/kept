@@ -4,6 +4,7 @@ import ch.orellbuehler.kept.model.Contract
 import ch.orellbuehler.kept.model.Pillar3aContribution
 import ch.orellbuehler.kept.model.Pillar3aGap
 import ch.orellbuehler.kept.model.Pillar3aPage
+import ch.orellbuehler.kept.model.Pillar3aPerformance
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNull
@@ -103,6 +104,19 @@ class Pillar3aLogicTest {
         val ordered = orderedPortfolios(page.overview.portfolios.reversed())
         assertNull(ordered.first().closedOn)
         assertTrue(ordered.last().closedOn != null)
+    }
+
+    @Test
+    fun listsThePortfoliosWithAReportedReturnWithTheirLatestFigure() {
+        val performance = page.performance.single()
+        val rows = performanceRows(page.overview.portfolios.reversed(), page.performance)
+        val row = rows.single()
+        assertEquals(performance.portfolioId, row.portfolio.portfolioId)
+        assertEquals(performance.points.last(), row.last)
+        assertEquals(row.portfolio.returnBps, row.last.gainBps)
+        assertTrue(performanceRows(page.overview.portfolios, emptyList()).isEmpty())
+        assertTrue(performanceRows(page.overview.portfolios, listOf(Pillar3aPerformance("other", performance.points))).isEmpty())
+        assertTrue(performanceRows(page.overview.portfolios, listOf(Pillar3aPerformance(performance.portfolioId))).isEmpty())
     }
 
     @Test

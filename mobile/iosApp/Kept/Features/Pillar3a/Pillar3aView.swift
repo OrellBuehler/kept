@@ -119,6 +119,7 @@ struct Pillar3aView: View {
                 totalsSection(page.overview.totals)
                 yearsSection(page)
                 portfoliosSection(page.overview.portfolios)
+                performanceSection(page)
                 contributionsSection(page)
                 orphansSection(page.overview.orphanAnnotations)
             }
@@ -181,7 +182,33 @@ struct Pillar3aView: View {
         } header: {
             Text("Portfolios")
         } footer: {
-            Text("Values are entered by hand on the account page.")
+            Text("Values and gains are entered by hand on the account page. A reported gain is your provider's figure; otherwise the gain is the value minus your contributions, as in the total above.")
+        }
+    }
+
+    @ViewBuilder
+    private func performanceSection(_ page: Pillar3aPage) -> some View {
+        let latest = Pillar3aText.latestReturns(page)
+        if !latest.isEmpty {
+            Section {
+                ForEach(latest) { item in
+                    performanceRow(item)
+                }
+            } header: {
+                Text("Performance")
+            } footer: {
+                Text("Total return of each portfolio at its latest reported figures: your provider's percentage, or else the gain over the capital it grew from.")
+            }
+        }
+    }
+
+    private func performanceRow(_ item: Pillar3aLatestReturn) -> some View {
+        ValueRow(item.name, subtitle: item.strategy) {
+            Text(formats.signedPercent(basisPoints: item.basisPoints)).font(.headline).monospacedDigit()
+            if let gain = item.gain {
+                AmountText(gain, currency, tone: .signed, showPlus: true).font(.caption)
+            }
+            Text("as of \(formats.date(item.date))").font(.caption2).foregroundStyle(.secondary)
         }
     }
 
@@ -208,11 +235,33 @@ struct Pillar3aView: View {
                     AmountText(portfolio.contributed, currency)
                 }
                 .font(.caption)
-                if let gain = portfolio.gain {
-                    AmountText(gain, currency, tone: .signed, showPlus: true).font(.caption)
-                }
+                gainLines(portfolio)
             }
         }
+    }
+
+    @ViewBuilder
+    private func gainLines(_ portfolio: Pillar3aPage.Portfolio) -> some View {
+        if let reported = portfolio.reportedGain {
+            labelledGain("Reported gain", reported)
+        } else if let gain = portfolio.gain {
+            labelledGain("Gain", gain)
+        }
+        if let bps = portfolio.returnBps {
+            HStack(spacing: 4) {
+                Text("Return").foregroundStyle(.secondary)
+                Text(formats.signedPercent(basisPoints: bps)).monospacedDigit()
+            }
+            .font(.caption)
+        }
+    }
+
+    private func labelledGain(_ label: String, _ amount: Int64) -> some View {
+        HStack(spacing: 4) {
+            Text(label).foregroundStyle(.secondary)
+            AmountText(amount, currency, tone: .signed, showPlus: true)
+        }
+        .font(.caption)
     }
 
     // MARK: Contributions

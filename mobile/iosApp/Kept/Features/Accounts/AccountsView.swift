@@ -19,6 +19,7 @@ struct AccountsView: View {
     @State private var deleting: AccountsPage.Institution?
     @State private var confirmDelete = false
     @Environment(\.session) private var session
+    @Environment(\.openURL) private var openURL
 
     var body: some View {
         PageView("Accounts", store: store) { page in
@@ -143,6 +144,15 @@ struct AccountsView: View {
             if let bic = group.institution?.bic, !bic.isEmpty {
                 Text(bic).font(.caption2).foregroundStyle(.secondary)
             }
+            if let institution = group.institution, let url = AccountsLogic.webURL(institution.websiteUrl) {
+                Button {
+                    openURL(url)
+                } label: {
+                    Image(systemName: "arrow.up.right.square")
+                }
+                .buttonStyle(.borderless)
+                .accessibilityLabel("Open \(institution.name) website")
+            }
             Spacer()
             if let institution = group.institution {
                 institutionMenu(institution)
@@ -209,12 +219,13 @@ private struct AccountsTotalsSection: View {
     }
 }
 
-/// One account in a list: name, type, balance, last booking and a hint when the last import is old.
+/// One account in a list: name, type, balance, top-up IBAN, last booking and a hint when the last import or check is old.
 struct AccountsRow: View {
     let account: AccountsPage.Account
 
     @Environment(\.formats) private var formats
     @Environment(\.session) private var session
+    @Environment(\.openURL) private var openURL
 
     var body: some View {
         NavigationLink(value: Route.account(account.id)) {
@@ -223,6 +234,19 @@ struct AccountsRow: View {
                 details
                 Spacer(minLength: 8)
                 balance
+            }
+        }
+        .swipeActions(edge: .leading, allowsFullSwipe: false) { websiteAction }
+        .contextMenu { websiteAction }
+    }
+
+    @ViewBuilder
+    private var websiteAction: some View {
+        if let url = AccountsLogic.portalURL(own: account.websiteUrl, institution: account.institution?.websiteUrl) {
+            Button {
+                openURL(url)
+            } label: {
+                Label("Website", systemImage: "arrow.up.right.square")
             }
         }
     }
@@ -234,8 +258,22 @@ struct AccountsRow: View {
             if let iban = account.iban, let text = AccountsLogic.displayIban(iban, mode: session?.preferences.ibanDisplay ?? "full") {
                 Text(text).font(.system(.caption2, design: .monospaced)).foregroundStyle(.secondary)
             }
+            topUpLine
             Text(lastBooking).font(.caption).foregroundStyle(.secondary)
             staleLine
+        }
+    }
+
+    @ViewBuilder
+    private var topUpLine: some View {
+        let mode = session?.preferences.ibanDisplay ?? "full"
+        if account.type != "pillar_3a", let iban = account.depositIban, let text = AccountsLogic.displayIban(iban, mode: mode) {
+            HStack(spacing: 4) {
+                Text("Top up via")
+                Text(text).font(.system(.caption2, design: .monospaced))
+            }
+            .font(.caption2)
+            .foregroundStyle(.secondary)
         }
     }
 
@@ -247,8 +285,8 @@ struct AccountsRow: View {
     @ViewBuilder
     private var staleLine: some View {
         let now = Int64(Date().timeIntervalSince1970 * 1000)
-        if let ago = AccountsLogic.staleHint(lastImportAt: account.lastImportAt, now: now) {
-            Label("Last import \(ago)", systemImage: "exclamationmark.triangle")
+        if let label = AccountsLogic.staleLabel(lastImportAt: account.lastImportAt, lastCheckedAt: account.lastCheckedAt, now: now) {
+            Label(label, systemImage: "exclamationmark.triangle")
                 .font(.caption)
                 .foregroundStyle(KeptColor.warning)
         }

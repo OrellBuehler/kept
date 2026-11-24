@@ -123,10 +123,51 @@ class AccountsLogicTest {
     @Test
     fun flagsOldImportsOnly() {
         val now = 1_000L * 86_400_000L
-        assertNull(staleImportDays(null, now))
-        assertNull(staleImportDays(now - 45L * 86_400_000L, now))
-        assertEquals(46, staleImportDays(now - 46L * 86_400_000L - 1, now))
-        assertNull(staleImportDays(now + 1_000, now))
+        assertNull(staleImportDays(null, null, now))
+        assertNull(staleImportDays(now - 45L * 86_400_000L, null, now))
+        assertEquals(46, staleImportDays(now - 46L * 86_400_000L - 1, null, now))
+        assertNull(staleImportDays(now + 1_000, null, now))
+    }
+
+    @Test
+    fun countsTheLaterOfTheImportAndTheNoNewTransactionsCheck() {
+        val now = 1_000L * 86_400_000L
+        val oldImport = now - 100L * 86_400_000L
+        assertEquals(100, staleImportDays(oldImport, null, now))
+        assertEquals(100, staleImportDays(oldImport, oldImport - 1, now))
+        assertEquals(100, staleImportDays(oldImport, oldImport, now))
+        assertNull(staleImportDays(oldImport, now - 2L * 86_400_000L, now))
+        assertEquals(60, staleImportDays(oldImport, now - 60L * 86_400_000L, now))
+        assertNull(staleImportDays(null, now - 60L * 86_400_000L, now))
+        assertTrue(checkedAfterImport(oldImport, oldImport + 1))
+        assertFalse(checkedAfterImport(oldImport, oldImport))
+        assertFalse(checkedAfterImport(oldImport, null))
+        assertFalse(checkedAfterImport(null, oldImport))
+    }
+
+    @Test
+    fun linksToTheAccountPortalElseTheInstitutionPortal() {
+        val institution = InstitutionRef("bank", "Bank", websiteUrl = "https://bank.example.com")
+        val own = account("a", null).copy(websiteUrl = "https://account.example.com", institution = institution)
+        assertEquals("https://account.example.com", websiteOf(own))
+        assertEquals("https://bank.example.com", websiteOf(own.copy(websiteUrl = null)))
+        assertNull(websiteOf(own.copy(websiteUrl = null, institution = institution.copy(websiteUrl = null))))
+        assertNull(websiteOf(account("b", null)))
+    }
+
+    @Test
+    fun usesTheReportedReturnElseWorksItOutFromTheGain() {
+        assertEquals(1244, returnBps(846_000, 96_000, 1244))
+        assertEquals(1244, returnBps(846_000, null, 1244))
+        assertEquals(1280, returnBps(846_000, 96_000, null))
+        assertEquals(-500, returnBps(95_000, -5_000, null))
+        assertEquals(0, returnBps(100_000, 0, null))
+        assertEquals(1, returnBps(100_013, 13, null))
+        assertEquals(3, returnBps(100_025, 25, null))
+        assertEquals(-2, returnBps(99_975, -25, null))
+        assertNull(returnBps(846_000, null, null))
+        assertNull(returnBps(96_000, 96_000, null))
+        assertNull(returnBps(50_000, 96_000, null))
     }
 
     @Test

@@ -77,6 +77,14 @@ class Formats(
         return format.format(fraction)
     }
 
+    /** Hundredths of a percent as a signed percentage with two decimals: 425 is "+4.25%". */
+    fun signedPercent(basisPoints: Int): String {
+        val format = NumberFormat.getPercentInstance(locale)
+        format.minimumFractionDigits = 2
+        format.maximumFractionDigits = 2
+        return (if (basisPoints > 0) "+" else "") + format.format(BigDecimal.valueOf(basisPoints.toLong(), 4))
+    }
+
     /** "12 Mar 2026" for "2026-03-12"; the input unchanged when it is not a date. */
     fun date(iso: String?): String = parseDate(iso)?.format(mediumDate) ?: iso.orEmpty()
 

@@ -153,6 +153,16 @@ fun AccountFormSheet(
                 hint = stringResource(R.string.accounts_field_deposit_iban_hint),
                 capitalization = KeyboardCapitalization.Characters,
             )
+        } else {
+            FormTextField(
+                label = stringResource(R.string.accounts_field_top_up_iban),
+                value = draft.depositIban,
+                onValueChange = { draft = draft.copy(depositIban = it) },
+                error = errors["depositIban"],
+                hint = stringResource(R.string.accounts_field_top_up_iban_hint),
+                placeholder = stringResource(R.string.accounts_field_iban_placeholder),
+                capitalization = KeyboardCapitalization.Characters,
+            )
         }
         AmountField(
             label = stringResource(R.string.accounts_field_opening_balance),
@@ -187,6 +197,15 @@ fun AccountFormSheet(
                 capitalization = KeyboardCapitalization.Words,
             )
         }
+        FormTextField(
+            label = stringResource(R.string.accounts_field_website),
+            value = draft.websiteUrl,
+            onValueChange = { draft = draft.copy(websiteUrl = it.take(MAX_WEBSITE_LENGTH)) },
+            error = errors["websiteUrl"],
+            hint = stringResource(R.string.accounts_field_website_account_hint),
+            placeholder = stringResource(R.string.accounts_field_website_placeholder),
+            keyboardType = KeyboardType.Uri,
+        )
         if (draft.hasNotice) {
             Text(stringResource(R.string.accounts_withdrawal), style = MaterialTheme.typography.titleSmall)
             FormTextField(
@@ -254,7 +273,7 @@ fun AccountFormSheet(
     }
 }
 
-/** The institution form: name, BIC and colour. The logo is uploaded in the browser. */
+/** The institution form: name, BIC, website and colour. The logo is uploaded in the browser. */
 @Composable
 fun InstitutionFormSheet(
     institution: AccountsInstitution?,
@@ -290,6 +309,15 @@ fun InstitutionFormSheet(
             error = errors["bic"],
             hint = stringResource(R.string.accounts_field_bic_hint),
             capitalization = KeyboardCapitalization.Characters,
+        )
+        FormTextField(
+            label = stringResource(R.string.accounts_field_website),
+            value = draft.websiteUrl,
+            onValueChange = { draft = draft.copy(websiteUrl = it.take(MAX_WEBSITE_LENGTH)) },
+            error = errors["websiteUrl"],
+            hint = stringResource(R.string.accounts_field_website_institution_hint),
+            placeholder = stringResource(R.string.accounts_field_website_placeholder),
+            keyboardType = KeyboardType.Uri,
         )
         Text(stringResource(R.string.accounts_field_colour), style = MaterialTheme.typography.labelLarge)
         Row(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) {

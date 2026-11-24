@@ -23,6 +23,30 @@ class AccountsContractTest {
         assertNotNull(savings.freeWithdrawal)
         assertNotNull(savings.noticeMonths)
         assertTrue(page.accounts.any { it.institution != null })
+        assertTrue(page.accounts.any { it.lastImportAt != null })
+    }
+
+    @Test
+    fun decodesTheWebsiteAndTheCheckedStampOfAnAccount() {
+        val account =
+            ApiJson.decodeFromString<AccountsAccount>(
+                """{"id":"a","name":"Example Card","type":"credit_card","currency":"CHF","iban":null,"contractNumber":null,
+                "websiteUrl":"https://www.example.com","depositIban":"TOPUP-ACCOUNT-1","institution":{"id":"i","name":"Example Bank",
+                "color":null,"logoVersion":null,"websiteUrl":"https://bank.example.com"},"lastImportAt":1795372853185,
+                "lastCheckedAt":1795459253185}""",
+            )
+        assertEquals("https://www.example.com", account.websiteUrl)
+        assertEquals("TOPUP-ACCOUNT-1", account.depositIban)
+        assertEquals("https://bank.example.com", account.institution?.websiteUrl)
+        assertEquals(1795459253185, account.lastCheckedAt)
+        val institution =
+            ApiJson.decodeFromString<AccountsInstitution>(
+                """{"id":"i","name":"Example Bank","websiteUrl":"https://bank.example.com"}""",
+            )
+        assertEquals("https://bank.example.com", institution.websiteUrl)
+        val bare = ApiJson.decodeFromString<AccountsAccount>("""{"id":"a","websiteUrl":null,"lastCheckedAt":null}""")
+        assertNull(bare.websiteUrl)
+        assertNull(bare.lastCheckedAt)
     }
 
     @Test
@@ -115,6 +139,17 @@ class AccountsContractTest {
             page.portfolioValues.values
                 .flatten()
                 .all { it.date.length == 10 },
+        )
+        val reported = page.portfolios.first { it.latestGain != null }
+        assertNotNull(reported.latestGainBps)
+        assertTrue(page.portfolios.any { it.latestGain == null && it.latestGainBps == null })
+        val history = page.portfolioValues.getValue(reported.id)
+        assertEquals(reported.latestGain, history.first().gain)
+        assertEquals(reported.latestGainBps, history.first().gainBps)
+        assertTrue(
+            page.portfolioValues.values
+                .flatten()
+                .any { it.gain == null && it.gainBps == null },
         )
         assertNotNull(page.value).also { assertTrue(it.portfolios > 0) }
     }

@@ -2,9 +2,11 @@ package ch.orellbuehler.kept.ui.accounts
 
 import ch.orellbuehler.kept.model.AccountDetailCategory
 import ch.orellbuehler.kept.model.AccountDetailPortfolio
+import ch.orellbuehler.kept.model.AccountDetailPortfolioValue
 import ch.orellbuehler.kept.model.AccountDetailTrade
 import ch.orellbuehler.kept.model.AccountDetailTx
 import ch.orellbuehler.kept.model.AccountsAccount
+import ch.orellbuehler.kept.model.AccountsInstitution
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
@@ -34,6 +36,7 @@ class AccountFormsTest {
         assertEquals("1", sent["fillFromTransfersField"])
         assertEquals("EX-1", sent["contractNumber"])
         assertEquals("DEPOSIT-ACCOUNT-1", sent["depositIban"])
+        assertFalse("depositIbanField" in sent)
         assertFalse("share" in sent)
         assertFalse("sharedWith" in sent)
         assertFalse("noticeMonths" in sent)
@@ -72,6 +75,51 @@ class AccountFormsTest {
         assertEquals("on", fields(draft.copy(type = "investment").toFields(hasPortfolios = false))["tradesMoveCash"])
         assertFalse("fillFromTransfers" in (draft.toFields(hasPortfolios = true)))
         assertEquals("on", fields(draft.copy(type = "current").toFields(hasTrades = true))["tradesMoveCash"])
+    }
+
+    @Test
+    fun sendsTheTopUpIbanOfOtherAccountsAndMarksTheFieldAsPosted() {
+        val draft = AccountDraft(name = "Card", type = "credit_card", currency = "CHF", depositIban = "TOPUP-ACCOUNT-1")
+        val sent = fields(draft.toFields())
+        assertEquals("1", sent["depositIbanField"])
+        assertEquals("TOPUP-ACCOUNT-1", sent["depositIban"])
+        assertFalse("contractNumber" in sent)
+        val cleared = fields(draft.copy(depositIban = "").toFields())
+        assertEquals("1", cleared["depositIbanField"])
+        assertEquals("", cleared["depositIban"])
+        ACCOUNT_TYPES.filter { it != "pillar_3a" }.forEach { type ->
+            assertEquals("1", fields(draft.copy(type = type).toFields())["depositIbanField"], type)
+        }
+    }
+
+    @Test
+    fun keepsTheStoredIbansWhenAnAccountIsEditedWithoutTouchingThem() {
+        val topUp = savedAccount.copy(type = "credit_card", depositIban = "TOPUP-ACCOUNT-1")
+        val sent = fields(AccountDraft.from(topUp, "", "CHF").toFields())
+        assertEquals("1", sent["depositIbanField"])
+        assertEquals("TOPUP-ACCOUNT-1", sent["depositIban"])
+        val threeA = savedAccount.copy(type = "pillar_3a", depositIban = "DEPOSIT-ACCOUNT-1", contractNumber = "EX-1")
+        val sentThreeA = fields(AccountDraft.from(threeA, "", "CHF").toFields())
+        assertEquals("DEPOSIT-ACCOUNT-1", sentThreeA["depositIban"])
+        assertEquals("EX-1", sentThreeA["contractNumber"])
+        assertFalse("depositIbanField" in sentThreeA)
+        assertEquals("", fields(AccountDraft.from(savedAccount, "", "CHF").toFields())["depositIban"])
+    }
+
+    @Test
+    fun alwaysSendsTheWebsiteOfAnAccountAndAnInstitution() {
+        val account = AccountDraft(name = "Savings", type = "savings", currency = "CHF", websiteUrl = "https://www.example.com")
+        assertEquals("https://www.example.com", fields(account.toFields())["websiteUrl"])
+        assertEquals("", fields(account.copy(websiteUrl = "").toFields())["websiteUrl"])
+        assertEquals("", fields(account.copy(type = "pillar_3a", websiteUrl = "").toFields())["websiteUrl"])
+        val edited = AccountDraft.from(savedAccount.copy(websiteUrl = "https://www.example.com"), "", "CHF")
+        assertEquals("https://www.example.com", edited.websiteUrl)
+        val institution = InstitutionDraft(name = "Bank", websiteUrl = "https://bank.example.com")
+        assertEquals("https://bank.example.com", institution.toFields("i1")["websiteUrl"])
+        assertEquals("", InstitutionDraft(name = "Bank").toFields(null)["websiteUrl"])
+        val saved = AccountsInstitution(id = "i1", name = "Bank", websiteUrl = "https://bank.example.com")
+        assertEquals("https://bank.example.com", InstitutionDraft.from(saved).websiteUrl)
+        assertEquals("", InstitutionDraft.from(null).websiteUrl)
     }
 
     private val savedAccount =
@@ -262,6 +310,48 @@ class AccountFormsTest {
         assertEquals("1234.56", sent["value:p1"])
         assertEquals("10", sent["value:p2"])
         assertEquals("n", sent["note"])
+    }
+
+    @Test
+    fun sendsTheReportedGainAndReturnOfEachPortfolioAndClearsWhatTheDayDoesNotHold() {
+        val portfolios =
+            listOf(AccountDetailPortfolio(id = "p1", name = "One", latestValue = 123_456), AccountDetailPortfolio(id = "p2", name = "Two"))
+        val history =
+            mapOf(
+                "p1" to
+                    listOf(
+                        AccountDetailPortfolioValue(
+                            id = "v2",
+                            portfolioId = "p1",
+                            date = "2026-06-01",
+                            amount = 123_456,
+                            gain = -2_500,
+                            gainBps = -199,
+                        ),
+                        AccountDetailPortfolioValue(id = "v1", portfolioId = "p1", date = "2026-03-01", amount = 100_000, gain = 5_000),
+                    ),
+            )
+        val draft = PortfolioValuesDraft.from(portfolios, "CHF", "2026-06-01", history)
+        assertEquals("-25.00", draft.gains["p1"])
+        assertEquals("-1.99", draft.returns["p1"])
+        assertEquals("", draft.gains["p2"])
+        assertEquals("", draft.returns["p2"])
+        val sent = fields(draft.toFields())
+        assertEquals("-25.00", sent["gain:p1"])
+        assertEquals("-1.99", sent["gainPercent:p1"])
+        assertEquals("", sent["gain:p2"])
+        assertEquals("", sent["gainPercent:p2"])
+        assertEquals("1234.56", sent["value:p1"])
+        val typed = draft.copy(gains = draft.gains + ("p2" to "1'200.50"), returns = draft.returns + ("p2" to "4.25 %"))
+        assertEquals("1'200.50", fields(typed.toFields())["gain:p2"])
+        assertEquals("4.25 %", fields(typed.toFields())["gainPercent:p2"])
+        val earlier = typed.withDate("2026-03-01", "CHF", history)
+        assertEquals("2026-03-01", earlier.date)
+        assertEquals("50.00", earlier.gains["p1"])
+        assertEquals("", earlier.returns["p1"])
+        assertEquals("", earlier.gains["p2"])
+        assertEquals(draft.values, earlier.values)
+        assertEquals("", draft.withDate("2026-01-01", "CHF", history).gains["p1"])
     }
 
     @Test

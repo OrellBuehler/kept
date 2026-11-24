@@ -69,6 +69,18 @@ struct Formats: Sendable, Equatable {
         return formatter.string(from: NSNumber(value: fraction)) ?? "\(fraction * 100)%"
     }
 
+    /// "+4.25%" for 425 hundredths of a percent: always two decimals, signed unless zero.
+    func signedPercent(basisPoints: Int) -> String {
+        let formatter = NumberFormatter()
+        formatter.locale = locale
+        formatter.numberStyle = .percent
+        formatter.minimumFractionDigits = 2
+        formatter.maximumFractionDigits = 2
+        let value = Decimal(basisPoints) / 10_000
+        let text = formatter.string(from: value as NSDecimalNumber) ?? "\(basisPoints) bp"
+        return (basisPoints > 0 ? "+" : "") + text
+    }
+
     /// The calendar date of "2026-03-12" (or the date part of a longer string), at noon UTC.
     static func parseDate(_ iso: String?) -> Date? {
         guard let iso, iso.count >= 10 else { return nil }

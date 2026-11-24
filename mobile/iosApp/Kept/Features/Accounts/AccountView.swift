@@ -155,6 +155,13 @@ struct AccountDetailBody: View {
                 } label: {
                     Label("Import history", systemImage: "clock")
                 }
+                if page.account.lastImportAt != nil && !page.account.archived {
+                    Button {
+                        Task { await markChecked() }
+                    } label: {
+                        Label("No new transactions", systemImage: "checkmark.circle")
+                    }
+                }
                 Button {
                     Task { await toggleArchive() }
                 } label: {
@@ -174,6 +181,11 @@ struct AccountDetailBody: View {
     private func toggleArchive() async {
         let action = page.account.archived ? "unarchive" : "archive"
         await store.submit(action, showRefusal: true)
+    }
+
+    private func markChecked() async {
+        let result = await store.submit("markChecked", showRefusal: true)
+        if result != nil { store.message = "Marked as up to date" }
     }
 
     private func applyQuery(_ changes: [String: String]) {

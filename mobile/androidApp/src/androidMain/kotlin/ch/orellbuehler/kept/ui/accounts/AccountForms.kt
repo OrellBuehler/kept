@@ -3,6 +3,7 @@ package ch.orellbuehler.kept.ui.accounts
 import ch.orellbuehler.kept.Amounts
 import ch.orellbuehler.kept.FormBody
 import ch.orellbuehler.kept.model.AccountDetailPortfolio
+import ch.orellbuehler.kept.model.AccountDetailPortfolioValue
 import ch.orellbuehler.kept.model.AccountDetailTrade
 import ch.orellbuehler.kept.model.AccountDetailTx
 import ch.orellbuehler.kept.model.AccountsAccount
@@ -14,6 +15,7 @@ data class InstitutionDraft(
     val name: String = "",
     val bic: String = "",
     val color: String = "",
+    val websiteUrl: String = "",
 ) {
     fun toFields(id: String?): Map<String, String> =
         fields {
@@ -21,13 +23,19 @@ data class InstitutionDraft(
             set("name", name)
             set("bic", bic)
             set("color", color)
+            set("websiteUrl", websiteUrl)
         }
 
     fun toForm(id: String?): FormBody = toFields(id).toFormBody()
 
     companion object {
         fun from(institution: AccountsInstitution?) =
-            InstitutionDraft(institution?.name.orEmpty(), institution?.bic.orEmpty(), institution?.color.orEmpty())
+            InstitutionDraft(
+                institution?.name.orEmpty(),
+                institution?.bic.orEmpty(),
+                institution?.color.orEmpty(),
+                institution?.websiteUrl.orEmpty(),
+            )
     }
 }
 
@@ -40,6 +48,7 @@ data class AccountDraft(
     val iban: String = "",
     val contractNumber: String = "",
     val depositIban: String = "",
+    val websiteUrl: String = "",
     val openingBalance: String = "",
     val openingDate: String = "",
     val share: String = "100",
@@ -76,6 +85,9 @@ data class AccountDraft(
             if (is3a) {
                 set("contractNumber", contractNumber)
                 set("depositIban", depositIban)
+            } else {
+                set("depositIbanField", "1")
+                set("depositIban", depositIban)
             }
             set("openingBalance", openingBalance)
             set("openingDate", openingDate)
@@ -83,6 +95,7 @@ data class AccountDraft(
                 set("share", share)
                 set("sharedWith", sharedWith)
             }
+            set("websiteUrl", websiteUrl)
             if (hasNotice) {
                 set("noticeMonths", noticeMonths)
                 set("freeWithdrawal", freeWithdrawal)
@@ -115,6 +128,7 @@ data class AccountDraft(
                     iban = account.iban.orEmpty(),
                     contractNumber = account.contractNumber.orEmpty(),
                     depositIban = account.depositIban.orEmpty(),
+                    websiteUrl = account.websiteUrl.orEmpty(),
                     openingBalance = if (account.openingBalance != 0L) Amounts.toInput(account.openingBalance, account.currency) else "",
                     openingDate = account.openingDate.orEmpty(),
                     share = shareToInput(account.shareBps),
@@ -362,30 +376,52 @@ data class PortfolioDraft(
     }
 }
 
-/** The values of the open portfolios on one day: one `value:<portfolioId>` field each, blank ones skipped by the server. */
+/**
+ * The values of the open portfolios on one day: one `value:<portfolioId>` field each, blank ones skipped by the server, with
+ * the optional reported `gain:<portfolioId>` and `gainPercent:<portfolioId>`. The gain fields are always sent, like the web
+ * dialog does: a blank one clears the figure the day already has, so they start from what the chosen day holds.
+ */
 data class PortfolioValuesDraft(
     val date: String = "",
     val note: String = "",
     val values: Map<String, String> = emptyMap(),
+    val gains: Map<String, String> = emptyMap(),
+    val returns: Map<String, String> = emptyMap(),
 ) {
     fun toFields(): Map<String, String> =
         fields {
             set("date", date)
             set("note", note)
             values.forEach { (id, value) -> set("value:$id", value) }
+            gains.forEach { (id, gain) -> set("gain:$id", gain) }
+            returns.forEach { (id, percent) -> set("gainPercent:$id", percent) }
         }
 
     fun toForm(): FormBody = toFields().toFormBody()
+
+    /** Another day: the gain and return fields show what that day holds, the typed values stay. */
+    fun withDate(
+        date: String,
+        currency: String,
+        history: Map<String, List<AccountDetailPortfolioValue>>,
+    ): PortfolioValuesDraft {
+        val stored = values.keys.associateWith { id -> history[id]?.firstOrNull { it.date == date } }
+        return copy(
+            date = date,
+            gains = stored.mapValues { (_, value) -> value?.gain?.let { Amounts.toInput(it, currency) }.orEmpty() },
+            returns = stored.mapValues { (_, value) -> value?.gainBps?.let { Amounts.toDecimalString(it.toLong(), 2) }.orEmpty() },
+        )
+    }
 
     companion object {
         fun from(
             portfolios: List<AccountDetailPortfolio>,
             currency: String,
             today: String,
+            history: Map<String, List<AccountDetailPortfolioValue>> = emptyMap(),
         ) = PortfolioValuesDraft(
-            date = today,
             values = portfolios.associate { it.id to (it.latestValue?.let { value -> Amounts.toInput(value, currency) }.orEmpty()) },
-        )
+        ).withDate(today, currency, history)
     }
 }
 

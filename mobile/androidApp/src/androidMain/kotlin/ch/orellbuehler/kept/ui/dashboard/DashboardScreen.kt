@@ -18,6 +18,7 @@ import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
@@ -28,6 +29,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import ch.orellbuehler.kept.FormBody
 import ch.orellbuehler.kept.KeptSdk
 import ch.orellbuehler.kept.R
 import ch.orellbuehler.kept.model.Dashboard
@@ -37,6 +39,7 @@ import ch.orellbuehler.kept.model.DashboardPage
 import ch.orellbuehler.kept.model.MonthSummary
 import ch.orellbuehler.kept.model.Spending
 import ch.orellbuehler.kept.model.load
+import ch.orellbuehler.kept.ui.accounts.lastFreshLabel
 import ch.orellbuehler.kept.ui.common.LocalFormats
 import ch.orellbuehler.kept.ui.common.PageViewModel
 import ch.orellbuehler.kept.ui.common.keptViewModel
@@ -77,6 +80,12 @@ class DashboardViewModel(
         range.value = value
         refresh()
     }
+
+    /** "No new transactions" for a stale account; [upToDateMessage] is shown once saved. */
+    fun markChecked(
+        accountId: String,
+        upToDateMessage: String,
+    ) = submit("dashboard", "markChecked", FormBody().set("accountId", accountId), showRefusal = true) { message(upToDateMessage) }
 }
 
 /** The overview: net worth, this month, what is due, where the money went, and every account. */
@@ -85,6 +94,7 @@ fun DashboardScreen(nav: Navigator) {
     val vm = keptViewModel { DashboardViewModel(it) }
     val state by vm.state.collectAsStateWithLifecycle()
     val range by vm.selectedRange.collectAsStateWithLifecycle()
+    val busy by vm.busy.collectAsStateWithLifecycle()
     PageScaffold(
         title = stringResource(R.string.nav_overview),
         state = state,
@@ -98,7 +108,7 @@ fun DashboardScreen(nav: Navigator) {
             MonthCard(dashboard.shareMonth ?: dashboard.month)
             BillsCard(dashboard.bills, nav)
             SpendingCard(dashboard.spending)
-            AccountsCard(dashboard.accounts, nav)
+            AccountsCard(dashboard.accounts, nav, busy, vm::markChecked)
         }
     }
 }
@@ -325,6 +335,8 @@ private fun SpendingCard(spending: Spending) {
 private fun AccountsCard(
     accounts: List<DashboardAccount>,
     nav: Navigator,
+    busy: Boolean,
+    onMarkChecked: (accountId: String, upToDateMessage: String) -> Unit,
 ) {
     if (accounts.isEmpty()) return
     SectionCard(title = stringResource(R.string.nav_accounts), contentPadding = false) {
@@ -342,7 +354,7 @@ private fun AccountsCard(
                 onClick = { nav.open(Routes.account(account.id)) },
             ) {
                 AmountText(account.balance, account.currency, tone = AmountTone.NEGATIVE)
-                if (account.stale) {
+                if (account.stale && account.lastImportAt == null) {
                     Icon(
                         Icons.Outlined.WarningAmber,
                         contentDescription = stringResource(R.string.dashboard_stale),
@@ -351,6 +363,35 @@ private fun AccountsCard(
                     )
                 }
             }
+            if (account.stale && account.lastImportAt != null) {
+                val upToDate = stringResource(R.string.dashboard_marked_checked, account.name)
+                StaleNotice(account, busy) { onMarkChecked(account.id, upToDate) }
+            }
         }
+    }
+}
+
+/** An imported account that has gone quiet: how long ago, and the way to say there is nothing new to import. */
+@Composable
+private fun StaleNotice(
+    account: DashboardAccount,
+    busy: Boolean,
+    onMarkChecked: () -> Unit,
+) {
+    val days = account.staleDays ?: 0
+    Row(Modifier.fillMaxWidth().padding(start = 68.dp, end = 8.dp, bottom = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+        Icon(
+            Icons.Outlined.WarningAmber,
+            contentDescription = null,
+            tint = MaterialTheme.kept.warning,
+            modifier = Modifier.size(14.dp),
+        )
+        Text(
+            lastFreshLabel(account.lastImportAt, account.lastCheckedAt, pluralStringResource(R.plurals.accounts_days_ago, days, days)),
+            modifier = Modifier.weight(1f).padding(start = 4.dp),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.kept.warning,
+        )
+        TextButton(onClick = onMarkChecked, enabled = !busy) { Text(stringResource(R.string.accounts_no_new_transactions)) }
     }
 }
