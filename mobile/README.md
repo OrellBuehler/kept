@@ -11,7 +11,9 @@ Kept username and password. Nothing is sent anywhere else.
 
 The server must be Kept 0.6 or newer (the first version with `/api/app/v1`).
 
-**Get the apps.** Android: the APK attached to the
+**Get the apps.** Android: the beta on Google Play. Join the
+[kept-test group](https://groups.google.com/g/kept-test) first, then [become a tester](https://play.google.com/apps/testing/ch.orellbuehler.kept) with the same Google account (the
+second page only works for members of the group). Or install the APK attached to the
 [releases](https://github.com/OrellBuehler/kept/releases). iPhone: the public beta on
 [TestFlight](https://testflight.apple.com/join/qVyFqZ15) (install Apple's TestFlight app first, then open the link on the phone).
 
