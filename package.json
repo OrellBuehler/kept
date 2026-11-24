@@ -27,7 +27,8 @@
     "db:studio": "drizzle-kit studio --config drizzle.sqlite.config.ts",
     "security": "./scripts/security/scan-all.sh",
     "security:install": "./scripts/security/install-tools.sh",
-    "leak-guard": "bun scripts/leak-guard.ts"
+    "leak-guard": "bun scripts/leak-guard.ts",
+    "seed:demo": "bun scripts/seed-demo/run.ts"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",

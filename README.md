@@ -412,6 +412,27 @@ point at a throwaway bucket. `bun run db:generate` writes the migrations for bot
 
 Test fixtures are synthetic; never commit real statements or bills.
 
+### Example data for store reviews
+
+`scripts/seed-demo/` fills a running server with a made-up household, so the phone apps show something on
+every screen when a store reviewer signs in: three institutions, five accounts (checking, savings, a prepaid card
+with a top-up IBAN, an investment account and pillar 3a), eleven months of transactions, bills in every state
+with PDFs, categories, rules, budgets, a forecast, recurring payments, trades, pillar 3a values and tax years. It
+works through the apps' own API (`/api/app/v1`): it signs in as the account whose data it fills (an ordinary member
+is enough), creates records through the pages' form actions and imports generated camt.053 statements through
+the upload, preview and confirm flow. Nothing touches the database, and everything in it is invented: the names
+start with "Example" and the IBANs are the documented examples.
+
+```bash
+KEPT_SEED_USERNAME=reviewer KEPT_SEED_PASSWORD=… bun run seed:demo --url https://kept.example.org
+```
+
+Use an account of its own, without two-step sign-in. The script prints one line per step (counts only), ends its
+session when it is done, also after an error, and checks that the token stopped working. It creates no API
+tokens and changes neither the password nor the preferences. Records are found again by name, invoice number and
+statement booking, so a second run adds nothing; a run some weeks later adds the newer periods. `--today
+YYYY-MM-DD` pretends it is another day (otherwise the server's date is used).
+
 ## License
 
 [PolyForm Noncommercial 1.0.0](LICENSE) — free for personal and other noncommercial use.
