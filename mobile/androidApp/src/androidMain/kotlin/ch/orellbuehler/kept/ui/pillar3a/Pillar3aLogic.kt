@@ -3,6 +3,8 @@ package ch.orellbuehler.kept.ui.pillar3a
 import ch.orellbuehler.kept.Amounts
 import ch.orellbuehler.kept.model.Pillar3aContribution
 import ch.orellbuehler.kept.model.Pillar3aGap
+import ch.orellbuehler.kept.model.Pillar3aPerformance
+import ch.orellbuehler.kept.model.Pillar3aPerformancePoint
 import ch.orellbuehler.kept.model.Pillar3aPortfolio
 import ch.orellbuehler.kept.model.Pillar3aYear
 
@@ -109,6 +111,27 @@ fun visibleContributions(
 /** Open portfolios first, then the closed ones, each group in the server's order. */
 fun orderedPortfolios(portfolios: List<Pillar3aPortfolio>): List<Pillar3aPortfolio> =
     portfolios.filter { it.closedOn == null } + portfolios.filter { it.closedOn != null }
+
+/** A portfolio with the returns reported for it, oldest first. */
+class PerformanceRow(
+    val portfolio: Pillar3aPortfolio,
+    val points: List<Pillar3aPerformancePoint>,
+) {
+    val last: Pillar3aPerformancePoint get() = points.last()
+}
+
+/** The portfolios that have a reported return, in the order of the portfolio list. */
+fun performanceRows(
+    portfolios: List<Pillar3aPortfolio>,
+    performance: List<Pillar3aPerformance>,
+): List<PerformanceRow> =
+    orderedPortfolios(portfolios).mapNotNull { portfolio ->
+        performance
+            .firstOrNull { it.portfolioId == portfolio.portfolioId }
+            ?.points
+            ?.takeIf { it.isNotEmpty() }
+            ?.let { PerformanceRow(portfolio, it) }
+    }
 
 /** How much of the year's limit the ordinary contributions fill, 0..1. */
 fun limitFraction(row: Pillar3aYear): Float = if (row.limit > 0) (row.ordinary.toFloat() / row.limit.toFloat()).coerceIn(0f, 1f) else 0f

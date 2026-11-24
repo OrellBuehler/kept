@@ -1,5 +1,7 @@
 package ch.orellbuehler.kept.ui.accounts
 
+import android.content.Context
+import android.widget.Toast
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -14,6 +16,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.outlined.OpenInNew
 import androidx.compose.material.icons.outlined.AccountBalance
 import androidx.compose.material.icons.outlined.Add
 import androidx.compose.material.icons.outlined.Delete
@@ -33,6 +36,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
@@ -44,6 +48,7 @@ import ch.orellbuehler.kept.model.AccountsAccount
 import ch.orellbuehler.kept.model.AccountsInstitution
 import ch.orellbuehler.kept.model.AccountsPage
 import ch.orellbuehler.kept.model.load
+import ch.orellbuehler.kept.ui.bills.openLink
 import ch.orellbuehler.kept.ui.common.Load
 import ch.orellbuehler.kept.ui.common.LocalFormats
 import ch.orellbuehler.kept.ui.common.LocalSession
@@ -303,6 +308,15 @@ private fun InstitutionSection(
                     )
                 }
             }
+            if (institution?.websiteUrl != null) {
+                val context = LocalContext.current
+                IconButton(onClick = { openWebsite(context, institution.websiteUrl) }) {
+                    Icon(
+                        Icons.AutoMirrored.Outlined.OpenInNew,
+                        contentDescription = stringResource(R.string.accounts_open_institution_website, institution.name),
+                    )
+                }
+            }
             if (institution != null) InstitutionMenu(institution, onDialog)
         }
         if (group.accounts.isEmpty()) {
@@ -377,7 +391,10 @@ private fun AccountRow(
     val formats = LocalFormats.current
     val ibanMode = LocalSession.current?.preferences?.ibanDisplay ?: "full"
     val iban = account.iban?.let { displayIban(it, ibanMode) }
-    val stale = staleImportDays(account.lastImportAt, now)
+    val topUpIban = account.depositIban?.takeIf { account.type != "pillar_3a" }?.let { displayIban(it, ibanMode) }
+    val stale = staleImportDays(account.lastImportAt, account.lastCheckedAt, now)
+    val website = websiteOf(account)
+    val context = LocalContext.current
     Row(
         Modifier
             .fillMaxWidth()
@@ -394,6 +411,13 @@ private fun AccountRow(
             }
             if (iban != null) {
                 Text(iban, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+            if (topUpIban != null) {
+                Text(
+                    stringResource(R.string.accounts_top_up_via, topUpIban),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
             }
             Text(
                 if (account.lastBookingDate != null) {
@@ -413,7 +437,7 @@ private fun AccountRow(
                         modifier = Modifier.size(14.dp),
                     )
                     Text(
-                        stringResource(R.string.accounts_last_import, daysAgo(stale)),
+                        lastFreshLabel(account.lastImportAt, account.lastCheckedAt, daysAgo(stale)),
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.kept.warning,
                     )
@@ -431,8 +455,37 @@ private fun AccountRow(
                 AmountText(account.shareBalance, account.currency, style = MaterialTheme.typography.bodySmall)
             }
         }
+        if (website != null) {
+            IconButton(onClick = { openWebsite(context, website) }, modifier = Modifier.size(36.dp)) {
+                Icon(
+                    Icons.AutoMirrored.Outlined.OpenInNew,
+                    contentDescription = stringResource(R.string.accounts_open_website, account.name),
+                    modifier = Modifier.size(18.dp),
+                )
+            }
+        }
     }
 }
+
+/** Opens a portal link in the browser, and says so when the phone has none. */
+internal fun openWebsite(
+    context: Context,
+    url: String,
+) {
+    if (!openLink(context, url)) Toast.makeText(context, R.string.accounts_no_browser, Toast.LENGTH_SHORT).show()
+}
+
+/** "Last import 3 months ago", or "Last checked …" when the user confirmed there was nothing new to import since. */
+@Composable
+internal fun lastFreshLabel(
+    lastImportAt: Long?,
+    lastCheckedAt: Long?,
+    ago: String,
+): String =
+    stringResource(
+        if (checkedAfterImport(lastImportAt, lastCheckedAt)) R.string.accounts_last_checked else R.string.accounts_last_import,
+        ago,
+    )
 
 /** "3 months ago" style text for a number of days, in plural-aware resources. */
 @Composable

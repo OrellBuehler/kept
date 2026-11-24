@@ -211,6 +211,47 @@ enum AccountsLogic {
         return agoText(days: days)
     }
 
+    /// "Last import 3 months ago" or, when the user confirmed there is nothing new since, "Last checked 50 days ago":
+    /// the later of the two counts. Nil until that is older than `staleDays`.
+    static func staleLabel(lastImportAt: Int64?, lastCheckedAt: Int64?, now: Int64) -> String? {
+        guard let lastImportAt else { return nil }
+        var freshAt = lastImportAt
+        var prefix = "Last import"
+        if let lastCheckedAt, lastCheckedAt > lastImportAt {
+            freshAt = lastCheckedAt
+            prefix = "Last checked"
+        }
+        guard let ago = staleHint(lastImportAt: freshAt, now: now) else { return nil }
+        return prefix + " " + ago
+    }
+
+    /// The dashboard's wording from the server's `staleDays`, which already counts the later of import and check.
+    static func staleDaysLabel(lastImportAt: Int64?, lastCheckedAt: Int64?, staleDays: Int?) -> String? {
+        guard let lastImportAt, let staleDays else { return nil }
+        let prefix = (lastCheckedAt ?? 0) > lastImportAt ? "Last checked" : "Last import"
+        return prefix + " " + plural(staleDays, "day") + " ago"
+    }
+
+    // MARK: Website links
+
+    /// A link the app opens: http(s) only.
+    static func webURL(_ text: String?) -> URL? {
+        return BillText.webURL(text)
+    }
+
+    /// The account's own web link, else its institution's.
+    static func portalURL(own: String?, institution: String?) -> URL? {
+        return webURL(own ?? institution)
+    }
+
+    /// What the account form posts for the IBAN to pay into and the portal link. Pillar 3a posts its deposit IBAN as
+    /// before; any other type posts the top-up IBAN with `depositIbanField`, so that an empty value clears it.
+    static func setIbanAndLinkFields(_ form: inout FormFields, is3a: Bool, depositIban: String, websiteUrl: String) {
+        form.set("depositIban", depositIban)
+        if !is3a { form.set("depositIbanField", "1") }
+        form.set("websiteUrl", websiteUrl)
+    }
+
     // MARK: Categories and transactions
 
     /// "Parent / Child" for subcategories, otherwise the name.
@@ -358,6 +399,77 @@ enum AccountsLogic {
             return entry.label
         }
         return reason
+    }
+
+    /// Hundredths of a percent as the text the form posts: 1244 -> "12.44", -5 -> "-0.05".
+    static func percentInput(_ basisPoints: Int) -> String {
+        let magnitude = basisPoints.magnitude
+        let whole = magnitude / 100
+        let fraction = magnitude % 100
+        let digits = fraction < 10 ? "0\(fraction)" : "\(fraction)"
+        return (basisPoints < 0 ? "-" : "") + "\(whole).\(digits)"
+    }
+
+    /// Total return of a portfolio value in hundredths of a percent: the provider's own figure, else the reported gain
+    /// over the capital it grew from (`amount - gain`), rounded half up. Nil without a gain or without positive capital.
+    static func returnBps(amount: Int64, gain: Int64?, gainBps: Int?) -> Int? {
+        if let gainBps { return gainBps }
+        guard let gain else { return nil }
+        let base = Int128(amount) - Int128(gain)
+        if base <= 0 { return nil }
+        let numerator = Int128(gain) * 20_000 + base
+        let denominator = base * 2
+        var quotient = numerator / denominator
+        if numerator % denominator < 0 { quotient -= 1 }
+        return Int(exactly: quotient)
+    }
+
+    /// The value a portfolio has on a day, if any.
+    static func storedValue(_ page: AccountPage, portfolioId: String, date: String) -> AccountPage.PortfolioValue? {
+        return page.portfolioValues[portfolioId]?.first(where: { $0.date == date })
+    }
+
+    /// The gain texts of the "update values" form for a day: what the day already holds, blank otherwise.
+    static func storedGains(_ page: AccountPage, date: String) -> [String: String] {
+        var result: [String: String] = [:]
+        for portfolio in page.portfolios where portfolio.closedOn == nil {
+            if let gain = storedValue(page, portfolioId: portfolio.id, date: date)?.gain {
+                result[portfolio.id] = Formats.amountInput(gain, page.account.currency)
+            }
+        }
+        return result
+    }
+
+    /// The return texts (percent) of the "update values" form for a day, like `storedGains`.
+    static func storedReturns(_ page: AccountPage, date: String) -> [String: String] {
+        var result: [String: String] = [:]
+        for portfolio in page.portfolios where portfolio.closedOn == nil {
+            if let bps = storedValue(page, portfolioId: portfolio.id, date: date)?.gainBps {
+                result[portfolio.id] = percentInput(bps)
+            }
+        }
+        return result
+    }
+
+    /// The form of "setPortfolioValues". Every open portfolio sends its value, gain and return; a blank gain or return
+    /// clears what the day holds, a blank value skips the portfolio.
+    static func portfolioValuesForm(
+        date: String,
+        note: String,
+        portfolioIds: [String],
+        values: [String: String],
+        gains: [String: String],
+        percents: [String: String]
+    ) -> FormFields {
+        var form = FormFields()
+        form.set("date", date)
+        form.set("note", note)
+        for id in portfolioIds {
+            form.set("value:" + id, values[id] ?? "")
+            form.set("gain:" + id, gains[id] ?? "")
+            form.set("gainPercent:" + id, percents[id] ?? "")
+        }
+        return form
     }
 
     /// QR-IBANs are CH/LI IBANs whose institution id (digits 5 to 9) is 30000 to 31999.

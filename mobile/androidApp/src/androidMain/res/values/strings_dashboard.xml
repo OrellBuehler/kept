@@ -20,6 +20,7 @@
     <string name="dashboard_spending">Spending</string>
     <string name="dashboard_uncategorized">Uncategorised</string>
     <string name="dashboard_stale">No recent import</string>
+    <string name="dashboard_marked_checked">%1$s marked as up to date</string>
     <string name="dashboard_alert_negative">%1$s is heading below zero</string>
     <string name="dashboard_alert_negative_text">Forecast for %1$s</string>
     <string name="dashboard_alert_needs_amount">Transfer to %1$s needs the amount received</string>

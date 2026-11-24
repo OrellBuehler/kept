@@ -50,6 +50,7 @@ import ch.orellbuehler.kept.ui.common.LocalFormats
 import ch.orellbuehler.kept.ui.common.LocalSession
 import ch.orellbuehler.kept.ui.components.AmountField
 import ch.orellbuehler.kept.ui.components.AmountText
+import ch.orellbuehler.kept.ui.components.AmountTone
 import ch.orellbuehler.kept.ui.components.Choice
 import ch.orellbuehler.kept.ui.components.ChoiceField
 import ch.orellbuehler.kept.ui.components.DateField
@@ -195,6 +196,7 @@ private fun PortfolioRow(
         Column(horizontalAlignment = Alignment.End) {
             if (portfolio.latestValue != null) {
                 AmountText(portfolio.latestValue, currency, style = MaterialTheme.typography.titleMedium)
+                GainLine(portfolio.latestGain, portfolio.latestGainBps, currency)
                 portfolio.latestValueDate?.let {
                     Text(
                         stringResource(R.string.accounts_as_of, formats.date(it)),
@@ -259,6 +261,29 @@ private fun PortfolioRow(
                     },
                 )
             }
+        }
+    }
+}
+
+/** The gain and return a provider reported with a value, as "+CHF 960.00 · +12.44%"; nothing when none was reported. */
+@Composable
+private fun GainLine(
+    gain: Long?,
+    gainBps: Int?,
+    currency: String,
+) {
+    if (gain == null && gainBps == null) return
+    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+        if (gain != null) AmountText(gain, currency, tone = AmountTone.SIGNED, showPlus = true, style = MaterialTheme.typography.bodySmall)
+        if (gain != null && gainBps != null) {
+            Text("·", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+        if (gainBps != null) {
+            Text(
+                LocalFormats.current.signedPercent(gainBps),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
         }
     }
 }
@@ -380,10 +405,11 @@ internal fun PortfolioFormSheet(
     }
 }
 
-/** The current value of each open portfolio on one day, as on the provider's statement. */
+/** The current value of each open portfolio on one day, as on the provider's statement, with its reported gain and return. */
 @Composable
 internal fun PortfolioValuesSheet(
     portfolios: List<AccountDetailPortfolio>,
+    history: Map<String, List<AccountDetailPortfolioValue>>,
     currency: String,
     busy: Boolean,
     errors: Map<String, String>,
@@ -392,7 +418,7 @@ internal fun PortfolioValuesSheet(
 ) {
     val today = serverToday(LocalSession.current?.today)
     val open = portfolios.filter { it.closedOn == null }
-    var draft by remember { mutableStateOf(PortfolioValuesDraft.from(open, currency, today)) }
+    var draft by remember { mutableStateOf(PortfolioValuesDraft.from(open, currency, today, history)) }
     FormSheet(
         title = stringResource(R.string.accounts_update_values),
         onDismiss = onDismiss,
@@ -409,18 +435,42 @@ internal fun PortfolioValuesSheet(
         DateField(
             label = stringResource(R.string.accounts_date),
             value = draft.date,
-            onValueChange = { draft = draft.copy(date = it) },
+            onValueChange = { draft = draft.withDate(it, currency, history) },
             error = errors["date"],
         )
         open.forEach { portfolio ->
+            Text(listOfNotNull(portfolio.name, portfolio.strategy).joinToString(" · "), style = MaterialTheme.typography.titleSmall)
             AmountField(
-                label = listOfNotNull(portfolio.name, portfolio.strategy).joinToString(" · "),
+                label = stringResource(R.string.accounts_value),
                 value = draft.values[portfolio.id].orEmpty(),
                 onValueChange = { draft = draft.copy(values = draft.values + (portfolio.id to it)) },
                 error = errors["value:${portfolio.id}"],
                 currency = currency,
             )
+            Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                FormTextField(
+                    label = stringResource(R.string.accounts_gain_field, currency),
+                    value = draft.gains[portfolio.id].orEmpty(),
+                    onValueChange = { draft = draft.copy(gains = draft.gains + (portfolio.id to it)) },
+                    modifier = Modifier.weight(1f),
+                    error = errors["gain:${portfolio.id}"],
+                    placeholder = stringResource(R.string.accounts_optional),
+                )
+                FormTextField(
+                    label = stringResource(R.string.accounts_return_field),
+                    value = draft.returns[portfolio.id].orEmpty(),
+                    onValueChange = { draft = draft.copy(returns = draft.returns + (portfolio.id to it)) },
+                    modifier = Modifier.weight(1f),
+                    error = errors["gainPercent:${portfolio.id}"],
+                    placeholder = stringResource(R.string.accounts_optional),
+                )
+            }
         }
+        Text(
+            stringResource(R.string.accounts_values_gain_note),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
         FormTextField(
             label = stringResource(R.string.accounts_note_optional),
             value = draft.note,
@@ -471,7 +521,10 @@ internal fun PortfolioHistorySheet(
                             )
                         }
                     }
-                    AmountText(value.amount, currency, style = MaterialTheme.typography.bodyLarge)
+                    Column(horizontalAlignment = Alignment.End) {
+                        AmountText(value.amount, currency, style = MaterialTheme.typography.bodyLarge)
+                        GainLine(value.gain, returnBps(value.amount, value.gain, value.gainBps), currency)
+                    }
                     IconButton(onClick = { onDelete(value) }) {
                         Icon(
                             Icons.Outlined.Delete,

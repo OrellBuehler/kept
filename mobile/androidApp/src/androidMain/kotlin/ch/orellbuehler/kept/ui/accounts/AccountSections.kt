@@ -3,17 +3,21 @@ package ch.orellbuehler.kept.ui.accounts
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.outlined.OpenInNew
 import androidx.compose.material.icons.outlined.ContentCopy
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
@@ -71,6 +75,7 @@ internal fun AccountHeader(page: AccountDetailPage) {
     val iban = account.iban?.let { displayIban(it, ibanMode) }
     val context = LocalContext.current
     val copied = stringResource(R.string.accounts_iban_copied)
+    val topUpCopied = stringResource(R.string.accounts_top_up_iban_copied)
     SectionCard {
         FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
             AccountBadges(account)
@@ -78,27 +83,26 @@ internal fun AccountHeader(page: AccountDetailPage) {
         account.institution?.let {
             Text(it.name, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
+        websiteOf(account)?.let { url ->
+            TextButton(onClick = { openWebsite(context, url) }, contentPadding = PaddingValues(0.dp)) {
+                Text(stringResource(R.string.accounts_website))
+                Icon(
+                    Icons.AutoMirrored.Outlined.OpenInNew,
+                    contentDescription = null,
+                    modifier = Modifier.padding(start = 4.dp).size(16.dp),
+                )
+            }
+        }
         val rawIban = account.iban
         if (iban != null && rawIban != null) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(
-                    iban,
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.weight(1f, fill = false),
-                )
-                IconButton(
-                    onClick = {
-                        copyToClipboard(context, formatIban(rawIban), copied)
-                    },
-                    modifier = Modifier.size(36.dp),
-                ) {
-                    Icon(
-                        Icons.Outlined.ContentCopy,
-                        contentDescription = stringResource(R.string.accounts_copy_iban),
-                        modifier = Modifier.size(18.dp),
-                    )
-                }
+            IbanRow(iban, stringResource(R.string.accounts_copy_iban)) { copyToClipboard(context, formatIban(rawIban), copied) }
+        }
+        account.depositIban?.takeIf { account.type != "pillar_3a" }?.let { topUpIban ->
+            displayIban(topUpIban, ibanMode)?.let { shown ->
+                IbanRow(
+                    stringResource(R.string.accounts_top_up_via, shown),
+                    stringResource(R.string.accounts_copy_top_up_iban),
+                ) { copyToClipboard(context, formatIban(topUpIban), topUpCopied) }
             }
         }
         Spacer(Modifier.height(8.dp))
@@ -135,6 +139,25 @@ internal fun AccountHeader(page: AccountDetailPage) {
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
+        }
+    }
+}
+
+@Composable
+private fun IbanRow(
+    text: String,
+    copyLabel: String,
+    onCopy: () -> Unit,
+) {
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Text(
+            text,
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.weight(1f, fill = false),
+        )
+        IconButton(onClick = onCopy, modifier = Modifier.size(36.dp)) {
+            Icon(Icons.Outlined.ContentCopy, contentDescription = copyLabel, modifier = Modifier.size(18.dp))
         }
     }
 }

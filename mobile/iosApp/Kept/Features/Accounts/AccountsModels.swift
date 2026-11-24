@@ -12,6 +12,7 @@ struct AccountsPage: Decodable, Sendable {
         let bic: String?
         let color: String?
         let logoVersion: String?
+        let websiteUrl: String?
         let accountCount: Int
     }
 
@@ -22,6 +23,7 @@ struct AccountsPage: Decodable, Sendable {
         let currency: String
         let iban: String?
         let contractNumber: String?
+        let websiteUrl: String?
         let depositIban: String?
         let openingBalance: Int64
         let openingDate: String?
@@ -41,6 +43,7 @@ struct AccountsPage: Decodable, Sendable {
         let shareBalance: Int64
         let lastBookingDate: String?
         let lastImportAt: Int64?
+        let lastCheckedAt: Int64?
 
         struct Holdings: Decodable, Sendable {
             let value: Int64
@@ -146,6 +149,8 @@ struct AccountPage: Decodable, Sendable {
         let sortOrder: Int
         let latestValue: Int64?
         let latestValueDate: String?
+        let latestGain: Int64?
+        let latestGainBps: Int?
     }
 
     struct PortfolioValue: Decodable, Sendable, Identifiable {
@@ -153,6 +158,8 @@ struct AccountPage: Decodable, Sendable {
         let portfolioId: String
         let date: String
         let amount: Int64
+        let gain: Int64?
+        let gainBps: Int?
         let note: String?
     }
 

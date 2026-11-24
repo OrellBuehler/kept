@@ -6,6 +6,7 @@ struct Pillar3aPage: Decodable, Sendable {
     let overview: Overview
     let contributions: [Contribution]
     let accounts: [AccountRef]
+    let performance: [Performance]?
 
     var thisYear: Int { Int(today.prefix(4)) ?? 0 }
 
@@ -63,7 +64,23 @@ struct Pillar3aPage: Decodable, Sendable {
         let latestValueDate: String?
         let contributed: Int64
         let gain: Int64?
+        let reportedGain: Int64?
+        let returnBps: Int?
         var id: String { portfolioId }
+    }
+
+    /// The reported performance of one portfolio, oldest point first; portfolios without a reported gain are left out.
+    struct Performance: Decodable, Sendable, Identifiable {
+        let portfolioId: String
+        let points: [Point]
+        var id: String { portfolioId }
+
+        struct Point: Decodable, Sendable {
+            let date: String
+            let amount: Int64
+            let gain: Int64?
+            let gainBps: Int
+        }
     }
 
     struct Orphan: Decodable, Sendable, Identifiable {
@@ -113,6 +130,17 @@ struct Pillar3aSaved: Decodable, Sendable {
     let warnings: [String]?
 }
 
+/// The latest reported return of one portfolio, for the performance list.
+struct Pillar3aLatestReturn: Sendable, Identifiable {
+    let portfolioId: String
+    let name: String
+    let strategy: String?
+    let date: String
+    let gain: Int64?
+    let basisPoints: Int
+    var id: String { portfolioId }
+}
+
 /// Labels and pure helpers of the pillar 3a screens.
 enum Pillar3aText {
     static let deductions: [String] = ["small", "large", "none"]
@@ -124,6 +152,28 @@ enum Pillar3aText {
         case "none": return "No deduction"
         default: return deduction
         }
+    }
+
+    /// The latest reported return of each portfolio that has one, open portfolios first, like the portfolio list.
+    nonisolated static func latestReturns(_ page: Pillar3aPage) -> [Pillar3aLatestReturn] {
+        let portfolios = page.overview.portfolios
+        let ordered = portfolios.filter { $0.closedOn == nil } + portfolios.filter { $0.closedOn != nil }
+        var result: [Pillar3aLatestReturn] = []
+        for portfolio in ordered {
+            let entry = page.performance?.first(where: { $0.portfolioId == portfolio.portfolioId })
+            guard let last = entry?.points.last else { continue }
+            result.append(
+                Pillar3aLatestReturn(
+                    portfolioId: portfolio.portfolioId,
+                    name: portfolio.name,
+                    strategy: portfolio.strategy,
+                    date: last.date,
+                    gain: last.gain,
+                    basisPoints: last.gainBps
+                )
+            )
+        }
+        return result
     }
 
     /// "2025, 2026" for the gap years of a buy-in, ascending.

@@ -8,6 +8,8 @@ data class Pillar3aPage(
     val today: String = "",
     val overview: Pillar3aOverview = Pillar3aOverview(),
     val contributions: List<Pillar3aContribution> = emptyList(),
+    /** The reported return of each portfolio over time; portfolios without a reported gain are left out. */
+    val performance: List<Pillar3aPerformance> = emptyList(),
     /** The user's pillar 3a accounts. */
     val accounts: List<Pillar3aAccount> = emptyList(),
 )
@@ -73,6 +75,26 @@ data class Pillar3aPortfolio(
     val latestValueDate: String? = null,
     val contributed: Long = 0,
     val gain: Long? = null,
+    /** The total gain the provider reported with the latest value. */
+    val reportedGain: Long? = null,
+    /** The total return of the latest value in hundredths of a percent: as reported, or worked out from the reported gain. */
+    val returnBps: Int? = null,
+)
+
+@Serializable
+data class Pillar3aPerformance(
+    val portfolioId: String,
+    /** Oldest first. */
+    val points: List<Pillar3aPerformancePoint> = emptyList(),
+)
+
+@Serializable
+data class Pillar3aPerformancePoint(
+    val date: String = "",
+    val amount: Long = 0,
+    val gain: Long? = null,
+    /** The total return in hundredths of a percent. */
+    val gainBps: Int = 0,
 )
 
 @Serializable

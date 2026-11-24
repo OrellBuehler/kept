@@ -119,6 +119,55 @@ final class AccountsContractTests: XCTestCase {
         XCTAssertGreaterThan(page.value?.portfolios ?? 0, 0)
         XCTAssertNotNil(page.account.depositIban)
         XCTAssertNotNil(page.account.contractNumber)
+
+        let openPortfolio = try XCTUnwrap(page.portfolios.first { $0.closedOn == nil })
+        XCTAssertEqual(openPortfolio.latestGain, 96_000)
+        XCTAssertEqual(openPortfolio.latestGainBps, 1244)
+        let closedPortfolio = try XCTUnwrap(page.portfolios.first { $0.closedOn != nil })
+        XCTAssertNil(closedPortfolio.latestGain)
+        XCTAssertNil(closedPortfolio.latestGainBps)
+        let history = try XCTUnwrap(page.portfolioValues[openPortfolio.id])
+        XCTAssertTrue(history.contains { $0.gain == 96_000 && $0.gainBps == 1244 })
+        let closedHistory = try XCTUnwrap(page.portfolioValues[closedPortfolio.id])
+        XCTAssertTrue(closedHistory.allSatisfy { $0.gain == nil && $0.gainBps == nil })
+    }
+
+    func testStoredFigures() throws {
+        let page = try ContractTests.decode(AccountPage.self, "accounts.id.pillar3a")
+        let portfolio = try XCTUnwrap(page.portfolios.first { $0.closedOn == nil })
+        let day = try XCTUnwrap(page.portfolioValues[portfolio.id]?.first { $0.gain == 96_000 }?.date)
+        XCTAssertEqual(AccountsLogic.storedGains(page, date: day), [portfolio.id: "960.00"])
+        XCTAssertEqual(AccountsLogic.storedReturns(page, date: day), [portfolio.id: "12.44"])
+        XCTAssertTrue(AccountsLogic.storedGains(page, date: "2000-01-01").isEmpty)
+        XCTAssertTrue(AccountsLogic.storedReturns(page, date: "2000-01-01").isEmpty)
+        XCTAssertNil(AccountsLogic.storedValue(page, portfolioId: portfolio.id, date: "2000-01-01"))
+        XCTAssertEqual(AccountsLogic.storedValue(page, portfolioId: portfolio.id, date: day)?.amount, 846_000)
+    }
+
+    /// The fixture holds no website links, checks or top-up IBANs: put some in and decode again.
+    func testWebsiteCheckedAndTopUpFieldsDecode() throws {
+        var object = try XCTUnwrap(JSONSerialization.jsonObject(with: ContractTests.fixture("accounts")) as? [String: Any])
+        var institutions = try XCTUnwrap(object["institutions"] as? [[String: Any]])
+        var accounts = try XCTUnwrap(object["accounts"] as? [[String: Any]])
+        institutions[0]["websiteUrl"] = "https://www.example.com"
+        accounts[0]["websiteUrl"] = "https://portal.example.com"
+        accounts[0]["lastCheckedAt"] = 1_795_400_000_000
+        accounts[1]["depositIban"] = Self.plain
+        object["institutions"] = institutions
+        object["accounts"] = accounts
+        let data = try JSONSerialization.data(withJSONObject: object)
+        let page = try JSONDecoder().decode(AccountsPage.self, from: data)
+        XCTAssertEqual(page.institutions[0].websiteUrl, "https://www.example.com")
+        XCTAssertEqual(page.accounts[0].websiteUrl, "https://portal.example.com")
+        XCTAssertEqual(page.accounts[0].lastCheckedAt, 1_795_400_000_000)
+        XCTAssertEqual(page.accounts[1].depositIban, Self.plain)
+        XCTAssertNil(page.accounts[1].websiteUrl)
+    }
+
+    func testInstitutionRefWebsite() throws {
+        let json = "{\"id\": \"i\", \"name\": \"Example Bank\", \"color\": null, \"logoVersion\": null, \"websiteUrl\": \"https://www.example.com\"}"
+        let ref = try JSONDecoder().decode(InstitutionRef.self, from: Data(json.utf8))
+        XCTAssertEqual(ref.websiteUrl, "https://www.example.com")
     }
 
     func testAccountPension() throws {
@@ -294,6 +343,115 @@ final class AccountsContractTests: XCTestCase {
         XCTAssertEqual(AccountsLogic.staleHint(lastImportAt: now - 50 * day, now: now), "50 days ago")
         XCTAssertEqual(AccountsLogic.staleHint(lastImportAt: now - 100 * day, now: now), "3 months ago")
         XCTAssertEqual(AccountsLogic.staleHint(lastImportAt: now - 800 * day, now: now), "2 years ago")
+    }
+
+    func testStaleLabel() {
+        let now: Int64 = 1_800_000_000_000
+        let day: Int64 = 86_400_000
+        XCTAssertNil(AccountsLogic.staleLabel(lastImportAt: nil, lastCheckedAt: now, now: now))
+        XCTAssertNil(AccountsLogic.staleLabel(lastImportAt: now - 10 * day, lastCheckedAt: nil, now: now))
+        XCTAssertEqual(
+            AccountsLogic.staleLabel(lastImportAt: now - 50 * day, lastCheckedAt: nil, now: now),
+            "Last import 50 days ago"
+        )
+        XCTAssertEqual(
+            AccountsLogic.staleLabel(lastImportAt: now - 100 * day, lastCheckedAt: now - 50 * day, now: now),
+            "Last checked 50 days ago"
+        )
+        XCTAssertNil(AccountsLogic.staleLabel(lastImportAt: now - 100 * day, lastCheckedAt: now - 10 * day, now: now))
+        XCTAssertEqual(
+            AccountsLogic.staleLabel(lastImportAt: now - 100 * day, lastCheckedAt: now - 120 * day, now: now),
+            "Last import 3 months ago"
+        )
+    }
+
+    func testStaleDaysLabel() {
+        XCTAssertEqual(
+            AccountsLogic.staleDaysLabel(lastImportAt: 1, lastCheckedAt: nil, staleDays: 50),
+            "Last import 50 days ago"
+        )
+        XCTAssertEqual(
+            AccountsLogic.staleDaysLabel(lastImportAt: 1, lastCheckedAt: 2, staleDays: 1),
+            "Last checked 1 day ago"
+        )
+        XCTAssertNil(AccountsLogic.staleDaysLabel(lastImportAt: nil, lastCheckedAt: 2, staleDays: 5))
+        XCTAssertNil(AccountsLogic.staleDaysLabel(lastImportAt: 1, lastCheckedAt: nil, staleDays: nil))
+    }
+
+    func testPortalURL() {
+        XCTAssertEqual(
+            AccountsLogic.portalURL(own: "https://portal.example.com", institution: "https://www.example.com")?.absoluteString,
+            "https://portal.example.com"
+        )
+        XCTAssertEqual(
+            AccountsLogic.portalURL(own: nil, institution: "https://www.example.com")?.absoluteString,
+            "https://www.example.com"
+        )
+        XCTAssertNil(AccountsLogic.portalURL(own: nil, institution: nil))
+        XCTAssertNil(AccountsLogic.portalURL(own: "javascript:alert(1)", institution: "https://www.example.com"))
+        XCTAssertNil(AccountsLogic.webURL(""))
+    }
+
+    private func field(_ form: FormFields, _ name: String) -> String? {
+        form.fields.first { $0.name == name }?.value
+    }
+
+    func testIbanAndLinkFields() {
+        var other = FormFields()
+        AccountsLogic.setIbanAndLinkFields(&other, is3a: false, depositIban: "", websiteUrl: "")
+        XCTAssertEqual(field(other, "depositIban"), "")
+        XCTAssertEqual(field(other, "depositIbanField"), "1")
+        XCTAssertEqual(field(other, "websiteUrl"), "")
+
+        var pillar = FormFields()
+        AccountsLogic.setIbanAndLinkFields(&pillar, is3a: true, depositIban: Self.plain, websiteUrl: "https://www.example.com")
+        XCTAssertEqual(field(pillar, "depositIban"), Self.plain)
+        XCTAssertNil(field(pillar, "depositIbanField"))
+        XCTAssertEqual(field(pillar, "websiteUrl"), "https://www.example.com")
+    }
+
+    func testPercentAndReturn() {
+        XCTAssertEqual(AccountsLogic.percentInput(1244), "12.44")
+        XCTAssertEqual(AccountsLogic.percentInput(1000), "10.00")
+        XCTAssertEqual(AccountsLogic.percentInput(-5), "-0.05")
+        XCTAssertEqual(AccountsLogic.percentInput(0), "0.00")
+        XCTAssertEqual(AccountsLogic.percentInput(-1244), "-12.44")
+
+        XCTAssertEqual(AccountsLogic.returnBps(amount: 846_000, gain: 96_000, gainBps: 1244), 1244)
+        XCTAssertEqual(AccountsLogic.returnBps(amount: 11_000, gain: 1_000, gainBps: nil), 1000)
+        XCTAssertEqual(AccountsLogic.returnBps(amount: 9_000, gain: -1_000, gainBps: nil), -1000)
+        XCTAssertEqual(AccountsLogic.returnBps(amount: 2, gain: -1, gainBps: nil), -3333)
+        XCTAssertEqual(AccountsLogic.returnBps(amount: 20_001, gain: 1, gainBps: nil), 1)
+        XCTAssertNil(AccountsLogic.returnBps(amount: 100, gain: 100, gainBps: nil))
+        XCTAssertNil(AccountsLogic.returnBps(amount: 100, gain: 150, gainBps: nil))
+        XCTAssertNil(AccountsLogic.returnBps(amount: 100, gain: nil, gainBps: nil))
+    }
+
+    func testSignedPercent() {
+        let formats = Formats(localeTag: "en-GB")
+        XCTAssertEqual(formats.signedPercent(basisPoints: 425), "+4.25%")
+        XCTAssertEqual(formats.signedPercent(basisPoints: 0), "0.00%")
+        XCTAssertEqual(formats.signedPercent(basisPoints: -1244), "-12.44%")
+    }
+
+    func testPortfolioValuesForm() {
+        let form = AccountsLogic.portfolioValuesForm(
+            date: "2026-11-20",
+            note: "Statement",
+            portfolioIds: ["a", "b"],
+            values: ["a": "8'500.00"],
+            gains: ["a": "-120.50"],
+            percents: ["a": "-1.4"]
+        )
+        XCTAssertEqual(field(form, "date"), "2026-11-20")
+        XCTAssertEqual(field(form, "note"), "Statement")
+        XCTAssertEqual(field(form, "value:a"), "8'500.00")
+        XCTAssertEqual(field(form, "gain:a"), "-120.50")
+        XCTAssertEqual(field(form, "gainPercent:a"), "-1.4")
+        XCTAssertEqual(field(form, "value:b"), "")
+        XCTAssertEqual(field(form, "gain:b"), "")
+        XCTAssertEqual(field(form, "gainPercent:b"), "")
+        XCTAssertEqual(form.fields.count, 8)
     }
 
     func testTransferSummary() {

@@ -13,6 +13,9 @@ const val STALE_IMPORT_DAYS = 45
 
 private const val DAY_MS = 86_400_000L
 
+/** The most characters of a website link the server takes. */
+const val MAX_WEBSITE_LENGTH = 300
+
 val ACCOUNT_TYPES = listOf("current", "savings", "credit_card", "investment", "pension", "pillar_3a", "cash", "other")
 
 /** Account types a withdrawal notice can apply to. */
@@ -139,14 +142,44 @@ fun currencyTotals(accounts: List<AccountsAccount>): List<CurrencyTotal> =
             )
         }
 
-/** Whole days since the last import when it is older than [STALE_IMPORT_DAYS]; null when the import is recent or missing. */
+/** The user confirmed "no new transactions" after the last import, so the account counts as fresh from that day. */
+fun checkedAfterImport(
+    lastImportAt: Long?,
+    lastCheckedAt: Long?,
+): Boolean = lastImportAt != null && lastCheckedAt != null && lastCheckedAt > lastImportAt
+
+/**
+ * Whole days since the later of the last import and the last "no new transactions" confirmation, when that is older
+ * than [STALE_IMPORT_DAYS]; null when it is recent or the account was never imported.
+ */
 fun staleImportDays(
     lastImportAt: Long?,
+    lastCheckedAt: Long?,
     now: Long,
 ): Int? {
     if (lastImportAt == null) return null
-    val days = Math.floorDiv(now - lastImportAt, DAY_MS)
+    val freshAt = maxOf(lastImportAt, lastCheckedAt ?: lastImportAt)
+    val days = Math.floorDiv(now - freshAt, DAY_MS)
     return if (days > STALE_IMPORT_DAYS) days.toInt() else null
+}
+
+/** The portal link of an account: its own, else its institution's. */
+fun websiteOf(account: AccountsAccount): String? = account.websiteUrl ?: account.institution?.websiteUrl
+
+/**
+ * The total return of a portfolio value in hundredths of a percent: the provider's own figure when there is one, else the
+ * reported gain over the capital it grew from (`amount - gain`). Null without a gain, or when that capital is not positive.
+ */
+fun returnBps(
+    amount: Long,
+    gain: Long?,
+    gainBps: Int?,
+): Int? {
+    if (gainBps != null) return gainBps
+    if (gain == null) return null
+    val base = amount - gain
+    if (base <= 0) return null
+    return Math.floorDiv(2 * gain * FULL_SHARE_BPS + base, 2 * base).toInt()
 }
 
 enum class ImpactKind { CATEGORIZED, NOTES, TAX_YEARS, DEDUCTION_YEARS, BILL_ALLOCATIONS, PILLAR_3A, TRANSFER_LINKS, MIRRORS }

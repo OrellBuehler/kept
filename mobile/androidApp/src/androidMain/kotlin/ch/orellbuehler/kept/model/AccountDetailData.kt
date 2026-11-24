@@ -236,6 +236,10 @@ data class AccountDetailPortfolio(
     val sortOrder: Int = 0,
     val latestValue: Long? = null,
     val latestValueDate: String? = null,
+    /** The gain the provider reported with the latest value. */
+    val latestGain: Long? = null,
+    /** The return of the latest value in hundredths of a percent: as reported, or worked out from the gain. */
+    val latestGainBps: Int? = null,
 )
 
 @Serializable
@@ -244,6 +248,10 @@ data class AccountDetailPortfolioValue(
     val portfolioId: String = "",
     val date: String = "",
     val amount: Long = 0,
+    /** The total gain as the provider reported it; may be negative. */
+    val gain: Long? = null,
+    /** The total return as the provider reported it, in hundredths of a percent. */
+    val gainBps: Int? = null,
     val note: String? = null,
 )
 

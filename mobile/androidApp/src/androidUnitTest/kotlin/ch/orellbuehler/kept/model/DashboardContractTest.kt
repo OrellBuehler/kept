@@ -18,6 +18,7 @@ class DashboardContractTest {
                 .points.size >= 2,
         )
         assertTrue(dashboard.accounts.any { it.institution != null })
+        assertTrue(dashboard.accounts.any { it.lastImportAt != null })
         assertTrue(dashboard.accounts.all { it.id.isNotEmpty() && it.currency.isNotEmpty() })
         assertTrue(dashboard.month.totals.isNotEmpty())
         assertTrue(dashboard.spending.currencies.any { it.items.isNotEmpty() })
@@ -29,5 +30,15 @@ class DashboardContractTest {
         )
         assertTrue(page.forecastAlerts.isNotEmpty())
         assertTrue(page.needsAmount.isNotEmpty())
+    }
+
+    @Test
+    fun decodesTheCheckedStampOfAStaleAccount() {
+        val account =
+            ApiJson.decodeFromString<DashboardAccount>(
+                """{"id":"a","name":"Example Checking","lastImportAt":1795372853185,"lastCheckedAt":1795459253185,"stale":true,"staleDays":50}""",
+            )
+        assertEquals(1795459253185, account.lastCheckedAt)
+        assertEquals(50, account.staleDays)
     }
 }

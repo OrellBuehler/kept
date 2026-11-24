@@ -6,6 +6,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.OpenInNew
 import androidx.compose.material.icons.outlined.Archive
+import androidx.compose.material.icons.outlined.Check
 import androidx.compose.material.icons.outlined.Delete
 import androidx.compose.material.icons.outlined.Edit
 import androidx.compose.material.icons.outlined.History
@@ -107,6 +108,9 @@ class AccountViewModel(
     ) = submit(path, "updateAccount", draft.toForm(hasPortfolios, hasTrades, confirmRemoveMirrors))
 
     fun setArchived(archived: Boolean) = submit(path, if (archived) "archive" else "unarchive", showRefusal = true)
+
+    /** "No new transactions": the account is up to date although nothing was imported. [upToDateMessage] is shown once saved. */
+    fun markChecked(upToDateMessage: String) = submit(path, "markChecked", showRefusal = true) { message(upToDateMessage) }
 
     fun deleteAccount() = submit(path, "deleteAccount", showRefusal = true)
 
@@ -374,6 +378,7 @@ private fun AccountMenu(
 ) {
     var open by remember { mutableStateOf(false) }
     val account = page.account
+    val upToDate = stringResource(R.string.accounts_marked_checked)
     Box {
         IconButton(onClick = { open = true }) {
             Icon(Icons.Outlined.MoreVert, contentDescription = stringResource(R.string.more_actions))
@@ -403,6 +408,16 @@ private fun AccountMenu(
                     nav.open(Routes.accountImports(account.id))
                 },
             )
+            if (account.lastImportAt != null && !account.archived) {
+                DropdownMenuItem(
+                    text = { Text(stringResource(R.string.accounts_no_new_transactions)) },
+                    leadingIcon = { Icon(Icons.Outlined.Check, contentDescription = null) },
+                    onClick = {
+                        open = false
+                        vm.markChecked(upToDate)
+                    },
+                )
+            }
             DropdownMenuItem(
                 text = { Text(stringResource(R.string.accounts_open_in_browser)) },
                 leadingIcon = { Icon(Icons.AutoMirrored.Outlined.OpenInNew, contentDescription = null) },

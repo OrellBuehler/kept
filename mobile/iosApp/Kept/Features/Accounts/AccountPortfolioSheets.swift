@@ -128,25 +128,31 @@ struct AccountPortfolioCloseSheet: View {
     }
 }
 
-/// The current value of each open portfolio on a day ("setPortfolioValues"); blank skips a portfolio.
+/// The value, reported gain and return of each open portfolio on a day ("setPortfolioValues"); a blank value skips a portfolio.
 struct AccountPortfolioValuesSheet: View {
     let store: PageStore<AccountPage>
     let page: AccountPage
 
-    @State private var date = Formats.isoDate(Date())
+    @State private var date: String
     @State private var note = ""
     @State private var amounts: [String: String]
+    @State private var gains: [String: String]
+    @State private var percents: [String: String]
 
     init(store: PageStore<AccountPage>, page: AccountPage) {
         self.store = store
         self.page = page
+        let today = Formats.isoDate(Date())
         var start: [String: String] = [:]
         for portfolio in page.portfolios where portfolio.closedOn == nil {
             if let value = portfolio.latestValue {
                 start[portfolio.id] = Formats.amountInput(value, page.account.currency)
             }
         }
+        _date = State(initialValue: today)
         _amounts = State(initialValue: start)
+        _gains = State(initialValue: AccountsLogic.storedGains(page, date: today))
+        _percents = State(initialValue: AccountsLogic.storedReturns(page, date: today))
     }
 
     private var openPortfolios: [AccountPage.Portfolio] {
@@ -160,6 +166,20 @@ struct AccountPortfolioValuesSheet: View {
         )
     }
 
+    private func gainBinding(_ id: String) -> Binding<String> {
+        Binding(
+            get: { gains[id] ?? "" },
+            set: { gains[id] = $0 }
+        )
+    }
+
+    private func percentBinding(_ id: String) -> Binding<String> {
+        Binding(
+            get: { percents[id] ?? "" },
+            set: { percents[id] = $0 }
+        )
+    }
+
     var body: some View {
         FormSheet("Update values", busy: store.busy, error: store.formErrors["form"]) {
             await save()
@@ -168,20 +188,35 @@ struct AccountPortfolioValuesSheet: View {
                 DateField("Date", value: $date)
                 FieldError(store.formErrors["date"])
             } footer: {
-                Text("Enter the current value of your portfolios as shown by your provider. Leave a portfolio blank to skip it.")
+                Text("Enter the current value of your portfolios as shown by your provider, and its total gain if you want to follow the performance. Leave a portfolio blank to skip it.")
             }
-            Section("Values") {
-                ForEach(openPortfolios) { portfolio in
-                    VStack(alignment: .leading, spacing: 2) {
-                        AmountField(label(portfolio), text: binding(portfolio.id), currency: page.account.currency)
-                        FieldError(store.formErrors["value:" + portfolio.id])
-                    }
-                }
+            ForEach(openPortfolios) { portfolio in
+                portfolioSection(portfolio)
             }
             Section {
                 TextField("Note (optional)", text: $note)
                 FieldError(store.formErrors["note"])
+            } footer: {
+                Text("Gain and return are the totals since the portfolio was opened, negative for a loss. With only the gain, the return is worked out from it.")
             }
+        }
+        .onChange(of: date) { _, value in
+            gains = AccountsLogic.storedGains(page, date: value)
+            percents = AccountsLogic.storedReturns(page, date: value)
+        }
+    }
+
+    private func portfolioSection(_ portfolio: AccountPage.Portfolio) -> some View {
+        let currency = page.account.currency
+        return Section {
+            AccountFigureField(title: "Value", placeholder: "0.00", text: binding(portfolio.id), suffix: currency)
+            FieldError(store.formErrors["value:" + portfolio.id])
+            AccountFigureField(title: "Gain", placeholder: "optional", text: gainBinding(portfolio.id), suffix: currency)
+            FieldError(store.formErrors["gain:" + portfolio.id])
+            AccountFigureField(title: "Return", placeholder: "optional", text: percentBinding(portfolio.id), suffix: "%")
+            FieldError(store.formErrors["gainPercent:" + portfolio.id])
+        } header: {
+            Text(label(portfolio))
         }
     }
 
@@ -191,14 +226,36 @@ struct AccountPortfolioValuesSheet: View {
     }
 
     private func save() async -> Bool {
-        var form = FormFields()
-        form.set("date", date)
-        form.set("note", note)
-        for portfolio in openPortfolios {
-            form.set("value:" + portfolio.id, amounts[portfolio.id] ?? "")
-        }
+        let form = AccountsLogic.portfolioValuesForm(
+            date: date,
+            note: note,
+            portfolioIds: openPortfolios.map { $0.id },
+            values: amounts,
+            gains: gains,
+            percents: percents
+        )
         let result = await store.submit("setPortfolioValues", form: form)
         return result != nil
+    }
+}
+
+/// A labelled number field of a form row: the label on the left, the number right-aligned, a unit after it.
+private struct AccountFigureField: View {
+    let title: String
+    let placeholder: String
+    @Binding var text: String
+    let suffix: String
+
+    var body: some View {
+        HStack {
+            Text(title)
+            TextField(placeholder, text: $text)
+                .multilineTextAlignment(.trailing)
+                .keyboardType(.numbersAndPunctuation)
+                .autocorrectionDisabled()
+                .monospacedDigit()
+            Text(suffix).foregroundStyle(.secondary)
+        }
     }
 }
 
@@ -238,6 +295,11 @@ struct AccountPortfolioHistorySheet: View {
                 ForEach(values) { value in
                     ValueRow(formats.date(value.date), subtitle: value.note) {
                         AmountText(value.amount, page.account.currency)
+                        AccountGainLine(
+                            gain: value.gain,
+                            basisPoints: AccountsLogic.returnBps(amount: value.amount, gain: value.gain, gainBps: value.gainBps),
+                            currency: page.account.currency
+                        )
                     }
                     .swipeActions(edge: .trailing, allowsFullSwipe: false) {
                         Button(role: .destructive) {

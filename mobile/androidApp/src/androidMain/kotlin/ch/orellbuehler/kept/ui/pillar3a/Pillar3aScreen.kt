@@ -64,6 +64,7 @@ import ch.orellbuehler.kept.ui.components.ConfirmDialog
 import ch.orellbuehler.kept.ui.components.DateField
 import ch.orellbuehler.kept.ui.components.FormSheet
 import ch.orellbuehler.kept.ui.components.FormTextField
+import ch.orellbuehler.kept.ui.components.LineChart
 import ch.orellbuehler.kept.ui.components.ListRow
 import ch.orellbuehler.kept.ui.components.MessagePane
 import ch.orellbuehler.kept.ui.components.PageScaffold
@@ -201,6 +202,7 @@ fun Pillar3aScreen(nav: Navigator) {
                     vm.clearFormErrors()
                 })
                 PortfoliosCard(data, nav)
+                PerformanceCard(data)
                 ContributionsCard(
                     data,
                     onAdd = { openContribution(null, null) },
@@ -462,7 +464,53 @@ private fun PortfoliosCard(
                             Hint(stringResource(R.string.pillar3a_no_value))
                         }
                         Hint(stringResource(R.string.pillar3a_contributed) + " " + formats.money(portfolio.contributed, PILLAR_3A_CURRENCY))
-                        portfolio.gain?.let {
+                        if (portfolio.reportedGain != null) {
+                            GainRow(stringResource(R.string.pillar3a_reported_gain), portfolio.reportedGain)
+                        } else if (portfolio.gain != null) {
+                            GainRow(stringResource(R.string.pillar3a_gain), portfolio.gain)
+                        }
+                        portfolio.returnBps?.let { Hint(stringResource(R.string.pillar3a_return) + " " + formats.signedPercent(it)) }
+                    },
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun GainRow(
+    label: String,
+    gain: Long,
+) {
+    Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+        Hint(label)
+        AmountText(gain, PILLAR_3A_CURRENCY, tone = AmountTone.SIGNED, showPlus = true, style = MaterialTheme.typography.bodySmall)
+    }
+}
+
+/** The reported return of each portfolio: its latest figure, and its course when it was reported on two dates or more. */
+@Composable
+private fun PerformanceCard(page: Pillar3aPage) {
+    val formats = LocalFormats.current
+    val rows = performanceRows(page.overview.portfolios, page.performance)
+    if (rows.isEmpty()) return
+    SectionCard(
+        title = stringResource(R.string.pillar3a_performance),
+        subtitle = stringResource(R.string.pillar3a_performance_hint),
+        contentPadding = false,
+    ) {
+        rows.forEachIndexed { index, row ->
+            if (index > 0) RowDivider()
+            Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Column(Modifier.weight(1f)) {
+                        Text(row.portfolio.name, style = MaterialTheme.typography.bodyLarge)
+                        row.portfolio.strategy?.let { Hint(it) }
+                        Hint(stringResource(R.string.pillar3a_as_of, formats.date(row.last.date)))
+                    }
+                    Column(horizontalAlignment = Alignment.End) {
+                        Text(formats.signedPercent(row.last.gainBps), style = MaterialTheme.typography.titleMedium)
+                        row.last.gain?.let {
                             AmountText(
                                 it,
                                 PILLAR_3A_CURRENCY,
@@ -471,8 +519,9 @@ private fun PortfoliosCard(
                                 style = MaterialTheme.typography.bodySmall,
                             )
                         }
-                    },
-                )
+                    }
+                }
+                if (row.points.size >= 2) LineChart(row.points.map { it.gainBps.toLong() }, height = 64.dp)
             }
         }
     }

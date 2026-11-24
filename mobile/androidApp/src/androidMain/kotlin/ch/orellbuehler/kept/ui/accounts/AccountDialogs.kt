@@ -127,7 +127,14 @@ internal fun AccountDialogs(
                 onDismiss = onClose,
             ) { vm.savePortfolio(dialog.portfolio?.id, it) }
         AccountDialog.PortfolioValues ->
-            PortfolioValuesSheet(page.portfolios, account.currency, busy, errors, onClose) { vm.setPortfolioValues(it) }
+            PortfolioValuesSheet(
+                page.portfolios,
+                page.portfolioValues,
+                account.currency,
+                busy,
+                errors,
+                onClose,
+            ) { vm.setPortfolioValues(it) }
         is AccountDialog.PortfolioHistory ->
             PortfolioHistorySheet(
                 portfolio = dialog.portfolio,

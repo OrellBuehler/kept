@@ -27,6 +27,9 @@ class Pillar3aContractTest {
         assertTrue(overview.portfolios.any { it.closedOn != null && it.closeReason != null })
         assertTrue(overview.portfolios.any { it.strategy == null })
         assertEquals(overview.portfolios.first().gain, overview.totals.gain)
+        val reported = overview.portfolios.first { it.reportedGain != null }
+        assertNotNull(reported.returnBps)
+        assertTrue(overview.portfolios.any { it.reportedGain == null && it.returnBps == null })
         assertEquals(1, overview.orphanAnnotations.size)
         assertTrue(
             overview.orphanAnnotations
@@ -34,6 +37,18 @@ class Pillar3aContractTest {
                 .id
                 .isNotEmpty(),
         )
+    }
+
+    @Test
+    fun decodesThePerformance() {
+        val page = Contract.page<Pillar3aPage>("pillar-3a")
+        val performance = page.performance.single()
+        val portfolio = page.overview.portfolios.first { it.portfolioId == performance.portfolioId }
+        assertEquals(2, performance.points.size)
+        assertEquals(performance.points.map { it.date }.sorted(), performance.points.map { it.date })
+        assertTrue(performance.points.all { it.date.length == 10 && it.amount > 0 })
+        assertEquals(portfolio.returnBps, performance.points.last().gainBps)
+        assertEquals(portfolio.reportedGain, performance.points.last().gain)
     }
 
     @Test
