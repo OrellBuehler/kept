@@ -47,7 +47,7 @@ jobs:
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
         with:
           path: ~/.bun/install/cache
-          key: bun-${{ runner.os }}-${{ hashFiles('**/bun.lock') }}
+          key: bun-${{ runner.os }}-${{ hashFiles('bun.lock') }}
           restore-keys: |
             bun-${{ runner.os }}-
 
@@ -129,7 +129,7 @@ jobs:
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
         with:
           path: ~/.bun/install/cache
-          key: bun-${{ runner.os }}-${{ hashFiles('**/bun.lock') }}
+          key: bun-${{ runner.os }}-${{ hashFiles('bun.lock') }}
           restore-keys: |
             bun-${{ runner.os }}-
 
@@ -167,6 +167,8 @@ jobs:
           fi
           echo "DEVICE_ID=$DEVICE_ID" >> "$GITHUB_ENV"
 
+      # Signed ad hoc, unlike the other workflows' simulator builds: without a signature the
+      # app cannot write the session token to the keychain and every page asks to sign in.
       - name: Build iOS app
         working-directory: mobile/iosApp
         run: |
@@ -175,19 +177,19 @@ jobs:
             -scheme Kept \
             -destination "id=$DEVICE_ID" \
             -configuration Debug \
-            -derivedDataPath build/DerivedData \
-            CODE_SIGNING_ALLOWED=NO \
+            -derivedDataPath "$RUNNER_TEMP/DerivedData" \
+            CODE_SIGNING_ALLOWED=YES \
+            CODE_SIGN_IDENTITY=- \
             ARCHS=arm64
 
       - name: Start a server with example data
         run: mobile/scripts/screenshots/server.sh "$RUNNER_TEMP/kept-shots"
 
       - name: Boot simulator and install app
-        working-directory: mobile/iosApp
         run: |
           xcrun simctl boot "$DEVICE_ID"
           xcrun simctl bootstatus "$DEVICE_ID" -b
-          xcrun simctl install "$DEVICE_ID" build/DerivedData/Build/Products/Debug-iphonesimulator/Kept.app
+          xcrun simctl install "$DEVICE_ID" "$RUNNER_TEMP/DerivedData/Build/Products/Debug-iphonesimulator/Kept.app"
 
       - name: Capture screenshots
         run: mobile/scripts/screenshots/ios.sh "$DEVICE_ID" "$RUNNER_TEMP/kept-shots" "$RUNNER_TEMP/store-screenshots"

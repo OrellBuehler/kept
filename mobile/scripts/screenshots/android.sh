@@ -35,6 +35,9 @@ launch() {
 }
 
 adb shell settings put global sysui_demo_allowed 1 </dev/null
+adb shell settings put global sysui_tuner_demo_on 1 </dev/null
+# The system UI starts listening for the commands a moment after the setting changed.
+sleep 3
 demo -e command enter
 demo -e command clock -e hhmm 0941
 demo -e command battery -e level 100 -e plugged false
