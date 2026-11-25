@@ -132,6 +132,22 @@ final class Router {
         }
     }
 
+    #if DEBUG
+        /// Opens a web path as the only screen on the stack of the tab it belongs to (store screenshots).
+        func open(webPath: String) {
+            guard let route = Route(webPath: webPath) else {
+                follow(webPath: webPath)
+                return
+            }
+            switch route {
+            case .account, .accountImports: tab = .accounts
+            case .bill, .billNew: tab = .bills
+            default: tab = .more
+            }
+            paths[tab] = [route]
+        }
+    #endif
+
     private func select(_ target: AppTab, replacing: Bool) {
         if replacing { pop() }
         if tab != target {

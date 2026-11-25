@@ -27,7 +27,45 @@ final class AppModel {
                 self?.apply(status)
             }
         }
+        #if DEBUG
+            Task { await screenshotLaunch() }
+        #endif
     }
+
+    #if DEBUG
+        /// Store screenshots (mobile/scripts/screenshots/ios.sh), debug builds only: the script
+        /// names the server, the user and the page as launch arguments. Signs in unless the app
+        /// already is signed in, then opens the page.
+        private func screenshotLaunch() async {
+            let arguments = UserDefaults.standard
+            guard let server = arguments.string(forKey: "screenshot_server"),
+                  let username = arguments.string(forKey: "screenshot_username"),
+                  let password = arguments.string(forKey: "screenshot_password")
+            else { return }
+            while status == nil {
+                try? await Task.sleep(for: .milliseconds(50))
+            }
+            if !isSignedIn {
+                do {
+                    _ = try await client.connect(server)
+                    guard case .done = try await client.login(username: username, password: password) else {
+                        print("screenshots: the account asks for a second factor")
+                        return
+                    }
+                } catch {
+                    print("screenshots: sign-in failed")
+                    return
+                }
+                // The statuses of the sign-in arrive one after the other and the earlier ones reset the router.
+                while !isSignedIn {
+                    try? await Task.sleep(for: .milliseconds(50))
+                }
+            }
+            if let path = arguments.string(forKey: "screenshot_path") {
+                router.open(webPath: path)
+            }
+        }
+    #endif
 
     private func apply(_ status: SessionStatus) {
         let wasSignedIn = isSignedIn

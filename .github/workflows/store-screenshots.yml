@@ -1,0 +1,202 @@
+name: Store Screenshots
+
+# Takes the store screenshots of both apps against a throwaway server filled
+# with the made-up household of scripts/seed-demo. Run it by hand, then
+# download the `android-store-screenshots` and `ios-store-screenshots`
+# artifacts (mobile/README.md).
+on:
+  workflow_dispatch:
+  # Also when the capture itself changes, so a broken script or seed shows up
+  # on the pull request instead of on the next manual run.
+  pull_request:
+    paths:
+      - ".github/workflows/store-screenshots.yml"
+      - "mobile/scripts/screenshots/**"
+      - "scripts/seed-demo/**"
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+concurrency:
+  group: store-screenshots-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  android:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      - name: Enable KVM
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
+        with:
+          bun-version-file: .bun-version
+
+      - name: Cache bun dependencies
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
+        with:
+          path: ~/.bun/install/cache
+          key: bun-${{ runner.os }}-${{ hashFiles('**/bun.lock') }}
+          restore-keys: |
+            bun-${{ runner.os }}-
+
+      - run: bun install --frozen-lockfile
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@d1374f8ac74474200d16ef8ecee22c7ae7a51880 # v6.3.0
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@be39fa834029ff78f1a44aa3bb0819b8fc2bd8fd # v4.0.4
+        # The legacy 'tools' package the action installs by default was removed
+        # from the SDK repository (android-actions/setup-android#537), so the
+        # default 'tools platform-tools' list makes sdkmanager exit 1.
+        with:
+          packages: platform-tools
+
+      - name: Cache Gradle dependencies
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+            ~/.gradle/build-cache
+          key: gradle-android-${{ runner.os }}-${{ hashFiles('**/*.gradle*', '**/libs.versions.toml', '**/gradle-wrapper.properties') }}
+          restore-keys: |
+            gradle-android-${{ runner.os }}-
+
+      - name: Build debug APK
+        working-directory: mobile
+        run: ./gradlew androidApp:assembleDebug
+
+      - name: Start a server with example data
+        run: mobile/scripts/screenshots/server.sh "$RUNNER_TEMP/kept-shots"
+
+      # Nexus 5X is 1080 x 1920: Play takes no phone screenshot taller than twice its width.
+      - name: Capture screenshots on the emulator
+        uses: reactivecircus/android-emulator-runner@a421e43855164a8197daf9d8d40fe71c6996bb0d # v2
+        with:
+          api-level: 35
+          target: google_apis
+          arch: x86_64
+          profile: Nexus 5X
+          emulator-boot-timeout: 600
+          disable-animations: true
+          emulator-options: -no-window -gpu swiftshader_indirect -no-snapshot-save -noaudio -no-boot-anim
+          script: |
+            adb install mobile/androidApp/build/outputs/apk/debug/androidApp-debug.apk
+            mobile/scripts/screenshots/android.sh "$RUNNER_TEMP/kept-shots" "$RUNNER_TEMP/store-screenshots"
+
+      - name: Upload screenshots
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: android-store-screenshots
+          path: ${{ runner.temp }}/store-screenshots
+          retention-days: 14
+          if-no-files-found: error
+
+  ios:
+    # Same runner as mobile-ios.yml, see the comment there.
+    runs-on: xcode-27
+    timeout-minutes: 45
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      - name: Set up the Xcode runner
+        uses: ./.github/actions/ios-setup
+
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
+        with:
+          bun-version-file: .bun-version
+
+      - name: Cache bun dependencies
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
+        with:
+          path: ~/.bun/install/cache
+          key: bun-${{ runner.os }}-${{ hashFiles('**/bun.lock') }}
+          restore-keys: |
+            bun-${{ runner.os }}-
+
+      - run: bun install --frozen-lockfile
+
+      - name: Build shared iOS framework
+        working-directory: mobile
+        run: ./gradlew shared:linkDebugFrameworkIosSimulatorArm64
+
+      - name: Stage shared framework for Xcode
+        working-directory: mobile
+        run: |
+          SDK_NAME=$(xcrun --sdk iphonesimulator --show-sdk-version)
+          DEST="shared/build/xcode-frameworks/Debug/iphonesimulator${SDK_NAME}"
+          mkdir -p "$DEST"
+          cp -R shared/build/bin/iosSimulatorArm64/debugFramework/shared.framework "$DEST/"
+
+      - name: Generate Xcode project
+        working-directory: mobile/iosApp
+        run: xcodegen generate
+
+      # The 6.9 inch App Store slot is the Pro Max screen (1320 x 2868).
+      - name: Pick a Pro Max simulator
+        run: |
+          DEVICE_ID=$(xcrun simctl list devices available --json | jq -r '
+            [.devices | to_entries[]
+             | select(.key | test("iOS"))
+             | .value[]
+             | select(.name | test("^iPhone.*Pro Max$"))
+             | .udid] | last')
+          if [ -z "$DEVICE_ID" ] || [ "$DEVICE_ID" = "null" ]; then
+            echo "No iPhone Pro Max simulator available" >&2
+            xcrun simctl list devices available
+            exit 1
+          fi
+          echo "DEVICE_ID=$DEVICE_ID" >> "$GITHUB_ENV"
+
+      - name: Build iOS app
+        working-directory: mobile/iosApp
+        run: |
+          xcodebuild build \
+            -project Kept.xcodeproj \
+            -scheme Kept \
+            -destination "id=$DEVICE_ID" \
+            -configuration Debug \
+            -derivedDataPath build/DerivedData \
+            CODE_SIGNING_ALLOWED=NO \
+            ARCHS=arm64
+
+      - name: Start a server with example data
+        run: mobile/scripts/screenshots/server.sh "$RUNNER_TEMP/kept-shots"
+
+      - name: Boot simulator and install app
+        working-directory: mobile/iosApp
+        run: |
+          xcrun simctl boot "$DEVICE_ID"
+          xcrun simctl bootstatus "$DEVICE_ID" -b
+          xcrun simctl install "$DEVICE_ID" build/DerivedData/Build/Products/Debug-iphonesimulator/Kept.app
+
+      - name: Capture screenshots
+        run: mobile/scripts/screenshots/ios.sh "$DEVICE_ID" "$RUNNER_TEMP/kept-shots" "$RUNNER_TEMP/store-screenshots"
+
+      - name: Upload screenshots
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: ios-store-screenshots
+          path: ${{ runner.temp }}/store-screenshots
+          retention-days: 14
+          if-no-files-found: error

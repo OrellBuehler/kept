@@ -45,5 +45,14 @@ class MainActivity : ComponentActivity() {
     private fun handleIncoming(intent: Intent?) {
         intent?.getStringExtra(ReminderScheduler.EXTRA_BILL_ID)?.let(appViewModel::openBill)
         intent?.data?.takeIf { it.scheme == KeptSdk.BROWSER_CALLBACK_SCHEME }?.let { appViewModel.browserReturned(it.toString()) }
+        if (BuildConfig.DEBUG) screenshotLaunch(intent)
+    }
+
+    /** Store screenshots (mobile/scripts/screenshots/android.sh): the script names the server, the user and the page. */
+    private fun screenshotLaunch(intent: Intent?) {
+        val server = intent?.getStringExtra("screenshot_server") ?: return
+        val username = intent.getStringExtra("screenshot_username") ?: return
+        val password = intent.getStringExtra("screenshot_password") ?: return
+        appViewModel.screenshotLaunch(server, username, password, intent.getStringExtra("screenshot_path"))
     }
 }
