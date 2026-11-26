@@ -30,11 +30,23 @@ launch() {
   adb shell am start -W -n "$PACKAGE/.MainActivity" "${args[@]}" >/dev/null </dev/null
 }
 
-# The first launch signs in. Without it every picture would show the sign-in screen.
-launch ""
-sleep 15
-adb shell uiautomator dump /sdcard/window.xml >/dev/null </dev/null
-if ! adb exec-out cat /sdcard/window.xml </dev/null | grep -q 'text="Overview"'; then
+signed_in() {
+  adb shell uiautomator dump /sdcard/window.xml >/dev/null 2>&1 </dev/null || return 1
+  adb exec-out cat /sdcard/window.xml </dev/null | grep -q 'text="Overview"'
+}
+
+# The first launch signs in; without it every picture would show the sign-in screen. Right after
+# boot the emulator may not reach the server yet, so the launch is repeated until the overview is up.
+for _ in 1 2 3 4 5; do
+  launch ""
+  for _ in 1 2 3 4 5 6; do
+    sleep 4
+    if signed_in; then
+      break 2
+    fi
+  done
+done
+if ! signed_in; then
   echo "the app did not sign in" >&2
   adb exec-out screencap -p >"$OUT/failed.png" </dev/null
   exit 1
