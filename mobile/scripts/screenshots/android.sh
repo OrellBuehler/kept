@@ -16,11 +16,6 @@ SETTLE_SECONDS="${SETTLE_SECONDS:-6}"
 SERVER="http://10.0.2.2:$KEPT_SHOTS_PORT"
 mkdir -p "$OUT"
 
-demo() {
-  adb shell am broadcast -a com.android.systemui.demo "$@" </dev/null
-  adb shell am broadcast -p com.android.systemui -a com.android.systemui.demo "$@" </dev/null
-}
-
 launch() {
   local path="$1"
   local args=(
@@ -34,17 +29,6 @@ launch() {
   adb shell am force-stop "$PACKAGE" </dev/null
   adb shell am start -W -n "$PACKAGE/.MainActivity" "${args[@]}" >/dev/null </dev/null
 }
-
-adb shell settings put global sysui_demo_allowed 1 </dev/null
-adb shell settings put global sysui_tuner_demo_on 1 </dev/null
-# The system UI starts listening for the commands a moment after the setting changed.
-sleep 3
-demo -e command enter
-demo -e command clock -e hhmm 0941
-demo -e command battery -e level 100 -e plugged false
-demo -e command network -e wifi show -e level 4
-demo -e command network -e mobile show -e datatype none -e level 4
-demo -e command notifications -e visible false
 
 # The first launch signs in. Without it every picture would show the sign-in screen.
 launch ""
@@ -68,4 +52,3 @@ while read -r name path appearance <&3; do
 done 3<"$WORK/screens"
 
 adb shell cmd uimode night no </dev/null
-demo -e command exit

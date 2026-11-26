@@ -4,10 +4,11 @@
  * Screenshots workflow: a headline above a phone showing the screen, per store size, plus the Play
  * feature graphic. Pages are HTML, pictures are taken by a headless Chromium.
  *
- *   bun scripts/store-promo/render.ts --android <dir> --ios <dir> --out <dir>
+ *   bun scripts/store-promo/render.ts --android <dir> --ios <dir> [--out <dir>]
  *
  * The directories are the downloaded `android-store-screenshots` and `ios-store-screenshots`
- * artifacts; either may be left out. CHROME names the browser binary (default: `chromium`).
+ * artifacts; either may be left out. The pictures go to store/promo/out (gitignored) unless --out
+ * says otherwise. CHROME names the browser binary (default: `chromium`).
  */
 import { mkdir, rm, writeFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
@@ -98,6 +99,19 @@ const font = pathToFileURL(
 
 const SYMBOL = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" fill="currentColor"><rect x="36" y="36" width="36" height="184"/><rect x="160" y="36" width="64" height="24"/><rect x="124" y="76" width="64" height="24"/><rect x="88" y="116" width="64" height="24"/><rect x="124" y="156" width="64" height="24"/><rect x="160" y="196" width="64" height="24"/></svg>`;
 
+/**
+ * A clean status bar over the top of an emulator screenshot, which shows the real time and the
+ * emulator's own notifications. In the coordinates of the 1080 px wide screenshot.
+ */
+function androidStatusBar(dark: boolean): string {
+  const ground = dark ? "#0e0f13" : "#fafbfc";
+  const ink = dark ? "#f3f4f6" : "#3c4043";
+  return `<svg class="status" viewBox="0 0 1080 52"><rect width="1080" height="52" fill="${ground}"/>
+<text x="44" y="43" font-family="Inter" font-weight="500" font-size="35" fill="${ink}">9:41</text>
+<g fill="${ink}"><path d="M909 14c-14 0-25 6-33 13l33 21 33-21c-8-7-19-13-33-13z" transform="translate(-2 0)"/>
+<path d="M966 14v32h-32z"/><rect x="986" y="18" width="18" height="28" rx="3"/><rect x="991" y="14" width="8" height="5" rx="1"/></g></svg>`;
+}
+
 function escapeHtml(text: string): string {
   return text
     .replaceAll("&", "&amp;")
@@ -130,7 +144,9 @@ body.dark {
 }
 em { font-style: normal; color: var(--accent); }
 .phone { background: var(--bezel); box-shadow: 0 40px 90px rgba(15, 23, 42, 0.28); }
-.phone img { display: block; width: 100%; }
+.screen { position: relative; overflow: hidden; }
+.screen img { display: block; width: 100%; }
+.status { position: absolute; top: 0; left: 0; width: 100%; }
 `;
 
 function slidePage(target: Target, slide: Slide, screen: string): string {
@@ -143,10 +159,10 @@ function slidePage(target: Target, slide: Slide, screen: string): string {
 h1 { font-size: ${Math.round(w * 0.082)}px; line-height: 1.08; font-weight: 800; letter-spacing: -0.03em; text-wrap: balance; }
 p { margin-top: ${Math.round(w * 0.028)}px; font-size: ${Math.round(w * 0.04)}px; line-height: 1.3; font-weight: 500; color: var(--muted); text-wrap: balance; }
 .phone { position: absolute; left: ${Math.round((w - phone) / 2)}px; top: ${Math.round(target.height * (target.device === "ios" ? 0.24 : 0.3))}px; width: ${phone}px; padding: ${bezel}px; border-radius: ${radius}px; }
-.phone img { border-radius: ${radius - bezel}px; }
+.screen { border-radius: ${radius - bezel}px; }
 </style><body class="${slide.dark ? "dark" : ""}">
 <div class="text"><h1>${accented(slide.headline)}</h1><p>${escapeHtml(slide.subline)}</p></div>
-<div class="phone"><img src="${screen}"></div>
+<div class="phone"><div class="screen"><img src="${screen}">${target.device === "android" ? androidStatusBar(slide.dark === true) : ""}</div></div>
 </body>`;
 }
 
@@ -158,13 +174,13 @@ function featurePage(screens: string[]): string {
 .mark span { font-size: 92px; font-weight: 800; letter-spacing: -0.04em; }
 .brand p { margin-top: 26px; font-size: 34px; line-height: 1.2; font-weight: 600; color: var(--muted); text-wrap: balance; }
 .phone { position: absolute; width: 230px; padding: 6px; border-radius: 26px; }
-.phone img { border-radius: 20px; }
+.screen { border-radius: 20px; }
 .one { left: 560px; top: 56px; transform: rotate(-4deg); }
 .two { left: 770px; top: 110px; transform: rotate(4deg); }
 </style><body>
 <div class="brand"><div class="mark">${SYMBOL}<span>Kept</span></div><p>${escapeHtml(feature.tagline)}</p></div>
-<div class="phone one"><img src="${screens[0]}"></div>
-<div class="phone two"><img src="${screens[1]}"></div>
+<div class="phone one"><div class="screen"><img src="${screens[0]}">${androidStatusBar(false)}</div></div>
+<div class="phone two"><div class="screen"><img src="${screens[1]}">${androidStatusBar(false)}</div></div>
 </body>`;
 }
 
@@ -208,13 +224,13 @@ const { values } = parseArgs({
   },
   strict: true,
 });
-if (!values.out || (!values.android && !values.ios)) {
+if (!values.android && !values.ios) {
   console.error(
-    "usage: bun scripts/store-promo/render.ts [--android <dir>] [--ios <dir>] --out <dir>",
+    "usage: bun scripts/store-promo/render.ts [--android <dir>] [--ios <dir>] [--out <dir>]",
   );
   process.exit(2);
 }
-const out = resolve(values.out);
+const out = resolve(values.out ?? join(root, "store/promo/out"));
 const screenUrl = (dir: string, name: string) =>
   pathToFileURL(join(resolve(dir), `${name}.png`)).href;
 

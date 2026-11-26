@@ -89,8 +89,11 @@ Chromium (`CHROME` names the binary) and the two downloaded artifacts:
 ```bash
 gh run download <run id> -D /tmp/kept-shots
 bun run store:promo --android /tmp/kept-shots/android-store-screenshots \
-  --ios /tmp/kept-shots/ios-store-screenshots --out /tmp/kept-promo
+  --ios /tmp/kept-shots/ios-store-screenshots
 ```
+
+The raw Android pictures show the emulator's own status bar (the real time, its notifications);
+the promo images paint a clean one over it. The pictures land in `store/promo/out/` (gitignored; `--out` picks another place).
 
 The slides and their texts are at the top of `../scripts/store-promo/render.ts`.
 

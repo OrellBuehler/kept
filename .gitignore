@@ -18,6 +18,9 @@ vite.config.ts.timestamp-*
 /data
 /coverage
 
+# rendered store promo images (bun run store:promo)
+/store
+
 # private terms for the leak guard (never commit)
 .private-terms
 
