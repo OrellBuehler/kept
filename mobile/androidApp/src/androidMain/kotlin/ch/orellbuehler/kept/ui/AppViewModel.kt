@@ -1,5 +1,6 @@
 package ch.orellbuehler.kept.ui
 
+import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import ch.orellbuehler.kept.KeptException
@@ -64,6 +65,38 @@ class AppViewModel(
 
     fun billOpened() {
         mutablePendingBill.value = null
+    }
+
+    private val mutablePendingPath = MutableStateFlow<String?>(null)
+
+    /** A web path to open as soon as the main screen is up (store screenshots, debug builds). */
+    val pendingPath: StateFlow<String?> = mutablePendingPath.asStateFlow()
+
+    fun pathOpened() {
+        mutablePendingPath.value = null
+    }
+
+    /**
+     * Store screenshots (mobile/scripts/screenshots), debug builds only: signs in to [server] unless
+     * the app already is signed in, then opens [path].
+     */
+    fun screenshotLaunch(
+        server: String,
+        username: String,
+        password: String,
+        path: String?,
+    ) {
+        viewModelScope.launch {
+            try {
+                if (sdk.state.value !is SessionState.SignedIn) {
+                    sdk.connect(server)
+                    sdk.login(username, password)
+                }
+                mutablePendingPath.value = path
+            } catch (e: KeptException) {
+                Log.w("Screenshots", "sign-in failed: ${e.kind}")
+            }
+        }
     }
 
     fun logout() {

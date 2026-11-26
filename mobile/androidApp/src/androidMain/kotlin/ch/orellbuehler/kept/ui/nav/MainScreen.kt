@@ -96,6 +96,14 @@ fun MainScreen(app: AppViewModel) {
         }
     }
 
+    val pendingPath by app.pendingPath.collectAsStateWithLifecycle()
+    LaunchedEffect(pendingPath) {
+        pendingPath?.let {
+            nav.openWebPath(it)
+            app.pathOpened()
+        }
+    }
+
     Scaffold(
         bottomBar = {
             if (route in Routes.tabs) {

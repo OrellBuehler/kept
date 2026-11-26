@@ -60,6 +60,43 @@ To try the app against a local server, run `bun dev` in the repository root and 
 CI builds and tests both apps on every pull request that touches `mobile/`
 (`mobile-android.yml`, `mobile-ios.yml`). The debug APK is attached to the Android run.
 
+## Store screenshots
+
+The **Store Screenshots** workflow (`store-screenshots.yml`, started by hand from the Actions tab)
+takes the pictures for both stores and attaches them as the artifacts `android-store-screenshots`
+(1080 × 1920, the Play phone size) and `ios-store-screenshots` (1320 × 2868, the 6.9 inch App
+Store slot). It also runs on pull requests that change the capture or the example data.
+
+Each job starts a throwaway server (`scripts/screenshots/server.sh`: a fresh SQLite database, one
+user, the made-up household of `../scripts/seed-demo`), builds the debug app and starts it once per
+screen (`scripts/screenshots/android.sh`, `ios.sh`). A debug build takes the server, the user and
+the page to open as intent extras (Android) or launch arguments (iOS), signs in by itself and
+opens the page; release builds do not contain that code path. The list of screens is at the end
+of `server.sh`.
+
+To run it on your own machine, with an emulator running and the debug app installed:
+
+```bash
+mobile/scripts/screenshots/server.sh /tmp/kept-shots
+mobile/scripts/screenshots/android.sh /tmp/kept-shots /tmp/kept-shots/out
+kill "$(cat /tmp/kept-shots/server.pid)"
+```
+
+`bun run store:promo` turns the raw pictures into what the stores show: a headline above a framed
+phone for each store size (`play-phone`, `ios-6.9`) and the Play feature graphic. It needs a
+Chromium (`CHROME` names the binary) and the two downloaded artifacts:
+
+```bash
+gh run download <run id> -D /tmp/kept-shots
+bun run store:promo --android /tmp/kept-shots/android-store-screenshots \
+  --ios /tmp/kept-shots/ios-store-screenshots
+```
+
+The raw Android pictures show the emulator's own status bar (the real time, its notifications);
+the promo images paint a clean one over it. The pictures land in `store/promo/out/` (gitignored; `--out` picks another place).
+
+The slides and their texts are at the top of `../scripts/store-promo/render.ts`.
+
 ## Release
 
 The apps are released together with the server: publishing a GitHub release (tag such as
