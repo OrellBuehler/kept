@@ -17,7 +17,8 @@ SERVER="http://10.0.2.2:$KEPT_SHOTS_PORT"
 mkdir -p "$OUT"
 
 demo() {
-  adb shell am broadcast -a com.android.systemui.demo "$@" >/dev/null </dev/null
+  adb shell am broadcast -a com.android.systemui.demo "$@" </dev/null
+  adb shell am broadcast -p com.android.systemui -a com.android.systemui.demo "$@" </dev/null
 }
 
 launch() {

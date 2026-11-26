@@ -82,6 +82,18 @@ mobile/scripts/screenshots/android.sh /tmp/kept-shots /tmp/kept-shots/out
 kill "$(cat /tmp/kept-shots/server.pid)"
 ```
 
+`bun run store:promo` turns the raw pictures into what the stores show: a headline above a framed
+phone for each store size (`play-phone`, `ios-6.9`) and the Play feature graphic. It needs a
+Chromium (`CHROME` names the binary) and the two downloaded artifacts:
+
+```bash
+gh run download <run id> -D /tmp/kept-shots
+bun run store:promo --android /tmp/kept-shots/android-store-screenshots \
+  --ios /tmp/kept-shots/ios-store-screenshots --out /tmp/kept-promo
+```
+
+The slides and their texts are at the top of `../scripts/store-promo/render.ts`.
+
 ## Release
 
 The apps are released together with the server: publishing a GitHub release (tag such as
