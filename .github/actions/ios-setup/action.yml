@@ -80,7 +80,7 @@ runs:
           ~/.gradle/wrapper
           ~/.gradle/build-cache
           ~/.konan
-        key: gradle-ios-${{ runner.os }}-${{ hashFiles('**/*.gradle*', '**/libs.versions.toml', '**/gradle-wrapper.properties') }}
+        key: gradle-ios-${{ runner.os }}-${{ hashFiles('mobile/**/*.gradle*', 'mobile/**/libs.versions.toml', 'mobile/**/gradle-wrapper.properties') }}
         restore-keys: |
           gradle-ios-${{ runner.os }}-
 
